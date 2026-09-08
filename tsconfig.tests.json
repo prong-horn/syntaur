@@ -84,5 +84,8 @@
     "src/__tests__/chat-records.test.ts",
     "src/__tests__/comment-resolve.test.ts",
     "src/__tests__/chat-questions.test.ts",
+    "src/__tests__/inbox-aggregate.test.ts",
+    "src/__tests__/inbox-predicates.test.ts",
+    "src/__tests__/inbox-cli.test.ts",
   ]
 }

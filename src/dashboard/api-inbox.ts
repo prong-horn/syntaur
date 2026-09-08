@@ -11,14 +11,14 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
  * Endpoint:
  *   GET /api/inbox
  *     ?project=<slug>        — restrict to one project slug
- *     ?type=<csv>            — restrict to categories (review,blocked,question,plan-approval)
+ *     ?type=<csv>            — restrict to categories (question,review,plan-approval)
  *                              unknown types yield HTTP 400 with a clear message
  *     ?limit=<n>             — truncate returned items (positive int; ignored if invalid)
  *
  * Returns `InboxResult` JSON (items, counts, total).
  *
  * BEST-EFFORT: on ANY error this returns the safe empty shape `{ items: [],
- * counts: { review:0, blocked:0, question:0, 'plan-approval':0 }, total: 0 }`
+ * counts: { question:0, review:0, 'plan-approval':0 }, total: 0 }`
  * with HTTP 200 so the dashboard never sees a 500 from the inbox endpoint.
  */
 export function createInboxRouter(
@@ -85,7 +85,7 @@ export function createInboxRouter(
       console.warn('[inbox] failed to compute inbox:', error);
       res.json({
         items: [],
-        counts: { review: 0, blocked: 0, question: 0, 'plan-approval': 0 },
+        counts: { question: 0, review: 0, 'plan-approval': 0 },
         total: 0,
       });
     }

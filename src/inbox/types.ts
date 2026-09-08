@@ -22,21 +22,19 @@ export interface InboxChatRef {
 }
 
 /**
- * The four v1 "needs me" categories. A closed union — predicates and ordering
+ * The three v1 "needs me" categories. A closed union — predicates and ordering
  * live in the pure aggregation module so they unit-test without a server.
  *
- * - `review`        — derived `status === 'review'` (awaiting accept/reopen)
- * - `blocked`       — derived `status === 'blocked'` (awaiting unblock)
  * - `question`      — an unresolved `question` comment (awaiting an answer)
+ * - `review`        — derived `status === 'review'` (awaiting accept/reopen)
  * - `plan-approval` — `ready_for_planning` with a latest, unapproved plan
  */
-export type InboxCategory = 'review' | 'blocked' | 'question' | 'plan-approval';
+export type InboxCategory = 'question' | 'review' | 'plan-approval';
 
-/** All categories in canonical render order. */
+/** All categories in canonical render order (CLI grouping). */
 export const INBOX_CATEGORIES: readonly InboxCategory[] = [
-  'review',
-  'blocked',
   'question',
+  'review',
   'plan-approval',
 ];
 
@@ -69,8 +67,10 @@ export interface InboxItem {
   since: string;
   /** `max(0, now − since)` in milliseconds. */
   ageMs: number;
-  /** One-line context line. */
+  /** One-line context line (clipped for CLI). */
   summary: string;
+  /** Question-only: marker-stripped full text (dashboard body). */
+  body?: string;
   action: InboxAction;
   /**
    * Review-only: the derived CLI verb that ACCEPTS the review (terminal target),
@@ -91,8 +91,8 @@ export interface InboxItem {
 
 /**
  * The aggregation result. `counts`/`total` reflect the FULL matched set (after
- * `project`/`types` filtering); `items` is the same set ordered most-urgent
- * first within each category, then truncated by `limit`.
+ * `project`/`types` filtering); `items` is the same set ordered oldest-first
+ * globally, then truncated by `limit`.
  */
 export interface InboxResult {
   items: InboxItem[];

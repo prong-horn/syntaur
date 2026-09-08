@@ -114,9 +114,8 @@ function parseTypes(raw: string | undefined): InboxCategory[] | undefined {
 
 /** Human-readable label per category for the section headers. */
 const CATEGORY_LABEL: Record<InboxCategory, string> = {
-  review: 'review',
-  blocked: 'blocked',
   question: 'question',
+  review: 'review',
   'plan-approval': 'plan-approval',
 };
 
@@ -176,7 +175,7 @@ function renderHuman(result: InboxResult): string {
 
 export const inboxCommand = new Command('inbox')
   .description(
-    'One triage view of everything awaiting a human: assignments in review, blocked, with an unanswered question, or with a plan awaiting approval. Read-only — prints the exact action command for each item; never mutates.',
+    'One triage view of everything awaiting a human: unanswered questions, assignments in review, or with a plan awaiting approval. Read-only — prints the exact action command for each item; never mutates.',
   )
   .option('--project <slug>', 'Restrict to one project')
   .option(

@@ -90,7 +90,15 @@ afterEach(async () => {
 describe('runInbox — JSON shape', () => {
   it('returns the InboxResult shape with counts Record + JSON-safe items', async () => {
     await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
-    await seed({ id: 'b1', slug: 'blk', status: 'blocked', project: 'p1', blockedReason: 'api' });
+    await seed({
+      id: 'q1',
+      slug: 'qs',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'which?', resolved: false },
+      ],
+    });
 
     const result = await runInbox({});
     // Round-trips cleanly (no Map / non-serializable fields).
@@ -98,7 +106,7 @@ describe('runInbox — JSON shape', () => {
     expect(round).toEqual(result);
 
     expect(result.total).toBe(2);
-    expect(result.counts).toEqual({ review: 1, blocked: 1, question: 0, 'plan-approval': 0 });
+    expect(result.counts).toEqual({ question: 1, review: 1, 'plan-approval': 0 });
     const review = result.items.find((i) => i.category === 'review')!;
     expect(review).toMatchObject({
       project: 'p1',
@@ -115,7 +123,7 @@ describe('runInbox — JSON shape', () => {
     const result = await runInbox({});
     expect(result).toEqual({
       items: [],
-      counts: { review: 0, blocked: 0, question: 0, 'plan-approval': 0 },
+      counts: { question: 0, review: 0, 'plan-approval': 0 },
       total: 0,
     });
   });
@@ -124,24 +132,38 @@ describe('runInbox — JSON shape', () => {
 describe('runInbox — --type filter', () => {
   beforeEach(async () => {
     await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
-    await seed({ id: 'b1', slug: 'blk', status: 'blocked', project: 'p1' });
+    await seed({
+      id: 'q1',
+      slug: 'qs',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'open?', resolved: false },
+      ],
+    });
   });
 
   it('restricts to the requested categories (comma-split, trimmed)', async () => {
-    const result = await runInbox({ type: 'blocked' });
+    const result = await runInbox({ type: 'question' });
     expect(result.total).toBe(1);
-    expect(result.counts).toEqual({ review: 0, blocked: 1, question: 0, 'plan-approval': 0 });
-    expect(result.items[0].category).toBe('blocked');
+    expect(result.counts).toEqual({ question: 1, review: 0, 'plan-approval': 0 });
+    expect(result.items[0].category).toBe('question');
   });
 
   it('accepts multiple categories with surrounding whitespace', async () => {
-    const result = await runInbox({ type: ' review , blocked ' });
+    const result = await runInbox({ type: ' review , question ' });
     expect(result.total).toBe(2);
   });
 
   it('throws a clean error on an unknown category (no stack trace)', async () => {
     await expect(runInbox({ type: 'bogus' })).rejects.toThrow(
-      /Unknown --type category: "bogus"\. Valid: review, blocked, question, plan-approval\./,
+      /Unknown --type category: "bogus"\. Valid: question, review, plan-approval\./,
+    );
+  });
+
+  it('rejects blocked as an unknown category', async () => {
+    await expect(runInbox({ type: 'blocked' })).rejects.toThrow(
+      /Unknown --type category: "blocked"\. Valid: question, review, plan-approval\./,
     );
   });
 

@@ -27,7 +27,6 @@ import {
 import { latestPlanFile, isPlanApproved } from '../lifecycle/facts.js';
 import { getTargetStatus } from '../lifecycle/state-machine.js';
 import type { InboxAction, InboxCategory, InboxChatRef, InboxItem, InboxResult } from './types.js';
-import { INBOX_CATEGORIES } from './types.js';
 import { parseChatQuestionMarker } from '../chat/questions.js';
 
 export type {
@@ -91,14 +90,6 @@ export interface ComputeInboxOptions {
 /** review = derived `status === 'review'`. */
 export function isReview(a: ParsedAssignmentFull): boolean {
   return a.status === 'review';
-}
-
-/**
- * blocked = derived `status === 'blocked'` (parity with `progress['blocked']`).
- * `blockedReason` is NOT the predicate — it only feeds `summary`.
- */
-export function isBlocked(a: ParsedAssignmentFull): boolean {
-  return a.status === 'blocked';
 }
 
 /** A single unresolved question comment. */
@@ -194,9 +185,6 @@ export function resolveSince(
   switch (category) {
     case 'review':
       primary = latestStatusHistoryAtWhere(a, (e) => e.to === 'review');
-      break;
-    case 'blocked':
-      primary = latestStatusHistoryAtWhere(a, (e) => e.dispositionTo === 'blocked');
       break;
     case 'question':
       primary = validTimestamp(comment?.timestamp);
@@ -369,11 +357,6 @@ export function buildAction(
         verb: 'Review',
         command: `syntaur timeline ${target}${projectFlag}`,
       };
-    case 'blocked':
-      return {
-        verb: 'Unblock',
-        command: `syntaur unblock ${target}${projectFlag}`,
-      };
     case 'question':
       if (ctx.chat && ctx.dashboardUrl) {
         const path = chatItemPath({ ...item, chat: ctx.chat });
@@ -407,11 +390,16 @@ export function orderByUrgency(items: InboxItem[]): InboxItem[] {
 // Aggregation entry point.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function summarizeQuestion(c: ParsedComment): string {
+function questionText(c: ParsedComment): string {
   const { ref, text } = parseChatQuestionMarker(c.body);
   const body = (ref ? text : c.body).replace(/\s+/g, ' ').trim();
+  return body.length > 0 ? body : '(empty question)';
+}
+
+function summarizeQuestion(c: ParsedComment): string {
+  const body = questionText(c);
   const clipped = body.length > 140 ? `${body.slice(0, 137)}...` : body;
-  return clipped.length > 0 ? clipped : '(empty question)';
+  return clipped;
 }
 
 /** Dashboard path to a chat item anchor for an inbox row. */
@@ -497,22 +485,6 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
       });
     }
 
-    // ── blocked ─────────────────────────────────────────────────────────────
-    if ((!typeFilter || typeFilter.has('blocked')) && isBlocked(parsed)) {
-      const since = resolveSince('blocked', parsed, now);
-      matched.push({
-        ...baseItem,
-        title,
-        category: 'blocked',
-        since,
-        ageMs: computeAgeMs(since, now),
-        summary: parsed.blockedReason
-          ? `Blocked: ${parsed.blockedReason}`
-          : 'Blocked — awaiting unblock.',
-        action: buildAction('blocked', baseItem, {}),
-      });
-    }
-
     // ── question ────────────────────────────────────────────────────────────
     if (!typeFilter || typeFilter.has('question')) {
       const commentsPath = resolve(entry.assignmentDir, 'comments.md');
@@ -531,6 +503,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               since,
               ageMs: computeAgeMs(since, now),
               summary: summarizeQuestion(c),
+              body: questionText(c),
               commentId: c.id,
               chat,
               action: buildAction('question', baseItem, {
@@ -565,19 +538,15 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
 
   // Counts/total reflect the FULL matched set (before `limit` truncation).
   const counts: Record<InboxCategory, number> = {
-    review: 0,
-    blocked: 0,
     question: 0,
+    review: 0,
     'plan-approval': 0,
   };
   for (const item of matched) counts[item.category]++;
   const total = matched.length;
 
-  // Order most-urgent first WITHIN each category, in canonical category order.
-  const ordered: InboxItem[] = [];
-  for (const category of INBOX_CATEGORIES) {
-    ordered.push(...orderByUrgency(matched.filter((i) => i.category === category)));
-  }
+  // Order oldest-first globally (largest ageMs first).
+  const ordered = orderByUrgency(matched);
 
   // `limit` truncates the returned items list only (counts/total stay full).
   const items =

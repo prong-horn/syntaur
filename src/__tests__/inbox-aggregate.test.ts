@@ -123,7 +123,7 @@ describe('computeInbox — shape', () => {
     const result = await run();
     expect(result).toEqual({
       items: [],
-      counts: { review: 0, blocked: 0, question: 0, 'plan-approval': 0 },
+      counts: { question: 0, review: 0, 'plan-approval': 0 },
       total: 0,
     });
   });
@@ -193,12 +193,11 @@ describe('computeInbox — positive categories', () => {
     expect(r.items[0].category).toBe('review');
   });
 
-  it('emits a blocked item; blockedReason feeds summary not the predicate', async () => {
+  it('does not emit a blocked assignment', async () => {
     await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1', blockedReason: 'waiting on api' });
     const r = await run();
-    expect(r.counts.blocked).toBe(1);
-    expect(r.items[0].summary).toContain('waiting on api');
-    expect(r.items[0].action.command).toBe('syntaur unblock blk --project p1');
+    expect(r.total).toBe(0);
+    expect(r.counts).toEqual({ question: 0, review: 0, 'plan-approval': 0 });
   });
 
   it('emits one item per unresolved question, skipping resolved/note/feedback', async () => {
@@ -359,7 +358,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('keeps a blocked-disposition assignment (only parked/terminal are dropped)', async () => {
+  it('keeps a blocked-disposition assignment excluded (blocked category removed)', async () => {
     await seed({
       id: 'bd',
       slug: 'blocked-d',
@@ -368,7 +367,7 @@ describe('computeInbox — exclusions', () => {
       extraFrontmatter: ['disposition: blocked'],
     });
     const r = await run();
-    expect(r.counts.blocked).toBe(1);
+    expect(r.total).toBe(0);
   });
 });
 
@@ -393,6 +392,33 @@ describe('computeInbox — since, age, ordering', () => {
     const r = await run();
     expect(r.items[0].since).toBe('2026-06-14T12:00:00Z');
     expect(r.items[0].ageMs).toBe(NOW - Date.parse('2026-06-14T12:00:00Z'));
+  });
+
+  it('orders most-urgent (largest ageMs) first globally across categories', async () => {
+    await seed({
+      id: 'old',
+      slug: 'old-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    await seed({
+      id: 'new',
+      slug: 'new-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    await seed({
+      id: 'plan',
+      slug: 'plan-row',
+      status: 'ready_for_planning',
+      project: 'p1',
+      planFiles: { 'plan.md': '# plan\n' },
+      statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
+    });
+    const r = await run();
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['old-rev', 'plan-row', 'new-rev']);
   });
 
   it('orders most-urgent (largest ageMs) first within a category', async () => {
@@ -427,7 +453,15 @@ describe('computeInbox — since, age, ordering', () => {
 describe('computeInbox — filters', () => {
   beforeEach(async () => {
     await seed({ id: 'r1', slug: 'r1', status: 'review', project: 'p1' });
-    await seed({ id: 'b1', slug: 'b1', status: 'blocked', project: 'p1' });
+    await seed({
+      id: 'q1',
+      slug: 'q1',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'open?', resolved: false },
+      ],
+    });
     await seed({ id: 'r2', slug: 'r2', status: 'review', project: 'p2' });
     await seed({ id: 's1', slug: 's1', status: 'review' }); // standalone
   });
@@ -439,17 +473,17 @@ describe('computeInbox — filters', () => {
   });
 
   it('types filter restricts to a subset of categories', async () => {
-    const r = await run({ types: ['blocked'] as InboxCategory[] });
+    const r = await run({ types: ['question'] as InboxCategory[] });
     expect(r.total).toBe(1);
-    expect(r.counts).toEqual({ review: 0, blocked: 1, question: 0, 'plan-approval': 0 });
-    expect(r.items[0].category).toBe('blocked');
+    expect(r.counts).toEqual({ question: 1, review: 0, 'plan-approval': 0 });
+    expect(r.items[0].category).toBe('question');
   });
 
   it('limit truncates items but counts/total reflect the FULL matched set', async () => {
     const r = await run({ limit: 2 });
     expect(r.total).toBe(4); // full
     expect(r.counts.review).toBe(3); // full (r1, r2, s1)
-    expect(r.counts.blocked).toBe(1); // full
+    expect(r.counts.question).toBe(1); // full
     expect(r.items).toHaveLength(2); // truncated
   });
 
@@ -463,10 +497,10 @@ describe('computeInbox — filters', () => {
 // ── board-parity sanity ────────────────────────────────────────────────────────
 
 describe('computeInbox — board parity', () => {
-  it('a blocked-status assignment becomes a blocked inbox item (progress[blocked] parity)', async () => {
+  it('blocked-status assignments are excluded from the inbox queue', async () => {
     await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1' });
     const r = await run();
-    expect(r.counts.blocked).toBe(1);
+    expect(r.total).toBe(0);
   });
 
   it('open-question count matches the unresolved-question parity filter', async () => {
@@ -508,6 +542,7 @@ describe('computeInbox — chat questions', () => {
     const q = r.items.find((i) => i.category === 'question')!;
     expect(q.chat).toEqual({ kind: 'reply', itemId: 'item-9', turnId: 'turn-1', agentId: 'claude' });
     expect(q.summary).toBe('Which name?');
+    expect(q.body).toBe('Which name?');
     expect(q.action).toEqual({
       verb: 'Open chat',
       command: 'http://localhost:4888/projects/demo/assignments/chat-q?tab=chat#item-9',
@@ -559,5 +594,30 @@ describe('computeInbox — chat questions', () => {
     expect(q.action.command).toBe(
       'http://test.local:4800/assignments/uuid-standalone?tab=chat#perm-1',
     );
+  });
+
+  it('chat question body carries full marker-stripped text; summary is clipped', async () => {
+    const longText = 'A'.repeat(200);
+    await seed({
+      id: 'a-long',
+      slug: 'long-q',
+      status: 'in_progress',
+      project: 'demo',
+      comments: [
+        {
+          id: 'lq1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `${longText}\n\n<!-- syntaur-chat kind="reply" item="item-long" turn="turn-2" -->`,
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run();
+    const q = r.items.find((i) => i.category === 'question')!;
+    expect(q.body).toBe(longText);
+    expect(q.summary).toBe(`${'A'.repeat(137)}...`);
+    expect(q.summary.length).toBeLessThanOrEqual(140);
   });
 });

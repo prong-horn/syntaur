@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   isReview,
-  isBlocked,
   isUnresolvedQuestion,
   unresolvedQuestions,
   isPlanAwaitingApproval,
@@ -54,7 +53,7 @@ function comment(partial: Partial<ParsedComment> & { id: string }): ParsedCommen
   };
 }
 
-// ── isReview / isBlocked ───────────────────────────────────────────────────────
+// ── isReview ───────────────────────────────────────────────────────────────────
 
 describe('isReview', () => {
   it('positive: derived status === review', () => {
@@ -63,21 +62,6 @@ describe('isReview', () => {
   it('negative: any other status', () => {
     for (const s of ['draft', 'ready_to_implement', 'in_progress', 'completed', 'blocked']) {
       expect(isReview(assignment(`status: ${s}`))).toBe(false);
-    }
-  });
-});
-
-describe('isBlocked', () => {
-  it('positive: derived status === blocked', () => {
-    expect(isBlocked(assignment('status: blocked'))).toBe(true);
-  });
-  it('negative: blockedReason set but status NOT blocked does not match', () => {
-    // Predicate is status-based, NOT blockedReason !== null.
-    expect(isBlocked(assignment('status: in_progress\nblockedReason: stuck'))).toBe(false);
-  });
-  it('negative: other statuses', () => {
-    for (const s of ['draft', 'in_progress', 'review', 'completed', 'parked']) {
-      expect(isBlocked(assignment(`status: ${s}`))).toBe(false);
     }
   });
 });
@@ -171,23 +155,6 @@ describe('resolveSince', () => {
       ].join('\n'),
     );
     expect(resolveSince('review', a, now)).toBe('2026-06-12T00:00:00Z');
-  });
-
-  it('blocked: picks latest statusHistory entry with dispositionTo===blocked', () => {
-    const a = assignment(
-      [
-        'status: blocked',
-        'statusHistory:',
-        '  - at: "2026-06-10T00:00:00Z"',
-        '    to: in_progress',
-        '    command: start',
-        '  - at: "2026-06-11T00:00:00Z"',
-        '    to: blocked',
-        '    command: block',
-        '    dispositionTo: blocked',
-      ].join('\n'),
-    );
-    expect(resolveSince('blocked', a, now)).toBe('2026-06-11T00:00:00Z');
   });
 
   it('question: uses comment.timestamp', () => {
@@ -433,12 +400,6 @@ describe('buildAction', () => {
     expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: null })).toEqual({
       verb: 'Review',
       command: 'syntaur timeline my-slug --project proj',
-    });
-  });
-  it('blocked: Unblock command', () => {
-    expect(buildAction('blocked', projItem, {})).toEqual({
-      verb: 'Unblock',
-      command: 'syntaur unblock my-slug --project proj',
     });
   });
   it('question: Answer command with --reply-to', () => {
