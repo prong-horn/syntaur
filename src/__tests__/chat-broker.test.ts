@@ -2675,7 +2675,10 @@ describe('inbox questions (needs-me)', () => {
     });
     await broker.send({ assignment: assignment(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 2, 'two permission cards');
-    await waitUntil(async () => (await parseAssignmentComments()).entries.length === 2, 'two grace comments');
+    await waitUntil(async () => {
+      if (!existsSync(commentsPath())) return false;
+      return (await parseAssignmentComments()).entries.length === 2;
+    }, 'two grace comments');
     const perms = itemsOfType('permission.request') as Array<{ requestId: string }>;
     expect(
       await broker.answerPermission(assignment(), perms[0].requestId, 'allow', { allowAllSession: true }),

@@ -333,6 +333,7 @@ interface PendingPermission {
   options: acp.PermissionOption[];
   graceTimer: ReturnType<typeof setTimeout> | null;
   inboxCommentId: string | null;
+  recorded: Promise<void>;
 }
 
 interface PendingQuestion {
@@ -347,6 +348,7 @@ interface PendingQuestion {
   }>;
   graceTimer: ReturnType<typeof setTimeout> | null;
   inboxCommentId: string | null;
+  recorded: Promise<void>;
 }
 
 interface Session {
@@ -644,6 +646,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           session.pendingPermissions.get(requestId) === pending ||
           session.pendingQuestions.get(requestId) === pending;
         if (!stillPending) return;
+        await pending.recorded;
         const item = findChatItemByRequestId(session.assignment.id, requestId);
         const ref: ChatQuestionRef = { kind, itemId: item?.itemId ?? requestId };
         const commentId = await fileChatQuestion(
@@ -2580,10 +2583,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         options: request.options ?? [],
         graceTimer: null,
         inboxCommentId: null,
+        recorded: record(session, 'acp.permission_request', { requestId, request }).catch(() => {}),
       };
       session.pendingPermissions.set(requestId, pending);
       armCardGraceTimer(session, requestId, 'permission', title, pending);
-      void record(session, 'acp.permission_request', { requestId, request }).catch(() => {});
     });
   }
 
@@ -2622,10 +2625,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           questions: body.questions ?? [],
           graceTimer: null,
           inboxCommentId: null,
+          recorded: record(session, 'acp.ext', { method, params, requestId }).catch(() => {}),
         };
         session.pendingQuestions.set(requestId, pending);
         armCardGraceTimer(session, requestId, 'ask', prompt, pending);
-        void record(session, 'acp.ext', { method, params, requestId }).catch(() => {});
       });
     }
     const requestId = `${session.key}:ext:${session.questionSeq++}`;
