@@ -651,7 +651,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           ref,
           questionBodyForCard(kind, titleOrPrompt),
         );
-        if (commentId) pending.inboxCommentId = commentId;
+        if (!commentId) return;
+        const stillThere =
+          session.pendingPermissions.get(requestId) === pending ||
+          session.pendingQuestions.get(requestId) === pending;
+        if (!stillThere) {
+          await resolveChatQuestions(session, byCommentId(commentId));
+        } else {
+          pending.inboxCommentId = commentId;
+        }
       })();
     }, timeouts.inboxGraceMs);
     graceTimer.unref?.();
@@ -1687,13 +1695,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (cardItemIds.length > 0) {
       try {
         await withRecordLock(session.assignment.assignmentDir, () =>
-          resolveQuestionComments(session.assignment.assignmentDir, (c) => {
-            const { ref } = parseChatQuestionMarker(c.body);
-            if (!ref || (ref.kind !== 'permission' && ref.kind !== 'ask')) return false;
-            return cardItemIds.some(
-              (entry) => entry.kind === ref.kind && entry.ids.includes(ref.itemId),
-            );
-          }),
+          resolveQuestionComments(session.assignment.assignmentDir, (c) =>
+            cardItemIds.some((entry) => byKindAndItemIds(entry.kind, entry.ids)(c)),
+          ),
         );
       } catch {
         /* best-effort */
@@ -2578,9 +2582,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         inboxCommentId: null,
       };
       session.pendingPermissions.set(requestId, pending);
-      void record(session, 'acp.permission_request', { requestId, request }).then(() => {
-        armCardGraceTimer(session, requestId, 'permission', title, pending);
-      });
+      armCardGraceTimer(session, requestId, 'permission', title, pending);
+      void record(session, 'acp.permission_request', { requestId, request }).catch(() => {});
     });
   }
 
@@ -2621,9 +2624,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           inboxCommentId: null,
         };
         session.pendingQuestions.set(requestId, pending);
-        void record(session, 'acp.ext', { method, params, requestId }).then(() => {
-          armCardGraceTimer(session, requestId, 'ask', prompt, pending);
-        });
+        armCardGraceTimer(session, requestId, 'ask', prompt, pending);
+        void record(session, 'acp.ext', { method, params, requestId }).catch(() => {});
       });
     }
     const requestId = `${session.key}:ext:${session.questionSeq++}`;
@@ -3635,14 +3637,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         );
       }
       if (deliveredTargets.length > 0) {
-        void resolveChatQuestions(assignment, (c) => {
-          const { ref } = parseChatQuestionMarker(c.body);
-          return (
-            ref !== null &&
-            ref.kind === 'reply' &&
-            deliveredTargets.includes(c.author)
-          );
-        });
+        void resolveChatQuestions(assignment, (c) =>
+          deliveredTargets.some((agentId) => byAgentAndKind(agentId, ['reply'])(c)),
+        );
       }
       if (targets.length === 0) {
         await recordAssignment(
@@ -3751,10 +3748,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
       const pending = session?.pendingQuestions.get(requestId);
       if (!session || !pending) return false;
+      const question = pending.questions[0];
+      if (!answer.optionId && !answer.text) return false;
       session.pendingQuestions.delete(requestId);
       clearTimeout(pending.timer);
       await settlePendingCard(session, pending);
-      const question = pending.questions[0];
       if (answer.optionId) {
         pending.resolve({
           outcome: {
@@ -3763,16 +3761,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           },
         });
         await record(session, 'question.answered', { requestId, optionId: answer.optionId, by: 'human' });
-      } else if (answer.text) {
+      } else {
         pending.resolve({
           outcome: {
             outcome: 'answered',
-            answers: [{ questionId: question?.id ?? 'q1', selectedOptionIds: [answer.text] }],
+            answers: [{ questionId: question?.id ?? 'q1', selectedOptionIds: [answer.text!] }],
           },
         });
         await record(session, 'question.answered', { requestId, text: answer.text, by: 'human' });
-      } else {
-        return false;
       }
       flush(session);
       return true;

@@ -224,7 +224,7 @@ export function assignmentHref(
 /** SPA href to a chat item anchor for a chat-sourced inbox row. */
 export function chatItemHref(item: InboxItem): string {
   if (!item.chat) return assignmentHref(item, 'chat');
-  return `${assignmentHref(item, 'chat')}#${encodeURIComponent(item.chat.itemId)}`;
+  return `${assignmentHref(item, 'chat')}#${item.chat.itemId}`;
 }
 
 export function chatRowLabel(chat: InboxChatRef): string {

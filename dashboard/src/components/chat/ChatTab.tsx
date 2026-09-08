@@ -97,6 +97,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   const location = useLocation();
   const listRef = useRef<HTMLDivElement | null>(null);
   const pinnedAtBottom = useRef(true);
+  const lastScrolledHash = useRef<string | null>(null);
 
   const plan = pinnedPlan(items) as AgentPlanItem | null;
   const activity = useMemo(() => groupByTurn(items), [items]);
@@ -134,12 +135,20 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
   }, [error]);
 
   useEffect(() => {
-    const hash = location.hash.replace(/^#/, '');
-    if (!hash || column.length === 0) return;
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw || column.length === 0) return;
+    let hash = raw;
+    try {
+      hash = decodeURIComponent(raw);
+    } catch {
+      /* keep raw */
+    }
+    if (hash === lastScrolledHash.current) return;
     const root = listRef.current;
     if (!root) return;
     const target = root.querySelector(`#${CSS.escape(hash)}`);
     if (!target) return;
+    lastScrolledHash.current = hash;
     pinnedAtBottom.current = false;
     target.scrollIntoView({ block: 'center' });
   }, [column, location.hash]);

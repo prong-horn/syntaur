@@ -33,6 +33,9 @@ export const BOILERPLATE_PHRASES: readonly RegExp[] = [
   /\bfeel free to\b/i,
 ];
 
+/** Max length for a trailing plain statement that may pair with a prior question. */
+export const PLAIN_STATEMENT_MAX_CHARS = 240;
+
 function parseMarkerAttributes(attrs: string): ChatQuestionRef | null {
   const kind = attrs.match(/\bkind="(reply|permission|ask)"/)?.[1];
   const itemId = attrs.match(/\bitem="([^"]+)"/)?.[1];
@@ -74,7 +77,26 @@ function matchesAnyPhrase(text: string, phrases: readonly RegExp[]): boolean {
   return phrases.some((re) => re.test(text));
 }
 
-/** Return the last paragraph when it looks like an open question, else null. */
+function paragraphQualifies(paragraph: string): boolean {
+  const p = stripTrailingEmphasis(paragraph);
+  if (p.length === 0) return false;
+  if (matchesAnyPhrase(p, BOILERPLATE_PHRASES)) return false;
+  return p.endsWith('?') || matchesAnyPhrase(p, DECISION_REQUEST_PHRASES);
+}
+
+function isPlainStatement(paragraph: string): boolean {
+  const p = stripTrailingEmphasis(paragraph);
+  if (p.length === 0) return false;
+  if (p.endsWith('?')) return false;
+  if (matchesAnyPhrase(p, DECISION_REQUEST_PHRASES)) return false;
+  return p.length <= PLAIN_STATEMENT_MAX_CHARS;
+}
+
+/**
+ * Return the qualifying paragraph when the reply looks like an open question.
+ * Examines the last paragraph; when it is a short plain statement, also checks
+ * the paragraph before it (Decision 2 amended).
+ */
 export function detectOpenQuestion(replyText: string): string | null {
   const paragraphs = replyText
     .split(/\n\s*\n/)
@@ -82,15 +104,19 @@ export function detectOpenQuestion(replyText: string): string | null {
     .filter((p) => p.length > 0);
   if (paragraphs.length === 0) return null;
 
-  const last = stripTrailingEmphasis(paragraphs[paragraphs.length - 1]);
-  if (last.length === 0) return null;
-  if (matchesAnyPhrase(last, BOILERPLATE_PHRASES)) return null;
+  const last = paragraphs[paragraphs.length - 1];
+  if (paragraphQualifies(last)) {
+    return clipExcerpt(stripTrailingEmphasis(last), 600);
+  }
 
-  const endsWithQuestion = last.endsWith('?');
-  const asksForDecision = matchesAnyPhrase(last, DECISION_REQUEST_PHRASES);
-  if (!endsWithQuestion && !asksForDecision) return null;
+  if (paragraphs.length >= 2 && isPlainStatement(last)) {
+    const prev = paragraphs[paragraphs.length - 2];
+    if (paragraphQualifies(prev)) {
+      return clipExcerpt(stripTrailingEmphasis(prev), 600);
+    }
+  }
 
-  return clipExcerpt(last, 600);
+  return null;
 }
 
 export function questionBodyForCard(kind: 'permission' | 'ask', titleOrPrompt: string): string {
