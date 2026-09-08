@@ -16,26 +16,27 @@ const base: InboxItem = {
   action: { verb: 'Answer', command: 'syntaur comment task "<answer>" --reply-to c1 --project demo' },
 };
 
-describe('InboxPage chat rows', () => {
-  it('renders a chat row with badge, chat link and no reply textarea', async () => {
+describe('InboxPage', () => {
+  it('renders a flat list without section headings or CLI code lines', async () => {
     vi.resetModules();
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [
-          {
-            ...base,
-            chat: { kind: 'reply', itemId: 'item-1', agentId: 'claude' },
-            action: {
-              verb: 'Open chat',
-              command: 'http://localhost:4800/projects/demo/assignments/task?tab=chat#item-1',
-            },
-          },
+          { ...base, category: 'review' as const, acceptCommand: 'complete', reopenCommand: 'start' },
+          base,
         ],
-        total: 1,
+        counts: { question: 1, review: 1, 'plan-approval': 0 },
+        total: 2,
         loading: false,
         error: null,
         refetch: () => {},
       }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [{ slug: 'demo', title: 'Demo' }], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
     }));
     const { InboxPage } = await import('../InboxPage');
     const html = renderToStaticMarkup(
@@ -43,22 +44,34 @@ describe('InboxPage chat rows', () => {
         <InboxPage />
       </MemoryRouter>,
     );
-    expect(html).toContain('@claude asked');
-    expect(html).toContain('Open chat');
-    expect(html).not.toContain('Reply inline');
-    expect(html).toContain('?tab=chat#item-1');
+    expect(html).not.toContain('<code');
+    expect(html).not.toContain('Questions');
+    expect(html).not.toContain('Review');
+    expect(html).toContain('Needs me');
+    expect(html).toContain('2 waiting');
   });
 
-  it('keeps the inline reply textarea for plain questions', async () => {
+  it('renders the project select with slugs from useProjects', async () => {
     vi.resetModules();
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [base],
+        counts: { question: 1, review: 0, 'plan-approval': 0 },
         total: 1,
         loading: false,
         error: null,
         refetch: () => {},
       }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({
+        data: [{ slug: 'alpha', title: 'Alpha' }, { slug: 'demo', title: 'Demo' }],
+        loading: false,
+        error: null,
+      }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
     }));
     const { InboxPage } = await import('../InboxPage');
     const html = renderToStaticMarkup(
@@ -66,7 +79,37 @@ describe('InboxPage chat rows', () => {
         <InboxPage />
       </MemoryRouter>,
     );
-    expect(html).toContain('Reply inline');
-    expect(html).toContain('Open to answer');
+    expect(html).toContain('All projects');
+    expect(html).toContain('alpha');
+    expect(html).toContain('demo');
+  });
+
+  it('renders the empty state naming the four sources', async () => {
+    vi.resetModules();
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [],
+        counts: { question: 0, review: 0, 'plan-approval': 0 },
+        total: 0,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Nothing is waiting on you');
+    expect(html).toContain('plan needs approval');
+    expect(html).toContain('permission card');
   });
 });
