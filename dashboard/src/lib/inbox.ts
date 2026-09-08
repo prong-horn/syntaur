@@ -194,15 +194,6 @@ export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
   };
 }
 
-export async function approvePlan(item: RouteIdentity): Promise<void> {
-  const { method, url } = planApproveEndpoint(item);
-  const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' } });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null);
-    throw new Error(body?.error || `HTTP ${response.status}`);
-  }
-}
-
 /**
  * Resolve the comments POST endpoint (used to answer a question by replying).
  */
