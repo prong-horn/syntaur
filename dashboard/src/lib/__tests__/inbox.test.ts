@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest';
 import {
   assignmentHref,
   chatItemHref,
+  chatReplyText,
   chatRowLabel,
   commentsEndpoint,
   formatAge,
-  groupInboxItems,
+  planApproveEndpoint,
+  projectOptions,
   resolveCommentEndpoint,
+  rowKind,
   transitionEndpoint,
+  waitingLabel,
   type InboxItem,
 } from '../inbox';
 
@@ -26,32 +30,101 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
   };
 }
 
-describe('groupInboxItems', () => {
-  it('groups by category in the stable canonical order, omitting empty groups', () => {
-    const items = [
-      makeItem({ category: 'plan-approval', assignmentId: 'p1' }),
-      makeItem({ category: 'review', assignmentId: 'r1' }),
-      makeItem({ category: 'question', assignmentId: 'q1' }),
-    ];
-    const groups = groupInboxItems(items);
-    expect(groups.map((g) => g.category)).toEqual(['review', 'question', 'plan-approval']);
-    // 'blocked' had no items → omitted.
-    expect(groups.find((g) => g.category === 'blocked')).toBeUndefined();
+describe('chatReplyText', () => {
+  it('trims and prefixes with @agent', () => {
+    expect(chatReplyText('claude', '  hello there  ')).toBe('@claude hello there');
   });
+});
 
-  it('orders items oldest-first (largest ageMs) within each group', () => {
+describe('projectOptions', () => {
+  it('sorts and dedupes project slugs with null last', () => {
     const items = [
-      makeItem({ category: 'review', assignmentId: 'young', ageMs: 1000 }),
-      makeItem({ category: 'review', assignmentId: 'old', ageMs: 99_000 }),
-      makeItem({ category: 'review', assignmentId: 'mid', ageMs: 50_000 }),
+      makeItem({ category: 'review', project: 'beta' }),
+      makeItem({ category: 'question', project: 'alpha' }),
+      makeItem({ category: 'review', project: 'alpha' }),
+      makeItem({ category: 'plan-approval', project: null, assignmentId: 's1' }),
     ];
-    const [reviewGroup] = groupInboxItems(items);
-    expect(reviewGroup.count).toBe(3);
-    expect(reviewGroup.items.map((i) => i.assignmentId)).toEqual(['old', 'mid', 'young']);
+    expect(projectOptions(items)).toEqual(['alpha', 'beta', null]);
   });
+});
 
-  it('returns no groups for an empty inbox', () => {
-    expect(groupInboxItems([])).toEqual([]);
+describe('rowKind', () => {
+  it('classifies each inbox row shape', () => {
+    expect(rowKind(makeItem({ category: 'review' }))).toBe('review');
+    expect(rowKind(makeItem({ category: 'plan-approval' }))).toBe('plan-approval');
+    expect(rowKind(makeItem({ category: 'question' }))).toBe('plain-question');
+    expect(
+      rowKind(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'reply', itemId: 'i', agentId: 'claude' },
+        }),
+      ),
+    ).toBe('reply');
+    expect(
+      rowKind(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'permission', itemId: 'i', agentId: 'cursor' },
+        }),
+      ),
+    ).toBe('permission');
+    expect(
+      rowKind(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'ask', itemId: 'i', agentId: 'cursor' },
+        }),
+      ),
+    ).toBe('ask');
+  });
+});
+
+describe('waitingLabel', () => {
+  it('labels each row kind', () => {
+    expect(
+      waitingLabel(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'reply', itemId: 'i', agentId: 'claude' },
+        }),
+        { name: 'claude' },
+      ),
+    ).toBe('@claude asked');
+    expect(
+      waitingLabel(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'permission', itemId: 'i', agentId: 'cursor' },
+        }),
+      ),
+    ).toBe('@cursor is waiting for permission');
+    expect(
+      waitingLabel(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'ask', itemId: 'i', agentId: 'cursor' },
+        }),
+      ),
+    ).toBe('@cursor is asking');
+    expect(waitingLabel(makeItem({ category: 'plan-approval' }))).toBe('Plan awaiting your approval');
+    expect(waitingLabel(makeItem({ category: 'review' }))).toBe('Awaiting your review');
+    expect(waitingLabel(makeItem({ category: 'question' }))).toBe('Question');
+  });
+});
+
+describe('planApproveEndpoint', () => {
+  it('maps project and standalone approve URLs', () => {
+    const proj = makeItem({ category: 'plan-approval' });
+    expect(planApproveEndpoint(proj)).toEqual({
+      method: 'POST',
+      url: '/api/projects/proj/assignments/my-task/plan/approve',
+    });
+    const standalone = makeItem({ category: 'plan-approval', project: null, assignmentId: 'uuid-pa' });
+    expect(planApproveEndpoint(standalone)).toEqual({
+      method: 'POST',
+      url: '/api/assignments/uuid-pa/plan/approve',
+    });
   });
 });
 
@@ -88,17 +161,6 @@ describe('transitionEndpoint', () => {
       method: 'POST',
       url: '/api/assignments/uuid-99/transitions/complete',
     });
-  });
-
-  it('maps blocked unblock for project and standalone', () => {
-    const proj = makeItem({ category: 'blocked' });
-    expect(transitionEndpoint(proj, 'unblock').url).toBe(
-      '/api/projects/proj/assignments/my-task/transitions/unblock',
-    );
-    const standalone = makeItem({ category: 'blocked', project: null, assignmentId: 'uuid-b' });
-    expect(transitionEndpoint(standalone, 'unblock').url).toBe(
-      '/api/assignments/uuid-b/transitions/unblock',
-    );
   });
 });
 

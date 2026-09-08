@@ -8,8 +8,8 @@
  * `src/inbox/types.ts` — the `GET /api/inbox` response contract).
  */
 
-/** The four v1 "needs me" categories (mirrors `InboxCategory` server-side). */
-export type InboxCategory = 'review' | 'blocked' | 'question' | 'plan-approval';
+/** The three v1 "needs me" categories (mirrors `InboxCategory` server-side). */
+export type InboxCategory = 'question' | 'review' | 'plan-approval';
 
 export type InboxChatKind = 'reply' | 'permission' | 'ask';
 
@@ -20,21 +20,27 @@ export interface InboxChatRef {
   agentId: string;
 }
 
-/** All categories in canonical render order (stable, server-aligned). */
-export const INBOX_CATEGORY_ORDER: readonly InboxCategory[] = [
-  'review',
-  'blocked',
-  'question',
-  'plan-approval',
-];
+export type InboxCard =
+  | {
+      requestId: string;
+      kind: 'permission';
+      options: Array<{ optionId: string; name: string; kind: string }>;
+      settled: boolean;
+    }
+  | {
+      requestId: string;
+      kind: 'ask';
+      options: Array<{ id: string; label: string }> | null;
+      settled: boolean;
+    };
 
-/** Human-facing section labels per category. */
-export const CATEGORY_LABELS: Record<InboxCategory, string> = {
-  review: 'Review',
-  blocked: 'Blocked',
-  question: 'Questions',
-  'plan-approval': 'Plan approval',
-};
+export type InboxRowKind =
+  | 'reply'
+  | 'permission'
+  | 'ask'
+  | 'plain-question'
+  | 'review'
+  | 'plan-approval';
 
 export interface InboxAction {
   verb: string;
@@ -55,6 +61,8 @@ export interface InboxItem {
   /** `max(0, now − since)` in milliseconds. */
   ageMs: number;
   summary: string;
+  /** Question rows: marker-stripped full text from the API. */
+  body?: string;
   action: InboxAction;
   /** Review-only: derived CLI verb that accepts the review, or null if none. */
   acceptCommand?: string | null;
@@ -64,6 +72,8 @@ export interface InboxItem {
   commentId?: string;
   /** Question-only: chat-sourced row linking to a chat item. */
   chat?: InboxChatRef;
+  /** Permission/ask chat rows: card options from the API. */
+  card?: InboxCard | null;
 }
 
 export interface InboxResult {
@@ -72,35 +82,65 @@ export interface InboxResult {
   total: number;
 }
 
-/** One category section: its key, label, count, and oldest-first items. */
-export interface InboxGroup {
-  category: InboxCategory;
-  label: string;
-  count: number;
-  items: InboxItem[];
+/** HTTP method + URL descriptor for a dashboard mutation. */
+export interface EndpointDescriptor {
+  method: 'POST' | 'PATCH';
+  url: string;
 }
 
 /**
- * Group items by category in the canonical stable order (review, blocked,
- * question, plan-approval). Within each group items are ordered OLDEST-FIRST
- * (largest `ageMs` first) so the most-stale decision sits at the top — matching
- * the CLI/aggregation-core ordering. Empty categories are omitted.
+ * Identity fields needed to derive a route — the subset of `InboxItem` the URL
+ * builders read. `project === null` selects the standalone routes (keyed on the
+ * UUID `assignmentId`); otherwise the project-nested routes (keyed on
+ * `project` + `assignmentSlug`).
  */
-export function groupInboxItems(items: InboxItem[]): InboxGroup[] {
-  const groups: InboxGroup[] = [];
-  for (const category of INBOX_CATEGORY_ORDER) {
-    const matched = items
-      .filter((item) => item.category === category)
-      .sort((a, b) => b.ageMs - a.ageMs);
-    if (matched.length === 0) continue;
-    groups.push({
-      category,
-      label: CATEGORY_LABELS[category],
-      count: matched.length,
-      items: matched,
-    });
+type RouteIdentity = Pick<InboxItem, 'project' | 'assignmentSlug' | 'assignmentId'>;
+
+export function rowKind(item: InboxItem): InboxRowKind {
+  if (item.category === 'review') return 'review';
+  if (item.category === 'plan-approval') return 'plan-approval';
+  if (item.category === 'question') {
+    if (!item.chat) return 'plain-question';
+    if (item.chat.kind === 'reply') return 'reply';
+    if (item.chat.kind === 'permission') return 'permission';
+    return 'ask';
   }
-  return groups;
+  return 'plain-question';
+}
+
+export function waitingLabel(item: InboxItem, author?: { name: string }): string {
+  const kind = rowKind(item);
+  const agentName = item.chat ? (author?.name ?? item.chat.agentId) : null;
+  const agent = agentName ? `@${agentName}` : null;
+  switch (kind) {
+    case 'reply':
+      return `${agent} asked`;
+    case 'permission':
+      return `${agent} is waiting for permission`;
+    case 'ask':
+      return `${agent} is asking`;
+    case 'plan-approval':
+      return 'Plan awaiting your approval';
+    case 'review':
+      return 'Awaiting your review';
+    case 'plain-question':
+      return 'Question';
+  }
+}
+
+export function chatReplyText(agentId: string, text: string): string {
+  return `@${agentId} ${text.trim()}`;
+}
+
+/** Sorted distinct project slugs from inbox items (`null` = standalone). */
+export function projectOptions(items: InboxItem[]): Array<string | null> {
+  const slugs = new Set<string | null>();
+  for (const item of items) slugs.add(item.project);
+  return [...slugs].sort((a, b) => {
+    if (a === null) return 1;
+    if (b === null) return -1;
+    return a.localeCompare(b);
+  });
 }
 
 /**
@@ -120,27 +160,9 @@ export function formatAge(ageMs: number): string {
   return `${totalDays}d`;
 }
 
-/** HTTP method + URL descriptor for a dashboard mutation. */
-export interface EndpointDescriptor {
-  method: 'POST' | 'PATCH';
-  url: string;
-}
-
 /**
- * Identity fields needed to derive a route — the subset of `InboxItem` the URL
- * builders read. `project === null` selects the standalone routes (keyed on the
- * UUID `assignmentId`); otherwise the project-nested routes (keyed on
- * `project` + `assignmentSlug`).
- */
-type RouteIdentity = Pick<InboxItem, 'project' | 'assignmentSlug' | 'assignmentId'>;
-
-/**
- * Resolve the transition endpoint for an item (review accept/reopen, blocked
- * unblock). `command` comes from the item's derived `action` (review) or is the
- * literal `'unblock'` (blocked). Branches on `project === null` for standalone.
- *
- * Project:    POST /api/projects/:slug/assignments/:aslug/transitions/:command
- * Standalone: POST /api/assignments/:id/transitions/:command
+ * Resolve the transition endpoint for an item (review accept/reopen).
+ * Branches on `project === null` for standalone.
  */
 export function transitionEndpoint(
   item: RouteIdentity,
@@ -159,11 +181,30 @@ export function transitionEndpoint(
   };
 }
 
+export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
+  if (item.project === null) {
+    return {
+      method: 'POST',
+      url: `/api/assignments/${encodeURIComponent(item.assignmentId)}/plan/approve`,
+    };
+  }
+  return {
+    method: 'POST',
+    url: `/api/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}/plan/approve`,
+  };
+}
+
+export async function approvePlan(item: RouteIdentity): Promise<void> {
+  const { method, url } = planApproveEndpoint(item);
+  const response = await fetch(url, { method, headers: { 'Content-Type': 'application/json' } });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.error || `HTTP ${response.status}`);
+  }
+}
+
 /**
  * Resolve the comments POST endpoint (used to answer a question by replying).
- *
- * Project:    POST /api/projects/:slug/assignments/:aslug/comments
- * Standalone: POST /api/assignments/:id/comments
  */
 export function commentsEndpoint(item: RouteIdentity): EndpointDescriptor {
   if (item.project === null) {
@@ -180,9 +221,6 @@ export function commentsEndpoint(item: RouteIdentity): EndpointDescriptor {
 
 /**
  * Resolve the comment-resolved PATCH endpoint (mark a question answered).
- *
- * Project:    PATCH /api/projects/:slug/assignments/:aslug/comments/:commentId/resolved
- * Standalone: PATCH /api/assignments/:id/comments/:commentId/resolved
  */
 export function resolveCommentEndpoint(
   item: RouteIdentity,
@@ -203,12 +241,7 @@ export function resolveCommentEndpoint(
 
 /**
  * Build the SPA jump-href to an assignment's detail page, optionally targeting a
- * tab (`plan` for plan-approval, `comments` for questions). Branches on
- * `project === null` for the standalone route (keyed on the UUID `assignmentId`,
- * which is the `:id` URL param).
- *
- * Project:    /projects/:slug/assignments/:aslug[?tab=...]
- * Standalone: /assignments/:id[?tab=...]
+ * tab (`plan` for plan-approval, `comments` for questions).
  */
 export function assignmentHref(
   item: RouteIdentity,
