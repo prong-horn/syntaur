@@ -8,6 +8,8 @@ import type { Server } from 'node:http';
 import { createInboxRouter } from '../dashboard/api-inbox.js';
 import { clearStatusConfigCache } from '../dashboard/api.js';
 import type { InboxResult } from '../inbox/types.js';
+import { formatCommentEntry } from '../templates/index.js';
+import { formatChatQuestionMarker } from '../chat/questions.js';
 
 /**
  * Router-level tests for `GET /api/inbox` (T3). These mirror the harness used
@@ -171,6 +173,52 @@ describe('GET /api/inbox', () => {
     const body = await res.json() as { error: string };
     expect(body.error).toMatch(/Unknown inbox type/i);
     expect(body.error).toContain('"bogus"');
+  });
+
+  it('returns chat metadata and a host-scoped Open chat URL for a reply marker', async () => {
+    await mkdir(join(projectsDir, 'p1'), { recursive: true });
+    await writeFile(
+      join(projectsDir, 'p1', 'project.md'),
+      `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
+    );
+    const dir = join(projectsDir, 'p1', 'assignments', 'chat-row');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'assignment.md'),
+      `---\nid: q-chat\nslug: chat-row\ntitle: Chat row\nstatus: in_progress\nproject: p1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# Chat row\n`,
+    );
+    const marker = formatChatQuestionMarker({
+      kind: 'reply',
+      itemId: 'turn-1:1',
+      turnId: 'turn-1',
+    });
+    await writeFile(
+      join(dir, 'comments.md'),
+      `---\nassignment: chat-row\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
+        id: 'c9',
+        timestamp: '2026-06-16T00:00:00Z',
+        author: 'claude',
+        type: 'question',
+        body: `Which name?\n\n${marker}`,
+        resolved: false,
+      })}\n`,
+    );
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as InboxResult;
+    expect(body.total).toBe(1);
+    const item = body.items[0];
+    expect(item.chat).toMatchObject({
+      kind: 'reply',
+      itemId: 'turn-1:1',
+      turnId: 'turn-1',
+      agentId: 'claude',
+    });
+    expect(item.action.verb).toBe('Open chat');
+    expect(item.action.command).toBe(
+      `${baseUrl}/projects/p1/assignments/chat-row?tab=chat#turn-1:1`,
+    );
   });
 
   it('returns safe empty shape (HTTP 200) on a forced internal error', async () => {

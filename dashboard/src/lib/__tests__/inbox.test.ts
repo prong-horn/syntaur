@@ -164,6 +164,16 @@ describe('chatItemHref', () => {
     });
     expect(chatItemHref(standalone)).toBe('/assignments/uuid-q?tab=chat#q-2');
   });
+
+  it('keeps colons in scope item ids unencoded in the hash', () => {
+    const item = makeItem({
+      category: 'question',
+      chat: { kind: 'reply', itemId: 'd73e60eb-9891-4ad9-a817-92eeb1df40d1:1', agentId: 'claude' },
+    });
+    expect(chatItemHref(item)).toBe(
+      '/projects/proj/assignments/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
+    );
+  });
 });
 
 describe('chatRowLabel', () => {

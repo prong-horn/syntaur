@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runInbox, inboxCommand } from '../commands/inbox.js';
 import { clearStatusConfigCache } from '../dashboard/api.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
+import { formatChatQuestionMarker } from '../chat/questions.js';
 
 /**
  * CLI-wiring tests for `syntaur inbox` (T2). The predicate matrix is covered by
@@ -228,6 +229,51 @@ describe('inbox human output (grouped, smoke)', () => {
       spy.mockRestore();
     }
     expect(logs.join('\n')).toContain('Nothing needs you.');
+  });
+
+  it('prints the dashboard Open chat URL for a chat-sourced question', async () => {
+    await mkdir(join(projectsDir, 'p1'), { recursive: true });
+    await writeFile(
+      join(projectsDir, 'p1', 'project.md'),
+      `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
+    );
+    const marker = formatChatQuestionMarker({
+      kind: 'reply',
+      itemId: 'turn-1:1',
+      turnId: 'turn-1',
+    });
+    await writeFile(join(root, 'dashboard-port'), '4999\n');
+    await seed({
+      id: 'q1',
+      slug: 'chat-row',
+      title: 'Chat row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c9',
+          timestamp: '2026-06-16T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `Which name?\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((m?: unknown) => {
+      logs.push(String(m));
+    });
+    try {
+      await inboxCommand.parseAsync(['node', 'inbox', '--project', 'p1']);
+    } finally {
+      spy.mockRestore();
+    }
+    const out = logs.join('\n');
+    expect(out).toContain(
+      '→ http://localhost:4999/projects/p1/assignments/chat-row?tab=chat#turn-1:1',
+    );
   });
 
   it('--json prints the structured InboxResult', async () => {

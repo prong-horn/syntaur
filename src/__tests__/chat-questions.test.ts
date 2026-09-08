@@ -100,6 +100,28 @@ describe('detectOpenQuestion clipping', () => {
   });
 });
 
+describe('detectOpenQuestion two-paragraph rule (Decision 2 amended)', () => {
+  it('files the question paragraph when followed by a short plain statement', () => {
+    const text =
+      'Which name should I use for the new file: **alpha** or **beta**?\n\nI have not created anything yet and will wait for your pick before touching the repo.';
+    expect(detectOpenQuestion(text)).toContain('Which name should I use');
+  });
+
+  it('returns null for boilerplate in the last paragraph', () => {
+    expect(detectOpenQuestion('Done.\n\nLet me know if you need anything else.')).toBeNull();
+  });
+
+  it('returns null when a long final statement follows a question', () => {
+    const text = `Should we ship?\n\n${'x'.repeat(241)}`;
+    expect(detectOpenQuestion(text)).toBeNull();
+  });
+
+  it('returns null when the question is three paragraphs up', () => {
+    const text = 'Should we use alpha?\n\nMiddle paragraph.\n\nPlain closing statement.';
+    expect(detectOpenQuestion(text)).toBeNull();
+  });
+});
+
 describe('questionBodyForCard', () => {
   it('formats permission cards', () => {
     expect(questionBodyForCard('permission', 'npm test')).toBe(

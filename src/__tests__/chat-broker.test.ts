@@ -2497,6 +2497,64 @@ describe('inbox questions (needs-me)', () => {
     expect(existsSync(commentsPath())).toBe(false);
   });
 
+  it('does not file a reply question for a handoff-triggered turn', async () => {
+    await writeAgentFile('claude');
+    await writeAgentFile('codex');
+    const codexFake = createFakeAgent({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm2') }] }],
+      sessionIds: ['acp-codex-1'],
+    });
+    fake = createFakeAgent({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('@codex please pick a name', 'm1') }] }],
+      sessionIds: ['acp-claude-1'],
+    });
+    broker = createChatBroker({
+      projectsDir: join(sandbox, 'projects'),
+      assignmentsDir: join(sandbox, 'assignments'),
+      syntaurHome: sandbox,
+      broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
+      clientFactory: (input) => {
+        const app = input.agentId === 'codex' ? codexFake.app : fake.app;
+        const client = connectAcpClient(app, {
+          onUpdate: input.onUpdate,
+          onPermissionRequest: input.onPermissionRequest,
+          onExtRequest: input.onExtRequest,
+          onExtNotification: input.onExtNotification,
+        });
+        clients.push(client);
+        return client;
+      },
+      timeouts: { flushMs: 1, permissionMs: 200, sessionIdleMs: 120, shutdownGraceMs: 200, inboxGraceMs: 60_000 },
+    });
+    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ assignment: assignment(), text: 'pick' });
+    await idle(2);
+    expect(existsSync(commentsPath())).toBe(false);
+  });
+
+  it('keeps a reply question open when send targets another agent, then resolves on asker', async () => {
+    await writeAgentFile('claude');
+    await writeAgentFile('codex');
+    makeBroker({
+      turns: [
+        { steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] },
+        { steps: [{ kind: 'update', update: textChunk('noted', 'm2') }] },
+        { steps: [{ kind: 'update', update: textChunk('ok', 'm3') }] },
+      ],
+    });
+    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ assignment: assignment(), text: 'pick' });
+    await idle();
+    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    await broker.send({ assignment: assignment(), text: 'hi codex', agentId: 'codex' });
+    await idle(2);
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    await broker.send({ assignment: assignment(), text: 'use alpha', agentId: 'claude' });
+    await idle(2);
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(true);
+  });
+
   it('resolves a reply question when the human sends to that agent', async () => {
     makeBroker({
       turns: [
@@ -2585,6 +2643,146 @@ describe('inbox questions (needs-me)', () => {
     await sendP;
     await idle();
     expect((await parseAssignmentComments()).entries[0].resolved).toBe(true);
+  });
+
+  it('allow-all sweep resolves the other parked card grace comment', async () => {
+    const permOpts = [
+      { optionId: 'allow', name: 'Allow', kind: 'allow_once' as const },
+      { optionId: 'reject', name: 'Deny', kind: 'reject_once' as const },
+    ];
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'permissionsParallel',
+              requests: [
+                {
+                  toolCall: { toolCallId: 't1', title: 'First', kind: 'execute' },
+                  options: permOpts,
+                },
+                {
+                  toolCall: { toolCallId: 't2', title: 'Second', kind: 'execute' },
+                  options: permOpts,
+                },
+              ],
+            },
+            { kind: 'update', update: textChunk('done', 'm1') },
+          ],
+        },
+      ],
+      timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
+    });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => itemsOfType('permission.request').length === 2, 'two permission cards');
+    await waitUntil(async () => (await parseAssignmentComments()).entries.length === 2, 'two grace comments');
+    const perms = itemsOfType('permission.request') as Array<{ requestId: string }>;
+    expect(
+      await broker.answerPermission(assignment(), perms[0].requestId, 'allow', { allowAllSession: true }),
+    ).toBe(true);
+    await idle();
+    const parsed = await parseAssignmentComments();
+    expect(parsed.entries.every((e) => e.resolved === true)).toBe(true);
+  });
+
+  it('resolves an orphan grace comment when the card settles during filing', async () => {
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 5, permissionMs: 60_000 } });
+    const sendP = broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
+    const perm = itemsOfType('permission.request')[0] as { requestId: string };
+    await new Promise((r) => setTimeout(r, 6));
+    await broker.answerPermission(assignment(), perm.requestId, 'allow');
+    await sendP;
+    await idle();
+    await waitUntil(async () => {
+      if (!existsSync(commentsPath())) return true;
+      const parsed = await parseAssignmentComments();
+      return parsed.entries.every((e) => e.resolved !== false);
+    }, 'orphan grace resolved');
+  });
+
+  it('resolves grace comments during crash repair for open permissions', async () => {
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
+    await broker.send({ assignment: assignment(), text: 'go' });
+    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    makeBroker({ turns: [{ steps: [] }] });
+    await broker.getSession(assignment(), 'claude');
+    await waitUntil(async () => (await parseAssignmentComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(
+      () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
+      'repair warn row',
+    );
+  });
+
+  it('resolves grace comments during crash repair for open ask_question cards', async () => {
+    await writeAgentFile('cursor');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/ask_question',
+              params: {
+                toolCallId: 'tool-q',
+                title: 'Pick one',
+                questions: [{ id: 'q1', prompt: 'Which colour?', options: [{ id: 'a', label: 'A' }] }],
+              },
+            },
+            { kind: 'update', update: textChunk('thanks', 'm-q') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+      timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
+    });
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await waitUntil(() => itemsOfType('question').length > 0, 'question card');
+    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    await sendP;
+    makeBroker({ turns: [{ steps: [] }], agentOptions: { resumeSupported: false } });
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    await broker.getSession(assignment(), 'cursor');
+    await waitUntil(async () => (await parseAssignmentComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(
+      () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
+      'repair warn row',
+    );
+  });
+
+  it('invalid answer shape leaves a cursor question card parked', async () => {
+    await writeAgentFile('cursor');
+    makeBroker({
+      turns: [
+        {
+          steps: [
+            {
+              kind: 'extRequest',
+              method: 'cursor/ask_question',
+              params: {
+                toolCallId: 'tool-q',
+                title: 'Pick one',
+                questions: [{ id: 'q1', prompt: 'Which colour?', options: [{ id: 'a', label: 'A' }] }],
+              },
+            },
+            { kind: 'update', update: textChunk('thanks', 'm-q') },
+          ],
+        },
+      ],
+      agentOptions: { resumeSupported: false },
+    });
+    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await waitUntil(() => itemsOfType('question').length > 0, 'question card');
+    const card = itemsOfType('question')[0] as { requestId: string; answer: string | null };
+    expect(await broker.answerQuestion(assignment(), card.requestId, {})).toBe(false);
+    expect((itemsOfType('question')[0] as { answer: string | null }).answer).toBeNull();
+    expect(await broker.answerQuestion(assignment(), card.requestId, { optionId: 'a' })).toBe(true);
+    await sendP;
+    await idle();
   });
 
   it.skipIf(process.platform === 'win32')(

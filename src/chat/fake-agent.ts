@@ -22,6 +22,7 @@ function chunkText(block: acp.ContentBlock | undefined): string {
 export type FakeStep =
   | { kind: 'update'; update: acp.SessionUpdate }
   | { kind: 'permission'; request: Omit<acp.RequestPermissionRequest, 'sessionId'> }
+  | { kind: 'permissionsParallel'; requests: Array<Omit<acp.RequestPermissionRequest, 'sessionId'>> }
   | { kind: 'extRequest'; method: string; params: unknown }
   | { kind: 'extNotification'; method: string; params: unknown }
   /** Resolve the prompt with `cancelled` when the client calls `session/cancel`. */
@@ -215,6 +216,18 @@ export function createFakeAgent(options: FakeAgentOptions = {}): FakeAgent {
               ...step.request,
             } as acp.RequestPermissionRequest);
             permissionAnswers.push(answer);
+            break;
+          }
+          case 'permissionsParallel': {
+            const answers = await Promise.all(
+              step.requests.map((request) =>
+                ctx.client.request(acp.methods.client.session.requestPermission, {
+                  sessionId,
+                  ...request,
+                } as acp.RequestPermissionRequest),
+              ),
+            );
+            permissionAnswers.push(...answers);
             break;
           }
           case 'extRequest': {
