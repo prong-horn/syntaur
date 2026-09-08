@@ -2493,6 +2493,25 @@ export function createWriteRouter(
     }
   });
 
+  router.post('/api/projects/:slug/assignments/:aslug/plan/approve', async (req: Request, res: Response) => {
+    try {
+      const projectSlug = getParam(req.params.slug);
+      const assignmentSlug = getParam(req.params.aslug);
+      const assignmentPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const { planApproveCommand } = await import('../commands/derive-verbs.js');
+      await planApproveCommand(assignmentSlug, { project: projectSlug, dir: projectsDir });
+      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+      res.json({ assignment });
+    } catch (error) {
+      const message = (error as Error).message;
+      res.status(409).json({ error: message });
+    }
+  });
+
   router.delete('/api/projects/:slug/assignments/:aslug', async (req: Request, res: Response) => {
     try {
       const projectSlug = getParam(req.params.slug);
@@ -3454,6 +3473,28 @@ export function createWriteRouter(
     } catch (error) {
       console.error('Error transitioning by id:', error);
       res.status(500).json({ error: `Failed to transition: ${(error as Error).message}` });
+    }
+  });
+
+  router.post('/api/assignments/:id/plan/approve', async (req: Request, res: Response) => {
+    try {
+      if (!assignmentsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const assignmentPath = resolve(assignmentsDir, id, 'assignment.md');
+      if (!(await fileExists(assignmentPath))) {
+        res.status(404).json({ error: 'Assignment not found' });
+        return;
+      }
+      const { planApproveCommand } = await import('../commands/derive-verbs.js');
+      await planApproveCommand(id, {});
+      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      res.json({ assignment });
+    } catch (error) {
+      const message = (error as Error).message;
+      res.status(409).json({ error: message });
     }
   });
 

@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createWriteRouter, worktreeInFlight, setTopLevelField } from '../dashboard/api-write.js';
 import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { planDigest } from '../lifecycle/facts.js';
 import { parseComments } from '../dashboard/parser.js';
 import { formatCommentEntry } from '../templates/comments.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
@@ -2847,5 +2848,132 @@ describe('parseComments preserves a body containing a "## " line (AC2)', () => {
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0].id).toBe('cd34');
     expect(parsed.entries[0].body).toContain('body here');
+  });
+});
+
+describe('POST plan/approve routes', () => {
+  async function seedProjectPlanAssignment(opts?: { withPlan?: boolean }): Promise<void> {
+    const projectDir = resolve(testDir, 'plan-project');
+    const assignmentDir = resolve(projectDir, 'assignments', 'plan-assignment');
+    await mkdir(assignmentDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      `---
+id: plan-project-id
+slug: plan-project
+title: Plan Project
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+---
+# Plan Project`,
+      'utf-8',
+    );
+    await writeFile(
+      resolve(assignmentDir, 'assignment.md'),
+      `---
+id: plan-assignment-id
+slug: plan-assignment
+title: Plan Assignment
+status: ready_for_planning
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+project: plan-project
+---
+# Plan Assignment`,
+      'utf-8',
+    );
+    if (opts?.withPlan !== false) {
+      await writeFile(resolve(assignmentDir, 'plan.md'), '# Plan body\n', 'utf-8');
+    }
+  }
+
+  it('POST /api/projects/:slug/assignments/:aslug/plan/approve writes planApproval', async () => {
+    await seedProjectPlanAssignment();
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/plan/approve',
+      { slug: 'plan-project', aslug: 'plan-assignment' },
+      {},
+    );
+    expect(response.statusCode).toBe(200);
+    const assignment = (response.payload as { assignment: { status: string } }).assignment;
+    expect(assignment.status).toBe('ready_to_implement');
+
+    const content = await readFile(
+      resolve(testDir, 'plan-project', 'assignments', 'plan-assignment', 'assignment.md'),
+      'utf-8',
+    );
+    const fm = parseAssignmentFrontmatter(content);
+    expect(fm.planApproval?.file).toBe('plan.md');
+    expect(fm.planApproval?.digest).toBe(planDigest('# Plan body\n'));
+  });
+
+  it('POST /api/projects/:slug/assignments/:aslug/plan/approve returns 409 without a plan file', async () => {
+    await seedProjectPlanAssignment({ withPlan: false });
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/plan/approve',
+      { slug: 'plan-project', aslug: 'plan-assignment' },
+      {},
+    );
+    expect(response.statusCode).toBe(409);
+    expect((response.payload as { error: string }).error).toContain('No plan file');
+  });
+
+  it('POST /api/projects/:slug/assignments/:aslug/plan/approve returns 404 for unknown assignment', async () => {
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/assignments/:aslug/plan/approve',
+      { slug: 'plan-project', aslug: 'missing' },
+      {},
+    );
+    expect(response.statusCode).toBe(404);
+  });
+
+  it('POST /api/assignments/:id/plan/approve writes planApproval for standalone', async () => {
+    const assignmentsDir = resolve(process.env.SYNTAUR_HOME!, 'assignments');
+    const id = 'standalone-plan-id';
+    const assignmentDir = resolve(assignmentsDir, id);
+    await mkdir(assignmentDir, { recursive: true });
+    await writeFile(
+      resolve(assignmentDir, 'assignment.md'),
+      `---
+id: ${id}
+slug: ${id}
+title: Standalone Plan
+status: ready_for_planning
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+project: null
+---
+# Standalone Plan`,
+      'utf-8',
+    );
+    await writeFile(resolve(assignmentDir, 'plan.md'), '# Standalone plan\n', 'utf-8');
+
+    const router = createWriteRouter(testDir, assignmentsDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/assignments/:id/plan/approve',
+      { id },
+      {},
+    );
+    expect(response.statusCode).toBe(200);
+    const assignment = (response.payload as { assignment: { status: string } }).assignment;
+    expect(assignment.status).toBe('ready_to_implement');
+
+    const content = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    const fm = parseAssignmentFrontmatter(content);
+    expect(fm.planApproval?.file).toBe('plan.md');
+    expect(fm.planApproval?.digest).toBe(planDigest('# Standalone plan\n'));
   });
 });
