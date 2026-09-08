@@ -87,5 +87,6 @@
     "src/__tests__/inbox-aggregate.test.ts",
     "src/__tests__/inbox-predicates.test.ts",
     "src/__tests__/inbox-cli.test.ts",
+    "src/__tests__/dashboard-api-inbox.test.ts",
   ]
 }

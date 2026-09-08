@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { computeInbox } from '../inbox/index.js';
-import { INBOX_CATEGORIES, type InboxCategory } from '../inbox/types.js';
+import { INBOX_CATEGORIES, type InboxCategory, type InboxItem } from '../inbox/types.js';
+import { getChatItem } from '../db/chat-db.js';
+import type { PermissionRequestItem, QuestionItem } from '../chat/types.js';
 import { getStatusConfig } from './api.js';
 import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 
@@ -21,6 +23,46 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
  * counts: { question:0, review:0, 'plan-approval':0 }, total: 0 }`
  * with HTTP 200 so the dashboard never sees a 500 from the inbox endpoint.
  */
+function enrichInboxItem(item: InboxItem): InboxItem {
+  const kind = item.chat?.kind;
+  if (kind !== 'permission' && kind !== 'ask') return item;
+  try {
+    const chatItem = getChatItem(item.chat!.itemId);
+    if (!chatItem) return { ...item, card: null };
+    if (chatItem.type === 'permission.request') {
+      const perm = chatItem as PermissionRequestItem;
+      return {
+        ...item,
+        card: {
+          requestId: perm.requestId,
+          kind: 'permission',
+          options: perm.options.map((o) => ({
+            optionId: o.optionId,
+            name: o.name,
+            kind: o.kind,
+          })),
+          settled: Boolean(perm.answer || perm.cancelled || perm.timedOut),
+        },
+      };
+    }
+    if (chatItem.type === 'question') {
+      const ask = chatItem as QuestionItem;
+      return {
+        ...item,
+        card: {
+          requestId: ask.requestId,
+          kind: 'ask',
+          options: ask.options,
+          settled: ask.answer !== null || Boolean(ask.cancelled || ask.timedOut),
+        },
+      };
+    }
+    return { ...item, card: null };
+  } catch {
+    return { ...item, card: null };
+  }
+}
+
 export function createInboxRouter(
   projectsDir: string,
   assignmentsDir: string | null,
@@ -80,7 +122,10 @@ export function createInboxRouter(
         dashboardUrl: `${req.protocol}://${req.get('host')}`,
       });
 
-      res.json(result);
+      res.json({
+        ...result,
+        items: result.items.map(enrichInboxItem),
+      });
     } catch (error) {
       console.warn('[inbox] failed to compute inbox:', error);
       res.json({

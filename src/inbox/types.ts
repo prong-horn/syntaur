@@ -21,6 +21,21 @@ export interface InboxChatRef {
   agentId: string;
 }
 
+/** Card metadata enriched at the API layer for inline inbox actions. */
+export type InboxCard =
+  | {
+      requestId: string;
+      kind: 'permission';
+      options: Array<{ optionId: string; name: string; kind: string }>;
+      settled: boolean;
+    }
+  | {
+      requestId: string;
+      kind: 'ask';
+      options: Array<{ id: string; label: string }> | null;
+      settled: boolean;
+    };
+
 /**
  * The three v1 "needs me" categories. A closed union — predicates and ordering
  * live in the pure aggregation module so they unit-test without a server.
@@ -87,6 +102,8 @@ export interface InboxItem {
   commentId?: string;
   /** Question-only: chat-sourced row linking to a chat item. */
   chat?: InboxChatRef;
+  /** Permission/ask chat rows: card options from the chat index (API-enriched). */
+  card?: InboxCard | null;
 }
 
 /**

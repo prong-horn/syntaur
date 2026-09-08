@@ -7,6 +7,8 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createInboxRouter } from '../dashboard/api-inbox.js';
 import { clearStatusConfigCache } from '../dashboard/api.js';
+import { initSessionDb, closeSessionDb } from '../dashboard/session-db.js';
+import { upsertChatItem } from '../db/chat-db.js';
 import type { InboxResult } from '../inbox/types.js';
 import { formatCommentEntry } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
@@ -20,7 +22,8 @@ import { formatChatQuestionMarker } from '../chat/questions.js';
  * The aggregation predicate matrix is already covered by T1's unit tests; here
  * we verify: (1) the route returns a valid InboxResult shape, (2) query params
  * (?type, ?project, ?limit) are wired through, (3) an unknown ?type yields 400,
- * and (4) a forced-error path returns the safe empty shape (HTTP 200).
+ * (4) a forced-error path returns the safe empty shape (HTTP 200), and (5) card
+ * enrichment for permission/ask chat rows.
  */
 
 let sandbox: string;
@@ -60,6 +63,30 @@ async function seed(o: SeedOpts): Promise<void> {
   );
 }
 
+async function seedQuestionComment(
+  project: string,
+  slug: string,
+  assignmentId: string,
+  comment: {
+    id: string;
+    author: string;
+    body: string;
+  },
+): Promise<void> {
+  const dir = join(projectsDir, project, 'assignments', slug);
+  await writeFile(
+    join(dir, 'comments.md'),
+    `---\nassignment: ${slug}\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
+      id: comment.id,
+      timestamp: '2026-06-16T00:00:00Z',
+      author: comment.author,
+      type: 'question',
+      body: comment.body,
+      resolved: false,
+    })}\n`,
+  );
+}
+
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-inbox-'));
   projectsDir = join(sandbox, 'projects');
@@ -77,6 +104,8 @@ beforeEach(async () => {
   process.env.SYNTAUR_HOME = sandbox;
   // getStatusConfig() caches module-globally; clear so each test resolves fresh.
   clearStatusConfigCache();
+  closeSessionDb();
+  initSessionDb(join(sandbox, 'syntaur.db'));
 
   const app = express();
   app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
@@ -90,6 +119,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await new Promise<void>((res) => server.close(() => res()));
+  closeSessionDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
   clearStatusConfigCache();
@@ -103,7 +133,7 @@ describe('GET /api/inbox', () => {
     const body = (await res.json()) as InboxResult;
     expect(body).toEqual({
       items: [],
-      counts: { review: 0, blocked: 0, question: 0, 'plan-approval': 0 },
+      counts: { question: 0, review: 0, 'plan-approval': 0 },
       total: 0,
     });
   });
@@ -120,10 +150,9 @@ describe('GET /api/inbox', () => {
     const res = await fetch(`${baseUrl}/api/inbox`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as InboxResult;
-    expect(body.total).toBe(2);
+    expect(body.total).toBe(1);
     expect(body.counts.review).toBe(1);
-    expect(body.counts.blocked).toBe(1);
-    expect(body.items.length).toBe(2);
+    expect(body.items.length).toBe(1);
 
     const reviewItem = body.items.find((i) => i.category === 'review');
     expect(reviewItem).toBeDefined();
@@ -139,14 +168,13 @@ describe('GET /api/inbox', () => {
       `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
     );
     await seed({ id: 'r1', slug: 'rev-a', status: 'review', project: 'p1' });
-    await seed({ id: 'b1', slug: 'blk-a', status: 'blocked', project: 'p1' });
+    await seed({ id: 'q1', slug: 'qs-a', status: 'in_progress', project: 'p1' });
 
     const res = await fetch(`${baseUrl}/api/inbox?type=review`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as InboxResult;
     expect(body.items.every((i) => i.category === 'review')).toBe(true);
-    // counts/total reflect the filtered set
-    expect(body.counts.blocked).toBe(0);
+    expect(body.counts.question).toBe(0);
   });
 
   it('?limit=1 truncates items to 1', async () => {
@@ -219,6 +247,7 @@ describe('GET /api/inbox', () => {
     expect(item.action.command).toBe(
       `${baseUrl}/projects/p1/assignments/chat-row?tab=chat#turn-1:1`,
     );
+    expect(item.card).toBeUndefined();
   });
 
   it('returns safe empty shape (HTTP 200) on a forced internal error', async () => {
@@ -237,10 +266,151 @@ describe('GET /api/inbox', () => {
       const body = await r.json() as InboxResult;
       // Safe empty shape — the exact convention from api-events.ts best-effort pattern.
       expect(body.items).toEqual([]);
-      expect(body.counts).toEqual({ review: 0, blocked: 0, question: 0, 'plan-approval': 0 });
+      expect(body.counts).toEqual({ question: 0, review: 0, 'plan-approval': 0 });
       expect(body.total).toBe(0);
     } finally {
       await new Promise<void>((res) => badServer.close(() => res()));
     }
+  });
+});
+
+describe('GET /api/inbox — card enrichment', () => {
+  const ASSIGNMENT_ID = 'perm-assignment';
+  const SESSION_KEY = `${ASSIGNMENT_ID}:cursor`;
+
+  beforeEach(async () => {
+    await mkdir(join(projectsDir, 'p1'), { recursive: true });
+    await writeFile(
+      join(projectsDir, 'p1', 'project.md'),
+      `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
+    );
+    await seed({ id: ASSIGNMENT_ID, slug: 'perm-row', status: 'in_progress', project: 'p1' });
+  });
+
+  it('enriches a permission row with requestId, options and settled:false', async () => {
+    const itemId = 'perm-item-1';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
+    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+      id: 'cq-perm',
+      author: 'cursor',
+      body: `Waiting for permission\n\n${marker}`,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId,
+      assignmentId: ASSIGNMENT_ID,
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: false,
+      requestId: 'req-perm-1',
+      toolCall: { title: 'Run uname' },
+      options: [
+        { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow-always', name: 'Allow always', kind: 'allow_always' },
+        { optionId: 'deny', name: 'Deny', kind: 'deny' },
+      ],
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const row = body.items.find((i) => i.chat?.kind === 'permission')!;
+    expect(row.card).toEqual({
+      requestId: 'req-perm-1',
+      kind: 'permission',
+      options: [
+        { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'allow-always', name: 'Allow always', kind: 'allow_always' },
+        { optionId: 'deny', name: 'Deny', kind: 'deny' },
+      ],
+      settled: false,
+    });
+  });
+
+  it('marks an answered permission card settled:true', async () => {
+    const itemId = 'perm-item-2';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
+    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+      id: 'cq-perm-2',
+      author: 'cursor',
+      body: `Waiting for permission\n\n${marker}`,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId,
+      assignmentId: ASSIGNMENT_ID,
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: true,
+      requestId: 'req-perm-2',
+      toolCall: { title: 'Run uname' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+      answer: 'allow-once',
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const row = body.items.find((i) => i.chat?.kind === 'permission')!;
+    expect(row.card?.settled).toBe(true);
+  });
+
+  it('enriches an ask row with two choices', async () => {
+    const itemId = 'ask-item-1';
+    const marker = formatChatQuestionMarker({ kind: 'ask', itemId });
+    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+      id: 'cq-ask',
+      author: 'cursor',
+      body: `Pick one\n\n${marker}`,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId,
+      assignmentId: ASSIGNMENT_ID,
+      turnId: 'turn-2',
+      agentId: 'cursor',
+      type: 'question',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 2,
+      seqLast: 2,
+      sealed: false,
+      requestId: 'req-ask-1',
+      text: 'Alpha or beta?',
+      options: [
+        { id: 'alpha', label: 'Alpha' },
+        { id: 'beta', label: 'Beta' },
+      ],
+      answer: null,
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const row = body.items.find((i) => i.chat?.kind === 'ask')!;
+    expect(row.card).toEqual({
+      requestId: 'req-ask-1',
+      kind: 'ask',
+      options: [
+        { id: 'alpha', label: 'Alpha' },
+        { id: 'beta', label: 'Beta' },
+      ],
+      settled: false,
+    });
+  });
+
+  it('returns card:null when the chat item is absent', async () => {
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: 'missing-item' });
+    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+      id: 'cq-missing',
+      author: 'cursor',
+      body: `Waiting for permission\n\n${marker}`,
+    });
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const row = body.items.find((i) => i.chat?.kind === 'permission')!;
+    expect(row.card).toBeNull();
   });
 });
