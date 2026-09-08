@@ -54,6 +54,7 @@ describe('detectOpenQuestion positives', () => {
     'First I read the plan.\n\nShould we ship this today?',
     'The build passed.\n\nAny objections to merging?',
     'Ready when you are — prefer a review first?',
+    'Should we use Redis?\n\nThe migration is complete.',
   ];
 
   for (const text of positives) {
@@ -68,7 +69,6 @@ describe('detectOpenQuestion negatives', () => {
     'Done. Let me know if you need anything else.',
     'Happy to help with anything else.',
     'I created the file and ran the tests.',
-    'Should we use Redis?\n\nThe migration is complete.',
     '',
     '   \n\n  ',
     'Here is the summary.\n\n```\nconst x = 1;\n```',
