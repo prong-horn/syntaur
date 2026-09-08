@@ -3,7 +3,6 @@ import {
   assignmentHref,
   chatItemHref,
   chatReplyText,
-  chatRowLabel,
   commentsEndpoint,
   formatAge,
   planApproveEndpoint,
@@ -235,15 +234,5 @@ describe('chatItemHref', () => {
     expect(chatItemHref(item)).toBe(
       '/projects/proj/assignments/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
     );
-  });
-});
-
-describe('chatRowLabel', () => {
-  it('labels the three chat kinds', () => {
-    expect(chatRowLabel({ kind: 'reply', itemId: 'a', agentId: 'claude' })).toBe('@claude asked');
-    expect(chatRowLabel({ kind: 'permission', itemId: 'a', agentId: 'claude' })).toBe(
-      '@claude is waiting for permission',
-    );
-    expect(chatRowLabel({ kind: 'ask', itemId: 'a', agentId: 'cursor' })).toBe('@cursor is asking');
   });
 });

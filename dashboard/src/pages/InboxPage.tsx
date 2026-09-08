@@ -73,7 +73,7 @@ export function InboxPage() {
         {header}
         <EmptyState
           title="Nothing is waiting on you"
-          description="When an agent asks a question, a permission card times out, a plan needs approval, or an assignment awaits your review, it appears here so you can reply in place."
+          description="When an agent asks a question, a permission card goes unanswered, a plan needs approval, or an assignment awaits your review, it appears here so you can reply in place."
         />
       </div>
     );

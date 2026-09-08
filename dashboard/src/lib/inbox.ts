@@ -259,15 +259,3 @@ export function chatItemHref(item: InboxItem): string {
   if (!item.chat) return assignmentHref(item, 'chat');
   return `${assignmentHref(item, 'chat')}#${item.chat.itemId}`;
 }
-
-export function chatRowLabel(chat: InboxChatRef): string {
-  const agent = `@${chat.agentId}`;
-  switch (chat.kind) {
-    case 'reply':
-      return `${agent} asked`;
-    case 'permission':
-      return `${agent} is waiting for permission`;
-    case 'ask':
-      return `${agent} is asking`;
-  }
-}
