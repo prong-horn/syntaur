@@ -287,7 +287,7 @@ syntaur search "stripe webhook" --all --limit 5
 
 ## `syntaur inbox`
 
-One triage view of everything awaiting a human across all projects and standalone assignments. Read-only — prints the exact action command for each item; never mutates.
+One triage view of everything awaiting a human across all projects and standalone assignments. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
 ```
 syntaur inbox [options]
@@ -296,7 +296,7 @@ syntaur inbox [options]
 ### Options
 
 - `--project <slug>` — Restrict to one project.
-- `--type <list>` — Comma-separated category filter (valid categories: `review`, `blocked`, `question`, `plan-approval`).
+- `--type <list>` — Comma-separated category filter (valid categories: `question`, `review`, `plan-approval`).
 - `--limit <n>` — Maximum number of items to show.
 - `--json` — Emit the structured `InboxResult` JSON instead of the grouped view.
 
@@ -304,9 +304,8 @@ syntaur inbox [options]
 
 | Category | What it means | Action command |
 |---|---|---|
+| `question` | Assignment has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
 | `review` | Assignment is in `review` status — awaiting accept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
-| `blocked` | Assignment is in `blocked` status — something is preventing progress | `syntaur unblock <slug> --project <p>` |
-| `question` | Assignment has an open (unresolved) comment of type `question` | `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>` — posts a reply; marking the comment resolved is dashboard-only |
 | `plan-approval` | Assignment is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
 
 For standalone assignments (no project), omit `--project` and use the assignment UUID as the target.
@@ -344,9 +343,8 @@ For standalone assignments (no project), omit `--project` and use the assignment
     }
   ],
   "counts": {
-    "review": 3,
-    "blocked": 1,
     "question": 0,
+    "review": 3,
     "plan-approval": 2
   },
   "total": 6
@@ -362,8 +360,8 @@ syntaur inbox
 # Emit structured JSON
 syntaur inbox --json
 
-# Filter to review and blocked only
-syntaur inbox --type review,blocked
+# Filter to review and questions only
+syntaur inbox --type review,question
 
 # Restrict to one project
 syntaur inbox --project my-api
@@ -372,7 +370,7 @@ syntaur inbox --project my-api
 syntaur inbox --limit 10
 ```
 
-The dashboard **Needs me** view is the GUI equivalent — it shows the same grouped list with inline action controls and live-updates via WebSocket whenever an assignment changes.
+The dashboard **Needs me** view is the GUI reply queue — a flat oldest-first list with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge showing the unfiltered total. It live-updates via WebSocket whenever an assignment changes.
 
 ## Working an assignment
 

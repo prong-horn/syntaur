@@ -174,13 +174,16 @@ A permission or Cursor question card left unanswered for about 30 seconds files 
 
 ### When an agent is waiting on you
 
-Three moments surface in **Needs me**:
+The dashboard **Needs me** page is a reply queue: one flat, oldest-first list of things waiting on a reply from you. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
 
-1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. Sending any message to that agent resolves the row.
-2. **Permission cards.** A card still pending after ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. Answering the card (including **Allow all this session** or `permissions: auto`) resolves it; if a card times out, its grace row is resolved first, so only the denial question remains.
-3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and links to the card.
+Four sources appear in the queue:
 
-The Comments tab shows the question text only (the marker is hidden). Inbox rows for chat items say `@agent asked`, `@agent is waiting for permission`, or `@agent is asking`, link straight to the item in the Chat tab, and offer **Open chat** instead of an inline reply box. You can still **Resolve** by hand on the Inbox or Comments tab; setting a question to its current resolved state returns success without error.
+1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. **Clears when** you send a message to that agent from the row (or from Chat).
+2. **Permission cards.** A card still pending after ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. **Clears when** you allow or deny from the row (including **Allow all this session** or `permissions: auto`); if a card times out, its grace row is resolved first, so only the denial question remains.
+3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and its choices. **Clears when** you pick an option or type an answer from the row.
+4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or an assignment in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
+
+The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting a question to its current resolved state returns success without error.
 
 A short sentence right before a tool call ("I'll read package.json first.")
 becomes the work card's header instead of its own bubble — that one rule is most

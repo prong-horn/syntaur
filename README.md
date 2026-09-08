@@ -217,23 +217,23 @@ Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separate
 
 ### Needs me inbox
 
-`syntaur inbox` shows a single grouped triage view of every assignment currently awaiting human action across all projects — assignments in review, blocked, with an unanswered question, or with a plan awaiting approval. Each item prints the exact action command to resolve it. Read-only; never mutates.
+`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and assignments in review — oldest first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that.
 
 ```bash
 # Show everything awaiting your attention
 syntaur inbox
 
 # Filter to a category or project
-syntaur inbox --type review,blocked
+syntaur inbox --type review,question
 syntaur inbox --project my-api
 
 # Emit structured JSON (InboxResult with items[], counts, total)
 syntaur inbox --json
 ```
 
-Key flags: `--project <slug>`, `--type <list>` (comma-separated; `review`, `blocked`, `question`, `plan-approval`), `--limit <n>`, `--json`.
+Key flags: `--project <slug>`, `--type <list>` (comma-separated; `question`, `review`, `plan-approval`), `--limit <n>`, `--json`.
 
-The dashboard **Needs me** view is the live GUI equivalent — same grouping, inline action controls, and a nav badge showing the total count.
+The dashboard **Needs me** page is the live reply queue — inline actions, project filter, and a nav badge equal to the unfiltered total.
 
 ### Migrate events (one-time backfill)
 
