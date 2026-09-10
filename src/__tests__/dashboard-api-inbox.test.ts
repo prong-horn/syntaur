@@ -66,19 +66,21 @@ async function seed(o: SeedOpts): Promise<void> {
 async function seedQuestionComment(
   project: string,
   slug: string,
-  assignmentId: string,
+  _assignmentId: string,
   comment: {
     id: string;
     author: string;
     body: string;
+    timestamp?: string;
   },
 ): Promise<void> {
+  const ts = comment.timestamp ?? '2026-06-16T00:00:00Z';
   const dir = join(projectsDir, project, 'assignments', slug);
   await writeFile(
     join(dir, 'comments.md'),
-    `---\nassignment: ${slug}\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
+    `---\nassignment: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
       id: comment.id,
-      timestamp: '2026-06-16T00:00:00Z',
+      timestamp: ts,
       author: comment.author,
       type: 'question',
       body: comment.body,
@@ -409,6 +411,113 @@ describe('GET /api/inbox — card enrichment', () => {
     });
 
     const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const row = body.items.find((i) => i.chat?.kind === 'permission')!;
+    expect(row.card).toBeNull();
+  });
+
+  it('pins an unsettled permission row above an older reply row', async () => {
+    const permItemId = 'perm-order-1';
+    const replyItemId = 'reply-order-1';
+    const permMarker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    const replyMarker = formatChatQuestionMarker({
+      kind: 'reply',
+      itemId: replyItemId,
+      turnId: 't1',
+    });
+    await seed({ id: 'perm-assn', slug: 'perm-order-row', status: 'in_progress', project: 'p1' });
+    await seed({ id: 'reply-assn', slug: 'reply-order-row', status: 'in_progress', project: 'p1' });
+    await seedQuestionComment('p1', 'reply-order-row', 'reply-assn', {
+      id: 'cq-reply-order',
+      author: 'claude',
+      timestamp: '2026-06-01T00:00:00Z',
+      body: `Need input\n\n${replyMarker}`,
+    });
+    await seedQuestionComment('p1', 'perm-order-row', 'perm-assn', {
+      id: 'cq-perm-order',
+      author: 'cursor',
+      timestamp: '2026-06-15T00:00:00Z',
+      body: `Waiting for permission\n\n${permMarker}`,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId: permItemId,
+      assignmentId: 'perm-assn',
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: false,
+      requestId: 'req-order-1',
+      toolCall: { title: 'Run uname' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    expect(body.items[0].chat?.kind).toBe('permission');
+    expect(body.items[0].card?.settled).toBe(false);
+  });
+
+  it('demotes a settled permission card below an older reply row', async () => {
+    const permItemId = 'perm-order-2';
+    const replyItemId = 'reply-order-2';
+    const permMarker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    const replyMarker = formatChatQuestionMarker({
+      kind: 'reply',
+      itemId: replyItemId,
+      turnId: 't1',
+    });
+    await seed({ id: 'perm-assn2', slug: 'perm-settled-row', status: 'in_progress', project: 'p1' });
+    await seed({ id: 'reply-assn2', slug: 'reply-older-row', status: 'in_progress', project: 'p1' });
+    await seedQuestionComment('p1', 'reply-older-row', 'reply-assn2', {
+      id: 'cq-reply-order2',
+      author: 'claude',
+      timestamp: '2026-06-01T00:00:00Z',
+      body: `Need input\n\n${replyMarker}`,
+    });
+    await seedQuestionComment('p1', 'perm-settled-row', 'perm-assn2', {
+      id: 'cq-perm-order2',
+      author: 'cursor',
+      timestamp: '2026-06-15T00:00:00Z',
+      body: `Waiting for permission\n\n${permMarker}`,
+    });
+    upsertChatItem(SESSION_KEY, {
+      itemId: permItemId,
+      assignmentId: 'perm-assn2',
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: true,
+      requestId: 'req-order-2',
+      toolCall: { title: 'Run uname' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+      answer: 'allow-once',
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    const body = (await res.json()) as InboxResult;
+    expect(body.items[0].chat?.kind).toBe('reply');
+    const permRow = body.items.find((i) => i.chat?.kind === 'permission')!;
+    expect(permRow.card?.settled).toBe(true);
+  });
+
+  it('returns card:null with HTTP 200 when the session db is closed', async () => {
+    const permItemId = 'perm-closed-db';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+      id: 'cq-closed-db',
+      author: 'cursor',
+      body: `Waiting for permission\n\n${marker}`,
+    });
+    closeSessionDb();
+
+    const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
+    expect(res.status).toBe(200);
     const body = (await res.json()) as InboxResult;
     const row = body.items.find((i) => i.chat?.kind === 'permission')!;
     expect(row.card).toBeNull();

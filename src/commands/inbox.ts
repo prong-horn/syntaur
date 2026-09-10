@@ -150,9 +150,9 @@ function renderHeader(result: InboxResult): string {
 }
 
 /**
- * Render the grouped, oldest-first human view. Items arrive from `computeInbox`
- * in global oldest-first order (`ageMs` descending); the CLI re-groups by
- * category for display. The CLI only PRINTS `action.command` — it never mutates.
+ * Render the grouped human view. Items arrive from `computeInbox` in tier order,
+ * then oldest-first within each tier; the CLI re-groups by category for display.
+ * The CLI only PRINTS `action.command` — it never mutates.
  */
 function renderHuman(result: InboxResult): string {
   const lines: string[] = [renderHeader(result)];
