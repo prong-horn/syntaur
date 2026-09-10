@@ -112,4 +112,116 @@ describe('InboxPage', () => {
     expect(html).toContain('plan needs approval');
     expect(html).toContain('permission card');
   });
+
+  it('shows Enable notifications when permission is default', async () => {
+    const orig = globalThis.Notification;
+    globalThis.Notification = Object.assign(
+      function StubNotification() {},
+      {
+        permission: 'default',
+        requestPermission: async () => 'default',
+      },
+    ) as unknown as typeof Notification;
+    try {
+      vi.resetModules();
+      vi.doMock('../../hooks/useInbox', () => ({
+        useInbox: () => ({
+          items: [base],
+          counts: { question: 1, review: 0, 'plan-approval': 0 },
+          total: 1,
+          loading: false,
+          error: null,
+          refetch: () => {},
+        }),
+      }));
+      vi.doMock('../../hooks/useProjects', () => ({
+        useProjects: () => ({ data: [], loading: false, error: null }),
+      }));
+      vi.doMock('../../lib/chat-api', () => ({
+        fetchChatAgents: async () => [],
+      }));
+      const { InboxPage } = await import('../InboxPage');
+      const html = renderToStaticMarkup(
+        <MemoryRouter>
+          <InboxPage />
+        </MemoryRouter>,
+      );
+      expect(html).toContain('Enable notifications');
+    } finally {
+      globalThis.Notification = orig;
+    }
+  });
+
+  it('hides Enable notifications when permission is granted', async () => {
+    const orig = globalThis.Notification;
+    globalThis.Notification = Object.assign(
+      function StubNotification() {},
+      {
+        permission: 'granted',
+        requestPermission: async () => 'granted',
+      },
+    ) as unknown as typeof Notification;
+    try {
+      vi.resetModules();
+      vi.doMock('../../hooks/useInbox', () => ({
+        useInbox: () => ({
+          items: [base],
+          counts: { question: 1, review: 0, 'plan-approval': 0 },
+          total: 1,
+          loading: false,
+          error: null,
+          refetch: () => {},
+        }),
+      }));
+      vi.doMock('../../hooks/useProjects', () => ({
+        useProjects: () => ({ data: [], loading: false, error: null }),
+      }));
+      vi.doMock('../../lib/chat-api', () => ({
+        fetchChatAgents: async () => [],
+      }));
+      const { InboxPage } = await import('../InboxPage');
+      const html = renderToStaticMarkup(
+        <MemoryRouter>
+          <InboxPage />
+        </MemoryRouter>,
+      );
+      expect(html).not.toContain('Enable notifications');
+    } finally {
+      globalThis.Notification = orig;
+    }
+  });
+
+  it('hides Enable notifications when Notification is unavailable', async () => {
+    const orig = globalThis.Notification;
+    // @ts-expect-error SSR / unsupported environment
+    delete globalThis.Notification;
+    try {
+      vi.resetModules();
+      vi.doMock('../../hooks/useInbox', () => ({
+        useInbox: () => ({
+          items: [base],
+          counts: { question: 1, review: 0, 'plan-approval': 0 },
+          total: 1,
+          loading: false,
+          error: null,
+          refetch: () => {},
+        }),
+      }));
+      vi.doMock('../../hooks/useProjects', () => ({
+        useProjects: () => ({ data: [], loading: false, error: null }),
+      }));
+      vi.doMock('../../lib/chat-api', () => ({
+        fetchChatAgents: async () => [],
+      }));
+      const { InboxPage } = await import('../InboxPage');
+      const html = renderToStaticMarkup(
+        <MemoryRouter>
+          <InboxPage />
+        </MemoryRouter>,
+      );
+      expect(html).not.toContain('Enable notifications');
+    } finally {
+      globalThis.Notification = orig;
+    }
+  });
 });

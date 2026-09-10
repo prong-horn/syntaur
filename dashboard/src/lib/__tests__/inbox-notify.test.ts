@@ -35,6 +35,11 @@ const agents = [
     respondsTo: 'mentions' as const,
     description: null,
     avatar: 'C',
+    default: true,
+    source: null,
+    builtin: true,
+    overridesBuiltin: false,
+    missing: null,
   },
 ];
 
@@ -130,7 +135,7 @@ describe('notifyFreshRows', () => {
       permission: 'granted' as const,
       requestPermission: async () => 'granted' as const,
     },
-  ) as NotificationApi;
+  ) as unknown as NotificationApi;
 
   it('creates one notification per fresh row when granted and onclick opens the row', () => {
     FakeNotification.records = [];
@@ -160,7 +165,7 @@ describe('notifyFreshRows', () => {
         return new FakeNotification(title, options);
       },
       { permission: 'denied' as const, requestPermission: async () => 'denied' as const },
-    ) as NotificationApi;
+    ) as unknown as NotificationApi;
     const count = notifyFreshRows({
       fresh: [
         makeItem({

@@ -7,6 +7,8 @@ import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
 import { useWorkspaces } from '../hooks/useProjects';
 import { useInbox } from '../hooks/useInbox';
+import { useChatAgents } from '../hooks/useChatAgents';
+import { useInboxNotifications } from '../hooks/useInboxNotifications';
 import { useSidebarCollapse } from '../hooks/useSidebarCollapse';
 import {
   UNGROUPED_WORKSPACE,
@@ -114,6 +116,19 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const {
+    total: inboxTotal,
+    items: inboxItems,
+    loading: inboxLoading,
+    error: inboxError,
+  } = useInbox();
+  const { data: chatAgents } = useChatAgents();
+  useInboxNotifications({
+    items: inboxItems,
+    loading: inboxLoading,
+    error: inboxError,
+    agents: chatAgents?.agents ?? [],
+  });
 
   // R6: Esc closes the non-Radix mobile nav overlay.
   useHotkey({
@@ -128,7 +143,7 @@ export function AppShell({
     <div className="min-h-screen bg-background">
       <div className="relative grid min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="hidden max-h-screen sticky top-0 overflow-y-auto border-r border-border/70 bg-sidebar px-4 py-4 lg:flex lg:flex-col">
-          <ShellSidebar activeWorkspace={workspace} />
+          <ShellSidebar activeWorkspace={workspace} inboxTotal={inboxTotal} />
         </aside>
 
         {mobileNavOpen ? (
@@ -154,6 +169,7 @@ export function AppShell({
               <div className="min-h-0 flex-1">
                 <ShellSidebar
                   activeWorkspace={workspace}
+                  inboxTotal={inboxTotal}
                   onNavigate={() => setMobileNavOpen(false)}
                 />
               </div>
@@ -179,16 +195,13 @@ export function AppShell({
 
 function ShellSidebar({
   activeWorkspace,
+  inboxTotal,
   onNavigate,
 }: {
   activeWorkspace: string | null;
+  inboxTotal: number;
   onNavigate?: () => void;
 }) {
-  // Live "needs me" count for the nav badge. This is one extra app-wide
-  // `/api/inbox` fetch (WS-refreshed, shared via the single WS connection) —
-  // a deliberate, cheap tradeoff for an always-visible at-a-glance count vs.
-  // threading the total down from every page. Injected onto the /inbox entry.
-  const { total: inboxTotal } = useInbox();
   const pinnedNavItems = PINNED_NAV_ITEMS.map((item) =>
     item.to === '/inbox' ? { ...item, badge: inboxTotal } : item,
   );

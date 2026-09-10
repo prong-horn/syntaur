@@ -10,6 +10,11 @@ import { useInbox } from '../hooks/useInbox';
 import { useProjects } from '../hooks/useProjects';
 import { fetchChatAgents } from '../lib/chat-api';
 import type { ChatAgentSummary } from '../lib/chat-types';
+import {
+  notificationPermission,
+  type NotificationApi,
+  type NotificationState,
+} from '../lib/inbox-notify';
 
 /**
  * The "Needs me" reply queue: a flat, oldest-first list of things waiting on
@@ -98,6 +103,31 @@ export function InboxPage() {
   );
 }
 
+function NotificationsControl() {
+  const [state, setState] = useState<NotificationState>(() =>
+    notificationPermission(
+      typeof Notification === 'undefined'
+        ? undefined
+        : (Notification as unknown as NotificationApi),
+    ),
+  );
+
+  if (state !== 'default') return null;
+
+  return (
+    <button
+      type="button"
+      className="shell-action"
+      onClick={() => {
+        if (typeof Notification === 'undefined') return;
+        void Notification.requestPermission().then((answer) => setState(answer));
+      }}
+    >
+      Enable notifications
+    </button>
+  );
+}
+
 function InboxHeader({
   total,
   project,
@@ -122,6 +152,7 @@ function InboxHeader({
             : `${total} waiting`}
         </p>
       </div>
+      <NotificationsControl />
       <label className="flex items-center gap-2 text-sm text-muted-foreground">
         <span className="sr-only">Project filter</span>
         <select
