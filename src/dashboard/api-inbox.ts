@@ -148,8 +148,8 @@ export function createInboxRouter(
       }
       let untilDays: number | undefined;
       if (hasDays) {
-        untilDays = Number(body.untilDays);
-        if (!Number.isFinite(untilDays) || untilDays <= 0) {
+        untilDays = body.untilDays as number;
+        if (typeof body.untilDays !== 'number' || !Number.isFinite(untilDays) || untilDays <= 0) {
           res.status(400).json({ error: 'untilDays must be a positive number' });
           return;
         }

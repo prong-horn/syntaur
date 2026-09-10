@@ -287,6 +287,7 @@ describe('snoozeLabel', () => {
     expect(snoozeLabel(null, now)).toBe('until it changes');
     expect(snoozeLabel('2026-06-17T12:00:00Z', now)).toBe('for 1d');
     expect(snoozeLabel('2026-06-25T12:00:00Z', now)).toMatch(/^until /);
+    expect(snoozeLabel('2026-06-15T12:00:00Z', now)).toBe('until it refreshes');
   });
 });
 

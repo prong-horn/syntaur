@@ -130,8 +130,9 @@ export function snoozeLabel(until: string | null, now: number): string {
   const ms = Date.parse(until);
   if (Number.isNaN(ms)) return 'until it changes';
   const delta = ms - now;
+  if (delta <= 0) return 'until it refreshes';
   const oneDay = 86_400_000;
-  if (delta > 0 && delta <= oneDay * 1.5) return 'for 1d';
+  if (delta <= oneDay * 1.5) return 'for 1d';
   return `until ${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 

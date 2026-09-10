@@ -191,6 +191,64 @@ describe('InboxPage', () => {
     expect(html).toContain('Snoozed (2)');
   });
 
+  it('renders Snoozed foot in the list branch when snoozedCount is positive', async () => {
+    vi.resetModules();
+    mockInboxWindow();
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [base],
+        counts: { question: 1, review: 0, 'plan-approval': 0 },
+        total: 1,
+        snoozedCount: 2,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Snoozed (2)');
+  });
+
+  it('hides the Snoozed foot when snoozedCount is zero', async () => {
+    vi.resetModules();
+    mockInboxWindow();
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [base],
+        counts: { question: 1, review: 0, 'plan-approval': 0 },
+        total: 1,
+        snoozedCount: 0,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).not.toContain('Snoozed (');
+  });
+
   it('marks the All window button when useInboxWindow returns all', async () => {
     vi.resetModules();
     mockInboxWindow('all');

@@ -709,6 +709,20 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     expect(res.status).toBe(409);
   });
 
+  it('returns 400 when untilDays is a string', async () => {
+    await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
+    const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    const key = inboxRowKey(inbox.items[0]);
+    const res = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilDays: '7' }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toMatch(/positive number/i);
+  });
+
   it('returns 400 when both or neither snooze fields are sent', async () => {
     await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
