@@ -104,7 +104,20 @@ export interface InboxItem {
   chat?: InboxChatRef;
   /** Permission/ask chat rows: card options from the chat index (API-enriched). */
   card?: InboxCard | null;
+  /** Frontmatter `updated` (may be `''` when absent). Used for snooze fingerprints. */
+  assignmentUpdated: string;
+  /** Present when `includeSnoozed` is set and the row is snoozed. */
+  snoozed?: { until: string | null };
 }
+
+/** One snooze entry in `inbox-snoozes.json`. */
+export interface SnoozeEntry {
+  until: string | null;
+  fingerprint: string;
+  createdAt: string;
+}
+
+export type SnoozeMap = Record<string, SnoozeEntry>;
 
 /**
  * Urgency tier for inbox ordering (ascending = more urgent).
@@ -122,4 +135,8 @@ export interface InboxResult {
   items: InboxItem[];
   counts: Record<InboxCategory, number>;
   total: number;
+  /** Rows hidden by an active snooze (excluded from counts/total). */
+  snoozedCount: number;
+  /** Snooze keys lifted because the row fingerprint changed (`until: null`). */
+  liftedSnoozeKeys: string[];
 }

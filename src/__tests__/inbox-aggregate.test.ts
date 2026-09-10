@@ -2,7 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { computeInbox, type InboxStatusConfig } from '../inbox/index.js';
+import {
+  computeInbox,
+  inboxRowKey,
+  rowFingerprint,
+  type InboxStatusConfig,
+} from '../inbox/index.js';
+import type { SnoozeMap } from '../inbox/types.js';
 import type { InboxCategory } from '../inbox/types.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
@@ -127,6 +133,8 @@ describe('computeInbox — shape', () => {
       items: [],
       counts: { question: 0, review: 0, 'plan-approval': 0 },
       total: 0,
+      snoozedCount: 0,
+      liftedSnoozeKeys: [],
     });
   });
 
@@ -980,5 +988,224 @@ describe('computeInbox — chat questions', () => {
     expect(q.body).toContain('\n\n');
     expect(q.summary).toBe('First paragraph. Second paragraph.');
     expect(q.summary).not.toContain('\n');
+  });
+});
+
+// ── max-age window ─────────────────────────────────────────────────────────────
+
+describe('computeInbox — maxAgeMs', () => {
+  it('drops an older review and keeps a newer one', async () => {
+    await seed({
+      id: 'old-rev',
+      slug: 'old-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    await seed({
+      id: 'new-rev',
+      slug: 'new-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const r = await run({ maxAgeMs: 7 * 86_400_000 });
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['new-rev']);
+    expect(r.total).toBe(1);
+    expect(r.counts.review).toBe(1);
+  });
+
+  it('keeps a tier-0 card row older than the window', async () => {
+    const permId = 'perm-old';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'a-old-card',
+      slug: 'old-card',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-old-card',
+          timestamp: '2026-06-01T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'a-old-card')]]);
+    const r = await run({
+      maxAgeMs: 1 * 86_400_000,
+      lookupChatItem: (id) => lookup.get(id) ?? null,
+    });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].assignmentSlug).toBe('old-card');
+    expect(r.total).toBe(1);
+  });
+});
+
+// ── snoozes ────────────────────────────────────────────────────────────────────
+
+describe('computeInbox — snoozes', () => {
+  async function reviewRow(slug: string, id: string, since: string) {
+    await seed({
+      id,
+      slug,
+      status: 'review',
+      project: 'p1',
+      statusHistory: [`- at: "${since}"`, '  to: review', '  command: review'],
+      updated: '2026-06-01T00:00:00Z',
+    });
+    const r = await run();
+    return r.items.find((i) => i.assignmentSlug === slug)!;
+  }
+
+  it('hides a snoozed review from items/counts/total', async () => {
+    await reviewRow('snoozed-rev', 'sn-r', '2026-06-01T00:00:00Z');
+    const item = (await run()).items.find((i) => i.assignmentSlug === 'snoozed-rev')!;
+    const key = inboxRowKey(item);
+    const until = new Date(NOW + 7 * 86_400_000).toISOString();
+    const snoozes: SnoozeMap = {
+      [key]: { until, fingerprint: rowFingerprint(item), createdAt: new Date(NOW).toISOString() },
+    };
+    const r = await run({ snoozes });
+    expect(r.items).toHaveLength(0);
+    expect(r.total).toBe(0);
+    expect(r.snoozedCount).toBe(1);
+  });
+
+  it('includes snoozed rows when includeSnoozed is set', async () => {
+    const item = await reviewRow('show-snoozed', 'ss-r', '2026-06-01T00:00:00Z');
+    const key = inboxRowKey(item);
+    const until = new Date(NOW + 7 * 86_400_000).toISOString();
+    const snoozes: SnoozeMap = {
+      [key]: { until, fingerprint: rowFingerprint(item), createdAt: new Date(NOW).toISOString() },
+    };
+    const r = await run({ snoozes, includeSnoozed: true });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].snoozed).toEqual({ until });
+    expect(r.total).toBe(0);
+    expect(r.snoozedCount).toBe(1);
+  });
+
+  it('lifts an until-change snooze when the fingerprint changes', async () => {
+    await reviewRow('lift-rev', 'lf-r', '2026-06-01T00:00:00Z');
+    const before = (await run()).items[0];
+    const key = inboxRowKey(before);
+    const snoozes: SnoozeMap = {
+      [key]: {
+        until: null,
+        fingerprint: 'stale-fingerprint',
+        createdAt: new Date(NOW).toISOString(),
+      },
+    };
+    const r = await run({ snoozes });
+    expect(r.items).toHaveLength(1);
+    expect(r.liftedSnoozeKeys).toEqual([key]);
+    expect(r.snoozedCount).toBe(0);
+  });
+
+  it('snoozes with a matching until-change entry', async () => {
+    const item = await reviewRow('until-change', 'uc-r', '2026-06-01T00:00:00Z');
+    const key = inboxRowKey(item);
+    const snoozes: SnoozeMap = {
+      [key]: {
+        until: null,
+        fingerprint: rowFingerprint(item),
+        createdAt: new Date(NOW).toISOString(),
+      },
+    };
+    const r = await run({ snoozes });
+    expect(r.items).toHaveLength(0);
+    expect(r.snoozedCount).toBe(1);
+  });
+
+  it('ignores a snooze entry keyed to a tier-0 card row', async () => {
+    const permId = 'perm:colon:id';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'a-tier0',
+      slug: 'tier0-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-tier0',
+          timestamp: '2026-06-01T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'a-tier0')]]);
+    const r0 = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
+    const item = r0.items[0];
+    const key = inboxRowKey(item);
+    const snoozes: SnoozeMap = {
+      [key]: {
+        until: new Date(NOW + 86_400_000).toISOString(),
+        fingerprint: rowFingerprint(item),
+        createdAt: new Date(NOW).toISOString(),
+      },
+    };
+    const r = await run({ snoozes, lookupChatItem: (id) => lookup.get(id) ?? null });
+    expect(r.items).toHaveLength(1);
+    expect(r.snoozedCount).toBe(0);
+  });
+});
+
+describe('inboxRowKey and rowFingerprint', () => {
+  it('uses commentId, chat itemId, or category:assignmentId', async () => {
+    await seed({
+      id: 'q-id',
+      slug: 'q-slug',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'comment-1',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'h',
+          type: 'question',
+          body: 'open?',
+          resolved: false,
+        },
+      ],
+    });
+    const plain = (await run()).items[0];
+    expect(inboxRowKey(plain)).toBe('comment-1');
+
+    const permId = 'perm:colon:id';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'chat-id',
+      slug: 'chat-slug',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-chat',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'chat-id')]]);
+    const chat = (await run({ lookupChatItem: (id) => lookup.get(id) ?? null })).items.find(
+      (i) => i.assignmentSlug === 'chat-slug',
+    )!;
+    expect(inboxRowKey(chat)).toBe('c-chat');
+    expect(rowFingerprint(chat)).toContain(permId);
+
+    await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });
+    const review = (await run()).items.find((i) => i.assignmentSlug === 'rev-slug')!;
+    expect(inboxRowKey(review)).toBe('review:rev-id');
+    expect(rowFingerprint(review)).toBe(`${review.since}|${review.assignmentUpdated}|`);
   });
 });

@@ -430,6 +430,7 @@ describe('orderByUrgency', () => {
       ageMs,
       summary: '',
       action: { verb: 'Accept', command: '' },
+      assignmentUpdated: '',
     });
     const ordered = orderByUrgency([item('a', 100), item('b', 5000), item('c', 300)]);
     expect(ordered.map((i) => i.assignmentSlug)).toEqual(['b', 'c', 'a']);

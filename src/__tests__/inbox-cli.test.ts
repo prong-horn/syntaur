@@ -125,6 +125,8 @@ describe('runInbox — JSON shape', () => {
       items: [],
       counts: { question: 0, review: 0, 'plan-approval': 0 },
       total: 0,
+      snoozedCount: 0,
+      liftedSnoozeKeys: [],
     });
   });
 });

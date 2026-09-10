@@ -34,6 +34,7 @@ import type {
   InboxItem,
   InboxResult,
   InboxTier,
+  SnoozeMap,
 } from './types.js';
 import { parseChatQuestionMarker } from '../chat/questions.js';
 import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
@@ -46,8 +47,18 @@ export type {
   InboxItem,
   InboxResult,
   InboxTier,
+  SnoozeEntry,
+  SnoozeMap,
 } from './types.js';
 export { INBOX_CATEGORIES } from './types.js';
+export {
+  snoozeFilePath,
+  readSnoozes,
+  writeSnoozes,
+  setSnooze,
+  clearSnooze,
+  pruneSnoozes,
+} from './snooze.js';
 
 /**
  * The minimal lifecycle status-config the inbox core needs for accept-verb
@@ -94,6 +105,12 @@ export interface ComputeInboxOptions {
   dashboardUrl?: string;
   /** Optional chat-item lookup for permission/ask card enrichment. */
   lookupChatItem?: (itemId: string) => ChatItem | null;
+  /** Drop rows older than this unless tier 0 (live cards). */
+  maxAgeMs?: number;
+  /** Active snooze entries keyed by `inboxRowKey`. */
+  snoozes?: SnoozeMap;
+  /** When set, snoozed rows are kept in `items` flagged `snoozed`. */
+  includeSnoozed?: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -446,6 +463,19 @@ export function orderByUrgency(items: InboxItem[]): InboxItem[] {
   return [...items].sort((x, y) => inboxTier(x) - inboxTier(y) || y.ageMs - x.ageMs);
 }
 
+/**
+ * Stable row key — must stay in lockstep with `rowKey` in `dashboard/src/lib/inbox.ts`.
+ * `commentId ?? chat.itemId ?? category:assignmentId`
+ */
+export function inboxRowKey(item: InboxItem): string {
+  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`;
+}
+
+/** Fingerprint for "until it changes" snoozes. */
+export function rowFingerprint(item: InboxItem): string {
+  return `${item.since}|${item.assignmentUpdated}|${item.chat?.itemId ?? item.commentId ?? ''}`;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Aggregation entry point.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -533,6 +563,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         category: 'review',
         since,
         ageMs: computeAgeMs(since, now),
+        assignmentUpdated: parsed.updated,
         // Cosmetic retired-fact read (WS-3 T9): `reviewRequested` stays
         // ENGINE-FED post-marker (the bridge writes it in the work-start CAS
         // payload), so this summary pick stays coherent in both worlds;
@@ -580,6 +611,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               category: 'question',
               since,
               ageMs: computeAgeMs(since, now),
+              assignmentUpdated: parsed.updated,
               summary: summarizeQuestion(c),
               body: rawQuestionText(c),
               commentId: c.id,
@@ -608,6 +640,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
           category: 'plan-approval',
           since,
           ageMs: computeAgeMs(since, now),
+          assignmentUpdated: parsed.updated,
           summary: 'Plan awaiting approval.',
           action: buildAction('plan-approval', baseItem, {}),
         });
@@ -615,21 +648,57 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
     }
   }
 
-  // Counts/total reflect the FULL matched set (before `limit` truncation).
+  // Max-age window: tier 0 (live cards) is always kept.
+  let filtered = matched.filter(
+    (r) => opts.maxAgeMs === undefined || inboxTier(r) === 0 || r.ageMs <= opts.maxAgeMs,
+  );
+
+  // Snooze pass: honour the injected map.
+  const liftedSnoozeKeys: string[] = [];
+  let snoozedCount = 0;
+  const visible: InboxItem[] = [];
+  const countable: InboxItem[] = [];
+  for (const row of filtered) {
+    const key = inboxRowKey(row);
+    const entry = opts.snoozes?.[key];
+    if (!entry) {
+      visible.push(row);
+      countable.push(row);
+      continue;
+    }
+    if (inboxTier(row) === 0) {
+      visible.push(row);
+      countable.push(row);
+      continue;
+    }
+    if (entry.until === null && entry.fingerprint !== rowFingerprint(row)) {
+      liftedSnoozeKeys.push(key);
+      visible.push(row);
+      countable.push(row);
+      continue;
+    }
+    snoozedCount++;
+    if (opts.includeSnoozed) {
+      visible.push({ ...row, snoozed: { until: entry.until } });
+    }
+  }
+  filtered = visible;
+
+  // Counts/total reflect non-snoozed rows only (snoozed rows may appear in `items`).
   const counts: Record<InboxCategory, number> = {
     question: 0,
     review: 0,
     'plan-approval': 0,
   };
-  for (const item of matched) counts[item.category]++;
-  const total = matched.length;
+  for (const item of countable) counts[item.category]++;
+  const total = countable.length;
 
   // Order by tier, then oldest-first within each tier (largest ageMs first).
-  const ordered = orderByUrgency(matched);
+  const ordered = orderByUrgency(filtered);
 
   // `limit` truncates the returned items list only (counts/total stay full).
   const items =
     opts.limit !== undefined && opts.limit >= 0 ? ordered.slice(0, opts.limit) : ordered;
 
-  return { items, counts, total };
+  return { items, counts, total, snoozedCount, liftedSnoozeKeys };
 }
