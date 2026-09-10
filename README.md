@@ -217,7 +217,7 @@ Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separate
 
 ### Needs me inbox
 
-`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and assignments in review — tier order (live cards first), then oldest-first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that.
+`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and assignments in review — tier order (live cards first), then oldest-first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that. The dashboard defaults to the last 14 days (badge follows); use `--max-age` and `--show-snoozed` in the terminal. Snoozes from **Not now** are stored under `~/.syntaur/inbox-snoozes.json` and hide rows everywhere until they expire, lift, or you unsnooze.
 
 ```bash
 # Show everything awaiting your attention

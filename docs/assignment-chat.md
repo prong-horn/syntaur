@@ -176,6 +176,8 @@ A permission or Cursor question card left unanswered for about 30 seconds files 
 
 The dashboard **Needs me** page is a reply queue: live permission and Cursor-question cards first, then chat replies, plain questions, plans awaiting approval, and reviews — oldest-first within each tier. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
 
+By default the page shows only the **last 14 days** (toggle **All** to see everything); the nav badge follows the same window. Live cards are never hidden by the age filter. **Not now** on any other row snoozes it for one day, one week, or until the row changes; snoozes live in `~/.syntaur/inbox-snoozes.json` (not in the assignment) and are honoured by the badge and `syntaur inbox`. When anything is snoozed, **Snoozed (N)** at the foot reveals those rows so you can unsnooze or let a fingerprint change lift the snooze.
+
 Four sources appear in the queue:
 
 1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. **Clears when** you send a message to that agent from the row (or from Chat).
