@@ -17,9 +17,12 @@ import {
   chatItemHref,
   chatReplyText,
   commentsEndpoint,
+  isSnoozable,
   planApproveEndpoint,
   resolveCommentEndpoint,
+  rowKey,
   rowKind,
+  snoozeEndpoint,
   transitionEndpoint,
   type EndpointDescriptor,
   type InboxItem,
@@ -76,20 +79,88 @@ export async function runMutationTask(
   }
 }
 
+function SnoozeMenu({
+  item,
+  onMutated,
+  onError,
+  onSuccess,
+}: InboxRowActionProps & { item: InboxItem }) {
+  if (!isSnoozable(item)) return null;
+  const key = rowKey(item);
+  const props = { onMutated, onError, onSuccess };
+
+  async function snooze(body: Record<string, unknown>) {
+    await runMutation(snoozeEndpoint(key), body, props, 'Snoozed');
+  }
+
+  return (
+    <details className="relative inline-block text-sm">
+      <summary className="cursor-pointer list-none shell-action inline-flex items-center">
+        Not now
+      </summary>
+      <div className="absolute z-10 mt-1 min-w-[10rem] rounded-md border border-border bg-background p-1 shadow-md">
+        <button type="button" className="block w-full rounded px-2 py-1 text-left hover:bg-muted" onClick={() => void snooze({ untilDays: 1 })}>
+          One day
+        </button>
+        <button type="button" className="block w-full rounded px-2 py-1 text-left hover:bg-muted" onClick={() => void snooze({ untilDays: 7 })}>
+          One week
+        </button>
+        <button type="button" className="block w-full rounded px-2 py-1 text-left hover:bg-muted" onClick={() => void snooze({ untilChange: true })}>
+          Until it changes
+        </button>
+      </div>
+    </details>
+  );
+}
+
 export function InboxRowActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps & { item: InboxItem }) {
+  const menu = (
+    <SnoozeMenu item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+  );
+
   switch (rowKind(item)) {
     case 'reply':
-      return <ReplyActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <ReplyActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     case 'permission':
-      return <PermissionActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <PermissionActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     case 'ask':
-      return <AskActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <AskActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     case 'plain-question':
-      return <PlainQuestionActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <PlainQuestionActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     case 'review':
-      return <ReviewActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <ReviewActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     case 'plan-approval':
-      return <PlanActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />;
+      return (
+        <div className="space-y-2">
+          {menu}
+          <PlanActions item={item} onMutated={onMutated} onError={onError} onSuccess={onSuccess} />
+        </div>
+      );
     default:
       return null;
   }

@@ -17,9 +17,20 @@ const base: InboxItem = {
   assignmentUpdated: '',
 };
 
+function mockInboxWindow(window: '14d' | 'all' = '14d') {
+  vi.doMock('../../hooks/useInboxWindow', () => ({
+    useInboxWindow: () => ({
+      window,
+      setWindow: () => {},
+      maxAgeDays: window === '14d' ? 14 : null,
+    }),
+  }));
+}
+
 describe('InboxPage', () => {
   it('renders a flat list without section headings or CLI code lines', async () => {
     vi.resetModules();
+    mockInboxWindow();
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [
@@ -28,6 +39,7 @@ describe('InboxPage', () => {
         ],
         counts: { question: 1, review: 1, 'plan-approval': 0 },
         total: 2,
+        snoozedCount: 0,
         loading: false,
         error: null,
         refetch: () => {},
@@ -50,15 +62,19 @@ describe('InboxPage', () => {
     expect(html).not.toContain('Review');
     expect(html).toContain('Needs me');
     expect(html).toContain('2 waiting');
+    expect(html).toContain('Last 14 days');
+    expect(html).toContain('aria-pressed="true"');
   });
 
   it('renders the project select with slugs from useProjects', async () => {
     vi.resetModules();
+    mockInboxWindow();
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [base],
         counts: { question: 1, review: 0, 'plan-approval': 0 },
         total: 1,
+        snoozedCount: 0,
         loading: false,
         error: null,
         refetch: () => {},
@@ -87,11 +103,13 @@ describe('InboxPage', () => {
 
   it('renders the empty state naming the four sources', async () => {
     vi.resetModules();
+    mockInboxWindow('all');
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [],
         counts: { question: 0, review: 0, 'plan-approval': 0 },
         total: 0,
+        snoozedCount: 0,
         loading: false,
         error: null,
         refetch: () => {},
@@ -114,8 +132,97 @@ describe('InboxPage', () => {
     expect(html).toContain('permission card');
   });
 
+  it('renders the 14-day empty state by default', async () => {
+    vi.resetModules();
+    mockInboxWindow('14d');
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [],
+        counts: { question: 0, review: 0, 'plan-approval': 0 },
+        total: 0,
+        snoozedCount: 0,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Nothing in the last 14 days');
+    expect(html).toContain('Show all');
+  });
+
+  it('renders Snoozed foot in the empty branch when snoozedCount is positive', async () => {
+    vi.resetModules();
+    mockInboxWindow('all');
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [],
+        counts: { question: 0, review: 0, 'plan-approval': 0 },
+        total: 0,
+        snoozedCount: 2,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Snoozed (2)');
+  });
+
+  it('marks the All window button when useInboxWindow returns all', async () => {
+    vi.resetModules();
+    mockInboxWindow('all');
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [base],
+        counts: { question: 1, review: 0, 'plan-approval': 0 },
+        total: 1,
+        snoozedCount: 0,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('aria-pressed="true">All</button>');
+  });
+
   it('renders anchor ids on list rows', async () => {
     vi.resetModules();
+    mockInboxWindow();
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [
@@ -134,6 +241,7 @@ describe('InboxPage', () => {
         ],
         counts: { question: 1, review: 1, 'plan-approval': 0 },
         total: 2,
+        snoozedCount: 0,
         loading: false,
         error: null,
         refetch: () => {},
@@ -167,11 +275,13 @@ describe('InboxPage', () => {
     ) as unknown as typeof Notification;
     try {
       vi.resetModules();
+      mockInboxWindow();
       vi.doMock('../../hooks/useInbox', () => ({
         useInbox: () => ({
           items: [base],
           counts: { question: 1, review: 0, 'plan-approval': 0 },
           total: 1,
+          snoozedCount: 0,
           loading: false,
           error: null,
           refetch: () => {},
@@ -206,11 +316,13 @@ describe('InboxPage', () => {
     ) as unknown as typeof Notification;
     try {
       vi.resetModules();
+      mockInboxWindow();
       vi.doMock('../../hooks/useInbox', () => ({
         useInbox: () => ({
           items: [base],
           counts: { question: 1, review: 0, 'plan-approval': 0 },
           total: 1,
+          snoozedCount: 0,
           loading: false,
           error: null,
           refetch: () => {},
@@ -240,11 +352,13 @@ describe('InboxPage', () => {
     delete globalThis.Notification;
     try {
       vi.resetModules();
+      mockInboxWindow();
       vi.doMock('../../hooks/useInbox', () => ({
         useInbox: () => ({
           items: [base],
           counts: { question: 1, review: 0, 'plan-approval': 0 },
           total: 1,
+          snoozedCount: 0,
           loading: false,
           error: null,
           refetch: () => {},

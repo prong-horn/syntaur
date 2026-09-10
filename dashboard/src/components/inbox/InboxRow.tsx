@@ -14,15 +14,18 @@ import {
   formatAge,
   rowKey,
   rowKind,
+  snoozeLabel,
+  unsnoozeEndpoint,
   waitingLabel,
   type InboxItem,
 } from '../../lib/inbox';
-import { InboxRowActions, type InboxRowActionProps } from './InboxRowActions';
+import { InboxRowActions, runMutation, type InboxRowActionProps } from './InboxRowActions';
 
 export interface InboxRowProps extends InboxRowActionProps {
   item: InboxItem;
   agents: readonly ChatAgentSummary[];
   highlighted?: boolean;
+  snoozed?: boolean;
 }
 
 function rowIcon(item: InboxItem) {
@@ -33,11 +36,12 @@ function rowIcon(item: InboxItem) {
   return null;
 }
 
-export function InboxRow({ item, agents, highlighted, ...actionProps }: InboxRowProps) {
+export function InboxRow({ item, agents, highlighted, snoozed = false, ...actionProps }: InboxRowProps) {
   const kind = rowKind(item);
   const chatAuthor = item.chat ? authorOf({ agentId: item.chat.agentId }, agents) : null;
   const label = waitingLabel(item, chatAuthor ? { name: chatAuthor.name } : undefined);
   const Icon = rowIcon(item);
+  const now = Date.now();
 
   const titleHref =
     kind === 'plan-approval'
@@ -49,7 +53,7 @@ export function InboxRow({ item, agents, highlighted, ...actionProps }: InboxRow
   return (
     <li
       id={rowKey(item)}
-      className={`flex gap-3 rounded-lg border border-border/70 bg-background/40 p-3${highlighted ? ' ring-2 ring-primary' : ''}`}
+      className={`flex gap-3 rounded-lg border border-border/70 bg-background/40 p-3${highlighted ? ' ring-2 ring-primary' : ''}${snoozed ? ' opacity-60' : ''}`}
     >
       <div className="shrink-0 pt-0.5">
         {chatAuthor ? (
@@ -91,7 +95,27 @@ export function InboxRow({ item, agents, highlighted, ...actionProps }: InboxRow
           <p className="text-sm text-muted-foreground">The latest plan awaits approval</p>
         ) : null}
 
-        <InboxRowActions item={item} {...actionProps} />
+        {snoozed ? (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+            <span>{snoozeLabel(item.snoozed?.until ?? null, now)}</span>
+            <button
+              type="button"
+              className="shell-action"
+              onClick={() =>
+                void runMutation(
+                  unsnoozeEndpoint(rowKey(item)),
+                  undefined,
+                  actionProps,
+                  'Unsnoozed',
+                )
+              }
+            >
+              Unsnooze
+            </button>
+          </div>
+        ) : (
+          <InboxRowActions item={item} {...actionProps} />
+        )}
       </div>
     </li>
   );

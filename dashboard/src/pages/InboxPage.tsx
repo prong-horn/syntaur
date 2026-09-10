@@ -7,6 +7,7 @@ import { ErrorState } from '../components/ErrorState';
 import { useToast, Toaster } from '../components/Toast';
 import { InboxRow } from '../components/inbox/InboxRow';
 import { useInbox } from '../hooks/useInbox';
+import { useInboxWindow, type InboxWindow } from '../hooks/useInboxWindow';
 import { useProjects } from '../hooks/useProjects';
 import { fetchChatAgents } from '../lib/chat-api';
 import type { ChatAgentSummary } from '../lib/chat-types';
@@ -24,13 +25,19 @@ import {
  * dashboard routes.
  */
 export function InboxPage() {
+  const { window: inboxWindow, setWindow, maxAgeDays } = useInboxWindow();
+  const [showSnoozed, setShowSnoozed] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const lastScrolledHash = useRef<string | null>(null);
   const highlightTimerRef = useRef<number | null>(null);
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
   const project = searchParams.get('project') || null;
-  const { items, total, loading, error, refetch } = useInbox({ project });
+  const { items, total, snoozedCount, loading, error, refetch } = useInbox({
+    project,
+    maxAgeDays,
+    includeSnoozed: showSnoozed,
+  });
   const { data: projects } = useProjects();
   const [agents, setAgents] = useState<readonly ChatAgentSummary[]>([]);
   const { toast, showToast, dismissToast } = useToast();
@@ -72,8 +79,6 @@ export function InboxPage() {
         window.clearTimeout(highlightTimerRef.current);
         highlightTimerRef.current = null;
       }
-      // Reset the once-per-hash guard too, so a remount (including React
-      // StrictMode's simulated unmount in dev) lands and highlights again.
       lastScrolledHash.current = null;
     };
   }, []);
@@ -115,6 +120,8 @@ export function InboxPage() {
         total={total}
         project={project}
         projects={projects ?? []}
+        inboxWindow={inboxWindow}
+        onWindowChange={setWindow}
         onProjectChange={(slug) => {
           const next = new URLSearchParams(searchParams);
           if (slug) next.set('project', slug);
@@ -125,14 +132,34 @@ export function InboxPage() {
     </>
   );
 
+  const snoozedFoot = (
+    <SnoozedFoot
+      snoozedCount={snoozedCount}
+      showSnoozed={showSnoozed}
+      onToggle={() => setShowSnoozed((v) => !v)}
+    />
+  );
+
   if (items.length === 0) {
+    const emptyTitle =
+      inboxWindow === '14d' ? 'Nothing in the last 14 days' : 'Nothing is waiting on you';
+    const emptyDescription =
+      inboxWindow === '14d'
+        ? 'Older reviews and plan approvals are hidden. Switch to All to see the full queue, or snooze rows you are not ready to act on.'
+        : 'When an agent asks a question, a permission card goes unanswered, a plan needs approval, or an assignment awaits your review, it appears here so you can reply in place.';
+
     return (
       <div className="space-y-4">
         {header}
-        <EmptyState
-          title="Nothing is waiting on you"
-          description="When an agent asks a question, a permission card goes unanswered, a plan needs approval, or an assignment awaits your review, it appears here so you can reply in place."
-        />
+        <EmptyState title={emptyTitle} description={emptyDescription} />
+        {inboxWindow === '14d' ? (
+          <p className="text-sm text-muted-foreground">
+            <button type="button" className="underline hover:text-foreground" onClick={() => setWindow('all')}>
+              Show all
+            </button>
+          </p>
+        ) : null}
+        {snoozedFoot}
       </div>
     );
   }
@@ -147,13 +174,32 @@ export function InboxPage() {
             item={item}
             agents={agents}
             highlighted={highlightedKey === rowKey(item)}
+            snoozed={Boolean(item.snoozed)}
             onMutated={refetch}
             onError={onError}
             onSuccess={onSuccess}
           />
         ))}
       </ul>
+      {snoozedFoot}
     </div>
+  );
+}
+
+function SnoozedFoot({
+  snoozedCount,
+  showSnoozed,
+  onToggle,
+}: {
+  snoozedCount: number;
+  showSnoozed: boolean;
+  onToggle: () => void;
+}) {
+  if (snoozedCount <= 0) return null;
+  return (
+    <button type="button" className="shell-action text-sm" onClick={onToggle}>
+      {showSnoozed ? 'Hide snoozed' : `Snoozed (${snoozedCount})`}
+    </button>
   );
 }
 
@@ -182,15 +228,48 @@ function NotificationsControl() {
   );
 }
 
+function WindowToggle({
+  inboxWindow,
+  onWindowChange,
+}: {
+  inboxWindow: InboxWindow;
+  onWindowChange: (value: InboxWindow) => void;
+}) {
+  return (
+    <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
+      <button
+        type="button"
+        className={`rounded px-2 py-1 ${inboxWindow === '14d' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}`}
+        aria-pressed={inboxWindow === '14d'}
+        onClick={() => onWindowChange('14d')}
+      >
+        Last 14 days
+      </button>
+      <button
+        type="button"
+        className={`rounded px-2 py-1 ${inboxWindow === 'all' ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground'}`}
+        aria-pressed={inboxWindow === 'all'}
+        onClick={() => onWindowChange('all')}
+      >
+        All
+      </button>
+    </div>
+  );
+}
+
 function InboxHeader({
   total,
   project,
   projects,
+  inboxWindow,
+  onWindowChange,
   onProjectChange,
 }: {
   total: number;
   project: string | null;
   projects: Array<{ slug: string; title: string }>;
+  inboxWindow: InboxWindow;
+  onWindowChange: (value: InboxWindow) => void;
   onProjectChange: (slug: string | null) => void;
 }) {
   return (
@@ -206,6 +285,7 @@ function InboxHeader({
             : `${total} waiting`}
         </p>
       </div>
+      <WindowToggle inboxWindow={inboxWindow} onWindowChange={onWindowChange} />
       <NotificationsControl />
       <label className="flex items-center gap-2 text-sm text-muted-foreground">
         <span className="sr-only">Project filter</span>

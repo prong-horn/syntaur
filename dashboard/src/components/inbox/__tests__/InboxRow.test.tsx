@@ -248,4 +248,69 @@ describe('InboxRow', () => {
     expect(html).toContain('Reply inline');
     expect(html).toContain('Resolve');
   });
+
+  it('snoozable review row contains Not now and the three choices', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({ category: 'review', acceptCommand: 'complete', reopenCommand: 'start' })}
+          agents={[]}
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Not now');
+    expect(html).toContain('One day');
+    expect(html).toContain('One week');
+    expect(html).toContain('Until it changes');
+  });
+
+  it('unsettled permission row does not contain Not now', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({
+            category: 'question',
+            chat: { kind: 'permission', itemId: 'perm-1', agentId: 'cursor' },
+            card: {
+              requestId: 'req-1',
+              kind: 'permission',
+              options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+              settled: false,
+            },
+          })}
+          agents={[]}
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).not.toContain('Not now');
+  });
+
+  it('snoozed row renders until label and Unsnooze without Not now', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({
+            category: 'review',
+            acceptCommand: 'complete',
+            reopenCommand: 'start',
+            snoozed: { until: '2026-06-20T00:00:00Z' },
+          })}
+          agents={[]}
+          snoozed
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('Unsnooze');
+    expect(html).not.toContain('Not now');
+    expect(html).toContain('opacity-60');
+  });
 });

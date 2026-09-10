@@ -7,6 +7,7 @@ import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
 import { useWorkspaces } from '../hooks/useProjects';
 import { useInbox } from '../hooks/useInbox';
+import { useInboxWindow } from '../hooks/useInboxWindow';
 import { useChatAgents } from '../hooks/useChatAgents';
 import { useInboxNotifications } from '../hooks/useInboxNotifications';
 import { useSidebarCollapse } from '../hooks/useSidebarCollapse';
@@ -116,12 +117,13 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { maxAgeDays } = useInboxWindow();
   const {
     total: inboxTotal,
     items: inboxItems,
     loading: inboxLoading,
     error: inboxError,
-  } = useInbox();
+  } = useInbox({ maxAgeDays });
   const { data: chatAgents } = useChatAgents();
   useInboxNotifications({
     items: inboxItems,
