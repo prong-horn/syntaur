@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { runInbox, inboxCommand } from '../commands/inbox.js';
+import { inboxRowKey, rowFingerprint, setSnooze, snoozeFilePath } from '../inbox/index.js';
+import { readFile } from 'node:fs/promises';
 import { clearStatusConfigCache } from '../dashboard/api.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
@@ -30,6 +32,8 @@ interface SeedOpts {
   project?: string | null; // null/undefined → standalone
   blockedReason?: string;
   comments?: Comment[];
+  statusHistory?: string[];
+  updated?: string;
 }
 
 /** Create a real on-disk assignment fixture under the seeded SYNTAUR_HOME. */
@@ -48,6 +52,11 @@ async function seed(o: SeedOpts): Promise<void> {
     `project: ${standalone ? 'null' : o.project}`,
   ];
   if (o.blockedReason) fm.push(`blockedReason: ${o.blockedReason}`);
+  if (o.updated) fm.push(`updated: "${o.updated}"`);
+  if (o.statusHistory) {
+    fm.push('statusHistory:');
+    fm.push(...o.statusHistory.map((l) => `  ${l}`));
+  }
   await writeFile(join(dir, 'assignment.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
 
   if (o.comments && o.comments.length > 0) {
@@ -318,6 +327,124 @@ describe('inbox human output (grouped, smoke)', () => {
   });
 });
 
+describe('runInbox — max-age and snoozes', () => {
+  const now = Date.now();
+  const oldAt = new Date(now - 30 * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const freshAt = new Date(now - 12 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  it('--max-age 1 hides an old review', async () => {
+    await seed({
+      id: 'old-r',
+      slug: 'old-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: [`- at: "${oldAt}"`, '  to: review', '  command: review'],
+    });
+    await seed({
+      id: 'new-r',
+      slug: 'new-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: [`- at: "${freshAt}"`, '  to: review', '  command: review'],
+    });
+    const result = await runInbox({ maxAge: '1' });
+    expect(result.items.map((i) => i.assignmentSlug)).toEqual(['new-rev']);
+  });
+
+  it('rejects invalid --max-age', async () => {
+    await expect(runInbox({ maxAge: 'abc' })).rejects.toThrow(
+      /--max-age must be a positive number of days/,
+    );
+  });
+
+  it('hides a snoozed row from JSON and human output', async () => {
+    await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
+    const before = await runInbox({});
+    const row = before.items[0];
+    const key = inboxRowKey(row);
+    await setSnooze(
+      snoozeFilePath(),
+      key,
+      {
+        until: new Date(now + 7 * 86_400_000).toISOString(),
+        fingerprint: rowFingerprint(row),
+        createdAt: new Date(now).toISOString(),
+      },
+      now,
+    );
+    const result = await runInbox({});
+    expect(result.items).toHaveLength(0);
+    expect(result.snoozedCount).toBe(1);
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((m?: unknown) => {
+      logs.push(String(m));
+    });
+    try {
+      await inboxCommand.parseAsync(['node', 'inbox']);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(logs.join('\n')).not.toContain('[p1/rev]');
+  });
+
+  it('--show-snoozed lists snoozed rows in JSON and the Snoozed section', async () => {
+    await seed({ id: 'r1', slug: 'rev', title: 'Snoozed rev', status: 'review', project: 'p1' });
+    const before = await runInbox({});
+    const row = before.items[0];
+    const key = inboxRowKey(row);
+    await setSnooze(
+      snoozeFilePath(),
+      key,
+      {
+        until: new Date(now + 86_400_000).toISOString(),
+        fingerprint: rowFingerprint(row),
+        createdAt: new Date(now).toISOString(),
+      },
+      now,
+    );
+    const result = await runInbox({ showSnoozed: true });
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].snoozed).toBeDefined();
+
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation((m?: unknown) => {
+      logs.push(String(m));
+    });
+    try {
+      await inboxCommand.parseAsync(['node', 'inbox', '--show-snoozed']);
+    } finally {
+      spy.mockRestore();
+    }
+    const out = logs.join('\n');
+    expect(out).toContain('Snoozed (1)');
+    expect(out).toContain('Snoozed rev');
+  });
+
+  it('prunes a lifted until-change entry from the store after a run', async () => {
+    await seed({
+      id: 'lift-r',
+      slug: 'lift-rev',
+      status: 'review',
+      project: 'p1',
+      updated: '2025-01-01T00:00:00Z',
+      statusHistory: ['- at: "2025-01-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const before = await runInbox({});
+    const row = before.items[0];
+    const key = inboxRowKey(row);
+    await setSnooze(
+      snoozeFilePath(),
+      key,
+      { until: null, fingerprint: 'stale', createdAt: new Date(now).toISOString() },
+      now,
+    );
+    await runInbox({});
+    const store = JSON.parse(await readFile(snoozeFilePath(), 'utf-8'));
+    expect(store[key]).toBeUndefined();
+  });
+});
+
 describe('inbox --help', () => {
   it('lists the command flags', () => {
     const cliEntry = fileURLToPath(new URL('../../dist/index.js', import.meta.url));
@@ -326,5 +453,7 @@ describe('inbox --help', () => {
     expect(out).toContain('--type');
     expect(out).toContain('--limit');
     expect(out).toContain('--json');
+    expect(out).toContain('--max-age');
+    expect(out).toContain('--show-snoozed');
   });
 });

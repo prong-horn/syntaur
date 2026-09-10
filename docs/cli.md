@@ -298,7 +298,11 @@ syntaur inbox [options]
 - `--project <slug>` — Restrict to one project.
 - `--type <list>` — Comma-separated category filter (valid categories: `question`, `review`, `plan-approval`).
 - `--limit <n>` — Maximum number of items to show.
+- `--max-age <days>` — Hide rows older than this many days (live permission/ask cards are always shown).
+- `--show-snoozed` — Include snoozed rows in the output (human view adds a **Snoozed (N)** section).
 - `--json` — Emit the structured `InboxResult` JSON instead of the grouped view.
+
+Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and honoured by the CLI — snoozed rows are hidden unless `--show-snoozed` is set.
 
 ### Categories
 
@@ -368,9 +372,15 @@ syntaur inbox --project my-api
 
 # Cap output at 10 items
 syntaur inbox --limit 10
+
+# Hide rows older than 14 days (live cards exempt)
+syntaur inbox --max-age 14
+
+# List snoozed rows too
+syntaur inbox --show-snoozed
 ```
 
-The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge showing the unfiltered total. It live-updates via WebSocket whenever an assignment changes.
+The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever an assignment changes.
 
 ## Working an assignment
 

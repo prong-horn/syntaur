@@ -7,6 +7,9 @@ import { getStatusConfig } from '../dashboard/api.js';
 import {
   computeInbox,
   INBOX_CATEGORIES,
+  pruneSnoozes,
+  readSnoozes,
+  snoozeFilePath,
   type InboxCategory,
   type InboxItem,
   type InboxResult,
@@ -19,6 +22,8 @@ export interface InboxOptions {
   /** Comma-split category list, validated against `INBOX_CATEGORIES`. */
   type?: string;
   limit?: string;
+  maxAge?: string;
+  showSnoozed?: boolean;
   json?: boolean;
 }
 
@@ -50,9 +55,14 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   const assignmentsDir = getAssignmentsDir();
 
   const limit = parseLimit(options.limit);
+  const maxAgeMs = parseMaxAge(options.maxAge);
   // Parse `--type` INSIDE the command's error path (not as a Commander coercion)
   // so an unknown category yields a clean one-line error, not an uncaught stack.
   const types = parseTypes(options.type);
+
+  const now = Date.now();
+  const snoozePath = snoozeFilePath();
+  const snoozes = await readSnoozes(snoozePath, now);
 
   const resolved = await getStatusConfig();
   // The blocked/parked HEADLINE status ids are NOT valid active "reopen" targets.
@@ -63,7 +73,7 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
 
   const dashboardUrl = await resolveDashboardUrl();
 
-  return computeInbox({
+  const result = await computeInbox({
     projectsDir,
     assignmentsDir,
     project: options.project,
@@ -71,7 +81,21 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
     limit,
     statusConfig,
     dashboardUrl,
+    maxAgeMs,
+    snoozes,
+    includeSnoozed: options.showSnoozed,
+    now,
   });
+
+  if (result.liftedSnoozeKeys.length > 0) {
+    try {
+      await pruneSnoozes(snoozePath, result.liftedSnoozeKeys, now);
+    } catch {
+      // best effort
+    }
+  }
+
+  return result;
 }
 
 async function resolveDashboardUrl(): Promise<string> {
@@ -90,6 +114,15 @@ function parseLimit(raw: string | undefined): number | undefined {
     throw new Error(`Invalid --limit value: "${raw}". Must be a positive integer.`);
   }
   return n;
+}
+
+function parseMaxAge(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    throw new Error('--max-age must be a positive number of days');
+  }
+  return n * 86_400_000;
 }
 
 /** Comma-split `--type` into validated `InboxCategory[]` (clean error on unknowns). */
@@ -154,12 +187,20 @@ function renderHeader(result: InboxResult): string {
  * then oldest-first within each tier; the CLI re-groups by category for display.
  * The CLI only PRINTS `action.command` — it never mutates.
  */
+function snoozeUntilLabel(until: string | null): string {
+  if (until === null) return 'it changes';
+  const d = new Date(until);
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 function renderHuman(result: InboxResult): string {
   const lines: string[] = [renderHeader(result)];
-  if (result.total === 0) return lines.join('\n');
+  const active = result.items.filter((i) => !i.snoozed);
+  const snoozed = result.items.filter((i) => i.snoozed);
+  if (result.total === 0 && snoozed.length === 0) return lines.join('\n');
 
   for (const category of INBOX_CATEGORIES) {
-    const items = result.items.filter((i) => i.category === category);
+    const items = active.filter((i) => i.category === category);
     if (items.length === 0) continue;
     lines.push('');
     lines.push(`${CATEGORY_LABEL[category]} (${result.counts[category]})`);
@@ -169,6 +210,18 @@ function renderHuman(result: InboxResult): string {
       lines.push(`    → ${item.action.command}`);
     }
   }
+
+  if (snoozed.length > 0) {
+    lines.push('');
+    lines.push(`Snoozed (${snoozed.length})`);
+    for (const item of snoozed) {
+      const until = item.snoozed!.until;
+      lines.push(
+        `  ${item.title}  [${locator(item)}]  until ${snoozeUntilLabel(until)}`,
+      );
+    }
+  }
+
   return lines.join('\n');
 }
 
@@ -182,6 +235,8 @@ export const inboxCommand = new Command('inbox')
     `Comma-separated category filter (${INBOX_CATEGORIES.join(', ')})`,
   )
   .option('--limit <n>', 'Maximum number of items to show')
+  .option('--max-age <days>', 'Hide rows older than this many days (live cards exempt)')
+  .option('--show-snoozed', 'Include snoozed rows in the output')
   .option('--json', 'Emit the structured InboxResult JSON instead of the grouped view')
   .action(async (options: InboxOptions) => {
     try {
