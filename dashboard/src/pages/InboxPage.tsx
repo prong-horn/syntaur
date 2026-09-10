@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { Inbox } from 'lucide-react';
 import { EmptyState } from '../components/EmptyState';
 import { LoadingState } from '../components/LoadingState';
@@ -10,6 +10,7 @@ import { useInbox } from '../hooks/useInbox';
 import { useProjects } from '../hooks/useProjects';
 import { fetchChatAgents } from '../lib/chat-api';
 import type { ChatAgentSummary } from '../lib/chat-types';
+import { rowKey } from '../lib/inbox';
 import {
   notificationPermission,
   type NotificationApi,
@@ -22,6 +23,9 @@ import {
  */
 export function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const lastScrolledHash = useRef<string | null>(null);
+  const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
   const project = searchParams.get('project') || null;
   const { items, total, loading, error, refetch } = useInbox({ project });
   const { data: projects } = useProjects();
@@ -33,6 +37,34 @@ export function InboxPage() {
       .then((result) => setAgents(result.agents))
       .catch(() => setAgents([]));
   }, []);
+
+  useEffect(() => {
+    const raw = location.hash.replace(/^#/, '');
+    if (!raw || items.length === 0) return;
+    let hash = raw;
+    try {
+      hash = decodeURIComponent(raw);
+    } catch {
+      /* keep raw */
+    }
+    if (hash === lastScrolledHash.current) return;
+    const el = document.getElementById(hash);
+    if (!el) return;
+    lastScrolledHash.current = hash;
+    el.scrollIntoView({ block: 'center' });
+    setHighlightedKey(hash);
+    const timer = window.setTimeout(() => setHighlightedKey(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [items, location.hash]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const previous = document.title;
+    document.title = total > 0 ? `(${total}) Needs me · Syntaur` : 'Needs me · Syntaur';
+    return () => {
+      document.title = previous;
+    };
+  }, [total]);
 
   const onError = (message: string) => showToast(message, 'error');
   const onSuccess = (message: string) => showToast(message, 'success');
@@ -90,9 +122,10 @@ export function InboxPage() {
       <ul className="space-y-3">
         {items.map((item) => (
           <InboxRow
-            key={item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`}
+            key={rowKey(item)}
             item={item}
             agents={agents}
+            highlighted={highlightedKey === rowKey(item)}
             onMutated={refetch}
             onError={onError}
             onSuccess={onSuccess}

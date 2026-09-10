@@ -12,6 +12,7 @@ import {
   assignmentHref,
   chatItemHref,
   formatAge,
+  rowKey,
   rowKind,
   waitingLabel,
   type InboxItem,
@@ -21,6 +22,7 @@ import { InboxRowActions, type InboxRowActionProps } from './InboxRowActions';
 export interface InboxRowProps extends InboxRowActionProps {
   item: InboxItem;
   agents: readonly ChatAgentSummary[];
+  highlighted?: boolean;
 }
 
 function rowIcon(item: InboxItem) {
@@ -31,7 +33,7 @@ function rowIcon(item: InboxItem) {
   return null;
 }
 
-export function InboxRow({ item, agents, ...actionProps }: InboxRowProps) {
+export function InboxRow({ item, agents, highlighted, ...actionProps }: InboxRowProps) {
   const kind = rowKind(item);
   const chatAuthor = item.chat ? authorOf({ agentId: item.chat.agentId }, agents) : null;
   const label = waitingLabel(item, chatAuthor ? { name: chatAuthor.name } : undefined);
@@ -45,7 +47,10 @@ export function InboxRow({ item, agents, ...actionProps }: InboxRowProps) {
         : assignmentHref(item);
 
   return (
-    <li className="flex gap-3 rounded-lg border border-border/70 bg-background/40 p-3">
+    <li
+      id={rowKey(item)}
+      className={`flex gap-3 rounded-lg border border-border/70 bg-background/40 p-3${highlighted ? ' ring-2 ring-primary' : ''}`}
+    >
       <div className="shrink-0 pt-0.5">
         {chatAuthor ? (
           <span

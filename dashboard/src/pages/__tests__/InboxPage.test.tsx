@@ -113,6 +113,48 @@ describe('InboxPage', () => {
     expect(html).toContain('permission card');
   });
 
+  it('renders anchor ids on list rows', async () => {
+    vi.resetModules();
+    vi.doMock('../../hooks/useInbox', () => ({
+      useInbox: () => ({
+        items: [
+          {
+            ...base,
+            category: 'review' as const,
+            commentId: undefined,
+            acceptCommand: 'complete',
+            reopenCommand: 'start',
+          },
+          {
+            ...base,
+            commentId: undefined,
+            chat: { kind: 'reply' as const, itemId: 'item:colon', agentId: 'claude' },
+          },
+        ],
+        counts: { question: 1, review: 1, 'plan-approval': 0 },
+        total: 2,
+        loading: false,
+        error: null,
+        refetch: () => {},
+      }),
+    }));
+    vi.doMock('../../hooks/useProjects', () => ({
+      useProjects: () => ({ data: [], loading: false, error: null }),
+    }));
+    vi.doMock('../../lib/chat-api', () => ({
+      fetchChatAgents: async () => [],
+      authorOf: () => null,
+    }));
+    const { InboxPage } = await import('../InboxPage');
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxPage />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('id="review:uuid-1"');
+    expect(html).toContain('id="item:colon"');
+  });
+
   it('shows Enable notifications when permission is default', async () => {
     const orig = globalThis.Notification;
     globalThis.Notification = Object.assign(

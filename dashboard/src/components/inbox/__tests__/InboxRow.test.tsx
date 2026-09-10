@@ -183,6 +183,55 @@ describe('InboxRow', () => {
     expect(html).toContain('Read plan');
   });
 
+  it('chat row renders id with literal colon in item id', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({
+            category: 'question',
+            chat: { kind: 'reply', itemId: 'abc:def', agentId: 'claude' },
+          })}
+          agents={[]}
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('id="abc:def"');
+  });
+
+  it('plain row renders id from commentId', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({ category: 'question', commentId: 'comment-42' })}
+          agents={[]}
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('id="comment-42"');
+  });
+
+  it('highlighted adds the ring class', () => {
+    const html = renderToStaticMarkup(
+      <MemoryRouter>
+        <InboxRow
+          item={makeItem({ category: 'question', commentId: 'c1' })}
+          agents={[]}
+          highlighted
+          onMutated={noop}
+          onError={noop}
+          onSuccess={noop}
+        />
+      </MemoryRouter>,
+    );
+    expect(html).toContain('ring-2 ring-primary');
+  });
+
   it('plain question keeps reply box', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
