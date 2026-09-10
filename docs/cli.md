@@ -370,7 +370,7 @@ syntaur inbox --project my-api
 syntaur inbox --limit 10
 ```
 
-The dashboard **Needs me** view is the GUI reply queue — a flat oldest-first list with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge showing the unfiltered total. It live-updates via WebSocket whenever an assignment changes.
+The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge showing the unfiltered total. It live-updates via WebSocket whenever an assignment changes.
 
 ## Working an assignment
 

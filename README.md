@@ -217,7 +217,7 @@ Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separate
 
 ### Needs me inbox
 
-`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and assignments in review — oldest first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that.
+`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and assignments in review — tier order (live cards first), then oldest-first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that.
 
 ```bash
 # Show everything awaiting your attention
@@ -233,7 +233,7 @@ syntaur inbox --json
 
 Key flags: `--project <slug>`, `--type <list>` (comma-separated; `question`, `review`, `plan-approval`), `--limit <n>`, `--json`.
 
-The dashboard **Needs me** page is the live reply queue — inline actions, project filter, and a nav badge equal to the unfiltered total.
+The dashboard **Needs me** page is the live reply queue — tiered order (live cards pinned first), inline actions, browser notifications for new chat rows, project filter, and a nav badge equal to the unfiltered total.
 
 ### Migrate events (one-time backfill)
 

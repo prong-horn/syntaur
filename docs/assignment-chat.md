@@ -174,7 +174,7 @@ A permission or Cursor question card left unanswered for about 30 seconds files 
 
 ### When an agent is waiting on you
 
-The dashboard **Needs me** page is a reply queue: one flat, oldest-first list of things waiting on a reply from you. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
+The dashboard **Needs me** page is a reply queue: live permission and Cursor-question cards first, then chat replies, plain questions, plans awaiting approval, and reviews — oldest-first within each tier. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
 
 Four sources appear in the queue:
 
@@ -184,6 +184,8 @@ Four sources appear in the queue:
 4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or an assignment in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
 
 The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting a question to its current resolved state returns success without error.
+
+The queue asks once for browser notification permission (**Enable notifications** in the header). With permission granted, each new chat row raises a notification whose click opens the queue on that row. Plan-approval and review rows never notify, and nothing fires while no dashboard tab is open.
 
 A short sentence right before a tool call ("I'll read package.json first.")
 becomes the work card's header instead of its own bubble — that one rule is most
