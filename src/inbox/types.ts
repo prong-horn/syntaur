@@ -107,9 +107,16 @@ export interface InboxItem {
 }
 
 /**
+ * Urgency tier for inbox ordering (ascending = more urgent).
+ * 0 — live permission/ask cards; 1 — chat replies; 2 — plain questions or settled cards;
+ * 3 — plan approvals; 4 — reviews.
+ */
+export type InboxTier = 0 | 1 | 2 | 3 | 4;
+
+/**
  * The aggregation result. `counts`/`total` reflect the FULL matched set (after
- * `project`/`types` filtering); `items` is the same set ordered oldest-first
- * globally, then truncated by `limit`.
+ * `project`/`types` filtering); `items` is the same set ordered by tier, then
+ * oldest-first within each tier, then truncated by `limit`.
  */
 export interface InboxResult {
   items: InboxItem[];

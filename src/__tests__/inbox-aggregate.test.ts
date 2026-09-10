@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { computeInbox, type InboxStatusConfig } from '../inbox/index.js';
 import type { InboxCategory } from '../inbox/types.js';
+import { formatChatQuestionMarker } from '../chat/questions.js';
+import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
 import { buildDefaultStatusConfig } from '../utils/config.js';
 import { buildTransitionTable } from '../lifecycle/state-machine.js';
 import { planDigest } from '../lifecycle/facts.js';
@@ -394,7 +396,7 @@ describe('computeInbox — since, age, ordering', () => {
     expect(r.items[0].ageMs).toBe(NOW - Date.parse('2026-06-14T12:00:00Z'));
   });
 
-  it('orders most-urgent (largest ageMs) first globally across categories', async () => {
+  it('orders by tier first, then most-urgent (largest ageMs) within a tier', async () => {
     await seed({
       id: 'old',
       slug: 'old-rev',
@@ -418,7 +420,7 @@ describe('computeInbox — since, age, ordering', () => {
       statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
     });
     const r = await run();
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['old-rev', 'plan-row', 'new-rev']);
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['plan-row', 'old-rev', 'new-rev']);
   });
 
   it('orders most-urgent (largest ageMs) first within a category', async () => {
@@ -445,6 +447,339 @@ describe('computeInbox — since, age, ordering', () => {
     });
     const r = await run();
     expect(r.items.map((i) => i.assignmentSlug)).toEqual(['old', 'mid', 'new']);
+  });
+});
+
+// ── tiered ordering with card lookup ───────────────────────────────────────────
+
+function permissionItem(
+  itemId: string,
+  assignmentId: string,
+  extra?: Partial<PermissionRequestItem>,
+): PermissionRequestItem {
+  return {
+    itemId,
+    assignmentId,
+    turnId: 'turn-1',
+    agentId: 'cursor',
+    type: 'permission.request',
+    ts: '2026-06-16T00:00:00Z',
+    seqFirst: 1,
+    seqLast: 1,
+    sealed: false,
+    requestId: `req-${itemId}`,
+    toolCall: { title: 'Run uname' },
+    options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    ...extra,
+  };
+}
+
+describe('computeInbox — tiered ordering with lookup', () => {
+  it('pins an unsettled permission row above an older reply row', async () => {
+    const permItemId = 'perm-new';
+    const replyItemId = 'reply-old';
+    const permMarker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    const replyMarker = formatChatQuestionMarker({ kind: 'reply', itemId: replyItemId, turnId: 't1' });
+    await seed({
+      id: 'a-perm',
+      slug: 'perm-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-perm',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting for permission\n\n${permMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 'a-reply',
+      slug: 'reply-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-reply',
+          timestamp: '2026-06-01T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `Need input\n\n${replyMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([
+      [permItemId, permissionItem(permItemId, 'a-perm')],
+    ]);
+    const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['perm-row', 'reply-row']);
+    expect(r.items[0].card?.settled).toBe(false);
+  });
+
+  it('demotes a settled permission card below an older reply row', async () => {
+    const permItemId = 'perm-settled';
+    const replyItemId = 'reply-older';
+    const permMarker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    const replyMarker = formatChatQuestionMarker({ kind: 'reply', itemId: replyItemId, turnId: 't1' });
+    await seed({
+      id: 'a-perm2',
+      slug: 'perm-settled-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-perm2',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting for permission\n\n${permMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 'a-reply2',
+      slug: 'reply-older-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-reply2',
+          timestamp: '2026-06-01T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `Need input\n\n${replyMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([
+      [permItemId, permissionItem(permItemId, 'a-perm2', { answer: 'allow-once', sealed: true })],
+    ]);
+    const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['reply-older-row', 'perm-settled-row']);
+    expect(r.items[1].card?.settled).toBe(true);
+  });
+
+  it('orders five tiers correctly regardless of age', async () => {
+    const permId = 'perm-tier';
+    const replyId = 'reply-tier';
+    const permMarker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    const replyMarker = formatChatQuestionMarker({ kind: 'reply', itemId: replyId, turnId: 't1' });
+    await seed({
+      id: 't-card',
+      slug: 'tier-card',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-card',
+          timestamp: '2026-06-14T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Permission\n\n${permMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 't-reply',
+      slug: 'tier-reply',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-reply-t',
+          timestamp: '2026-06-13T00:00:00Z',
+          author: 'claude',
+          type: 'question',
+          body: `Reply\n\n${replyMarker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 't-plain',
+      slug: 'tier-plain',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-plain',
+          timestamp: '2026-06-12T00:00:00Z',
+          author: 'human',
+          type: 'question',
+          body: 'Plain question?',
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 't-plan',
+      slug: 'tier-plan',
+      status: 'ready_for_planning',
+      project: 'p1',
+      planFiles: { 'plan.md': '# plan\n' },
+      statusHistory: ['- at: "2026-06-11T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
+    });
+    await seed({
+      id: 't-rev',
+      slug: 'tier-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 't-card')]]);
+    const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual([
+      'tier-card',
+      'tier-reply',
+      'tier-plain',
+      'tier-plan',
+      'tier-rev',
+    ]);
+  });
+
+  it('orders two same-tier cards oldest-first', async () => {
+    const permA = 'perm-a';
+    const permB = 'perm-b';
+    const markerA = formatChatQuestionMarker({ kind: 'permission', itemId: permA });
+    const markerB = formatChatQuestionMarker({ kind: 'permission', itemId: permB });
+    await seed({
+      id: 'card-new',
+      slug: 'card-newer',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-new',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Newer\n\n${markerA}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 'card-old',
+      slug: 'card-older',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-old',
+          timestamp: '2026-06-01T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Older\n\n${markerB}`,
+          resolved: false,
+        },
+      ],
+    });
+    const lookup = new Map<string, ChatItem>([
+      [permA, permissionItem(permA, 'card-new')],
+      [permB, permissionItem(permB, 'card-old')],
+    ]);
+    const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
+    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['card-older', 'card-newer']);
+  });
+
+  it('without lookup a permission row has no card key and is still tier 0', async () => {
+    const permId = 'perm-no-lookup';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'a-nolookup',
+      slug: 'no-lookup-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-nolookup',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 'a-rev-nl',
+      slug: 'rev-nolookup',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const r = await run();
+    expect(r.items[0].assignmentSlug).toBe('no-lookup-row');
+    expect(r.items[0]).not.toHaveProperty('card');
+  });
+
+  it('a lookup that throws yields card:null and tier 0', async () => {
+    const permId = 'perm-throw';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'a-throw',
+      slug: 'throw-row',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-throw',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    const r = await run({
+      lookupChatItem: () => {
+        throw new Error('db closed');
+      },
+    });
+    expect(r.items[0].assignmentSlug).toBe('throw-row');
+    expect(r.items[0].card).toBeNull();
+  });
+
+  it('limit:1 returns only the tier-0 row while counts/total cover all', async () => {
+    const permId = 'perm-limit';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
+    await seed({
+      id: 'a-limit-card',
+      slug: 'limit-card',
+      status: 'in_progress',
+      project: 'p1',
+      comments: [
+        {
+          id: 'c-limit',
+          timestamp: '2026-06-15T00:00:00Z',
+          author: 'cursor',
+          type: 'question',
+          body: `Waiting\n\n${marker}`,
+          resolved: false,
+        },
+      ],
+    });
+    await seed({
+      id: 'a-limit-rev',
+      slug: 'limit-rev',
+      status: 'review',
+      project: 'p1',
+      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'a-limit-card')]]);
+    const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null, limit: 1 });
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].assignmentSlug).toBe('limit-card');
+    expect(r.total).toBe(2);
+    expect(r.counts).toEqual({ question: 1, review: 1, 'plan-approval': 0 });
   });
 });
 

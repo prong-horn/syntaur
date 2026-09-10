@@ -26,15 +26,26 @@ import {
 } from '../dashboard/parser.js';
 import { latestPlanFile, isPlanApproved } from '../lifecycle/facts.js';
 import { getTargetStatus } from '../lifecycle/state-machine.js';
-import type { InboxAction, InboxCategory, InboxChatRef, InboxItem, InboxResult } from './types.js';
-import { parseChatQuestionMarker } from '../chat/questions.js';
-
-export type {
+import type {
   InboxAction,
+  InboxCard,
   InboxCategory,
   InboxChatRef,
   InboxItem,
   InboxResult,
+  InboxTier,
+} from './types.js';
+import { parseChatQuestionMarker } from '../chat/questions.js';
+import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
+
+export type {
+  InboxAction,
+  InboxCard,
+  InboxCategory,
+  InboxChatRef,
+  InboxItem,
+  InboxResult,
+  InboxTier,
 } from './types.js';
 export { INBOX_CATEGORIES } from './types.js';
 
@@ -81,6 +92,8 @@ export interface ComputeInboxOptions {
   now?: number;
   /** Dashboard origin without trailing slash (for chat row links). */
   dashboardUrl?: string;
+  /** Optional chat-item lookup for permission/ask card enrichment. */
+  lookupChatItem?: (itemId: string) => ChatItem | null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -378,12 +391,59 @@ export function buildAction(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Ordering (pure) — most-urgent (largest ageMs) first within each category.
+// Card enrichment + tiered ordering (pure).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Stable sort: largest `ageMs` first (most urgent). */
+/** Build card metadata from a chat item (permission/ask only). */
+export function buildCard(chatItem: ChatItem | null): InboxCard | null {
+  if (!chatItem) return null;
+  if (chatItem.type === 'permission.request') {
+    const perm = chatItem as PermissionRequestItem;
+    return {
+      requestId: perm.requestId,
+      kind: 'permission',
+      options: perm.options.map((o) => ({
+        optionId: o.optionId,
+        name: o.name,
+        kind: o.kind,
+      })),
+      settled: Boolean(perm.answer || perm.cancelled || perm.timedOut),
+    };
+  }
+  if (chatItem.type === 'question') {
+    const ask = chatItem as QuestionItem;
+    return {
+      requestId: ask.requestId,
+      kind: 'ask',
+      options: ask.options,
+      settled: ask.answer !== null || Boolean(ask.cancelled || ask.timedOut),
+    };
+  }
+  return null;
+}
+
+/**
+ * Urgency tier for ordering. Lower = more urgent.
+ * 0: live permission/ask cards; 1: chat replies; 2: plain questions or settled cards;
+ * 3: plan approvals; 4: reviews.
+ */
+export function inboxTier(item: Pick<InboxItem, 'category' | 'chat' | 'card'>): InboxTier {
+  const kind = item.chat?.kind;
+  if (kind === 'permission' || kind === 'ask') {
+    if (item.card === undefined || item.card === null || item.card.settled !== true) {
+      return 0;
+    }
+    return 2;
+  }
+  if (kind === 'reply') return 1;
+  if (item.category === 'question') return 2;
+  if (item.category === 'plan-approval') return 3;
+  return 4;
+}
+
+/** Stable sort: tier ascending, then largest `ageMs` first within a tier. */
 export function orderByUrgency(items: InboxItem[]): InboxItem[] {
-  return [...items].sort((x, y) => y.ageMs - x.ageMs);
+  return [...items].sort((x, y) => inboxTier(x) - inboxTier(y) || y.ageMs - x.ageMs);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -500,6 +560,20 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
             const { ref } = parseChatQuestionMarker(c.body);
             const chat = ref ? { ...ref, agentId: c.author } : undefined;
             const since = resolveSince('question', parsed, now, c);
+            let card: InboxCard | null | undefined;
+            if (
+              chat &&
+              (chat.kind === 'permission' || chat.kind === 'ask') &&
+              opts.lookupChatItem
+            ) {
+              card = (() => {
+                try {
+                  return buildCard(opts.lookupChatItem!(chat.itemId));
+                } catch {
+                  return null;
+                }
+              })();
+            }
             matched.push({
               ...baseItem,
               title,
@@ -510,6 +584,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               body: rawQuestionText(c),
               commentId: c.id,
               chat,
+              ...(card !== undefined ? { card } : {}),
               action: buildAction('question', baseItem, {
                 commentId: c.id,
                 chat,
@@ -549,7 +624,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
   for (const item of matched) counts[item.category]++;
   const total = matched.length;
 
-  // Order oldest-first globally (largest ageMs first).
+  // Order by tier, then oldest-first within each tier (largest ageMs first).
   const ordered = orderByUrgency(matched);
 
   // `limit` truncates the returned items list only (counts/total stay full).
