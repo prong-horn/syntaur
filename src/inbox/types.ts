@@ -21,7 +21,7 @@ export interface InboxChatRef {
   agentId: string;
 }
 
-/** Card metadata enriched at the API layer for inline inbox actions. */
+/** Card metadata enriched by the core via `lookupChatItem` for inline inbox actions. */
 export type InboxCard =
   | {
       requestId: string;

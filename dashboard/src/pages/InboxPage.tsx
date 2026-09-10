@@ -18,13 +18,16 @@ import {
 } from '../lib/inbox-notify';
 
 /**
- * The "Needs me" reply queue: a flat, oldest-first list of things waiting on
- * a reply from you, with inline affordances wired to existing dashboard routes.
+ * The "Needs me" reply queue: live permission and Cursor-question cards first,
+ * then chat replies, plain questions, plans awaiting approval, and reviews —
+ * oldest-first within each tier — with inline affordances wired to existing
+ * dashboard routes.
  */
 export function InboxPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const lastScrolledHash = useRef<string | null>(null);
+  const highlightTimerRef = useRef<number | null>(null);
   const [highlightedKey, setHighlightedKey] = useState<string | null>(null);
   const project = searchParams.get('project') || null;
   const { items, total, loading, error, refetch } = useInbox({ project });
@@ -39,6 +42,7 @@ export function InboxPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof document === 'undefined') return;
     const raw = location.hash.replace(/^#/, '');
     if (!raw || items.length === 0) return;
     let hash = raw;
@@ -53,9 +57,22 @@ export function InboxPage() {
     lastScrolledHash.current = hash;
     el.scrollIntoView({ block: 'center' });
     setHighlightedKey(hash);
-    const timer = window.setTimeout(() => setHighlightedKey(null), 2000);
-    return () => window.clearTimeout(timer);
+    if (highlightTimerRef.current !== null) {
+      window.clearTimeout(highlightTimerRef.current);
+    }
+    highlightTimerRef.current = window.setTimeout(() => {
+      highlightTimerRef.current = null;
+      setHighlightedKey(null);
+    }, 2000);
   }, [items, location.hash]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current !== null) {
+        window.clearTimeout(highlightTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   diffChatRows,
   notificationFor,
@@ -116,15 +116,16 @@ describe('notificationPermission', () => {
 
 describe('notifyFreshRows', () => {
   let lastInstance: FakeNotification | null = null;
+  const closeMock = vi.fn();
 
   class FakeNotification implements NotificationLike {
     static records: Array<{ title: string; body?: string; tag?: string }> = [];
     onclick: ((ev: unknown) => void) | null = null;
+    close = closeMock;
     constructor(title: string, options?: { body?: string; tag?: string }) {
       FakeNotification.records.push({ title, ...options });
       lastInstance = this;
     }
-    close(): void {}
   }
 
   const fakeApi = Object.assign(
@@ -140,6 +141,7 @@ describe('notifyFreshRows', () => {
   it('creates one notification per fresh row when granted and onclick opens the row', () => {
     FakeNotification.records = [];
     lastInstance = null;
+    closeMock.mockClear();
     const item = makeItem({
       category: 'question',
       commentId: 'c-new',
@@ -157,6 +159,7 @@ describe('notifyFreshRows', () => {
     expect(lastInstance).not.toBeNull();
     lastInstance!.onclick?.(null);
     expect(opened).toEqual(['/inbox#c-new']);
+    expect(closeMock).toHaveBeenCalledOnce();
   });
 
   it('returns 0 when permission is not granted', () => {
