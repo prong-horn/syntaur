@@ -70,7 +70,11 @@ export function InboxPage() {
     return () => {
       if (highlightTimerRef.current !== null) {
         window.clearTimeout(highlightTimerRef.current);
+        highlightTimerRef.current = null;
       }
+      // Reset the once-per-hash guard too, so a remount (including React
+      // StrictMode's simulated unmount in dev) lands and highlights again.
+      lastScrolledHash.current = null;
     };
   }, []);
 
