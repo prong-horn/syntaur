@@ -9,7 +9,9 @@ import { createInboxRouter } from '../dashboard/api-inbox.js';
 import { clearStatusConfigCache } from '../dashboard/api.js';
 import { initSessionDb, closeSessionDb } from '../dashboard/session-db.js';
 import { upsertChatItem } from '../db/chat-db.js';
+import { inboxRowKey } from '../inbox/index.js';
 import type { InboxResult } from '../inbox/types.js';
+import { readFile } from 'node:fs/promises';
 import { formatCommentEntry } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 
@@ -39,6 +41,9 @@ interface SeedOpts {
   title?: string;
   status: string;
   project?: string | null; // null/undefined → standalone
+  statusHistory?: string[];
+  updated?: string;
+  planFiles?: Record<string, string>;
 }
 
 async function seed(o: SeedOpts): Promise<void> {
@@ -55,12 +60,21 @@ async function seed(o: SeedOpts): Promise<void> {
     `status: ${o.status}`,
     `project: ${standalone ? 'null' : o.project}`,
     `created: "2026-01-01T00:00:00Z"`,
-    `updated: "2026-01-01T00:00:00Z"`,
+    `updated: "${o.updated ?? '2026-01-01T00:00:00Z'}"`,
   ];
+  if (o.statusHistory) {
+    fm.push('statusHistory:');
+    fm.push(...o.statusHistory.map((l) => `  ${l}`));
+  }
   await writeFile(
     join(dir, 'assignment.md'),
     `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`,
   );
+  if (o.planFiles) {
+    for (const [name, content] of Object.entries(o.planFiles)) {
+      await writeFile(join(dir, name), content);
+    }
+  }
 }
 
 async function seedQuestionComment(
@@ -110,6 +124,7 @@ beforeEach(async () => {
   initSessionDb(join(sandbox, 'syntaur.db'));
 
   const app = express();
+  app.use(express.json());
   app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
 
   await new Promise<void>((res) => {
@@ -272,6 +287,8 @@ describe('GET /api/inbox', () => {
       expect(body.items).toEqual([]);
       expect(body.counts).toEqual({ question: 0, review: 0, 'plan-approval': 0 });
       expect(body.total).toBe(0);
+      expect(body.snoozedCount).toBe(0);
+      expect(body.liftedSnoozeKeys).toEqual([]);
     } finally {
       await new Promise<void>((res) => badServer.close(() => res()));
     }
@@ -523,5 +540,236 @@ describe('GET /api/inbox — card enrichment', () => {
     const body = (await res.json()) as InboxResult;
     const row = body.items.find((i) => i.chat?.kind === 'permission')!;
     expect(row.card).toBeNull();
+  });
+});
+
+describe('GET /api/inbox — maxAgeDays', () => {
+  const now = Date.now();
+  const oldAt = new Date(now - 30 * 86_400_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const freshAt = new Date(now - 12 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+  beforeEach(async () => {
+    await mkdir(join(projectsDir, 'p1'), { recursive: true });
+    await writeFile(
+      join(projectsDir, 'p1', 'project.md'),
+      `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
+    );
+    await seed({
+      id: 'old-r',
+      slug: 'old-review',
+      status: 'review',
+      project: 'p1',
+      statusHistory: [`- at: "${oldAt}"`, '  to: review', '  command: review'],
+    });
+    await seed({
+      id: 'new-r',
+      slug: 'new-review',
+      status: 'review',
+      project: 'p1',
+      statusHistory: [`- at: "${freshAt}"`, '  to: review', '  command: review'],
+    });
+  });
+
+  it('?maxAgeDays=1 hides an old review and keeps a fresh one', async () => {
+    const res = await fetch(`${baseUrl}/api/inbox?maxAgeDays=1`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as InboxResult;
+    expect(body.items.map((i) => i.assignmentSlug)).toEqual(['new-review']);
+    expect(body.total).toBe(1);
+  });
+
+  it('?maxAgeDays=abc returns 400', async () => {
+    const res = await fetch(`${baseUrl}/api/inbox?maxAgeDays=abc`);
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toMatch(/positive/i);
+  });
+
+  it('keeps an unsettled permission row older than the window', async () => {
+    const permItemId = 'perm:old:window';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    await seed({ id: 'perm-a', slug: 'perm-old', status: 'in_progress', project: 'p1' });
+    await seedQuestionComment('p1', 'perm-old', 'perm-a', {
+      id: 'cq-perm-old',
+      author: 'cursor',
+      timestamp: oldAt,
+      body: `Waiting\n\n${marker}`,
+    });
+    upsertChatItem('perm-a:cursor', {
+      itemId: permItemId,
+      assignmentId: 'perm-a',
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: false,
+      requestId: 'req-old',
+      toolCall: { title: 'Run uname' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+
+    const res = await fetch(`${baseUrl}/api/inbox?maxAgeDays=1&project=p1`);
+    const body = (await res.json()) as InboxResult;
+    const perm = body.items.find((i) => i.chat?.kind === 'permission');
+    expect(perm).toBeDefined();
+    expect(perm!.card?.settled).toBe(false);
+  });
+});
+
+describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
+  beforeEach(async () => {
+    await mkdir(join(projectsDir, 'p1'), { recursive: true });
+    await writeFile(
+      join(projectsDir, 'p1', 'project.md'),
+      `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
+    );
+  });
+
+  it('snoozes a review row and round-trips colon keys', async () => {
+    await seed({
+      id: 'plan:uuid',
+      slug: 'plan-check',
+      status: 'ready_for_planning',
+      project: 'p1',
+      planFiles: { 'plan.md': '# plan\n' },
+    });
+    const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    const row = inbox.items.find((i) => i.assignmentSlug === 'plan-check')!;
+    const key = inboxRowKey(row);
+    expect(key).toBe('plan-approval:plan:uuid');
+
+    const putRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilDays: 7 }),
+    });
+    expect(putRes.status).toBe(200);
+    const putBody = await putRes.json() as { rowKey: string; until: string };
+    expect(putBody.rowKey).toBe(key);
+    expect(putBody.until).toMatch(/^\d{4}-/);
+
+    const getRes = await fetch(`${baseUrl}/api/inbox`);
+    const getBody = (await getRes.json()) as InboxResult;
+    expect(getBody.items.find((i) => i.assignmentSlug === 'plan-check')).toBeUndefined();
+    expect(getBody.snoozedCount).toBe(1);
+
+    const showRes = await fetch(`${baseUrl}/api/inbox?includeSnoozed=1`);
+    const showBody = (await showRes.json()) as InboxResult;
+    const flagged = showBody.items.find((i) => i.assignmentSlug === 'plan-check');
+    expect(flagged?.snoozed?.until).toBe(putBody.until);
+
+    const delRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+    expect((await delRes.json()).removed).toBe(true);
+
+    const back = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    expect(back.items.find((i) => i.assignmentSlug === 'plan-check')).toBeDefined();
+
+    const del2 = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    });
+    expect((await del2.json()).removed).toBe(false);
+  });
+
+  it('returns 409 for a tier-0 permission row', async () => {
+    const permItemId = 'perm-snooze';
+    const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
+    await seed({ id: 'perm-a', slug: 'perm-row', status: 'in_progress', project: 'p1' });
+    await seedQuestionComment('p1', 'perm-row', 'perm-a', {
+      id: 'cq-perm',
+      author: 'cursor',
+      body: `Waiting\n\n${marker}`,
+    });
+    upsertChatItem('perm-a:cursor', {
+      itemId: permItemId,
+      assignmentId: 'perm-a',
+      turnId: 'turn-1',
+      agentId: 'cursor',
+      type: 'permission.request',
+      ts: '2026-06-16T00:00:00Z',
+      seqFirst: 1,
+      seqLast: 1,
+      sealed: false,
+      requestId: 'req-1',
+      toolCall: { title: 'Run uname' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }],
+    } as never);
+
+    const inbox = (await (await fetch(`${baseUrl}/api/inbox?project=p1`)).json()) as InboxResult;
+    const row = inbox.items.find((i) => i.chat?.kind === 'permission')!;
+    const key = inboxRowKey(row);
+    const res = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilDays: 1 }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  it('returns 400 when both or neither snooze fields are sent', async () => {
+    await seed({ id: 'r1', slug: 'rev', status: 'review', project: 'p1' });
+    const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    const key = inboxRowKey(inbox.items[0]);
+    const both = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilDays: 1, untilChange: true }),
+    });
+    expect(both.status).toBe(400);
+    const neither = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(neither.status).toBe(400);
+  });
+
+  it('returns 404 for an unknown row key', async () => {
+    const res = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent('bogus:key')}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilDays: 1 }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('lifts an until-change snooze when assignment updated changes', async () => {
+    await seed({
+      id: 'old-r',
+      slug: 'old-review',
+      status: 'review',
+      project: 'p1',
+      updated: '2025-01-01T00:00:00Z',
+      statusHistory: ['- at: "2025-01-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    const row = inbox.items.find((i) => i.assignmentSlug === 'old-review')!;
+    const key = inboxRowKey(row);
+
+    const putRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ untilChange: true }),
+    });
+    expect(putRes.status).toBe(200);
+
+    let getBody = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    expect(getBody.items.find((i) => i.assignmentSlug === 'old-review')).toBeUndefined();
+
+    const dir = join(projectsDir, 'p1', 'assignments', 'old-review');
+    const md = await readFile(join(dir, 'assignment.md'), 'utf-8');
+    await writeFile(
+      join(dir, 'assignment.md'),
+      md.replace('updated: "2025-01-01T00:00:00Z"', 'updated: "2026-06-16T12:00:00Z"'),
+    );
+
+    getBody = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
+    expect(getBody.items.find((i) => i.assignmentSlug === 'old-review')).toBeDefined();
+
+    const store = JSON.parse(await readFile(join(sandbox, 'inbox-snoozes.json'), 'utf-8'));
+    expect(store[key]).toBeUndefined();
   });
 });
