@@ -74,17 +74,23 @@ export interface InboxItem {
   chat?: InboxChatRef;
   /** Permission/ask chat rows: card options from the API. */
   card?: InboxCard | null;
+  /** Frontmatter `updated` from the API (may be `''`). */
+  assignmentUpdated: string;
+  /** Present when `includeSnoozed` is set and the row is snoozed. */
+  snoozed?: { until: string | null };
 }
 
 export interface InboxResult {
   items: InboxItem[];
   counts: Record<InboxCategory, number>;
   total: number;
+  snoozedCount: number;
+  liftedSnoozeKeys: string[];
 }
 
 /** HTTP method + URL descriptor for a dashboard mutation. */
 export interface EndpointDescriptor {
-  method: 'POST' | 'PATCH';
+  method: 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   url: string;
 }
 
@@ -96,9 +102,45 @@ export interface EndpointDescriptor {
  */
 type RouteIdentity = Pick<InboxItem, 'project' | 'assignmentSlug' | 'assignmentId'>;
 
-/** Stable row key shared by the list, anchors, and notifier. */
+/**
+ * Stable row key shared by the list, anchors, and notifier.
+ * Must stay in lockstep with `inboxRowKey` in `src/inbox/index.ts`.
+ */
 export function rowKey(item: InboxItem): string {
   return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`;
+}
+
+export function snoozeEndpoint(rowKeyValue: string): EndpointDescriptor {
+  return {
+    method: 'PUT',
+    url: `/api/inbox/snoozes/${encodeURIComponent(rowKeyValue)}`,
+  };
+}
+
+export function unsnoozeEndpoint(rowKeyValue: string): EndpointDescriptor {
+  return {
+    method: 'DELETE',
+    url: `/api/inbox/snoozes/${encodeURIComponent(rowKeyValue)}`,
+  };
+}
+
+/** Human label for a snooze expiry (`until` ISO or null = until it changes). */
+export function snoozeLabel(until: string | null, now: number): string {
+  if (until === null) return 'until it changes';
+  const ms = Date.parse(until);
+  if (Number.isNaN(ms)) return 'until it changes';
+  const delta = ms - now;
+  const oneDay = 86_400_000;
+  if (delta > 0 && delta <= oneDay * 1.5) return 'for 1d';
+  return `until ${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+}
+
+/** True when the row may be snoozed (not a live permission/ask card). */
+export function isSnoozable(item: InboxItem): boolean {
+  const kind = rowKind(item);
+  if (kind !== 'permission' && kind !== 'ask') return true;
+  if (item.card === undefined || item.card === null) return false;
+  return item.card.settled === true;
 }
 
 /** SPA href to an inbox row anchor (literal hash, never percent-encoded). */

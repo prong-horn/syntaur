@@ -6,12 +6,15 @@ export type { InboxCategory, InboxItem, InboxResult } from '../lib/inbox';
 
 interface UseInboxOptions {
   project?: string | null;
+  maxAgeDays?: number | null;
+  includeSnoozed?: boolean;
 }
 
 interface UseInboxResult {
   items: InboxItem[];
   counts: Record<InboxCategory, number>;
   total: number;
+  snoozedCount: number;
   loading: boolean;
   error: string | null;
   refetch: () => void;
@@ -28,9 +31,12 @@ const EMPTY_COUNTS: Record<InboxCategory, number> = {
  */
 export function useInbox(opts?: UseInboxOptions): UseInboxResult {
   const project = opts?.project ?? null;
+  const maxAgeDays = opts?.maxAgeDays ?? null;
+  const includeSnoozed = opts?.includeSnoozed ?? false;
   const [items, setItems] = useState<InboxItem[]>([]);
   const [counts, setCounts] = useState<Record<InboxCategory, number>>(EMPTY_COUNTS);
   const [total, setTotal] = useState(0);
+  const [snoozedCount, setSnoozedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fetchCount, setFetchCount] = useState(0);
@@ -46,6 +52,8 @@ export function useInbox(opts?: UseInboxOptions): UseInboxResult {
 
     const params = new URLSearchParams();
     if (project) params.set('project', project);
+    if (maxAgeDays !== null && maxAgeDays > 0) params.set('maxAgeDays', String(maxAgeDays));
+    if (includeSnoozed) params.set('includeSnoozed', '1');
     const query = params.toString();
     const url = query ? `/api/inbox?${query}` : '/api/inbox';
 
@@ -62,6 +70,7 @@ export function useInbox(opts?: UseInboxOptions): UseInboxResult {
         setItems(Array.isArray(json.items) ? json.items : []);
         setCounts(json.counts ?? EMPTY_COUNTS);
         setTotal(typeof json.total === 'number' ? json.total : 0);
+        setSnoozedCount(typeof json.snoozedCount === 'number' ? json.snoozedCount : 0);
         setLoading(false);
       })
       .catch((fetchError: Error) => {
@@ -73,7 +82,7 @@ export function useInbox(opts?: UseInboxOptions): UseInboxResult {
     return () => {
       cancelled = true;
     };
-  }, [fetchCount, project]);
+  }, [fetchCount, project, maxAgeDays, includeSnoozed]);
 
   useWebSocket((message: WsMessage) => {
     if (message.type === 'assignment-updated' || message.type === 'project-updated') {
@@ -81,5 +90,5 @@ export function useInbox(opts?: UseInboxOptions): UseInboxResult {
     }
   });
 
-  return { items, counts, total, loading, error, refetch };
+  return { items, counts, total, snoozedCount, loading, error, refetch };
 }

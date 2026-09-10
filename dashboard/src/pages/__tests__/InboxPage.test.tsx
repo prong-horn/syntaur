@@ -14,6 +14,7 @@ const base: InboxItem = {
   summary: 'Which name?',
   commentId: 'c1',
   action: { verb: 'Answer', command: 'syntaur comment task "<answer>" --reply-to c1 --project demo' },
+  assignmentUpdated: '',
 };
 
 describe('InboxPage', () => {

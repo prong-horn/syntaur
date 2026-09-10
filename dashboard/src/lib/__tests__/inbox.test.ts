@@ -6,12 +6,16 @@ import {
   commentsEndpoint,
   formatAge,
   inboxRowHref,
+  isSnoozable,
   planApproveEndpoint,
   projectOptions,
   resolveCommentEndpoint,
   rowKey,
   rowKind,
+  snoozeEndpoint,
+  snoozeLabel,
   transitionEndpoint,
+  unsnoozeEndpoint,
   waitingLabel,
   type InboxItem,
 } from '../inbox';
@@ -27,6 +31,7 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
     ageMs: 1000,
     summary: 'context',
     action: { verb: 'Accept', command: 'syntaur complete my-task --project proj' },
+    assignmentUpdated: '',
     ...overrides,
   };
 }
@@ -263,5 +268,60 @@ describe('chatItemHref', () => {
     expect(chatItemHref(item)).toBe(
       '/projects/proj/assignments/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
     );
+  });
+});
+
+describe('snooze endpoints', () => {
+  it('encode colons in row keys', () => {
+    const key = 'review:uuid:1';
+    expect(snoozeEndpoint(key).url).toBe('/api/inbox/snoozes/review%3Auuid%3A1');
+    expect(snoozeEndpoint(key).method).toBe('PUT');
+    expect(unsnoozeEndpoint(key).method).toBe('DELETE');
+  });
+});
+
+describe('snoozeLabel', () => {
+  const now = Date.parse('2026-06-16T12:00:00Z');
+
+  it('labels until-change, one day, and longer windows', () => {
+    expect(snoozeLabel(null, now)).toBe('until it changes');
+    expect(snoozeLabel('2026-06-17T12:00:00Z', now)).toBe('for 1d');
+    expect(snoozeLabel('2026-06-25T12:00:00Z', now)).toMatch(/^until /);
+  });
+});
+
+describe('isSnoozable', () => {
+  it('allows snooze for non-live rows', () => {
+    expect(isSnoozable(makeItem({ category: 'review' }))).toBe(true);
+    expect(
+      isSnoozable(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'permission', itemId: 'p1', agentId: 'cursor' },
+          card: { requestId: 'r', kind: 'permission', options: [], settled: true },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects unsettled permission/ask cards', () => {
+    expect(
+      isSnoozable(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'permission', itemId: 'p1', agentId: 'cursor' },
+          card: { requestId: 'r', kind: 'permission', options: [], settled: false },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSnoozable(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'ask', itemId: 'a1', agentId: 'cursor' },
+          card: null,
+        }),
+      ),
+    ).toBe(false);
   });
 });

@@ -19,6 +19,7 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
     ageMs: 1000,
     summary: 'context line',
     action: { verb: 'Answer', command: 'syntaur comment my-task' },
+    assignmentUpdated: '',
     ...overrides,
   };
 }

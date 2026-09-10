@@ -14,6 +14,7 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
     ageMs: 60_000,
     summary: 'summary',
     action: { verb: 'Open chat', command: 'http://localhost/chat' },
+    assignmentUpdated: '',
     ...overrides,
   };
 }
