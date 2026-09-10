@@ -5,9 +5,11 @@ import {
   chatReplyText,
   commentsEndpoint,
   formatAge,
+  inboxRowHref,
   planApproveEndpoint,
   projectOptions,
   resolveCommentEndpoint,
+  rowKey,
   rowKind,
   transitionEndpoint,
   waitingLabel,
@@ -28,6 +30,33 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
     ...overrides,
   };
 }
+
+describe('rowKey', () => {
+  it('prefers commentId, then chat item id, then category:assignmentId', () => {
+    expect(rowKey(makeItem({ category: 'question', commentId: 'c1' }))).toBe('c1');
+    expect(
+      rowKey(
+        makeItem({
+          category: 'question',
+          chat: { kind: 'reply', itemId: 'item:1', agentId: 'claude' },
+        }),
+      ),
+    ).toBe('item:1');
+    expect(rowKey(makeItem({ category: 'review', assignmentId: 'uuid-r' }))).toBe(
+      'review:uuid-r',
+    );
+  });
+});
+
+describe('inboxRowHref', () => {
+  it('keeps colons literal in the hash', () => {
+    const item = makeItem({
+      category: 'question',
+      chat: { kind: 'permission', itemId: 'abc:def', agentId: 'cursor' },
+    });
+    expect(inboxRowHref(item)).toBe('/inbox#abc:def');
+  });
+});
 
 describe('chatReplyText', () => {
   it('trims and prefixes with @agent', () => {

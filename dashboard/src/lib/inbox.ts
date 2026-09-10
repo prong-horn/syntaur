@@ -96,6 +96,21 @@ export interface EndpointDescriptor {
  */
 type RouteIdentity = Pick<InboxItem, 'project' | 'assignmentSlug' | 'assignmentId'>;
 
+/** Stable row key shared by the list, anchors, and notifier. */
+export function rowKey(item: InboxItem): string {
+  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`;
+}
+
+/** SPA href to an inbox row anchor (literal hash, never percent-encoded). */
+export function inboxRowHref(item: InboxItem): string {
+  return `/inbox#${rowKey(item)}`;
+}
+
+/** True when the row is a chat-sourced question. */
+export function isChatRow(item: InboxItem): boolean {
+  return Boolean(item.chat);
+}
+
 export function rowKind(item: InboxItem): InboxRowKind {
   if (item.category === 'review') return 'review';
   if (item.category === 'plan-approval') return 'plan-approval';
