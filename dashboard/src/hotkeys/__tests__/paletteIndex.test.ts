@@ -7,7 +7,6 @@ import type { ProjectSummary } from '../../hooks/useProjects';
 const project = {
   slug: 'acme',
   title: 'Acme',
-  workspace: null,
   tags: ['backend'],
   externalIds: [{ system: 'jira', id: 'PROJ-123', url: null }],
 } as unknown as ProjectSummary;

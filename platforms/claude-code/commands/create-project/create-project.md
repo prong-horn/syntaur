@@ -3,7 +3,7 @@ name: create-project
 description: Create a new Syntaur project with full scaffolding
 arguments:
   - name: args
-    description: "Title and optional flags (--slug, --dir, --workspace). See the create-project skill for full usage."
+    description: "Title and optional flags (--slug, --dir). See the create-project skill for full usage."
     required: false
 ---
 

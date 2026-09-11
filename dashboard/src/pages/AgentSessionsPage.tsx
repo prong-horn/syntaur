@@ -180,7 +180,7 @@ export function AgentSessionsPage() {
   // row it points at — archive a selected session, or switch the archived
   // filter, and it is gone from the table while still in `selectedIds`. Acting
   // on the raw set would then delete a row the user can no longer see.
-  // Intersecting here covers every filter (search, dates, workspace,
+  // Intersecting here covers every filter (search, dates,
   // attribution, archived) and every mutation, rather than patching each
   // state transition separately.
   const actionableIds = useMemo(() => {
