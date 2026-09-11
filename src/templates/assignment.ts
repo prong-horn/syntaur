@@ -13,7 +13,6 @@ export interface AssignmentParams {
   type?: string;
   /** Explicit lifecycle-workflow override; emitted only when provided. */
   workflow?: string | null;
-  includeTodos?: boolean;
   status?: string;
   acceptanceCriteria?: string[];
 }
@@ -41,20 +40,6 @@ export function renderAssignment(params: AssignmentParams): string {
     : `- [ ] <!-- criterion 1 -->
 - [ ] <!-- criterion 2 -->
 - [ ] <!-- criterion 3 -->`;
-
-  const todosSection = params.includeTodos
-    ? `## Todos
-
-<!--
-Checklist of work items for this assignment. Items may be simple tasks
-or a markdown link to a plan file (e.g., "- [ ] Execute [plan](./plan.md)").
-When a plan is superseded by a new one, mark the old todo as:
-  - [x] ~~Execute [old plan](./plan.md)~~ (superseded by plan-v2)
-Never delete superseded todos — preserve the history.
--->
-
-`
-    : '';
 
   return `---
 id: ${params.id}
@@ -98,7 +83,7 @@ archivedReason: null
 
 ${criteriaLines}
 
-${todosSection}## Context
+## Context
 
 <!-- Links to relevant docs, code, or other assignments. -->
 

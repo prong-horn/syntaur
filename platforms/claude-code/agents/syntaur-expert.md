@@ -54,7 +54,7 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       _status.md                     # Derived: project status rollup
       assignments/
         <assignment-slug>/
-          assignment.md              # Agent-writable: source of truth for state (includes ## Todos)
+          assignment.md              # Agent-writable: source of truth for state
           plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
@@ -90,8 +90,8 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 - `project.md` — project overview, goal, context, success criteria
 
 ### Agent-Writable (single-writer per assignment)
-- `assignment.md` — source of truth for assignment state (includes `## Todos` checklist). `## Todos` is also the landing spot for cross-assignment requests.
-- `plan*.md` — versioned implementation plans (optional, one per `## Todos` entry: `plan.md`, `plan-v2.md`, ...)
+- `assignment.md` — source of truth for assignment state
+- `plan*.md` — versioned implementation plans (optional: `plan.md`, `plan-v2.md`, ...)
 - `progress.md` — append-only timestamped progress log (newest first). Replaces the old `## Progress` body section.
 - `scratchpad.md` — unstructured working notes
 - `handoff.md` — append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`)
@@ -102,7 +102,6 @@ Only the assigned agent may write to its own assignment folder.
 
 ### CLI-Mediated Shared-Writable
 - `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
-- Another assignment's `## Todos` — writes via `syntaur request <source> <target> "text"`. Appends annotated `(from: <source>)`.
 
 ### Shared-Writable (any agent or human)
 - `resources/<slug>.md` — reference material
@@ -174,14 +173,13 @@ Only the assigned agent may write to its own assignment folder.
 | Command | Description |
 |---------|-------------|
 | `syntaur create-project <title> [--slug S] [--dir D]` | Create new project with full scaffolding |
-| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T] [--with-todos]` | Create assignment in a project. `--with-todos` pre-scaffolds a `## Todos` section (omitted by default — usually added later by `plan-assignment`). |
-| `syntaur create-assignment <title> --one-off [--type T] [--with-todos]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
+| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create assignment in a project |
+| `syntaur create-assignment <title> --one-off [--type T]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
 
 ### Coordination (CLI-mediated writes)
 | Command | Description |
 |---------|-------------|
 | `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
-| `syntaur request <target> "text" [--from <source>] [--project <slug>]` | Append a todo to another assignment's `## Todos`, annotated `(from: <source>)`. |
 
 ### State Transitions
 | Command | Description |
@@ -250,14 +248,14 @@ Slash commands (`/grab-assignment` etc.) are thin wrappers that delegate to the 
 | `/grab-assignment` | User says "grab assignment" or starts work on a project | Discover pending assignments, claim one, create context.json |
 | `/create-project` | User wants to create a new project | Run CLI scaffolding, guide through editing project files |
 | `/create-assignment` | User wants to add an assignment to a project | Create assignment with all supporting files |
-| `/plan-assignment` | User wants to plan current assignment | Explore workspace, write the next `plan-v<N>.md`, append a linked todo to `## Todos` (supersede prior plan todo) |
+| `/plan-assignment` | User wants to plan current assignment | Explore workspace, write the next `plan-v<N>.md` |
 | `/complete-assignment` | User is done with assignment work | Verify criteria, write handoff, transition state, close session |
 
 ### Hooks
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) and append a linked todo in the `## Todos` section of `assignment.md` |
+| PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) under the assignment dir |
 | SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active assignment). |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
 | PreToolUse | — | No write-boundary hook in Claude Code; boundaries are documentation-enforced (Codex enforces via its own PreToolUse hook) |
@@ -333,7 +331,7 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 **assignment.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
 
-**plan files (plan.md, plan-v2.md, ...):** assignment, status (draft/approved/in_progress/completed), created, updated — zero or more per assignment, each linked from a todo in `assignment.md`'s `## Todos` section
+**plan files (plan.md, plan-v2.md, ...):** assignment, status (draft/approved/in_progress/completed), created, updated — zero or more per assignment
 
 **progress.md:** assignment, entryCount, generated, updated — body is reverse-chron `## <timestamp>` entries
 
@@ -424,9 +422,6 @@ A: Three distinct artifacts.
 - `progress.md`: continuous reverse-chron log of what you've done — one entry per meaningful work unit, append-only.
 - `handoff.md`: **assignment-level cross-ticket outbound**, written at completion (via `complete-assignment`) for the next ticket / agent / human reviewer. Append-only.
 - `sessions/<session-id>/summary.md`: **session-scoped mid-assignment continuity**, written via `/save-session-summary` before compaction or session end so a future session of the same agent can resume cleanly. Single doc per session id, overwritten on save. The Claude Code `PreCompact` hook reminds you to invoke this; the SessionStart hook surfaces the latest one as `latestSessionSummaryPath` in `.syntaur/context.json`.
-
-**Q: How do I route work to another assignment without breaking the single-writer rule?**
-A: Run `syntaur request <target> "text"` — it appends a todo to the target's `## Todos` annotated `(from: <source>)`. This is a CLI-mediated exception to the single-writer rule.
 
 **Q: How do indexes get updated?**
 A: Derived files are rebuilt by tooling. They are projections of assignment frontmatter. When divergence occurs, re-run rebuild.

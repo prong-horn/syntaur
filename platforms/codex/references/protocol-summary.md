@@ -17,7 +17,7 @@ Protocol version: **2.0**
       _status.md             # Derived (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state (includes ## Todos checklist)
+          assignment.md      # Agent-writable: source of truth for state
           plan*.md           # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
@@ -82,12 +82,10 @@ Protocol version: **2.0**
 4. Slugs are lowercase and hyphen-separated.
 5. Dependencies are declared via `dependsOn` in assignment frontmatter. Only valid within the same project.
 6. An assignment cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
-7. The `## Todos` section in `assignment.md` is an informal markdown checklist. Items may be simple tasks or link to plan files. When a plan is superseded, mark the old todo: `- [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)` — never delete it. `## Todos` also receives cross-assignment requests via `syntaur request`.
-8. Playbooks in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
-9. Progress is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
-10. Comments are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly.
-11. Cross-assignment work is requested via `syntaur request <source> <target> "text"` — appends to the target's `## Todos` annotated `(from: <source>)`.
-12. Session continuity (mid-assignment) lives at `sessions/<session-id>/summary.md` inside the assignment dir — one document per session id, overwritten on every save (via `/save-session-summary`). On resume, pick the latest by `summary.md` file mtime. Older summaries accumulate as immutable history; never delete them. Distinct from `handoff.md`, which is the assignment-level cross-ticket outbound at completion. `syntaur doctor` intentionally ignores `sessions/`. **Codex has no `PreCompact` hook event** — invoke `/save-session-summary` manually before compaction or session end.
+7. Playbooks in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
+8. Progress is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
+9. Comments are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly.
+10. Session continuity (mid-assignment) lives at `sessions/<session-id>/summary.md` inside the assignment dir — one document per session id, overwritten on every save (via `/save-session-summary`). On resume, pick the latest by `summary.md` file mtime. Older summaries accumulate as immutable history; never delete them. Distinct from `handoff.md`, which is the assignment-level cross-ticket outbound at completion. `syntaur doctor` intentionally ignores `sessions/`. **Codex has no `PreCompact` hook event** — invoke `/save-session-summary` manually before compaction or session end.
 
 ## Proof artifacts (opt-in)
 

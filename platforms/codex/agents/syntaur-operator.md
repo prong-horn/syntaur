@@ -12,7 +12,7 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 - Create projects and assignments (project-nested or standalone) with the `syntaur` CLI
 - Claim assignments and establish local assignment context
 - Keep `assignment.md`, active plan files (`plan.md`, `plan-v2.md`, ...), `progress.md`, `handoff.md` (cross-ticket outbound), and any active `sessions/<sid>/summary.md` (mid-assignment continuity) accurate during execution
-- Record questions/notes/feedback via `syntaur comment` and route cross-assignment work via `syntaur request`
+- Record questions/notes/feedback via `syntaur comment`
 - Track Codex sessions for the Syntaur dashboard
 - Set up Codex adapter instructions in the active workspace
 - Enforce Syntaur write boundaries and lifecycle rules
@@ -27,7 +27,7 @@ When a task involves Syntaur:
    - `<projectDir>/manifest.md` (project-nested assignments only)
    - `<projectDir>/project.md` (project-nested assignments only)
    - `<assignmentDir>/assignment.md` — frontmatter now includes `project: <slug> | null` and `type: <classification> | null`
-   - any `<assignmentDir>/plan*.md` files linked from active todos in the `## Todos` section
+   - any `<assignmentDir>/plan*.md` files (pick the newest version)
    - `<assignmentDir>/progress.md` (if present) — reverse-chron progress log
    - `<assignmentDir>/comments.md` (if present) — threaded questions/notes/feedback
    - `<assignmentDir>/handoff.md` — cross-ticket outbound history
@@ -63,7 +63,6 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 ### Write only via CLI (never edit directly)
 
 - `comments.md` (any assignment) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly. Questions carry a `resolved` flag toggled in the dashboard.
-- Another assignment's `## Todos` section — use `syntaur request <source> <target> "text"` to append a todo annotated `(from: <source>)`.
 
 ## Protocol Rules
 
@@ -71,9 +70,9 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 - Slugs are lowercase and hyphen-separated. Standalone assignment folders are named by UUID; `slug` is display-only in that case.
 - `pending` with unmet `dependsOn` means structural waiting. `blocked` means a real runtime obstacle and requires a `blockedReason`.
 - `dependsOn` is only valid between assignments within the same project — standalone assignments cannot declare dependencies.
-- Update acceptance criteria and `## Todos` checkboxes as work lands.
+- Update acceptance criteria checkboxes as work lands.
 - Append timestamped entries to `progress.md` (not to `assignment.md`) after meaningful milestones.
-- When requirements shift, supersede the prior plan todo instead of rewriting the old plan file.
+- When requirements shift, write a new versioned plan file instead of rewriting the old one.
 - Append handoff.md entries (cross-ticket outbound) instead of replacing previous handoff entries. Mid-assignment session continuity is a separate file: `sessions/<sid>/summary.md`, single document per session id, overwritten on each save. Do not delete older `sessions/*/summary.md` files at completion — they remain as immutable history.
 - Record questions via `syntaur comment ... --type question` — they roll up into `_status.md`'s `openQuestions` counter.
 
@@ -82,8 +81,8 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 Use these commands directly when needed:
 
 - `syntaur create-project "<title>" [--slug <slug>] [--dir <path>]`
-- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>] [--with-todos]` — `--with-todos` pre-scaffolds a `## Todos` section (omitted by default; usually added later by `plan-assignment`)
-- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>] [--with-todos]` — creates standalone at `~/.syntaur/assignments/<uuid>/`
+- `syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
+- `syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]` — creates standalone at `~/.syntaur/assignments/<uuid>/`
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <assignment-slug> --agent codex --project <project-slug>`
 - `syntaur start <assignment-slug> --project <project-slug>`
@@ -93,7 +92,6 @@ Use these commands directly when needed:
 - `syntaur unblock <assignment-slug> --project <project-slug>`
 - `syntaur fail <assignment-slug> --project <project-slug>`
 - `syntaur comment <assignment-slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
-- `syntaur request <target-slug-or-uuid> "text" [--from <source>] [--project <slug>]` — append to target's `## Todos`, annotated `(from: <source>)`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
 - `syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>`
@@ -124,8 +122,7 @@ Use these commands directly when needed:
 2. Explore the workspace.
 3. Determine the next plan filename: `plan.md` if no `plan*.md` exists, otherwise the smallest unused `plan-v<N>.md` (N >= 2).
 4. Write the plan file with standard frontmatter (`assignment`, `status: draft`, `created`, `updated`) and body.
-5. Update `assignment.md`'s `## Todos` section: supersede any prior active plan todo (`- [x] ~~...~~ (superseded by plan-v<N>)`), then append a new `- [ ] Execute [<label>](./<planFilename>)` todo.
-6. Keep `assignment.md` in sync with what is now known.
+5. Keep `assignment.md` in sync with what is now known.
 
 ### Complete an assignment
 

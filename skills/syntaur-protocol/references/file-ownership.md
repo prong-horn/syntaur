@@ -18,8 +18,8 @@ You may only write to files inside your currently-claimed assignment folder:
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record; source of truth for state. Includes `## Todos` checklist. |
-| `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). When superseded, the old plan's todo is marked superseded but the file itself is never deleted. |
+| `assignment.md` | Assignment record; source of truth for state. |
+| `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). Prior plan files are kept on disk as immutable history. |
 | `progress.md` | Append-only, timestamped progress log (newest first). |
 | `scratchpad.md` | Working notes. |
 | `handoff.md` | Append-only handoff log. |
@@ -36,7 +36,6 @@ These files are never edited directly — write to them only through the CLI so 
 | Target | Command |
 |--------|---------|
 | `comments.md` (any assignment) | `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>]` |
-| Another assignment's `## Todos` | `syntaur request <target> "text" [--from <source>]` |
 
 ## Shared-Writable (any agent or human)
 

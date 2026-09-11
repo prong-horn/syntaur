@@ -31,8 +31,8 @@ You are working within the Syntaur protocol for multi-agent project coordination
       _status.md             # Derived (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state (includes ## Todos)
-          plan*.md           # Agent-writable: versioned implementation plans (optional, one per ## Todos entry)
+          assignment.md      # Agent-writable: source of truth for state
+          plan*.md           # Agent-writable: versioned implementation plans (optional)
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
           scratchpad.md      # Agent-writable: working notes
@@ -76,7 +76,6 @@ You are working within the Syntaur protocol for multi-agent project coordination
 
 ### Files written only via CLI (never edit directly):
 - \`comments.md\` (any assignment) -- use \`syntaur comment <slug-or-uuid> "body" [--type question|note|feedback] [--reply-to <id>]\`
-- Another assignment's \`## Todos\` section -- use \`syntaur request <source> <target> "text"\` to request cross-assignment work
 
 ### Files you must NEVER write:
 1. \`project.md\` -- human-authored, read-only
@@ -123,7 +122,6 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur fail <slug> --project <project>\` -- mark as failed
 - \`syntaur create-assignment "Title" [--type <type>] [--project <slug> | --one-off]\` -- create project-nested or standalone assignment
 - \`syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (questions support resolve toggle via dashboard)
-- \`syntaur request <source> <target> "text"\` -- append a todo to another assignment's \`## Todos\` annotated \`(from: <source>)\`
 
 ## Playbooks
 
@@ -142,7 +140,6 @@ Follow the rules in each playbook. They take precedence over default conventions
 - Always read \`project.md\` at the project level (when project-nested) before starting work.
 - Append timestamped entries to \`progress.md\` (never to \`assignment.md\`).
 - Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly.
-- To route work to another assignment, use \`syntaur request\`.
 - Commit frequently with messages referencing the assignment slug.
 `;
 }
@@ -165,8 +162,8 @@ alwaysApply: true
 
 Before starting work, read these files in order:
 1. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested assignments only)
-2. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status. Frontmatter includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
-3. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
+2. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status. Frontmatter includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
+3. any \`${params.assignmentDir}/plan*.md\` files (may be 0, 1, or many — pick the newest version)
 4. \`${params.assignmentDir}/progress.md\` -- reverse-chron progress log (if present)
 5. \`${params.assignmentDir}/comments.md\` -- threaded questions/notes/feedback (if present)
 6. \`${params.assignmentDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this assignment off)
@@ -183,7 +180,7 @@ You may write directly to these files inside your assignment folder:
 - \`${params.assignmentDir}/decision-record.md\`
 - \`${params.assignmentDir}/sessions/<session-id>/summary.md\` (per-session continuity)
 
-Do NOT edit \`${params.assignmentDir}/comments.md\` directly — use \`syntaur comment\`. Do NOT edit other assignments' files — use \`syntaur request\` for cross-assignment todos.
+Do NOT edit \`${params.assignmentDir}/comments.md\` directly — use \`syntaur comment\`. Do NOT edit other assignments' files.
 
 And source code files in your workspace. Read the \`workspace\` field from your assignment's frontmatter to determine the exact boundary. If not set, the current working directory is your workspace.
 `;

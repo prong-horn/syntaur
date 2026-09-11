@@ -15,7 +15,7 @@ Write a handoff for your current Syntaur assignment and transition it to `review
 
 ## Input
 
-Optional: the user may pass `--complete` to transition directly to `completed` instead of `review`. However, `--complete` is only allowed if ALL acceptance criteria are met AND every `## Todos` item is either checked or marked superseded. If any criterion or todo is unresolved, always transition to `review` regardless of the flag, and inform the user why.
+Optional: the user may pass `--complete` to transition directly to `completed` instead of `review`. However, `--complete` is only allowed if ALL acceptance criteria are met. If any criterion is unresolved, always transition to `review` regardless of the flag, and inform the user why.
 
 ## Step 1: Load Context
 
@@ -35,17 +35,15 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 
 Verify your work complies with their rules. If any playbook has completion-related rules (e.g., "run tests before done"), follow them before proceeding.
 
-## Step 3: Verify Acceptance Criteria and Todos
+## Step 3: Verify Acceptance Criteria
 
-Read `<assignmentDir>/assignment.md` and find the `## Acceptance Criteria` and `## Todos` sections.
+Read `<assignmentDir>/assignment.md` and find the `## Acceptance Criteria` section.
 
-Review each acceptance criterion (checkbox item) AND each todo. Superseded todos marked `- [x] ~~Execute [...](./plan-v<N>.md)~~ (superseded by plan-v<N>)` count as resolved — they do not need to be done again.
+Review each acceptance criterion (checkbox item). For each:
+- If you believe it is met, note why (what was implemented, where).
+- If it is NOT met, flag it clearly.
 
-For each:
-- If you believe it is met / done, note why (what was implemented, where).
-- If it is NOT met / done, flag it clearly.
-
-If any acceptance criteria are unmet OR any todo is still `- [ ]` and not superseded, warn the user: "The following are not yet done: [list]. Do you want to proceed with the handoff anyway?" — stop if the user says no.
+If any acceptance criteria are unmet, warn the user: "The following are not yet done: [list]. Do you want to proceed with the handoff anyway?" — stop if the user says no.
 
 ## Step 3.5: Append a Final Progress Entry
 
@@ -91,13 +89,11 @@ Append a new handoff entry to the markdown body. Read the current `handoffCount`
 
 Also update the handoff.md frontmatter: set `updated` to the current timestamp and increment the `handoffCount` by 1.
 
-## Step 5: Update Checkboxes (Criteria + Todos)
+## Step 5: Update Acceptance Criteria Checkboxes
 
-In `<assignmentDir>/assignment.md`, update checkboxes in both the `## Acceptance Criteria` and `## Todos` sections to reflect the current state. Check off items that were completed (change `- [ ]` to `- [x]`).
+In `<assignmentDir>/assignment.md`, update checkboxes in the `## Acceptance Criteria` section to reflect the current state. Check off items that were completed (change `- [ ]` to `- [x]`).
 
 Ideally, these should have been checked off incrementally during implementation. If they are already checked, verify they are still accurate. If some were missed, check them off now and note which were verified at completion time vs. during development in the handoff.
-
-Do NOT uncheck or rewrite superseded todo lines matching `- [x] ~~...~~ (superseded by ...)` — preserve that history intact.
 
 ## Step 6: Close Session (optional)
 
@@ -128,8 +124,6 @@ syntaur review <assignment-slug> --project <project-slug>
 If the command fails, report the error. Common failures:
 - Assignment is not in `in_progress` status
 - Project not found
-
-**Side effect:** Source todos that were promoted into this assignment via `syntaur todo promote --new-assignment` (or the dashboard `Promote to assignment` flow) automatically flip from `in_progress` to `completed` when this transition runs. If you later `reopen` the assignment, those auto-completed todos flip back to `in_progress`. Todos that the user manually marked `completed` after the auto-complete fired are left untouched on reopen.
 
 ## Step 8: Clean Up Context
 

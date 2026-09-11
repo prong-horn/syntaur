@@ -53,7 +53,8 @@ describe('syntaur plan create', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('writes an initial plan.md (no Supersedes/v<N>) and appends the todo cycle', async () => {
+  it('writes an initial plan.md without changing assignment.md ## Todos', async () => {
+    const before = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
     const r = await runCli(['plan', 'create', '--assignment', 'a', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
 
@@ -64,8 +65,9 @@ describe('syntaur plan create', () => {
     expect(plan).toContain('status: draft');
 
     const assignment = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
-    expect(assignment).toContain('- [ ] Create [plan](./plan.md)');
-    expect(assignment).toContain('- [ ] Review implementation of [plan](./plan.md)');
+    expect(assignment.replace(/^---[\s\S]*?---\n?/, '')).toBe(
+      before.replace(/^---[\s\S]*?---\n?/, ''),
+    );
   });
 
   it('refuses to overwrite an existing plan.md without --force', async () => {

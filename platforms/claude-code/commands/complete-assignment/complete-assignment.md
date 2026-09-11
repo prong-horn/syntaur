@@ -9,7 +9,7 @@ arguments:
 
 # /complete-assignment
 
-Thin wrapper that invokes the `complete-assignment` skill. The skill lives in `~/.claude/skills/complete-assignment/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying acceptance criteria and todos, appending a progress.md entry, writing a handoff.md section, and calling `syntaur review` or `syntaur complete`.
+Thin wrapper that invokes the `complete-assignment` skill. The skill lives in `~/.claude/skills/complete-assignment/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying acceptance criteria, appending a progress.md entry, writing a handoff.md section, and calling `syntaur review` or `syntaur complete`.
 
 ## Instructions
 

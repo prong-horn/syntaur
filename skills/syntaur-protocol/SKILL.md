@@ -37,7 +37,6 @@ Respect file ownership boundaries. The Codex plugin enforces them with a PreTool
 ### Files written only via CLI (never edit directly)
 
 - `comments.md` (any assignment) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Questions carry a `resolved` flag toggled in the dashboard.
-- Another assignment's `## Todos` section — use `syntaur request <target> "text" [--from <source>]` to append a todo annotated `(from: <source>)`.
 
 ### Files you must never write
 
@@ -62,7 +61,6 @@ The **active assignment** is resolved from the session's OPEN engagement — the
 - `sessionId` — real agent-runtime session id (legacy hint; never a synthesized UUID, and a co-tenant can clobber it — not authoritative for identity)
 - `transcriptPath` — absolute path to the agent's rollout/transcript file, if known
 - `leases` — array of active resource-lease records (managed by `/claim-resource` and `/release-resource`). Entry shape: `{ lease_id, inventory_slug, member_id, expires_at, metadata, claimed_at }`. Leases are NOT auto-released on session end or assignment completion in v1 — call `/release-resource` explicitly (or let the TTL expire).
-- `bundleId` and related bundle fields — present when this workspace is bound to a todo bundle (managed by the bundle skills).
 
 ## Required Reading Order
 
@@ -88,7 +86,6 @@ When starting work on an existing assignment, read these in order:
 - `syntaur fail <slug> --project <project>` — mark as failed
 - `syntaur create-assignment "<title>" [--type <type>] [--project <slug> | --one-off]` — create project-nested or standalone
 - `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]` — append to `comments.md`
-- `syntaur request <target> "text" [--from <source>]` — append a todo to another assignment's `## Todos`
 - `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--assignment <a>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
 
 ## Agent Sessions
@@ -109,7 +106,6 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 - Slugs are lowercase, hyphen-separated. For standalone assignments the folder is named by UUID; `slug` is display-only.
 - Update acceptance criteria checkboxes as work lands, not only at the end.
 - Append milestones to `progress.md` — do NOT add a `## Progress` section to `assignment.md` (v2.0 moved progress to its own file).
-- `## Todos` in `assignment.md` is an informal markdown checklist. Items may be simple tasks or markdown links to plan files. When a plan is superseded, mark the old todo as `- [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)` — never delete. `## Todos` is also the landing spot for cross-assignment `syntaur request` entries.
 - Record questions / notes / feedback via `syntaur comment` — never edit `comments.md` directly. Do NOT set status to `blocked` just because there is an open question; block only for a real external dependency with a `--reason`.
 - Write handoffs with enough context for another agent or human to continue cleanly. Record decisions in `decision-record.md` with Status / Context / Decision / Consequences — downstream dependents auto-load these during grab.
 - Commit frequently with messages referencing the assignment slug.

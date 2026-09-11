@@ -56,7 +56,6 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('syntaur unblock');
     expect(out).toContain('syntaur fail');
     expect(out).toContain('syntaur comment');
-    expect(out).toContain('syntaur request');
     expect(out).toContain('syntaur create-assignment');
   });
 
@@ -108,7 +107,6 @@ describe('renderCursorAssignment', () => {
   it('flags comments.md as CLI-mediated', () => {
     const out = renderCursorAssignment(TEST_PARAMS);
     expect(out).toContain('syntaur comment');
-    expect(out).toContain('syntaur request');
   });
 });
 
@@ -169,7 +167,6 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur start');
     expect(out).toContain('syntaur complete');
     expect(out).toContain('syntaur comment');
-    expect(out).toContain('syntaur request');
   });
 
   it('includes assignment-specific CLI commands', () => {
@@ -237,7 +234,6 @@ describe('renderOpenCodeConfig', () => {
     expect(out).toContain('progress.md');
     expect(out).toContain('comments.md');
     expect(out).toContain('syntaur comment');
-    expect(out).toContain('syntaur request');
   });
 
   it('ends with newline', () => {

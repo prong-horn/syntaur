@@ -18,11 +18,9 @@ Bump the active assignment to a new plan version (`plan.md` → `plan-v2.md`,
 `plan-v2.md` → `plan-v3.md`, …). The CLI does the deterministic file ops; this
 skill writes the **body** of the new plan.
 
-This skill follows the **Plan Versioning** and **Create-and-Plan-Assignment**
-playbooks: prior plan-cycle todos are marked done with strikethrough +
-`(superseded by plan-v<N>)`, and a fresh four-todo cycle (Create / Review /
-Implement / Review implementation) is appended for the new plan. **Superseded
-todos are never deleted.**
+This skill follows the **Plan Versioning** playbook: prior plan files stay on
+disk as immutable history; write a new `plan-v<N>.md` instead of rewriting the
+old one.
 
 ## When NOT to use this skill
 
@@ -67,13 +65,7 @@ This is the only file-mutating step the skill performs through the CLI. It:
 
 1. Picks the next available `plan-v<N>.md` filename.
 2. Writes a stub plan with frontmatter and a `## Carried-forward tasks`
-   section pre-populated with any unchecked todos from the prior plan body.
-3. Rewrites the assignment.md `## Todos` section per the four-todo cycle:
-   marks the four prior plan-cycle todos as
-   `- [x] ~~<original>~~ (superseded by plan-v<N>)` and appends a fresh
-   `Create / Review / Implement / Review implementation` cycle pointing at the
-   new file.
-4. Never deletes any prior todo.
+   section pre-populated with any unchecked tasks from the prior plan body.
 
 If the CLI exits non-zero, surface the error to the user and stop.
 
@@ -96,8 +88,6 @@ Tasks / Verification, etc.) but keep the body concise. Document explicitly
 **why** a new revision is needed (e.g., "scope expanded after review",
 "rework after partial implementation").
 
-Do NOT touch `assignment.md` here — the CLI already updated `## Todos`.
-
 ## Step 6: Update progress.md
 
 Append a progress entry recording the new plan version, the reason, and a
@@ -109,8 +99,6 @@ Summarize:
 
 - New plan path (`<assignmentDir>/plan-v<N>.md`).
 - Number of carried-forward unchecked tasks.
-- Number of prior todos rewritten as superseded (should be the four-todo
-  cycle of the previous plan).
 - Reminder: prior plan files are kept on disk as immutable history; do not
   delete them.
-- Next step: review the new plan and begin the new four-todo cycle.
+- Next step: review the new plan and begin implementation.

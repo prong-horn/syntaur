@@ -9,7 +9,7 @@ arguments:
 
 # /plan-assignment
 
-Thin wrapper that invokes the `plan-assignment` skill. The skill lives in `~/.claude/skills/plan-assignment/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking the next `plan-v<N>.md`, writing it, appending a `## Todos` entry, marking any prior plan todo superseded, and recording key decisions in `decision-record.md`.
+Thin wrapper that invokes the `plan-assignment` skill. The skill lives in `~/.claude/skills/plan-assignment/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking the next `plan-v<N>.md`, writing it, and recording key decisions in `decision-record.md`.
 
 ## Instructions
 

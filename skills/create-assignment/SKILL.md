@@ -26,7 +26,6 @@ Expects arguments from the user:
 - `--type <type>` (optional): classification such as `feature`, `bug`, `refactor`, `research`, `chore`. Defaults to `feature`. When `~/.syntaur/config.md` defines `types.definitions`, the CLI validates against that list.
 - `--depends-on <slug[,slug...]>` (optional, project-nested only): comma-separated list of assignment slugs this depends on
 - `--dir <path>` (optional): override the default project directory
-- `--with-todos` (optional): scaffold a `## Todos` section in `assignment.md`. **Omit unless the user explicitly asks for it.** Todos are normally a plan (added by `plan-assignment`) or populated during planning — not something to pre-create at assignment time. Pass this flag only if the user explicitly says something like "include todos", "with a todo list", "scaffold todos", etc.
 
 If no title was provided, ask the user what the assignment should be called.
 
@@ -39,13 +38,13 @@ If there is no open engagement and no project flag, ask the user which project t
 Build the command from the parsed arguments:
 
 ```bash
-syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--type <type>] [--depends-on <slugs>] [--dir <path>] [--with-todos]
+syntaur create-assignment "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--type <type>] [--depends-on <slugs>] [--dir <path>]
 ```
 
 Or for a one-off (standalone at `~/.syntaur/assignments/<uuid>/`):
 
 ```bash
-syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>] [--with-todos]
+syntaur create-assignment "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]
 ```
 
 If the command fails (e.g., project not found, slug collision, invalid type), report the error and suggest fixes.
@@ -68,6 +67,6 @@ Tell the user:
 - The assignment was created with its slug, priority, type, and location. For standalone assignments, note that the folder is named by UUID (not slug) — `slug` is display-only.
 - Files created: `assignment.md`, `progress.md`, `comments.md`, `scratchpad.md`, `handoff.md`, `decision-record.md`. **`plan.md` is NOT scaffolded** — plan files are optional and created on demand by the `plan-assignment` skill.
 - Remind the user: `progress.md` is where timestamped progress entries go (NOT `assignment.md`), and `comments.md` is CLI-mediated — write only via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`.
-- Suggest editing `assignment.md` to fill in the objective, acceptance criteria, and context. A `## Todos` section is **not** scaffolded by default — it is added automatically by `plan-assignment` (linking the new plan file) or by `syntaur request` (cross-assignment requests). Only the `--with-todos` flag pre-scaffolds an empty `## Todos` section.
+- Suggest editing `assignment.md` to fill in the objective, acceptance criteria, and context.
 - If dependencies were set, note them. Standalone assignments cannot declare `dependsOn`.
 - Suggest `grab-assignment <project-slug> <assignment-slug>` (or `grab-assignment --id <uuid>` for standalone) to claim and start working on it.

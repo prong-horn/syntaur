@@ -14,7 +14,7 @@ You may ONLY write to files inside your assigned assignment folder:
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record, source of truth for state (includes `## Todos` checklist) |
+| `assignment.md` | Assignment record, source of truth for state |
 | `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
 | `progress.md` | Append-only timestamped progress log (newest first). Replaces the old `## Progress` body section. |
 | `scratchpad.md` | Working notes |
@@ -32,7 +32,6 @@ Do NOT edit these files directly. Use the listed CLI commands:
 | File | Mediator |
 |------|----------|
 | `comments.md` (any assignment) | `syntaur comment <slug-or-uuid> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
-| `## Todos` in another assignment's `assignment.md` (cross-assignment request) | `syntaur request <source> <target> "text"` |
 | Question resolution | `PATCH /api/.../comments/:id/resolved` (dashboard) or toggle in dashboard UI |
 
 These are bounded exceptions to the single-writer rule for assignment folders — the CLI serializes writes to avoid conflicts.

@@ -180,20 +180,6 @@ describe('renderAssignment', () => {
     expect(out).not.toContain('## Todos');
   });
 
-  it('includes ## Todos when includeTodos is true', () => {
-    const out = renderAssignment({
-      id: 'id',
-      slug: 's',
-      title: 'T',
-      timestamp: TIMESTAMP,
-      priority: 'medium',
-      dependsOn: [],
-      links: [],
-      includeTodos: true,
-    });
-    expect(out).toContain('## Todos');
-  });
-
   it('uses status override when provided', () => {
     const out = renderAssignment({
       id: 'id',

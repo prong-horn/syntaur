@@ -17,7 +17,7 @@ Protocol version: **2.0**
       _status.md             # Derived: status rollup (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state (## Todos checklist)
+          assignment.md      # Agent-writable: source of truth for state
           plan*.md           # Agent-writable: versioned plans (plan.md, plan-v2.md, ...)
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
@@ -75,11 +75,9 @@ Protocol version: **2.0**
 5. **Dependencies** are declared via `dependsOn` in assignment frontmatter. Only valid within the same project — standalone assignments cannot declare `dependsOn`.
 6. An assignment cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read them before starting work.
-8. **Todos** in `## Todos` of `assignment.md` is an informal markdown checklist. Items may be simple tasks or markdown links to plan files. When a plan is superseded, mark the old todo `- [x] ~~Execute [plan](./plan.md)~~ (superseded by plan-v2)` — never delete. `## Todos` is also the landing spot for cross-assignment `syntaur request` entries.
-9. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do NOT add a `## Progress` section to `assignment.md` — protocol v2.0 moved progress to its own file.
-10. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag toggled in the dashboard.
-11. **Cross-assignment work** is requested via `syntaur request <target> "text"` — appends to the target's `## Todos` annotated `(from: <source>)`.
-12. **Agent sessions** in `syntaur.db` must use real agent-runtime session IDs. Synthesized UUIDs are rejected. Plugins for Claude Code / Codex populate `.syntaur/context.json` with the real id via a SessionStart hook; other agents should source it from their runtime and pass `--session-id` explicitly.
+8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do NOT add a `## Progress` section to `assignment.md` — protocol v2.0 moved progress to its own file.
+9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag toggled in the dashboard.
+10. **Agent sessions** in `syntaur.db` must use real agent-runtime session IDs. Synthesized UUIDs are rejected. Plugins for Claude Code / Codex populate `.syntaur/context.json` with the real id via a SessionStart hook; other agents should source it from their runtime and pass `--session-id` explicitly.
 
 ## Proof artifacts (opt-in)
 

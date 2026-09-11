@@ -65,7 +65,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
       _status.md                     # Derived: computed project status, assignment rollup, dependency graph
       assignments/
         <assignment-slug>/
-          assignment.md              # Agent-writable: the assignment record (source of truth for state; includes ## Todos)
+          assignment.md              # Agent-writable: the assignment record (source of truth for state)
           plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated shared-writable: threaded questions/notes/feedback
@@ -126,8 +126,8 @@ Files inside assignment folders. Only the assigned agent writes to its own assig
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record and source of truth for state (includes `## Todos` checklist). `## Todos` is also the landing spot for cross-assignment requests (see `syntaur request`). |
-| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
+| `assignment.md` | Assignment record and source of truth for state |
+| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) |
 | `progress.md` | Append-only timestamped progress log (replaces the old `## Progress` body section) |
 | `scratchpad.md` | Unstructured working notes |
 | `handoff.md` | Append-only handoff log |
@@ -140,8 +140,6 @@ Inside an assignment folder but writable by anyone through the CLI/API — never
 | File | Purpose | Mediator |
 |------|---------|----------|
 | `comments.md` | Threaded questions/notes/feedback (replaces the old `## Questions & Answers` body section). Questions carry a `resolved` flag. | `syntaur comment` CLI and dashboard write API |
-
-Cross-assignment **requests** (`syntaur request`) write to another assignment's `## Todos` section in `assignment.md`, annotated with `(from: <source>)`. This is a bounded exception to the single-writer rule, also CLI-mediated.
 
 ### Shared-Writable
 
@@ -314,9 +312,6 @@ workspace:
 **Intra-project markdown links** (links between files within the same project folder) use **relative paths** for portability. If a project folder is moved or renamed, relative links remain valid.
 
 ```markdown
-## Todos
-- [ ] Execute [plan](./plan.md)
-
 ## Links
 - [Assignment](./assignments/implement-jwt-middleware/assignment.md)
 - [Status](./_status.md)
@@ -338,7 +333,6 @@ The current protocol version is **`"2.0"`**.
 - **`project` and `type` added to `assignment.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone) and `type: string | null` provides a free-form classification validated against `config.md` `types.definitions` when present.
 - **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `assignment.md`. See sections 3 and 4.
 - **Standalone assignments** at `~/.syntaur/assignments/<uuid>/` — assignments that don't belong to any project. Folder is named by UUID.
-- **Cross-assignment requests** — `syntaur request <source> <target>` writes a todo into the target's `## Todos` with a `(from: <source>)` annotation. Read-side backlinks (`Referenced by`) surface the reverse direction in the dashboard.
 - **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, now computed from `comments.md` (question entries with `resolved !== true`).
 
 ### Forward Compatibility
@@ -366,14 +360,4 @@ Any markdown body (assignment, progress, comments, handoff) may reference anothe
 - **Relative path** — `[title](../other-slug/assignment.md)` for project-nested peers.
 - **Absolute route** — `[title](/projects/<slug>/assignments/<aslug>/assignment.md)` for project-nested cross-project links, or `[title](/assignments/<id>/assignment.md)` for standalone assignments.
 
-Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads an assignment detail — it scans other assignments' Todos, comments, progress, and handoff bodies for links that resolve to the current assignment. Results are capped at 50 mentions to bound work.
-
-### Cross-Assignment Requests
-
-When an agent on assignment A discovers work that belongs to assignment B, it runs:
-
-```
-syntaur request <source-slug-or-uuid> <target-slug-or-uuid> "Do the thing"
-```
-
-This appends a todo to B's `## Todos` section, annotated `(from: <source>)`. If the target has no `## Todos` section, it is created. The target's `updated` timestamp is bumped. This is the write-side counterpart to the read-side `Referenced by` panel.
+Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads an assignment detail — it scans other assignments' comments, progress, and handoff bodies for links that resolve to the current assignment. Results are capped at 50 mentions to bound work.

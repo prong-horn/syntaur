@@ -57,6 +57,11 @@ tags: []
 - [Progress](./progress.md)
 `;
 
+function extractTodosSection(content: string): string {
+  const match = content.match(/^## Todos\s*$([\s\S]*?)(?=^## |\s*$)/m);
+  return match ? `## Todos${match[1]}` : '';
+}
+
 const PLAN_MD = `---
 assignment: demo
 status: in_progress
@@ -100,7 +105,8 @@ describe('syntaur plan version', () => {
     await rm(syntaurHome, { recursive: true, force: true });
   });
 
-  it('creates plan-v2.md and rewrites assignment.md ## Todos with the four-todo cycle', async () => {
+  it('creates plan-v2.md and leaves assignment.md ## Todos unchanged', async () => {
+    const before = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
     const result = await runCli(
       ['plan', 'version', '--assignment', 'demo', '--project', 'p'],
       syntaurHome,
@@ -117,22 +123,7 @@ describe('syntaur plan version', () => {
     expect(planV2).not.toContain('Second task done');
 
     const assignment = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
-    // All four prior todos rewritten with strikethrough + superseded tag.
-    expect(assignment).toMatch(/- \[x\] ~~Create \[plan\]\(\.\/plan\.md\)~~ \(superseded by plan-v2\)/);
-    expect(assignment).toMatch(/- \[x\] ~~Review \[plan\]\(\.\/plan\.md\)~~ \(superseded by plan-v2\)/);
-    expect(assignment).toMatch(/- \[x\] ~~Implement \[plan\]\(\.\/plan\.md\)~~ \(superseded by plan-v2\)/);
-    expect(assignment).toMatch(
-      /- \[x\] ~~Review implementation of \[plan\]\(\.\/plan\.md\)~~ \(superseded by plan-v2\)/,
-    );
-    // Fresh four-todo cycle pointing at plan-v2.md.
-    expect(assignment).toContain('- [ ] Create [plan v2](./plan-v2.md)');
-    expect(assignment).toContain('- [ ] Review [plan v2](./plan-v2.md)');
-    expect(assignment).toContain('- [ ] Implement [plan v2](./plan-v2.md)');
-    expect(assignment).toContain(
-      '- [ ] Review implementation of [plan v2](./plan-v2.md)',
-    );
-    // Original todos are still present (never deleted).
-    expect(assignment.match(/Create \[plan\]/g)?.length).toBe(1);
+    expect(extractTodosSection(assignment)).toBe(extractTodosSection(before));
   });
 
   it('does NOT rewrite non-canonical checkbox lines that happen to reference the old plan link', async () => {
@@ -150,12 +141,10 @@ describe('syntaur plan version', () => {
     );
     expect(result.code, result.stderr).toBe(0);
     const updated = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
-    // Custom non-cycle line is left intact.
     expect(updated).toContain(
       '- [ ] Custom follow-up referencing [plan](./plan.md) in prose',
     );
-    // Canonical cycle lines ARE superseded.
-    expect(updated).toMatch(/- \[x\] ~~Create \[plan\]\(\.\/plan\.md\)~~ \(superseded/);
+    expect(updated).not.toMatch(/\(superseded by plan-v/);
   });
 
   it('picks plan-v3.md when plan-v2.md already exists (no clobber)', async () => {

@@ -67,7 +67,7 @@ priority signal — there is an outstanding baton to consume.
 
 ## Step 4: Read assignment.md and progress.md
 
-Always read the current assignment.md (objective, acceptance criteria, todos)
+Always read the current assignment.md (objective, acceptance criteria)
 and the tail of progress.md so you know what has been logged since the last
 summary.
 

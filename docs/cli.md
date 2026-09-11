@@ -124,8 +124,8 @@ Manage git worktrees bound to assignments.
 
 Manage plan files for an assignment.
 
-- `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` and append the four-todo cycle to `assignment.md ## Todos`. Refuses to overwrite an existing `plan.md` without `--force`.
-- `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md`, supersede the prior cycle, and carry forward unchecked tasks.
+- `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
+- `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
 
 ## `syntaur timeline <assignment>`
 

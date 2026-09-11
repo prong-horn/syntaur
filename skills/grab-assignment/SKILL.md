@@ -23,7 +23,7 @@ Expects up to two arguments from the user:
 
 ## Pre-flight Check
 
-`.syntaur/context.json` is a WORKSPACE MARKER (repository/branch/worktree/workspaceRoot plus legacy session and bundle fields) — it is NOT the active-assignment source of truth. The active assignment binds via the session's open engagement (established by `track-session` in Step 6).
+`.syntaur/context.json` is a WORKSPACE MARKER (repository/branch/worktree/workspaceRoot plus legacy session fields) — it is NOT the active-assignment source of truth. The active assignment binds via the session's open engagement (established by `track-session` in Step 6).
 
 Check whether this session already has an open engagement — i.e., a different assignment is already active:
 
@@ -85,7 +85,7 @@ If `workspace.repository` and `workspace.worktreePath` are both null, set them t
 
 `.syntaur/context.json` is a WORKSPACE MARKER — it records the repository/branch/worktree so tooling can recognize this directory as a Syntaur workspace. It is NOT the active-assignment source of truth: the assignment binds via the session's open engagement (Step 6, `track-session`). Do NOT write `projectSlug` / `assignmentSlug` / `assignmentDir` / `projectDir` / `title` — those scalars are non-authoritative.
 
-Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`, or a worktree skill wrote bundle/lease fields), preserve those fields.
+Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`, or a worktree skill wrote lease fields), preserve those fields.
 
 ```bash
 mkdir -p .syntaur
@@ -158,7 +158,6 @@ Summarize:
 - Current status (call it out explicitly if the assignment was already past `pending`).
 - The objective (first paragraph from assignment.md body).
 - The acceptance criteria (checkbox list).
-- Active todos from `## Todos`, including any linked plan files.
 - The workspace path.
 - Any inherited comments/questions from `comments.md`.
 - Suggested next step: `plan-assignment` to create an implementation plan.

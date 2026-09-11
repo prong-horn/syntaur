@@ -12,7 +12,7 @@ metadata:
 
 # Plan Assignment
 
-Create a versioned implementation plan for your current Syntaur assignment. Plans are versioned files: the first is `plan.md`, subsequent ones are `plan-v2.md`, `plan-v3.md`, and so on. Each plan gets a linked todo in the `## Todos` section of `assignment.md`; prior active plan todos are marked superseded (never deleted).
+Create a versioned implementation plan for your current Syntaur assignment. Plans are versioned files: the first is `plan.md`, subsequent ones are `plan-v2.md`, `plan-v3.md`, and so on. Prior plan files are kept on disk as immutable history.
 
 ## Input
 
@@ -43,7 +43,7 @@ For each file found, read it and follow its directives. Playbooks may contain ru
 
 Read these files to understand the assignment:
 
-1. `<assignmentDir>/assignment.md` — objective, acceptance criteria, context, and the `## Todos` list
+1. `<assignmentDir>/assignment.md` — objective, acceptance criteria, and context
 2. `<assignmentDir>/comments.md` if present — inherited questions, notes, and feedback
 3. `<projectDir>/project.md` — project goal for broader context (skip for standalone)
 4. `<projectDir>/manifest.md` — project navigation index (skip for standalone)
@@ -72,7 +72,7 @@ List `<assignmentDir>/plan*.md` and pick the target:
 - If `plan.md` exists but no `plan-v<N>.md` → `plan-v2.md` (version label: "plan v2").
 - Otherwise pick the smallest `N >= 2` such that `plan-v<N>.md` does not exist (version label: `plan v<N>`).
 
-Remember this `planFilename` and `versionLabel` for Steps 5b and 5c.
+Remember this `planFilename` and `versionLabel` for Step 5b.
 
 ### 5b. Write the plan file
 
@@ -85,13 +85,11 @@ Remember this `planFilename` and `versionLabel` for Steps 5b and 5c.
   ```
 
   (or `--assignment <slug> [--project <slug>]` to target one explicitly). This
-  writes `plan.md` with the standard `draft` frontmatter AND appends the
-  four-todo cycle to assignment.md `## Todos` — so **Step 5c is already done for
-  the initial plan**; skip it and proceed to fill in the body sections below.
+  writes `plan.md` with the standard `draft` frontmatter.
 
 - **New version** (`planFilename` is `plan-v<N>.md`): run `syntaur plan version`,
-  which scaffolds `plan-v<N>.md`, supersedes the prior cycle, and carries forward
-  unchecked tasks (this is Step 5c for the versioned case).
+  which scaffolds `plan-v<N>.md` and carries forward unchecked tasks from the
+  prior plan body.
 
 The scaffolded frontmatter is:
 
@@ -118,49 +116,6 @@ Body sections:
 
 If the target file already exists (only possible for `plan.md` on first re-run against a scaffolded-but-empty plan), preserve the frontmatter and replace only the body, flipping `status` from `draft` to `in_progress` and updating `updated`.
 
-### 5c. Update assignment.md Todos (four-todo cycle)
-
-Read `<assignmentDir>/assignment.md` and locate the `## Todos` section. Per
-the **Create-and-Plan-Assignment** playbook, every plan version uses a
-four-todo cycle: Create / Review / Implement / Review implementation.
-
-1. **Supersede the prior plan's four-todo cycle.** For every line referencing
-   the prior plan file (`./plan.md` or `./plan-v<N-1>.md`) — both the older
-   single-line `Execute [...]` form AND the four-todo-cycle lines (Create /
-   Review / Implement / Review implementation of) — rewrite as:
-
-   ```
-   - [x] ~~<original line body>~~ (superseded by <versionLabel>)
-   ```
-
-   Mark the checkbox `[x]` and wrap the body in `~~...~~`. Never delete any
-   prior todo — preserve history.
-
-2. **Append the new four-todo cycle.** Add four lines to the end of
-   `## Todos`, replacing `<versionLabel>` with the human label (e.g.
-   `plan v2`) and `<planFilename>` with the new file (e.g. `plan-v2.md`):
-
-   ```
-   - [ ] Create [<versionLabel>](./<planFilename>)
-   - [ ] Review [<versionLabel>](./<planFilename>)
-   - [ ] Implement [<versionLabel>](./<planFilename>)
-   - [ ] Review implementation of [<versionLabel>](./<planFilename>)
-   ```
-
-   For the first plan ever (`plan.md`), the label is `plan` and the four todos
-   point at `./plan.md`.
-
-3. **Missing-section fallback.** If `## Todos` does not exist (legacy
-   assignment predating this convention), insert it immediately after
-   `## Acceptance Criteria` with a short guidance HTML comment followed by
-   the new four-todo cycle.
-
-Also refresh the assignment frontmatter `updated` timestamp.
-
-> **Note:** the `syntaur plan version` CLI verb (used by the `replan` skill)
-> applies this exact same four-todo-cycle supersede pattern — `plan-assignment`
-> and `replan` are now in lockstep on this convention.
-
 ## Step 6: Report to User
 
 After writing the plan:
@@ -174,4 +129,4 @@ After writing the plan:
 - Check off acceptance criteria in `assignment.md` as each one is completed — not in a batch at the end.
 - Append timestamped milestones to `progress.md` (a separate append-only file). Do NOT add a `## Progress` section to `assignment.md` — protocol v2.0 moved progress to its own file.
 - Record questions, notes, or feedback via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback` — never edit `comments.md` directly.
-- Keep `assignment.md` status, todos, and acceptance checkboxes reflecting current state at all times.
+- Keep `assignment.md` status and acceptance checkboxes reflecting current state at all times.

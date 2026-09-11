@@ -26,7 +26,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`create-project\` -- scaffold a project
 - \`create-assignment\` -- create a new assignment (use \`--type <bug|feature|chore|...>\` to classify; use \`--one-off\` to create a standalone assignment at \`~/.syntaur/assignments/<uuid>/\` with no parent project)
 - \`grab-assignment\` -- claim work, create \`.syntaur/context.json\`, and register a session
-- \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...) and link it from the \`## Todos\` section of \`assignment.md\`
+- \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
 - \`complete-assignment\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
 - \`save-session-summary\` -- write per-session continuity at \`<assignmentDir>/sessions/<sessionId>/summary.md\` for resume across sessions of the same agent. Codex has no \`PreCompact\` hook event — invoke this manually before compaction or session end.
 - \`capture-artifacts\` -- capture typed proof artifacts (screenshot/video/asciinema/http/text) for the active assignment. Criterion linkage is optional. Run \`syntaur proof build\` to render \`proof.html\`.
@@ -47,8 +47,8 @@ If the plugin is unavailable, follow the same workflow manually with the \`synta
 Before starting work, read these files in order:
 1. \`${params.projectDir}/manifest.md\` -- root navigation entry point (project-nested assignments only)
 2. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested assignments only)
-3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, todos, current status. Frontmatter now includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
-4. any \`${params.assignmentDir}/plan*.md\` files linked from active todos in the \`## Todos\` section (may be 0, 1, or many)
+3. \`${params.assignmentDir}/assignment.md\` -- your assignment details, acceptance criteria, current status. Frontmatter now includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
+4. any \`${params.assignmentDir}/plan*.md\` files (may be 0, 1, or many — pick the newest version)
 5. \`${params.assignmentDir}/progress.md\` -- reverse-chron progress log (if present)
 6. \`${params.assignmentDir}/comments.md\` -- threaded questions/notes/feedback (if present)
 7. \`${params.assignmentDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this assignment off)
@@ -75,8 +75,8 @@ Before starting work, read these files in order:
       _status.md             # Derived (read-only)
       assignments/
         <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state (includes ## Todos)
-          plan*.md           # Agent-writable: versioned implementation plans (optional, one per ## Todos entry)
+          assignment.md      # Agent-writable: source of truth for state
+          plan*.md           # Agent-writable: versioned implementation plans (optional)
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
           scratchpad.md      # Agent-writable: working notes
@@ -119,7 +119,6 @@ Before starting work, read these files in order:
 
 ### Files written only via CLI (never edit directly):
 - \`comments.md\` (any assignment) -- use \`syntaur comment <slug-or-uuid> "body" [--type question|note|feedback] [--reply-to <id>]\`
-- Another assignment's \`## Todos\` section -- use \`syntaur request <source> <target> "text"\` to request cross-assignment work
 
 ### Files you must NEVER write:
 1. \`project.md\` -- human-authored, read-only
@@ -165,7 +164,6 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur unblock ${params.assignmentSlug} --project ${params.projectSlug}\` -- unblock
 - \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
 - \`syntaur comment ${params.assignmentSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
-- \`syntaur request ${params.assignmentSlug} <target-slug-or-uuid> "text"\` -- append a todo to another assignment's \`## Todos\` annotated \`(from: ${params.assignmentSlug})\`
 - \`syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] [--transcribe] ${params.assignmentSlug} --project ${params.projectSlug}\` -- record a proof artifact. \`--kind=text\` requires \`--note\` and forbids \`--file\`. Criterion linkage is optional. \`--transcribe\` is video-only and writes a sibling \`<id>.transcript.md\` (requires \`ELEVENLABS_API_KEY\` + \`ffmpeg\`).
 - \`syntaur proof build ${params.assignmentSlug} --project ${params.projectSlug}\` -- render \`proof.html\` and \`proof.md\` at the assignment dir. Atomic overwrite — safe to re-run.
 
@@ -188,11 +186,10 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 - Assignment frontmatter is the single source of truth for state. \`project\` is the containing project slug (\`null\` for standalone); \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
 - Slugs are lowercase, hyphen-separated. For standalone assignments, \`slug\` is display-only; the folder is named by the UUID.
 - Always read \`project.md\` at the project level (when project-nested) before starting work.
-- Keep \`assignment.md\` acceptance criteria and \`## Todos\` updated as work lands; append timestamped entries to \`progress.md\` (never to \`assignment.md\`).
+- Keep \`assignment.md\` acceptance criteria updated as work lands; append timestamped entries to \`progress.md\` (never to \`assignment.md\`).
 - Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-assignment\`) at the cross-ticket boundary; write \`sessions/<sid>/summary.md\` (via \`/save-session-summary\`) before compaction or before ending a session mid-assignment so a future session can resume cleanly.
-- When requirements shift, supersede the prior plan todo (\`- [x] ~~...~~ (superseded by plan-v<N>)\`) and write a new plan file instead of rewriting the old one.
+- When requirements shift, write a new versioned plan file instead of rewriting the old one.
 - Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).
-- To route work to another assignment, use \`syntaur request\`.
 - Commit frequently with messages referencing the assignment slug.
 `;
 }
