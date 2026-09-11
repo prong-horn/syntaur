@@ -50,7 +50,6 @@
     "src/__tests__/workflow-library.test.ts",
     "src/__tests__/workflow-write.test.ts",
     "src/__tests__/workflow-resolve.test.ts",
-    "src/__tests__/github-backup.test.ts",
     "src/__tests__/dashboard-watcher.test.ts",
     "src/__tests__/session-db-migration-v7.test.ts",
     "src/__tests__/session-db-migration-v10.test.ts",

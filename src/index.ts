@@ -49,7 +49,6 @@ import { enablePlaybookCommand } from './commands/enable-playbook.js';
 import { disablePlaybookCommand } from './commands/disable-playbook.js';
 import { deletePlaybookCommand } from './commands/delete-playbook.js';
 import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
-import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { commentCommand } from './commands/comment.js';
 import { captureCommand } from './commands/capture.js';
@@ -796,7 +795,6 @@ program
     }),
   );
 
-program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
 program.addCommand(proofCommand);
 program.addCommand(planCommand);

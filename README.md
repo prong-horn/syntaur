@@ -403,7 +403,6 @@ If you want to completely reset the installation while keeping all projects and 
 ```bash
 # 1. Safety backup (optional but recommended)
 cp -a ~/.syntaur ~/.syntaur.backup-$(date +%Y%m%d)
-# or: syntaur backup   (if you've configured the GitHub backup)
 
 # 2. Remove skills from both agent dirs
 syntaur uninstall-skills --all

@@ -84,7 +84,6 @@ import {
   migrateLegacyConfig,
   summarizeMigration,
 } from '../utils/fs-migration.js';
-import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
@@ -765,9 +764,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
       res.status(500).json({ error: `Failed to load resources: ${(error as Error).message}` });
     }
   });
-
-  // --- Backup API ---
-  app.use('/api/backup', createBackupRouter());
 
   // --- Static files (production only) ---
   // Only serve the built asset directory as static — never let express.static

@@ -29,6 +29,19 @@ describe('config integrations', () => {
     await rm(homeDir, { recursive: true, force: true });
   });
 
+  it('ignores a legacy backup block without error', async () => {
+    const configPath = resolve(homeDir, '.syntaur', 'config.md');
+    await writeFile(
+      configPath,
+      '---\nversion: "1.0"\ndefaultProjectDir: ~/.syntaur/projects\nbackup:\n  repo: null\n  categories: projects, playbooks\n  lastBackup: null\n  lastRestore: null\n---\n',
+    );
+
+    const config = await readConfig();
+
+    expect(config.defaultProjectDir).toBe(resolve(homeDir, '.syntaur', 'projects'));
+    expect('backup' in config).toBe(false);
+  });
+
   it('reads optional integration paths and expands home-relative values', async () => {
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
     await writeFile(

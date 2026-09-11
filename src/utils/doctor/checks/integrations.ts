@@ -60,33 +60,6 @@ const codexPluginLinked: Check = {
   },
 };
 
-const backupConfigured: Check = {
-  id: 'integrations.backup-configured',
-  category: CATEGORY,
-  title: 'GitHub backup is configured (if user has projects)',
-  async run(ctx) {
-    if (ctx.config.backup?.repo) return pass(this);
-    const projectsDir = ctx.config.defaultProjectDir;
-    if (!(await fileExists(projectsDir))) return skipped(this, 'no projects dir');
-    const entries = await readdir(projectsDir, { withFileTypes: true });
-    const hasProjects = entries.some((e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'));
-    if (!hasProjects) return skipped(this, 'no projects yet');
-    return {
-      id: this.id,
-      category: this.category,
-      title: this.title,
-      status: 'warn',
-      detail: 'you have projects but no GitHub backup repo configured',
-      remediation: {
-        kind: 'manual',
-        suggestion: 'Run `syntaur backup config --repo <url>` to configure',
-        command: null,
-      },
-      autoFixable: false,
-    } satisfies CheckResult;
-  },
-};
-
 // Reads ~/.claude/plugins/known_marketplaces.json safely.
 async function readKnownMarketplaces(): Promise<Record<string, { installLocation?: string }>> {
   const path = resolve(homedir(), '.claude', 'plugins', 'known_marketplaces.json');
@@ -209,7 +182,6 @@ export const integrationChecks: Check[] = [
   claudePluginLinked,
   claudeMarketplaceRegistered,
   codexPluginLinked,
-  backupConfigured,
 ];
 
 function pass(check: { id: string; category: string; title: string }): CheckResult {

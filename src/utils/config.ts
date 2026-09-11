@@ -203,13 +203,6 @@ export interface OnboardingConfig {
   completed: boolean;
 }
 
-export interface BackupConfig {
-  repo: string | null;
-  categories: string;
-  lastBackup: string | null;
-  lastRestore: string | null;
-}
-
 export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
 
 export interface PlaybooksConfig {
@@ -275,7 +268,6 @@ export interface SyntaurConfig {
     idleSweepHours: number;
   };
   integrations: IntegrationConfig;
-  backup: BackupConfig | null;
   statuses: StatusConfig | null;
   /** Global library of named lifecycle workflows, referenced by id. Absent →
    * the legacy single `statuses:` lifecycle is the built-in `default` workflow.
@@ -324,7 +316,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     codexPluginDir: null,
     codexMarketplacePath: null,
   },
-  backup: null,
   statuses: null,
   workflows: null,
   defaultWorkflow: null,
@@ -364,7 +355,6 @@ function cloneDefaultConfig(): SyntaurConfig {
     agentDefaults: { ...DEFAULT_CONFIG.agentDefaults },
     session: { ...DEFAULT_CONFIG.session },
     integrations: { ...DEFAULT_CONFIG.integrations },
-    backup: DEFAULT_CONFIG.backup ? { ...DEFAULT_CONFIG.backup } : null,
     statuses: DEFAULT_CONFIG.statuses
       ? {
           statuses: DEFAULT_CONFIG.statuses.statuses.map((s) => ({ ...s })),
@@ -904,15 +894,6 @@ function serializeIntegrationConfig(integrations: IntegrationConfig): string | n
 
 function serializeOnboardingConfig(onboarding: OnboardingConfig): string {
   return ['onboarding:', `  completed: ${onboarding.completed ? 'true' : 'false'}`].join('\n');
-}
-
-function serializeBackupConfig(backup: BackupConfig): string {
-  const lines: string[] = ['backup:'];
-  lines.push(`  repo: ${backup.repo ?? 'null'}`);
-  lines.push(`  categories: ${backup.categories}`);
-  lines.push(`  lastBackup: ${backup.lastBackup ?? 'null'}`);
-  lines.push(`  lastRestore: ${backup.lastRestore ?? 'null'}`);
-  return lines.join('\n');
 }
 
 function serializePlaybooksConfig(playbooks: PlaybooksConfig): string | null {
@@ -1910,40 +1891,6 @@ export async function updateOnboardingConfig(
   await writeFileForce(configPath, newContent);
 }
 
-export async function updateBackupConfig(
-  backup: Partial<BackupConfig>,
-): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const current = (await readConfig()).backup;
-  const nextBackup: BackupConfig = {
-    repo: current?.repo ?? null,
-    categories: current?.categories ?? 'projects, playbooks, servers, workflows, config',
-    lastBackup: current?.lastBackup ?? null,
-    lastRestore: current?.lastRestore ?? null,
-    ...backup,
-  };
-
-  const backupBlock = serializeBackupConfig(nextBackup);
-  const existing = await fileExists(configPath)
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${backupBlock}\n---\n${existing}`;
-    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'backup');
-  const newFm = `${cleanedFm}\n${backupBlock}`.replace(/^\n+/, '');
-  const normalizedFm = newFm.replace(/\n+$/, '');
-  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
-
 // Guard so the legacy-config migration runs at most once per config path per
 // process lifetime. Keyed by absolute path so tests with multiple sandbox
 // HOMEs still get the migration applied to each.
@@ -2035,14 +1982,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
       ),
       ...parseInstalledAgents(fm),
     },
-    backup: fm['backup.repo'] || fm['backup.categories']
-      ? {
-          repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
-          categories: fm['backup.categories'] || 'projects, playbooks, servers, workflows, config',
-          lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
-          lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
-        }
-      : null,
     statuses: parseStatusConfig(content),
     workflows: parseWorkflowsConfig(content),
     defaultWorkflow: fm['defaultWorkflow'] ? String(fm['defaultWorkflow']) : null,

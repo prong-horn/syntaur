@@ -166,7 +166,6 @@ function detectNestedParseMismatch(
   fmBlock: string,
   config: {
     integrations: { claudePluginDir: string | null; codexPluginDir: string | null; codexMarketplacePath: string | null };
-    backup: { repo: string | null; categories: string; lastBackup: string | null; lastRestore: string | null } | null;
   },
 ): NestedMismatch | null {
   const integrationChecks: Array<[string, string | null]> = [
@@ -178,27 +177,6 @@ function detectNestedParseMismatch(
     const raw = readNestedField(fmBlock, dotted);
     if (raw !== null && raw !== 'null' && raw !== '' && parsedValue === null) {
       return { field: dotted, parent: 'integrations' };
-    }
-  }
-
-  const backupFields: Array<[string, string | null]> = [
-    ['backup.repo', config.backup?.repo ?? null],
-    ['backup.lastBackup', config.backup?.lastBackup ?? null],
-    ['backup.lastRestore', config.backup?.lastRestore ?? null],
-  ];
-  for (const [dotted, parsedValue] of backupFields) {
-    const raw = readNestedField(fmBlock, dotted);
-    if (raw !== null && raw !== 'null' && raw !== '' && parsedValue === null) {
-      return { field: dotted, parent: 'backup' };
-    }
-  }
-
-  const rawCategories = readNestedField(fmBlock, 'backup.categories');
-  if (rawCategories !== null && rawCategories !== '' && config.backup?.categories) {
-    const rawNormalized = rawCategories.split(',').map((s) => s.trim()).filter(Boolean).join(',');
-    const parsedNormalized = config.backup.categories.split(',').map((s) => s.trim()).filter(Boolean).join(',');
-    if (rawNormalized && rawNormalized !== parsedNormalized) {
-      return { field: 'backup.categories', parent: 'backup' };
     }
   }
 

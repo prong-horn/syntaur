@@ -13,11 +13,6 @@ agentDefaults:
   autoApprove: false
 session:
   idleSweepHours: 6
-backup:
-  repo: null
-  categories: projects, playbooks, servers, workflows, config
-  lastBackup: null
-  lastRestore: null
 ---
 
 # Syntaur Configuration

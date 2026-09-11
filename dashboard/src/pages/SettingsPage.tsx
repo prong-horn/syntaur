@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { RotateCcw, Check } from 'lucide-react';
 import { SectionCard } from '../components/SectionCard';
-import { BackupSection } from '../components/BackupSection';
 import { PRESETS, type ThemeSlug } from '../themes';
 import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
@@ -141,8 +140,6 @@ export function SettingsPage() {
 
       <ViewDefaultsSection />
 
-      {/* GitHub Backup */}
-      <BackupSection />
     </div>
   );
 }
