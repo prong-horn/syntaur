@@ -465,9 +465,7 @@ async function handleWorktreeCreate(
 export function createWriteRouter(
   projectsDir: string,
   assignmentsDir?: string,
-  todosDir?: string,
 ): Router {
-  const linkedTodosLookup = todosDir ? { todosDir, projectsDir } : undefined;
   const router = Router();
   // Every mutation here writes a record file; clear the shared records cache
   // once each handler resolves so the next read reflects the change.
@@ -2398,14 +2396,12 @@ export function createWriteRouter(
       // WS-2 (Decision 1): on the MIGRATED path, complete/fail/reopen are ENGINE
       // moves through the locked recompute (parity with the CLI). `null` ⇒ not
       // migrated / no per-file workflow → fall through to the ladder below. The
-      // engine handles terminal side effects (linked-todos) internally.
       const engineResult = await runEngineTransition({
         assignmentPath,
         projectDir,
         command,
         by: 'human',
         reason: typeof reason === 'string' ? reason : undefined,
-        linkedTodosLookup,
       });
       if (engineResult) {
         if (!engineResult.success) {
@@ -2453,7 +2449,6 @@ export function createWriteRouter(
         commandTargets:
           config.custom && gatedFallback ? new Map([[command, gatedFallback]]) : undefined,
         terminalStatuses: config.custom ? config.terminalStatuses : undefined,
-        linkedTodosLookup,
       });
 
       if (!result.success) {
@@ -3377,7 +3372,6 @@ export function createWriteRouter(
         command,
         by: 'human',
         reason: typeof reason === 'string' ? reason : undefined,
-        linkedTodosLookup,
       });
       if (engineResult) {
         if (!engineResult.success) {
@@ -3431,7 +3425,6 @@ export function createWriteRouter(
             config.custom && gatedFallbackById ? new Map([[command, gatedFallbackById]]) : undefined,
           transitionTable: config.custom && GATED_TERMINAL.has(command) ? config.transitionTable : undefined,
           terminalStatuses: config.custom ? config.terminalStatuses : undefined,
-          linkedTodosLookup,
         },
       );
       if (!transitionResult.success) {

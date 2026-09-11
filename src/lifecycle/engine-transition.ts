@@ -22,8 +22,6 @@ import {
   resolveRecomputeContext,
 } from './recompute.js';
 import { parseAssignmentFrontmatter } from './frontmatter.js';
-import { runTerminalSideEffects, type LinkedTodosLookup } from './linked-todos.js';
-import { linkedAssignmentRef } from './transitions.js';
 
 /**
  * Whether the stage ENGINE is active for THIS assignment: the `stages-migrated`
@@ -57,8 +55,8 @@ function commandToMove(command: string, workflow: StageWorkflow, actor: string |
   }
   if (command === 'fail') {
     // ONLY the declared failure terminal — never fall back to "the first
-    // terminal", which could be the SUCCESS terminal and would auto-complete
-    // linked todos on a `fail` (codex review major 1). A workflow with no
+    // terminal", which could be the SUCCESS terminal on a `fail` (codex review
+    // major 1). A workflow with no
     // failure terminal is rejected up in runEngineTransition.
     const tf = workflow.terminalFailure;
     return tf ? { kind: 'manual-override', target: tf, actor: actor ?? undefined } : null;
@@ -81,7 +79,6 @@ export async function runEngineTransition(input: {
   command: string;
   by: string | null;
   reason?: string;
-  linkedTodosLookup?: LinkedTodosLookup;
 }): Promise<TransitionResult | null> {
   if (!(await isStagesMigrated())) return null;
   if (!(await fileExists(input.assignmentPath))) return null;
@@ -132,13 +129,6 @@ export async function runEngineTransition(input: {
       fromStatus,
     };
   }
-
-  // Terminal side effects run AFTER the locked write returned (lock released):
-  // linked-todo completion on a success terminal, reopen on `reopen`.
-  await runTerminalSideEffects(input.linkedTodosLookup, fm.id, linkedAssignmentRef(fm), {
-    isSuccessTerminal: result.successTerminal === true,
-    isReopen: input.command === 'reopen',
-  });
 
   return {
     success: true,

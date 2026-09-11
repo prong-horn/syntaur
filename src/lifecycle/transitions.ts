@@ -5,37 +5,7 @@ import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
 import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
 import { recordStatusEvent, resolveActor, emitEvent } from './event-emit.js';
-import {
-  runTerminalSideEffects,
-  type LinkedTodosLookup,
-} from './linked-todos.js';
 import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
-
-/** The linked-todo reference id for an assignment (`project/slug` or bare id).
- *  Exported so the WS-2 engine callers compute the SAME ref. */
-export function linkedAssignmentRef(frontmatter: AssignmentFrontmatter): string {
-  return frontmatter.project ? `${frontmatter.project}/${frontmatter.slug}` : frontmatter.id;
-}
-
-async function applyLinkedTodosSideEffect(
-  lookup: LinkedTodosLookup | undefined,
-  command: string,
-  targetStatus: string,
-  frontmatter: AssignmentFrontmatter,
-  terminalStatuses?: ReadonlySet<string>,
-): Promise<void> {
-  // Auto-complete linked todos when the parent finishes via the SUCCESS path.
-  // Keyed on `command === 'complete'` reaching a terminal (not the literal
-  // status `'completed'`) so a custom workflow whose completion terminal is
-  // renamed (e.g. `done`) is handled the same as the built-in — and so `fail`,
-  // which also reaches a terminal, never completes the children. This exact
-  // predicate is preserved verbatim (WS-2 shared helper is predicate-agnostic).
-  const terminals = terminalStatuses ?? new Set(['completed', 'failed']);
-  await runTerminalSideEffects(lookup, frontmatter.id, linkedAssignmentRef(frontmatter), {
-    isSuccessTerminal: command === 'complete' && terminals.has(targetStatus),
-    isReopen: command === 'reopen',
-  });
-}
 
 function resolveAssignmentPath(projectDir: string, assignmentSlug: string): string {
   return resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
@@ -96,14 +66,6 @@ export interface TransitionOptions {
    * from:command guard, even for assignments on legacy/undefined statuses. */
   commandTargets?: Map<string, string>;
   terminalStatuses?: ReadonlySet<string>;
-  /**
-   * When provided, on a transition to `completed` we scan the configured todos
-   * dirs and auto-complete any todo whose `linkedAssignmentId` matches this
-   * assignment's UUID. On `reopen` we auto-reopen any such todo whose most
-   * recent log entry is the auto-complete marker (manual completions are left
-   * untouched).
-   */
-  linkedTodosLookup?: LinkedTodosLookup;
 }
 
 const ASSIGNEE_SETTING_COMMANDS = new Set(['start', 'shape', 'plan-ready', 'implement']);
@@ -214,14 +176,6 @@ export async function executeTransition(
     to: targetStatus,
     command,
   });
-
-  await applyLinkedTodosSideEffect(
-    options.linkedTodosLookup,
-    command,
-    targetStatus,
-    frontmatter,
-    options.terminalStatuses,
-  );
 
   return {
     success: true,
@@ -371,14 +325,6 @@ export async function executeTransitionByDir(
     to: targetStatus,
     command,
   });
-
-  await applyLinkedTodosSideEffect(
-    options.linkedTodosLookup,
-    command,
-    targetStatus,
-    frontmatter,
-    options.terminalStatuses,
-  );
 
   return {
     success: true,

@@ -228,8 +228,7 @@ export interface RecomputeResult {
   warning?: string;
   /** WS-2: the write went through the stage engine (vs the ladder). */
   viaEngine?: boolean;
-  /** WS-2: this write landed the ticket on a SUCCESS terminal stage — the caller
-   * runs the terminal side effects (linked-todos) after lock release (Task 2.5). */
+  /** WS-2: this write landed the ticket on a SUCCESS terminal stage. */
   successTerminal?: boolean;
 }
 

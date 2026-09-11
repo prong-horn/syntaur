@@ -7,8 +7,8 @@ import { recomputeDependents, resolveRecomputeContext } from '../lifecycle/recom
 
 export interface CompleteOptions extends LifecycleOptions {}
 
-/** Terminal stays gated: complete runs the existing transition (mutual
- * exclusion + linked-todo side effects), then reverse-dependency recompute —
+/** Terminal stays gated: complete runs the existing transition, then
+ * reverse-dependency recompute —
  * dependents' depsSatisfied fact just changed. Resolves the project dir + slug
  * even when the assignment was addressed by UUID without `--project` (mirrors
  * reopen), and recomputes by the resolved SLUG (recomputeDependents matches
