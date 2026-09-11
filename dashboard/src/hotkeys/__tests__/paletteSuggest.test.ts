@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { suggestPalette, type SuggestContext } from '../paletteSuggest';
 
 const ctx: SuggestContext = {
-  aliases: { a: 'assignment', p: 'project', t: 'todo', s: 'server', pb: 'playbook' },
+  aliases: { a: 'assignment', p: 'project', s: 'server', pb: 'playbook' },
   fields: [
     'kind',
     'status',

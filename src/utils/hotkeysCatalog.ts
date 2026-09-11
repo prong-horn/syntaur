@@ -44,7 +44,6 @@ export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
   'g o',
   'g m',
   'g a',
-  'g t',
   'g s',
   'g !',
   'g ,',

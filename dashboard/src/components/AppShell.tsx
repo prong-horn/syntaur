@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Archive, BookOpen, Bot, Boxes, Brain, CalendarClock, CheckSquare, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, Archive, BookOpen, Bot, Boxes, Brain, CalendarClock, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
@@ -73,7 +73,6 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
     id: 'board',
     label: 'Board',
     items: [
-      { to: '/todos', label: 'Todos', icon: CheckSquare },
       { to: '/views', label: 'Saved Views', icon: LayoutTemplate },
       { to: '/archive', label: 'Archive', icon: Archive },
     ],
@@ -92,7 +91,7 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
 ];
 
 // Only entities that live INSIDE a workspace and have no global nav entry.
-// Inventories/Usage/Todos/Agent Sessions are intentionally NOT here — they live
+// Inventories/Usage/Agent Sessions are intentionally NOT here — they live
 // once in the global nav (their pages aggregate across workspaces with their own
 // filters), so repeating them per-workspace was pure duplication. Routes like
 // /w/:ws/usage and /w/:ws/agent-sessions still work; only the sidebar list is

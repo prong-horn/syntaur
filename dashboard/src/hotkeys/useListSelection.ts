@@ -6,7 +6,7 @@ import type { HotkeyScope } from './HotkeyProvider';
 export interface UseListSelectionOptions<T> {
   scope: HotkeyScope;
   onOpen: (item: T, index: number) => void;
-  /** When false, the `o` binding is not registered (use for todo pages where `o` is a no-op). */
+  /** When false, the `o` binding is not registered. */
   bindO?: boolean;
 }
 

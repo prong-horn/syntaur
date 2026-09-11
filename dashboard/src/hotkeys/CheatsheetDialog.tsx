@@ -9,7 +9,6 @@ const SCOPE_LABEL: Record<HotkeyScope, string> = {
   'list:overview': 'Overview',
   'list:projects': 'Projects list',
   'list:assignments': 'Assignments list',
-  'list:todos': 'Todos list',
   assignment: 'Assignment detail',
   project: 'Project detail',
 };
@@ -19,7 +18,6 @@ const SCOPE_ORDER: HotkeyScope[] = [
   'list:overview',
   'list:projects',
   'list:assignments',
-  'list:todos',
   'project',
   'assignment',
 ];

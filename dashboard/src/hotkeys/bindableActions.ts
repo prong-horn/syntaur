@@ -54,7 +54,6 @@ export const BUILTIN_HOTKEY_CATALOG: readonly BuiltinHotkeyEntry[] = [
   { combo: 'g o',         description: 'Go to Overview',                scope: 'global' },
   { combo: 'g m',         description: 'Go to Projects',                scope: 'global' },
   { combo: 'g a',         description: 'Go to Assignments',             scope: 'global' },
-  { combo: 'g t',         description: 'Go to Todos',                   scope: 'global' },
   { combo: 'g s',         description: 'Go to Servers',                 scope: 'global' },
   { combo: 'g !',         description: 'Go to Attention',               scope: 'global' },
   { combo: 'g ,',         description: 'Go to Settings',                scope: 'global' },
@@ -90,7 +89,6 @@ export function lookupReservedCombo(combo: string): BuiltinHotkeyEntry | null {
 export const BINDABLE_ACTION_LABELS: Record<BindableActionKind, string> = {
   'new-workspace': 'New Workspace',
   'new-project': 'New Project',
-  'new-todo': 'New Todo',
   'new-assignment': 'New Assignment',
 };
 

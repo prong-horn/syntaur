@@ -7,7 +7,7 @@ import { useSyncExternalStore } from 'react';
 // instances (the CSS-hidden desktop `<aside>` and the mobile overlay) share one
 // source of truth and re-render together — plain `useState` would let them
 // desync until reload. Mirrors the SSR/quota-safe guard style of
-// `useTodoSectionCollapse` and the external-store pattern of `wsManager`.
+// the external-store pattern of `wsManager`.
 
 const STORAGE_KEY = 'syntaur.sidebar.collapsed.v1';
 

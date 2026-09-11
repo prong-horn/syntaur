@@ -22,7 +22,6 @@ const TYPE_LABEL: Record<string, string> = {
   assignment: 'Assignment',
   playbook: 'Playbook',
   server: 'Server',
-  todo: 'Todo',
   content: 'Content',
 };
 

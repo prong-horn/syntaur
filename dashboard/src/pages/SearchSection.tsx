@@ -18,7 +18,6 @@ const SCOPE_LABELS: Record<DefaultScope, string> = {
   all: 'Everything',
   assignment: 'Assignments',
   project: 'Projects',
-  todo: 'Todos',
   server: 'Servers',
   playbook: 'Playbooks',
 };

@@ -17,14 +17,13 @@ import type { EntityKind, DefaultScope } from '@shared/search-schema';
 const TYPE_ALIASES: Record<string, EntityKind> = {
   a: 'assignment',
   p: 'project',
-  t: 'todo',
   s: 'server',
   pb: 'playbook',
 };
 
 /**
  * Sentinel returned by the `assignee`/`project` accessors when the entry does not
- * carry that property at all (page/server/todo/playbook). It is non-"none" so the
+ * carry that property at all (page/server/playbook). It is non-"none" so the
  * `noneSentinel` `:none` check does NOT match field-less entities — only entities
  * that genuinely have the field set to null/'' match `field:none`. Restores the
  * design invariant "an atom referencing a field an entity lacks is false for it".
@@ -73,7 +72,7 @@ function jiraHaystack(item: QueryItem): string {
  * The palette's AQL vocabulary. The index entry IS the `QueryItem` the gate
  * evaluates, so accessors read the entry's own keys. An atom referencing a field
  * an entity lacks evaluates to `false` for it (so `status:done` narrows to
- * assignments/todos, `jira:X` to entities carrying external IDs) — no special
+ * assignments, `jira:X` to entities carrying external IDs) — no special
  * multi-entity casing needed. `type` (frontmatter type) is distinct from `kind`
  * (the entity kind, target of the aliases).
  */
@@ -101,7 +100,7 @@ export interface SplitResult {
 /**
  * Split a raw palette query into `{ aqlExpr, fuzzy }`.
  *
- * - Type aliases (`a:`/`p:`/`t:`/`s:`/`pb:`) desugar to `kind:<entityType>`; any
+ * - Type aliases (`a:`/`p:`/`s:`/`pb:`) desugar to `kind:<entityType>`; any
  *   value after the alias colon is left for normal classification (a bare word →
  *   free text; another atom → its own atom).
  * - A token run forms a filter atom only if its IDENT resolves in `PALETTE_FIELDS`;

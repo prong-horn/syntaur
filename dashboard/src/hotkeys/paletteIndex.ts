@@ -1,5 +1,5 @@
 import type { ProjectSummary, AssignmentBoardItem, ExternalIdInfo } from '../hooks/useProjects';
-import type { PlaybookSummary, TrackedSession, TodoItem } from '../types';
+import type { PlaybookSummary, TrackedSession } from '../types';
 import type { ContentHit, ContentMatchRange } from '../hooks/useContentSearch';
 
 export type PaletteEntryType =
@@ -7,7 +7,6 @@ export type PaletteEntryType =
   | 'assignment'
   | 'playbook'
   | 'server'
-  | 'todo'
   | 'page'
   | 'content';
 
@@ -41,7 +40,6 @@ export const WORKSPACE_CAPABLE_ROUTES = new Set<string>([
   '/assignments',
   '/servers',
   '/agent-sessions',
-  '/todos',
 ]);
 
 export function resolveRoute(basePath: string, wsPrefix: string): string {
@@ -52,7 +50,6 @@ export const STATIC_PAGES = [
   { id: 'page-overview',    title: 'Overview',    basePath: '/',            keywords: ['home', 'dashboard'] },
   { id: 'page-projects',    title: 'Projects',    basePath: '/projects',    keywords: [] },
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
-  { id: 'page-todos',       title: 'Todos',       basePath: '/todos',       keywords: ['tasks'] },
   { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
   { id: 'page-agent-sessions', title: 'Agent Sessions', basePath: '/agent-sessions', keywords: ['sessions', 'runs', 'claude', 'codex'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
@@ -68,7 +65,6 @@ interface BuildInput {
   assignments?: AssignmentBoardItem[];
   playbooks?: PlaybookSummary[];
   servers?: TrackedSession[];
-  todos?: Array<TodoItem & { workspace?: string }>;
   wsPrefix: string;
   /**
    * Fold external IDs into the index + carry the `externalIds` fact on entries.
@@ -130,14 +126,6 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       project: m.slug,
       externalIds: idField(m.externalIds),
     });
-    out.push({
-      type: 'todo',
-      id: `project-todos-${m.slug}`,
-      title: `${m.title} todos`,
-      subtitle: `${m.slug} · project`,
-      keywords: [...(m.tags ?? []), 'project', 'todos'],
-      route: `${projectWs}/projects/${m.slug}?tab=todos`,
-    });
   }
 
   for (const a of input.assignments ?? []) {
@@ -181,22 +169,6 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       title: s.name,
       subtitle: s.alive ? 'alive' : 'dead',
       route: `${resolveRoute('/servers', input.wsPrefix)}#server-${encodeURIComponent(s.name)}`,
-    });
-  }
-
-  for (const t of input.todos ?? []) {
-    // If the todo came from a specific workspace, route there; else use the current wsPrefix.
-    const todoWs = t.workspace && t.workspace !== '_ungrouped' ? `/w/${t.workspace}` : input.wsPrefix;
-    const base = resolveRoute('/todos', todoWs);
-    out.push({
-      type: 'todo',
-      id: `todo-${t.id}`,
-      title: t.description,
-      subtitle: t.status,
-      keywords: t.tags,
-      route: `${base}?focus=${encodeURIComponent(t.id)}`,
-      status: t.status,
-      tags: t.tags,
     });
   }
 

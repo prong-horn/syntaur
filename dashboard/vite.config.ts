@@ -24,7 +24,6 @@ export default defineConfig({
       '@shared/terminal-schema': resolve(__dirname, '../src/utils/terminal-schema.ts'),
       '@shared/search-schema': resolve(__dirname, '../src/utils/search-schema.ts'),
       '@shared/branch-name': resolve(__dirname, '../src/utils/branch-name.ts'),
-      '@shared/todo-sections': resolve(__dirname, '../src/utils/todoSections.ts'),
       '@shared/workspace-visibility-schema': resolve(
         __dirname,
         '../src/utils/workspace-visibility-schema.ts',

@@ -20,7 +20,6 @@ import { ViewToggle } from '../components/ViewToggle';
 import { EmptyState } from '../components/EmptyState';
 import { DependencyGraph } from '../components/DependencyGraph';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
-import { ProjectTodosPanel } from '../components/ProjectTodosPanel';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { TableColumnPicker } from '../components/TableColumnPicker';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
@@ -40,7 +39,7 @@ import { captureCurrentView, applyConfig, inferLandingRoute, mergeUpdatedConfig,
 import { scopeMatches, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { useToast, Toaster } from '../components/Toast';
 
-const VALID_TABS = new Set(['overview', 'assignments', 'todos', 'dependencies', 'knowledge']);
+const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies', 'knowledge']);
 const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
 
 export function ProjectDetail() {
@@ -66,7 +65,7 @@ export function ProjectDetail() {
   const { data: workspacesData } = useWorkspaces();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
-  // palette jumping from one project's overview to another's todos tab).
+  // palette jumping from one project's overview to another's tab).
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab = tabParam && VALID_TABS.has(tabParam) ? tabParam : 'overview';
@@ -956,11 +955,6 @@ export function ProjectDetail() {
                     </SectionCard>
                   </div>
                 ),
-              },
-              {
-                value: 'todos',
-                label: 'Todos',
-                content: <ProjectTodosPanel projectId={project.slug} />,
               },
               {
                 value: 'workflow',

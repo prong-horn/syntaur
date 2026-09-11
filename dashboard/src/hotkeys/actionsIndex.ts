@@ -1,7 +1,6 @@
 import type { NavigateFunction } from 'react-router-dom';
 import type { PlaybookSummary } from '../types';
 import { slugify } from '../lib/slug';
-import { addTodo } from '../hooks/useTodos';
 import type { BindableActionKind } from './bindableActions';
 
 export interface FlowOption {
@@ -62,7 +61,6 @@ interface BuildActionsInput {
   playbooks: PlaybookSummary[];
   projectSlug: string | null;
   currentProjectTitle: string | null;
-  currentProjectWorkspace: string | null;
   wsPrefix: string;
   refetchPlaybooks: () => void;
   navigate: NavigateFunction;
@@ -83,18 +81,6 @@ async function togglePlaybook(
     throw new Error(body.error || `Failed to ${action} playbook`);
   }
   refetch();
-}
-
-async function createTodo(workspace: string, description: string): Promise<void> {
-  const response = await fetch(`/api/todos/${encodeURIComponent(workspace)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ description }),
-  });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || `Failed to create todo (HTTP ${response.status})`);
-  }
 }
 
 // --- Helpers used by the canonical create flows ---
@@ -168,7 +154,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
     playbooks,
     projectSlug,
     currentProjectTitle,
-    currentProjectWorkspace,
     wsPrefix,
     refetchPlaybooks,
     navigate,
@@ -283,58 +268,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
             ? `/w/${workspace}/projects/${payload.slug ?? slug}`
             : `/projects/${payload.slug ?? slug}`;
         helpers.navigate(navTarget);
-      },
-    },
-  });
-
-  out.push({
-    id: 'new-todo',
-    title: 'New Todo',
-    subtitle: 'Pick scope (global / workspace / project)',
-    group: 'Create',
-    keywords: ['new', 'create', 'todo', 'task'],
-    bindableKind: 'new-todo',
-    flow: {
-      steps: [
-        {
-          kind: 'picker',
-          id: 'scope',
-          label: 'Scope',
-          loadOptions: async () => {
-            const [{ workspaces }, projects] = await Promise.all([
-              fetchWorkspaces(),
-              fetchProjects(),
-            ]);
-            const options: FlowOption[] = [
-              { value: '_ungrouped', label: 'Global', hint: 'no workspace' },
-            ];
-            for (const ws of workspaces) {
-              options.push({ value: ws, label: ws, hint: 'workspace' });
-            }
-            for (const p of projects) {
-              const target = p.workspace ?? '_ungrouped';
-              options.push({
-                value: target,
-                label: `${p.title}`,
-                hint: `project · ${p.workspace ?? 'ungrouped'}`,
-              });
-            }
-            return options;
-          },
-        },
-        {
-          kind: 'text',
-          id: 'description',
-          label: 'Description',
-          placeholder: 'Describe the todo…',
-          required: true,
-        },
-      ],
-      submit: async (values) => {
-        const scope = (values.scope ?? '_ungrouped').trim() || '_ungrouped';
-        const description = (values.description ?? '').trim();
-        if (!description) throw new Error('Description is required');
-        await addTodo(scope, description);
       },
     },
   });
@@ -465,59 +398,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
     keywords: ['new', 'create', 'playbook'],
     run: () => navigate('/playbooks/create'),
   });
-
-  out.push({
-    id: 'create-todo-global',
-    title: 'New Todo (global, quick)',
-    subtitle: 'Ungrouped, single-step',
-    group: 'Create',
-    keywords: ['new', 'create', 'todo', 'global', 'ungrouped', 'quick'],
-    requiresInput: {
-      placeholder: 'Describe the todo…',
-      runWithInput: async (value) => {
-        const desc = value.trim();
-        if (!desc) return;
-        await createTodo('_ungrouped', desc);
-      },
-    },
-  });
-
-  if (wsPrefix) {
-    const wsName = wsPrefix.replace(/^\/w\//, '');
-    out.push({
-      id: `create-todo-workspace-${wsName}`,
-      title: `New Todo in workspace ${wsName}`,
-      subtitle: wsName,
-      group: 'Create',
-      keywords: ['new', 'create', 'todo', 'workspace', wsName],
-      requiresInput: {
-        placeholder: `Describe the todo for workspace ${wsName}…`,
-        runWithInput: async (value) => {
-          const desc = value.trim();
-          if (!desc) return;
-          await createTodo(wsName, desc);
-        },
-      },
-    });
-  }
-
-  if (projectSlug && currentProjectWorkspace) {
-    out.push({
-      id: `create-todo-project-${projectSlug}`,
-      title: `New Todo in project ${currentProjectTitle ?? projectSlug}`,
-      subtitle: `${projectSlug} · workspace ${currentProjectWorkspace}`,
-      group: 'Create',
-      keywords: ['new', 'create', 'todo', 'project', projectSlug, currentProjectWorkspace],
-      requiresInput: {
-        placeholder: `Describe the todo for project ${currentProjectTitle ?? projectSlug}…`,
-        runWithInput: async (value) => {
-          const desc = value.trim();
-          if (!desc) return;
-          await createTodo(currentProjectWorkspace, desc);
-        },
-      },
-    });
-  }
 
   // --- Toggle group ---
 

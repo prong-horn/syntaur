@@ -26,7 +26,6 @@ const SIDEBAR_SECTIONS = [
   '/playbooks',
   '/memories',
   '/resources',
-  '/todos',
   '/views',
   '/help',
   '/settings',
@@ -105,10 +104,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/resources')) {
     return '/resources';
-  }
-
-  if (normalized.startsWith('/todos')) {
-    return '/todos';
   }
 
   if (normalized.startsWith('/views')) {
@@ -257,9 +252,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
     if (parts[1] === 'new') {
       title = 'New Resource';
     }
-  } else if (parts[0] === 'todos') {
-    title = 'Todos';
-    breadcrumbs.push({ label: 'Todos', path: `${workspacePrefix}/todos` });
   } else if (parts[0] === 'views') {
     title = 'Saved Views';
     breadcrumbs.push({ label: 'Saved Views', path: `${workspacePrefix}/views` });

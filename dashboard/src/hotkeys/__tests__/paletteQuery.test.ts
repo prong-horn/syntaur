@@ -8,7 +8,6 @@ describe('splitPaletteQuery — alias expansion', () => {
   it('bare alias → kind atom, no fuzzy', () => {
     expect(split('a:')).toEqual({ aqlExpr: 'kind:assignment', fuzzy: '' });
     expect(split('p:')).toEqual({ aqlExpr: 'kind:project', fuzzy: '' });
-    expect(split('t:')).toEqual({ aqlExpr: 'kind:todo', fuzzy: '' });
     expect(split('s:')).toEqual({ aqlExpr: 'kind:server', fuzzy: '' });
     expect(split('pb:')).toEqual({ aqlExpr: 'kind:playbook', fuzzy: '' });
   });
@@ -248,7 +247,7 @@ describe('splitPaletteQuery — config-driven aliases', () => {
 });
 
 describe('splitPaletteQuery — default-scope injection', () => {
-  const scope = (q: string, defaultScope: 'all' | 'project' | 'todo') =>
+  const scope = (q: string, defaultScope: 'all' | 'project' | 'assignment') =>
     splitPaletteQuery(q, undefined, { defaultScope });
 
   it('injects kind:<scope> when the box has no explicit prefix', () => {
@@ -274,7 +273,7 @@ describe('splitPaletteQuery — default-scope injection', () => {
 
   it('a leading all: escape searches everything regardless of scope', () => {
     expect(scope('all: payment', 'project')).toEqual({ aqlExpr: '', fuzzy: 'payment' });
-    expect(scope('all:', 'todo')).toEqual({ aqlExpr: '', fuzzy: '' });
+    expect(scope('all:', 'assignment')).toEqual({ aqlExpr: '', fuzzy: '' });
   });
 
   it('defaultScope=all never injects', () => {

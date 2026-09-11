@@ -17,7 +17,6 @@ import {
   usePlaybooks,
   useServers,
 } from '../hooks/useProjects';
-import { useAllTodos } from '../hooks/useTodos';
 import { useSearchConfig } from '../hooks/useSearchConfig';
 import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
 import { buildActionsIndex, type Action } from './actionsIndex';
@@ -42,7 +41,6 @@ export type HotkeyScope =
   | 'list:overview'
   | 'list:projects'
   | 'list:assignments'
-  | 'list:todos'
   | 'assignment'
   | 'project';
 
@@ -119,8 +117,8 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 
   // Palette index data is fetched lazily: these hooks stay inert until the
   // command/actions palette is first opened. Previously they fired five
-  // requests (projects, assignments, playbooks, servers, todos — the last hits
-  // the tmux scan) on *every* page load, which is what made the overview slow
+  // requests (projects, assignments, playbooks, servers) on *every* page load,
+  // which is what made the overview slow
   // on every load, not just the first. Global hotkeys and g-chord navigation
   // don't need this data, so deferring it doesn't affect them.
   const [paletteDataEnabled, setPaletteDataEnabled] = useState(false);
@@ -128,7 +126,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const assignmentsState = useAssignmentsBoard(paletteDataEnabled);
   const playbooksState = usePlaybooks(paletteDataEnabled);
   const serversState = useServers(paletteDataEnabled);
-  const todosState = useAllTodos(paletteDataEnabled);
   const { search: searchCfg } = useSearchConfig();
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
@@ -136,16 +133,11 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     const assignments = assignmentsState.data?.assignments ?? [];
     const playbooks = playbooksState.data?.playbooks ?? [];
     const servers = serversState.data?.sessions ?? [];
-    const todoList = todosState.data?.workspaces ?? [];
-    const todos = todoList.flatMap((w) =>
-      w.items.map((it) => ({ ...it, workspace: w.workspace })),
-    );
     return buildIndex({
       projects,
       assignments,
       playbooks,
       servers,
-      todos,
       wsPrefix,
       externalIds: searchCfg.externalIds,
     });
@@ -154,7 +146,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     assignmentsState.data,
     playbooksState.data,
     serversState.data,
-    todosState.data,
     wsPrefix,
     searchCfg.externalIds,
   ]);
@@ -166,7 +157,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     return projectsState.data?.find((p) => p.slug === currentProjectSlug) ?? null;
   }, [projectsState.data, currentProjectSlug]);
   const currentProjectTitle = currentProject?.title ?? null;
-  const currentProjectWorkspace = currentProject?.workspace ?? null;
 
   const actionEntries = useMemo<Action[]>(
     () =>
@@ -174,7 +164,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
         playbooks: playbooksState.data?.playbooks ?? [],
         projectSlug: currentProjectSlug,
         currentProjectTitle,
-        currentProjectWorkspace,
         wsPrefix,
         refetchPlaybooks: playbooksState.refetch,
         navigate,
@@ -185,7 +174,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       playbooksState.refetch,
       currentProjectSlug,
       currentProjectTitle,
-      currentProjectWorkspace,
       wsPrefix,
       navigate,
       toggleTheme,
@@ -520,7 +508,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       { suffix: 'o', basePath: '/',            desc: 'Go to Overview' },
       { suffix: 'm', basePath: '/projects',    desc: 'Go to Projects' },
       { suffix: 'a', basePath: '/assignments', desc: 'Go to Assignments' },
-      { suffix: 't', basePath: '/todos',       desc: 'Go to Todos' },
       { suffix: 's', basePath: '/servers',     desc: 'Go to Servers' },
       { suffix: ',', basePath: '/settings',    desc: 'Go to Settings' },
     ];

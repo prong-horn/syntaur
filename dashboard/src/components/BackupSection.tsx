@@ -4,7 +4,7 @@ import { SectionCard } from './SectionCard';
 import { ConfirmDialog } from './ConfirmDialog';
 import { formatDateTime } from '../lib/format';
 
-const VALID_CATEGORIES = ['projects', 'playbooks', 'todos', 'servers', 'config'] as const;
+const VALID_CATEGORIES = ['projects', 'playbooks', 'servers', 'config'] as const;
 type Category = (typeof VALID_CATEGORIES)[number];
 
 interface BackupStatus {

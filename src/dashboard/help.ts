@@ -469,7 +469,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         title: 'Use the assignment workspace for execution',
-        detail: 'Keep the objective and todos in assignment.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
+        detail: 'Keep the objective and acceptance criteria in assignment.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
         href: '/projects',
       },
       {

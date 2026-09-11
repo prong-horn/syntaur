@@ -865,7 +865,7 @@ const assignmentsByMission = {
   ],
 };
 
-// --- Playbooks, servers, todos, sessions ---
+// --- Playbooks, servers, sessions ---
 
 const playbooks = [
   {
@@ -990,49 +990,6 @@ function renderServer(s) {
   if (s.ports) lines.push(`ports: [${s.ports.join(', ')}]`);
   if (s.cwd) lines.push(`cwd: ${s.cwd}`);
   return `---\n${lines.join('\n')}\n---\n`;
-}
-
-const todoWorkspaces = [
-  {
-    workspace: 'demo-billing',
-    items: [
-      { id: 'a1b2', status: 'completed', text: 'Audit v1 webhook handlers' },
-      { id: 'c3d4', status: 'in_progress', text: 'Wire the v2 signature verifier behind the feature flag', session: 'claude-1234' },
-      { id: 'e5f6', status: 'blocked', text: 'Backfill v2 events for the 30-day overlap' },
-      { id: '7890', status: 'open', text: 'Write the cutover runbook' },
-      { id: '1122', status: 'open', text: 'Set up Grafana alert for `webhook.rejected` rate' },
-    ],
-  },
-  {
-    workspace: 'demo-webapp',
-    items: [
-      { id: 'aaaa', status: 'completed', text: 'Instrument the four onboarding funnel events' },
-      { id: 'bbbb', status: 'in_progress', text: 'Ship the Lottie empty-workspace illustration', session: 'claude-5678' },
-      { id: 'cccc', status: 'in_progress', text: 'Build the Invite Teammate step', session: 'claude-5679' },
-      { id: 'dddd', status: 'open', text: 'Rewrite welcome email' },
-      { id: 'eeee', status: 'open', text: 'Seed a sample project on signup' },
-    ],
-  },
-];
-
-function renderTodoChecklist(ws) {
-  const lines = ws.items.map((it) => {
-    const marker =
-      it.status === 'completed' ? 'x' :
-      it.status === 'blocked' ? '!' :
-      it.status === 'in_progress' ? (it.session ? `>:${it.session}` : '>') :
-      ' ';
-    return `- [${marker}] ${it.text} [t:${it.id}]`;
-  }).join('\n');
-  return `---
-workspace: ${ws.workspace}
-archive_interval: weekly
----
-
-# Todos — ${ws.workspace}
-
-${lines}
-`;
 }
 
 // --- Agent sessions seeded into SQLite ---
@@ -1191,13 +1148,10 @@ async function main() {
   const projectsDir = resolve(TARGET, 'projects');
   const playbooksDir = resolve(TARGET, 'playbooks');
   const serversDir = resolve(TARGET, 'servers');
-  const todosDir = resolve(TARGET, 'todos');
-
   await ensureDir(TARGET);
   await ensureDir(projectsDir);
   await ensureDir(playbooksDir);
   await ensureDir(serversDir);
-  await ensureDir(todosDir);
   await ensureDir(resolve(TARGET, 'assignments'));
 
   await writeText(resolve(TARGET, 'config.md'), renderConfigMd(projectsDir));
@@ -1278,11 +1232,6 @@ async function main() {
     await writeText(resolve(serversDir, `${s.session}.md`), renderServer(s));
   }
 
-  // Todos
-  for (const ws of todoWorkspaces) {
-    await writeText(resolve(todosDir, `${ws.workspace}.md`), renderTodoChecklist(ws));
-  }
-
   // Agent sessions (SQLite)
   const dbPath = resolve(TARGET, 'syntaur.db');
   seedAgentSessions(dbPath, projects);
@@ -1291,7 +1240,7 @@ async function main() {
   const totalAssignments = Object.values(assignmentsByMission).reduce((n, arr) => n + arr.length, 0);
   console.log(`\n✓ Demo workspace seeded at: ${TARGET}`);
   console.log(`  ${projects.length} projects, ${totalAssignments} assignments`);
-  console.log(`  ${playbooks.length} playbooks, ${servers.length} servers, ${todoWorkspaces.length} todo workspaces`);
+  console.log(`  ${playbooks.length} playbooks, ${servers.length} servers`);
   console.log(`  agent sessions seeded into syntaur.db`);
   console.log(`\nLaunch the dashboard against it with:`);
   console.log(`  SYNTAUR_HOME=${TARGET.replace(homedir(), '~')} syntaur dashboard`);
