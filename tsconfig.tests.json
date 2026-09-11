@@ -89,5 +89,6 @@
     "src/__tests__/inbox-cli.test.ts",
     "src/__tests__/dashboard-api-inbox.test.ts",
     "src/__tests__/inbox-snooze.test.ts",
+    "src/__tests__/home-path-hygiene.test.ts",
   ]
 }
