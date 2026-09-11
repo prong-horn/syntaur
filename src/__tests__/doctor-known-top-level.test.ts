@@ -16,6 +16,14 @@ const CRITERION_NAMES = [
   'inbox-snoozes.json',
 ] as const;
 
+const REQUIRED_DISCOVERED = [
+  'worktrees',
+  'npx-install.json',
+  'inbox-snoozes.json',
+  'recording.pid',
+  'runtime',
+] as const;
+
 // session.ts compares against context.json only to skip it — nothing writes it at root.
 const EXCLUDED_ROOT_NAMES = new Set(['context.json']);
 
@@ -43,11 +51,20 @@ function collectRootBindings(source: string): Set<string> {
   return bindings;
 }
 
-function collectRootLiterals(source: string, bindings: Set<string>): Set<string> {
+function rootReceiverPattern(bindings: Set<string>): string {
+  const parts: string[] = [];
+  for (const id of bindings) {
+    if (id === 'syntaurRoot') parts.push(`${id}\\(\\)`);
+    else parts.push(`\\b${id}\\b`);
+  }
+  return parts.join('|');
+}
+
+export function collectRootLiterals(source: string, bindings: Set<string>): Set<string> {
   const names = new Set<string>();
-  const bindingPattern = bindings.size > 0 ? [...bindings].join('|') : 'syntaurRoot';
+  const receiver = rootReceiverPattern(bindings);
   const callRe = new RegExp(
-    `(?:resolve|join)\\(\\s*(?:${bindingPattern})\\s*,\\s*['"]([^'"]+)['"]`,
+    `(?:resolve|join)\\(\\s*(?:${receiver})\\s*,\\s*['"]([^'"]+)['"]`,
     'g',
   );
   let m: RegExpExecArray | null;
@@ -56,21 +73,31 @@ function collectRootLiterals(source: string, bindings: Set<string>): Set<string>
     if (!name.includes('/')) names.add(name);
   }
 
-  // Multi-line resolve(syntaurRoot(), 'worktrees', ...) — grab chained string literals.
-  const multiRe = new RegExp(
-    `(?:resolve|join)\\(\\s*(?:${bindingPattern})\\s*,\\s*((?:['"][^'"]+['"]\\s*,\\s*)+['"][^'"]+['"])`,
+  const multilineFirstRe = new RegExp(
+    `(?:resolve|join)\\(\\s*(?:${receiver})\\s*,\\s*[\\s\\n]*['"]([^'"]+)['"]`,
     'g',
   );
-  while ((m = multiRe.exec(source)) !== null) {
-    const chunk = m[1];
-    const litRe = /['"]([^'"]+)['"]/g;
-    let lit: RegExpExecArray | null;
-    while ((lit = litRe.exec(chunk)) !== null) {
-      if (!lit[1].includes('/')) names.add(lit[1]);
-    }
+  while ((m = multilineFirstRe.exec(source)) !== null) {
+    const name = m[1];
+    if (!name.includes('/')) names.add(name);
   }
 
   return names;
+}
+
+export function discoverKnownTopLevelNames(): Set<string> {
+  const discovered = new Set<string>();
+  for (const file of walkTsFiles(join(REPO_ROOT, 'src'))) {
+    const source = readFileSync(file, 'utf-8');
+    const bindings = collectRootBindings(source);
+    for (const name of collectRootLiterals(source, bindings)) {
+      if (!EXCLUDED_ROOT_NAMES.has(name)) discovered.add(name);
+    }
+  }
+  for (const marker of markerConstants()) {
+    discovered.add(marker);
+  }
+  return discovered;
 }
 
 function markerConstants(): string[] {
@@ -89,17 +116,10 @@ describe('doctor KNOWN_TOP_LEVEL', () => {
   });
 
   it('matches every root-level literal written via syntaurRoot bindings', () => {
-    const discovered = new Set<string>();
-    for (const file of walkTsFiles(join(REPO_ROOT, 'src'))) {
-      const rel = relative(REPO_ROOT, file);
-      const source = readFileSync(file, 'utf-8');
-      const bindings = collectRootBindings(source);
-      for (const name of collectRootLiterals(source, bindings)) {
-        if (!EXCLUDED_ROOT_NAMES.has(name)) discovered.add(name);
-      }
-    }
-    for (const marker of markerConstants()) {
-      discovered.add(marker);
+    const discovered = discoverKnownTopLevelNames();
+
+    for (const name of REQUIRED_DISCOVERED) {
+      expect(discovered.has(name), `scanner must discover ${name}`).toBe(true);
     }
 
     const missing = [...discovered].filter((n) => !KNOWN_TOP_LEVEL.has(n)).sort();

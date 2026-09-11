@@ -302,7 +302,9 @@ export interface SyntaurConfig {
 
 const DEFAULT_CONFIG: SyntaurConfig = {
   version: '2.0',
-  defaultProjectDir: '',
+  get defaultProjectDir() {
+    return defaultProjectDir();
+  },
   onboarding: {
     completed: false,
   },
@@ -341,14 +343,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   stalenessWatchdog: false,
   standaloneDefaultCwd: null,
 };
-
-Object.defineProperty(DEFAULT_CONFIG, 'defaultProjectDir', {
-  get() {
-    return defaultProjectDir();
-  },
-  enumerable: true,
-  configurable: true,
-});
 
 const AUTO_CREATE_WORKTREE_VALUES: readonly AutoCreateWorktree[] = ['skip', 'ask', 'always'];
 
