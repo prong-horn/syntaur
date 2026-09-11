@@ -3,15 +3,6 @@
   "hooks": {
     "PostToolUse": [
       {
-        "matcher": "ExitPlanMode",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "You just exited plan mode. If there is an active Syntaur assignment (check for a workspace field in assignment.md), pick the next unused `plan-v<N>.md` filename (or `plan.md` if no plan*.md exists yet) under the assignment dir and write the plan you just created there."
-          }
-        ]
-      },
-      {
         "hooks": [
           {
             "type": "command",
@@ -28,16 +19,6 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/session-touch.sh",
             "timeout": 5
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "Before compaction, if there is an active Syntaur assignment (check `.syntaur/context.json` for `assignmentDir`), invoke `/save-session-summary` so a future session can resume cleanly. The summary is written under `<assignmentDir>/sessions/<sessionId>/`, where the CLI resolves `<sessionId>` from your running process (env / process tree) \u2014 do not read it from the `context.json` scalar (a co-tenant can clobber that hint). Skip silently if no active Syntaur context. Do NOT write to `handoff.md` \u2014 that is reserved for cross-ticket handoff at completion."
           }
         ]
       }

@@ -42,7 +42,6 @@ Protocol version: **2.0**
       scratchpad.md
       handoff.md
       decision-record.md
-      sessions/<session-id>/summary.md  # Per-session continuity, same as project-nested
   playbooks/
     manifest.md              # Derived: playbook listing (read-only)
     <slug>.md                # User-authored: behavioral rules for agents
@@ -85,7 +84,7 @@ Protocol version: **2.0**
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
 9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
-10. **Session continuity** (mid-assignment) lives at `sessions/<session-id>/summary.md` inside the assignment dir — one document per session id, overwritten on every save (via `/save-session-summary`). On resume, pick the latest by `summary.md` file mtime; the Claude Code SessionStart hook also stashes the absolute path in `.syntaur/context.json` as `latestSessionSummaryPath`. Older summaries accumulate as immutable history; never delete them. Distinct from `handoff.md`, which is the assignment-level cross-ticket outbound at completion. `syntaur doctor` intentionally ignores `sessions/`. The Claude Code `PreCompact` hook reminds the agent to invoke `/save-session-summary` before context is compacted.
+10. On resume, read any open `handoff.md` (assignment-level cross-ticket outbound) plus `assignment.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.
 
 ## Proof artifacts (opt-in)
 

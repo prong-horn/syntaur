@@ -54,7 +54,6 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
   - `scratchpad.md`
   - `handoff.md` (append-only; **assignment-level cross-ticket outbound** at completion)
   - `decision-record.md`
-  - `sessions/<session-id>/summary.md` (**per-session continuity**; single doc per session id, overwritten on save by `/save-session-summary`. Codex has no `PreCompact` hook — invoke manually before compaction or session end.)
 - project `resources/*.md`
 - project `memories/*.md`
 - `.syntaur/context.json` in the current working directory
@@ -73,7 +72,7 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 - Update acceptance criteria checkboxes as work lands.
 - Append timestamped entries to `progress.md` (not to `assignment.md`) after meaningful milestones.
 - When requirements shift, write a new versioned plan file instead of rewriting the old one.
-- Append handoff.md entries (cross-ticket outbound) instead of replacing previous handoff entries. Mid-assignment session continuity is a separate file: `sessions/<sid>/summary.md`, single document per session id, overwritten on each save. Do not delete older `sessions/*/summary.md` files at completion — they remain as immutable history.
+- Append handoff.md entries (cross-ticket outbound) instead of replacing previous handoff entries.
 - Record questions via `syntaur comment ... --type question` — they roll up into `_status.md`'s `openQuestions` counter.
 
 ## CLI Reference
@@ -96,7 +95,7 @@ Use these commands directly when needed:
 - `syntaur track-session --project <project-slug> --assignment <assignment-slug> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
 - `syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>`
 - `syntaur plan version --assignment <slug> [--project <slug>]` — bump to `plan-v<N>.md` per Plan Versioning playbook
-- `syntaur session resume [--json]` — re-orient on the active assignment from latest session summary + context.json + open handoff (idempotent)
+- `syntaur session resume [--json]` — re-orient on the active assignment from context.json + open handoff (idempotent)
 - `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--assignment <slug>] [--project <slug>]` — repo-local `<repository>/.worktrees/<branch>` convention
 - `syntaur resource add --project <slug> --name <name> --source <url> [--category <name>] [--related-assignments <slug,slug>]` — writes resource file + regenerates `_index.md`
 - `syntaur memory add --project <slug> --name <name> --source <text> [--scope <scope>] [--source-assignment <slug>] [--related-assignments <slug,slug>]` — writes memory file + regenerates `_index.md`

@@ -2,9 +2,7 @@
  * Session auto-summarizer: turns a session transcript into a one-line
  * description plus a short summary, stored on the session row.
  *
- * This is deliberately separate from `/save-session-summary` (which writes the
- * detailed `sessions/<id>/summary.md` continuity doc under an assignment). This
- * one is DB-backed, needs no assignment, and exists so the dashboard list is
+ * This is DB-backed, needs no assignment, and exists so the dashboard list is
  * scannable — including for the many sessions that are bound to nothing.
  *
  * The backend contract is declared HERE rather than imported from the backend

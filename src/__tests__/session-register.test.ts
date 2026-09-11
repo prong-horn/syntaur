@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile, utimes } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -151,42 +151,6 @@ describe('runSessionRegister', () => {
     const ctx = JSON.parse(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8'));
     expect(ctx.sessionId).toBe('real-session-1');
     expect(ctx.transcriptPath).toBeNull();
-  });
-
-  it('resolves latestSessionSummaryPath to the newest summary.md by mtime', async () => {
-    const assignmentDir = join(testDir, 'assignment');
-    const oldDir = join(assignmentDir, 'sessions', 'older');
-    const newDir = join(assignmentDir, 'sessions', 'newer');
-    await mkdir(oldDir, { recursive: true });
-    await mkdir(newDir, { recursive: true });
-    await writeFile(join(oldDir, 'summary.md'), '# old');
-    await writeFile(join(newDir, 'summary.md'), '# new');
-    const past = new Date(Date.now() - 60_000);
-    await utimes(join(oldDir, 'summary.md'), past, past);
-
-    await mkdir(join(cwd, '.syntaur'), { recursive: true });
-    await writeFile(
-      join(cwd, '.syntaur', 'context.json'),
-      JSON.stringify({ assignmentDir }),
-    );
-
-    await runSessionRegister(payload(), {}, DEPS);
-
-    const ctx = JSON.parse(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8'));
-    expect(ctx.latestSessionSummaryPath).toBe(join(newDir, 'summary.md'));
-  });
-
-  it('sets latestSessionSummaryPath to null when no sessions/ dir exists', async () => {
-    await mkdir(join(cwd, '.syntaur'), { recursive: true });
-    await writeFile(
-      join(cwd, '.syntaur', 'context.json'),
-      JSON.stringify({ assignmentDir: join(testDir, 'assignment') }),
-    );
-
-    await runSessionRegister(payload(), {}, DEPS);
-
-    const ctx = JSON.parse(await readFile(join(cwd, '.syntaur', 'context.json'), 'utf-8'));
-    expect(ctx.latestSessionSummaryPath).toBeNull();
   });
 
   it('returns silently on malformed stdin', async () => {

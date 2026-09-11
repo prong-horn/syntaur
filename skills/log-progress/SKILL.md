@@ -30,8 +30,8 @@ records current in real-time, especially after every meaningful action.
 
 - The action belongs in `decision-record.md` (architecturally significant
   decisions with rationale) — write to that file, not progress.md.
-- The information is for the next session of the SAME assignment — that's
-  `/save-session-summary`.
+- The information is for the next session of the SAME assignment — append to
+  `progress.md` (this skill) and read `handoff.md` on resume when present.
 - The information is a question for the user — write to `comments.md` via
   `syntaur comment` (CLI-mediated).
 - The information is a follow-up assignment idea — open a new assignment

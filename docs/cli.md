@@ -72,16 +72,6 @@ Append a timestamped entry to the active assignment's `progress.md`: newest firs
 syntaur progress log "<text>" [--assignment <slug> [--project <slug>]]
 ```
 
-## `syntaur session save`
-
-Write the active session's continuity summary to `<assignmentDir>/sessions/<sessionId>/summary.md`. Preserves the existing `created` timestamp on re-save; the section body comes from `--from-file`, piped stdin, or a written skeleton. Never touches `handoff.md`.
-
-```
-syntaur session save [--session-id <id>] [--from-file <path>] [--assignment <slug> [--project <slug>]]
-```
-
-`--session-id` defaults to the `sessionId` in `.syntaur/context.json`; the command aborts if no real session id can be resolved.
-
 ## `syntaur unassign <assignment>`
 
 Clear the assignee on an assignment (the inverse of `syntaur assign`) and bump `updated`.

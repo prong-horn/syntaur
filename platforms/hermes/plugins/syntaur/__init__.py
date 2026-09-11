@@ -27,7 +27,6 @@ CORE_COMMANDS = [
     {"name": "grab-assignment", "description": "Claim a Syntaur assignment into this session", "kind": "guidance", "skill": "grab-assignment"},
     {"name": "log-progress", "description": "Append a progress entry to the active assignment", "kind": "guidance", "skill": "log-progress"},
     {"name": "complete-assignment", "description": "Write a handoff and complete the assignment", "kind": "guidance", "skill": "complete-assignment"},
-    {"name": "save-session-summary", "description": "Save a session continuity summary", "kind": "guidance", "skill": "save-session-summary"},
     {"name": "resume-session", "description": "Re-orient on the active assignment", "kind": "guidance", "skill": "resume-session"},
     {"name": "set-workspace", "description": "Set workspace fields on the active assignment", "kind": "guidance", "skill": "set-workspace"},
     {"name": "track-session", "description": "Register this session in the Syntaur dashboard", "kind": "guidance", "skill": "track-session"},

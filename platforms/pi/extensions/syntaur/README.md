@@ -9,7 +9,7 @@ pi-coding-agent):
   files, and the workspace root), mirroring `platforms/codex/scripts/enforce-boundaries.sh`.
 - **Session cleanup** — a `session_shutdown` handler marks the dashboard session `stopped`.
 - **Slash commands** — `doctor-syntaur` runs `syntaur doctor`; the rest (`grab-assignment`,
-  `log-progress`, `complete-assignment`, `save-session-summary`, `resume-session`, `set-workspace`,
+  `log-progress`, `complete-assignment`, `resume-session`, `set-workspace`,
   `track-session`) point the agent at the installed Tier-1 skill of the same name.
 
 ## Install

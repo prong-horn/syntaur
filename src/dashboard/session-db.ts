@@ -11,7 +11,7 @@ import { sanitizeSessionPath } from '../utils/transcript.js';
 
 let db: Database.Database | null = null;
 
-const SCHEMA_VERSION = '11';
+const SCHEMA_VERSION = '12';
 
 // v10 base schema: v9 plus the two session curation flags — `pinned_at`
 // (non-NULL ⇒ the session sorts ahead of the active sort on every browsing
@@ -19,6 +19,13 @@ const SCHEMA_VERSION = '11';
 // session is hidden from the default list queries but is never deleted).
 // Nullable ISO-8601 TEXT timestamps rather than INTEGER booleans so pin order
 // is deterministic and archiving is auditable.
+//
+// v12 base schema: v11 minus the five ops-subsystem tables (`lease_events`,
+// `leases`, `inventory_members`, `inventories`, `artifacts`) and the
+// `proof_schema_version` / `lease_schema_version` meta rows. The same drops
+// also run unconditionally on every init via `dropRetiredTables()` so a stale
+// CLI that recreates them with `CREATE TABLE IF NOT EXISTS` cannot leave them
+// behind.
 //
 // v11 base schema: v10 minus everything the terminal-launch stack owned —
 // the whole `launch_reservations` table, and the `pid`, `pid_started_at` and
@@ -102,6 +109,38 @@ CREATE TABLE IF NOT EXISTS summarize_state (
 `;
 
 /**
+ * Drop the five ops-subsystem tables and their meta-version rows. FK order:
+ * lease_events → leases → inventory_members → inventories; artifacts is
+ * independent. Idempotent (`IF EXISTS` / targeted DELETE). On SQLITE_BUSY or
+ * SQLITE_LOCKED — e.g. a stale leases-db connection still open — log once and
+ * return so init never fails; the next init retries.
+ */
+function dropRetiredTables(database: Database.Database): void {
+  try {
+    database.exec(`
+      DROP TABLE IF EXISTS lease_events;
+      DROP TABLE IF EXISTS leases;
+      DROP TABLE IF EXISTS inventory_members;
+      DROP TABLE IF EXISTS inventories;
+      DROP TABLE IF EXISTS artifacts;
+      DELETE FROM meta WHERE key IN ('proof_schema_version', 'lease_schema_version');
+    `);
+  } catch (err) {
+    const code =
+      err instanceof Error && 'code' in err
+        ? (err as Error & { code: string }).code
+        : undefined;
+    if (code === 'SQLITE_BUSY' || code === 'SQLITE_LOCKED') {
+      console.warn(
+        'dropRetiredTables: database locked by another connection; retired tables will be dropped on the next init',
+      );
+      return;
+    }
+    throw err;
+  }
+}
+
+/**
  * Initialize the SQLite database for session tracking.
  * Creates the database file and schema if they don't exist.
  * @param dbPath Optional override for the database file path (used in tests).
@@ -112,6 +151,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
   const finalPath = dbPath ?? resolve(syntaurRoot(), 'syntaur.db');
   db = new Database(finalPath);
   db.pragma('journal_mode = WAL');
+  db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA_SQL);
   // The engagement edge table (session↔assignment M:N). Idempotent
   // `CREATE TABLE IF NOT EXISTS`, so it is safe to run here — outside the
@@ -688,8 +728,25 @@ export function initSessionDb(dbPath?: string): Database.Database {
         UPDATE meta SET value = '11' WHERE key = 'schema_version';
       `);
     }
+
+    // --- v11 → v12: drop the lease, inventory and artifact subsystems.
+    // Same DROP/DELETE as `dropRetiredTables()` — the versioned step handles
+    // databases upgrading from v11; the unconditional call after migrations
+    // catches tables recreated by a stale CLI on an already-v12 database.
+    const vBeforeV12 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (vBeforeV12 === '11') {
+      dropRetiredTables(database);
+      database.exec("UPDATE meta SET value = '12' WHERE key = 'schema_version'");
+    }
   });
   runMigrations.exclusive();
+
+  dropRetiredTables(db);
 
   // Indexes, re-ensured AFTER migrations. SCHEMA_SQL runs before them, and the
   // pre-v9 migrations rebuild `sessions` via CREATE/INSERT/DROP/RENAME — which

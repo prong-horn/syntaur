@@ -15,7 +15,7 @@ When answering questions, read the actual source files rather than relying solel
 - **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md` (or `~/.claude/skills/syntaur-protocol/references/protocol-summary.md` for the installed skill version)
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,save-session-summary,track-session,track-server,replan,resume-session,syntaur-worktree,add-resource,add-memory,list-assignments,log-progress,set-workspace}/`
+- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,track-session,track-server,replan,resume-session,syntaur-worktree,add-resource,add-memory,list-assignments,log-progress,set-workspace}/`
 - **Protocol skills source (vendored via submodule):** `<syntaur-repo>/vendor/syntaur-skills/skills/` — standalone repo at https://github.com/prong-horn/syntaur-skills
 - **Slash commands (ship in plugin):** `${CLAUDE_PLUGIN_ROOT}/commands/` — thin wrappers that invoke the corresponding installed skill
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`
@@ -61,9 +61,6 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
           scratchpad.md              # Agent-writable: working notes
           handoff.md                 # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md         # Agent-writable: append-only decision log
-          sessions/
-            <session-id>/
-              summary.md             # Agent-writable: per-session continuity (single doc, overwritten)
       resources/
         _index.md                    # Derived
         <resource-slug>.md           # Shared-writable
@@ -79,7 +76,6 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       scratchpad.md
       handoff.md
       decision-record.md
-      sessions/<session-id>/summary.md  # Per-session continuity (same as project-nested)
 ```
 
 ---
@@ -96,7 +92,6 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 - `scratchpad.md` — unstructured working notes
 - `handoff.md` — append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`)
 - `decision-record.md` — append-only decision log
-- `sessions/<session-id>/summary.md` — **per-session continuity** for resume across sessions of the same agent on this assignment (written by `/save-session-summary`). Single document per session id, overwritten on each save. Distinct from `handoff.md`. Older summaries accumulate as immutable history; never delete.
 
 Only the assigned agent may write to its own assignment folder.
 
@@ -255,7 +250,6 @@ Slash commands (`/grab-assignment` etc.) are thin wrappers that delegate to the 
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) under the assignment dir |
 | SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active assignment). |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
 | PreToolUse | — | No write-boundary hook in Claude Code; boundaries are documentation-enforced (Codex enforces via its own PreToolUse hook) |
@@ -417,11 +411,10 @@ A: No. Single-writer guarantee — one agent per assignment folder. Use separate
 **Q: What if I need to ask the human a question?**
 A: Run `syntaur comment <slug> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
 
-**Q: What goes in `progress.md` vs `handoff.md` vs `sessions/<sid>/summary.md`?**
-A: Three distinct artifacts.
+**Q: What goes in `progress.md` vs `handoff.md`?**
+A: Two distinct artifacts.
 - `progress.md`: continuous reverse-chron log of what you've done — one entry per meaningful work unit, append-only.
-- `handoff.md`: **assignment-level cross-ticket outbound**, written at completion (via `complete-assignment`) for the next ticket / agent / human reviewer. Append-only.
-- `sessions/<session-id>/summary.md`: **session-scoped mid-assignment continuity**, written via `/save-session-summary` before compaction or session end so a future session of the same agent can resume cleanly. Single doc per session id, overwritten on save. The Claude Code `PreCompact` hook reminds you to invoke this; the SessionStart hook surfaces the latest one as `latestSessionSummaryPath` in `.syntaur/context.json`.
+- `handoff.md`: **assignment-level cross-ticket outbound**, written at completion (via `complete-assignment`) for the next ticket / agent / human reviewer. Append-only. `syntaur session resume` surfaces an open handoff when present.
 
 **Q: How do indexes get updated?**
 A: Derived files are rebuilt by tooling. They are projections of assignment frontmatter. When divergence occurs, re-run rebuild.

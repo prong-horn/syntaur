@@ -20,7 +20,6 @@ You may ONLY write to files inside your assigned assignment folder:
 | `scratchpad.md` | Working notes |
 | `handoff.md` | Append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`) |
 | `decision-record.md` | Append-only decision log |
-| `sessions/<session-id>/summary.md` | **Per-session continuity** for resume across sessions of the same agent on this assignment. Single document per session id, overwritten on every save (written by `/save-session-summary`). Not the same as `handoff.md`. |
 
 Path pattern (project-nested): `~/.syntaur/projects/<project>/assignments/<your-assignment>/`
 Path pattern (standalone): `~/.syntaur/assignments/<your-assignment-uuid>/`

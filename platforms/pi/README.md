@@ -46,5 +46,5 @@ echo "$PI_SESSION_ID"   # prints the real Pi session id
 ```
 
 `PI_SESSION_ID` is already in the resolver's layer-2 precedence list
-(`src/utils/session-id.ts`), so once injected, `syntaur session save` (etc.)
+(`src/utils/session-id.ts`), so once injected, session-scoped CLI commands
 attribute to the correct session automatically.
