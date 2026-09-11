@@ -76,6 +76,7 @@ The noun is **ticket** in user-facing text, file names (`ticket.md`), and databa
     tickets/<ID>-<slug>/   # CLI on new/migrate
   syntaur.db                # CLI operational cache (sessions, chat index, events, usage)
   inbox-snoozes.json        # CLI on snooze API/verb
+  view-prefs.json           # CLI on dashboard view-pref writes; project-keyed
 ```
 
 Gone in v2 (see §11): `workspaces.json`, standalone `assignments/<uuid>/`, `todos/`, `servers/`, `targets/`, `workflows/`, `saved-views.json`, memories, resources, backup subsystem.
@@ -670,7 +671,7 @@ gates:
 
 `Cannot <verb> <ID>: ticket is in <stage>, <verb> applies from <previous>.`
 
-When the target stage is absent: `start`, `review`, `done` fail with `template <id> has no <stage> stage`. On a template without `planning`/`ready`, `plan` and `approve` apply from any active stage (file actions only, no stage move); `approve` implies `plan-exists`.
+When the target stage is absent: `start`, `review`, `done` fail with `template <id> has no <stage> stage`. On a template with a plan role but without `planning`/`ready`, `plan` and `approve` apply from any active stage (file actions only, no stage move); `approve` implies `plan-exists`. Templates without a plan role (`quick`, `spike`) refuse `plan` and `approve` per §4.1.
 
 **`--force`:** skips gates; recorded on `moved` event as `forced: true`.
 
@@ -693,8 +694,8 @@ When the target stage is absent: `start`, `review`, `done` fail with `template <
 
 | Verb | From (by template) | To | Gates (built-in) | Side effects | Event |
 |---|---|---|---|---|---|
-| `plan` | stage before `planning`, or any active if no planning | `planning` | — | create/scaffold plan file | `moved` |
-| `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | feature/legacy: `plan-exists` (implies `plan-exists`) | set `plan.approved*` | `plan-approved`, `moved` if stage moves |
+| `plan` | stage before `planning`, or any active if no planning | `planning` or file-only | — | create/scaffold plan file | `moved` |
+| `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | feature/legacy: `plan-exists`; always implies `plan-exists` | set `plan.approved*` | `plan-approved`, `moved` if stage moves |
 | `start` | stage before `in_progress` | `in_progress` | feature: `plan-approved`, `deps-done`, `workspace-set`; bug: `deps-done`, `workspace-set`; legacy: `deps-done` | dispatch if `auto` | `moved`, `dispatched` |
 | `review` | stage before `review` | `review` | — | dispatch reviewer if configured | `moved`, `dispatched` |
 | `done` | stage before `done` | `done` | per template `gates.done` | — | `moved` |
@@ -827,9 +828,11 @@ Next: <hint>
 Commands: syntaur log <ID> -t <type> "..."; syntaur block <ID> "<reason>"; ask via question log or @mention in chat
 ```
 
+`n` is fixed at 3 in v2 for the Log tail.
+
 **Next line:** first unmet gate of the next verb in stage order, or the verb name when all gates pass.
 
-**`show --log [-t <type>]`:** prints log entries only (no header).
+**`show --log [-t <type>]`:** prints log entries only (no header); prints the chat notes when the template has no log role.
 
 **`--json`:** `{ ticket, workspace, depends[], links[], files[], handoff, log[], stage, next, commands[] }` with the same content.
 
@@ -1018,6 +1021,8 @@ Counts in the audit (324 assignments, etc.) drift daily; verification compares t
 | Kanban/table board | Board page | dashboard-six-pages |
 | Worktree utilities | Agent workflows | skills-and-install |
 | Ticket detail + chat tab | Core UI | dashboard-six-pages |
+
+Port ticket names the ticket that keeps the subsystem's code; CLI verb ownership is §6.4.
 
 ## 12. Non-goals and open questions
 
