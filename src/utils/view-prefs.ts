@@ -70,8 +70,19 @@ export async function readViewPrefsFile(): Promise<ViewPrefsFile> {
     await backupCorrupt(path);
     return { ...DEFAULT_VIEW_PREFS_FILE };
   }
-  // Normalize version (missing -> 1).
-  return { ...parsed, version: 1 };
+  // Normalize version (missing -> 1) and drop retired workspace-scoped keys.
+  return pruneWorkspaceScopeKeys({ ...parsed, version: 1 });
+}
+
+/** Remove legacy `w:<workspace>` scope keys from on-disk view prefs. */
+export function pruneWorkspaceScopeKeys(file: ViewPrefsFile): ViewPrefsFile {
+  const projects = { ...file.projects };
+  for (const key of Object.keys(projects)) {
+    if (key.startsWith('w:')) {
+      delete projects[key];
+    }
+  }
+  return { ...file, projects };
 }
 
 async function backupCorrupt(path: string): Promise<void> {

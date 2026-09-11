@@ -61,7 +61,6 @@ interface BuildActionsInput {
   playbooks: PlaybookSummary[];
   projectSlug: string | null;
   currentProjectTitle: string | null;
-  wsPrefix: string;
   refetchPlaybooks: () => void;
   navigate: NavigateFunction;
   toggleTheme: () => void;
@@ -85,25 +84,9 @@ async function togglePlaybook(
 
 // --- Helpers used by the canonical create flows ---
 
-interface WorkspaceListResponse {
-  workspaces: string[];
-  hasUngrouped: boolean;
-}
-
 interface ProjectSummaryShape {
   slug: string;
   title: string;
-  workspace?: string | null;
-}
-
-async function fetchWorkspaces(): Promise<WorkspaceListResponse> {
-  const res = await fetch('/api/workspaces');
-  if (!res.ok) throw new Error(`Failed to load workspaces (HTTP ${res.status})`);
-  const data = (await res.json()) as Partial<WorkspaceListResponse>;
-  return {
-    workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
-    hasUngrouped: data.hasUngrouped === true,
-  };
 }
 
 async function fetchProjects(): Promise<ProjectSummaryShape[]> {
@@ -147,14 +130,11 @@ function setFrontmatterField(content: string, key: string, value: string): strin
   return `${fmOpen}${newBody}${fmClose}${after}`;
 }
 
-const SLUG_REGEX = /^[a-z0-9][a-z0-9-]*$/;
-
 export function buildActionsIndex(input: BuildActionsInput): Action[] {
   const {
     playbooks,
     projectSlug,
     currentProjectTitle,
-    wsPrefix,
     refetchPlaybooks,
     navigate,
     toggleTheme,
@@ -166,71 +146,14 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
   // These always exist and live alongside the contextual variants below.
 
   out.push({
-    id: 'new-workspace',
-    title: 'New Workspace',
-    subtitle: 'Create a Syntaur workspace',
-    group: 'Create',
-    keywords: ['new', 'create', 'workspace'],
-    bindableKind: 'new-workspace',
-    flow: {
-      steps: [
-        {
-          kind: 'text',
-          id: 'name',
-          label: 'Workspace name',
-          placeholder: 'lowercase, hyphenated (e.g. acme-app)',
-          required: true,
-          pattern: {
-            regex: SLUG_REGEX,
-            message:
-              'Use lowercase letters, digits, and hyphens (e.g. acme-app). Must start with a letter or digit.',
-          },
-        },
-      ],
-      submit: async (values, helpers) => {
-        const name = (values.name ?? '').trim();
-        if (!name) throw new Error('Name is required');
-        const res = await fetch('/api/workspaces', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name }),
-        });
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Failed to create workspace (HTTP ${res.status})`);
-        }
-        helpers.navigate(`/w/${name}/projects`);
-      },
-    },
-  });
-
-  out.push({
     id: 'new-project',
     title: 'New Project',
-    subtitle: 'Create a project (pick workspace)',
+    subtitle: 'Create a project',
     group: 'Create',
     keywords: ['new', 'create', 'project'],
     bindableKind: 'new-project',
     flow: {
       steps: [
-        {
-          kind: 'picker',
-          id: 'workspace',
-          label: 'Workspace',
-          emptyMessage: 'No workspaces yet — create one with "New Workspace"',
-          loadOptions: async () => {
-            const { workspaces, hasUngrouped } = await fetchWorkspaces();
-            const options: FlowOption[] = [
-              { value: '_ungrouped', label: 'Ungrouped', hint: 'no workspace' },
-            ];
-            for (const ws of workspaces) {
-              options.push({ value: ws, label: ws, hint: 'workspace' });
-            }
-            // hasUngrouped is informational; ungrouped is always offered.
-            void hasUngrouped;
-            return options;
-          },
-        },
         {
           kind: 'text',
           id: 'title',
@@ -240,7 +163,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         },
       ],
       submit: async (values, helpers) => {
-        const workspace = (values.workspace ?? '').trim();
         const title = (values.title ?? '').trim();
         if (!title) throw new Error('Title is required');
         const slug = slugify(title);
@@ -249,9 +171,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         let template = await fetchTemplate('/api/templates/project');
         template = setFrontmatterField(template, 'slug', slug);
         template = setFrontmatterField(template, 'title', title);
-        if (workspace && workspace !== '_ungrouped') {
-          template = setFrontmatterField(template, 'workspace', workspace);
-        }
 
         const res = await fetch('/api/projects', {
           method: 'POST',
@@ -263,11 +182,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
           throw new Error(payload.error || `Failed to create project (HTTP ${res.status})`);
         }
 
-        const navTarget =
-          workspace && workspace !== '_ungrouped'
-            ? `/w/${workspace}/projects/${payload.slug ?? slug}`
-            : `/projects/${payload.slug ?? slug}`;
-        helpers.navigate(navTarget);
+        helpers.navigate(`/projects/${payload.slug ?? slug}`);
       },
     },
   });
@@ -294,7 +209,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
               options.push({
                 value: p.slug,
                 label: p.title,
-                hint: p.workspace ? `workspace · ${p.workspace}` : 'ungrouped',
               });
             }
             return options;
@@ -368,7 +282,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
     subtitle: 'Open the markdown editor',
     group: 'Create',
     keywords: ['new', 'create', 'project', 'advanced', 'editor'],
-    run: () => navigate(`${wsPrefix}/create/project`),
+    run: () => navigate('/create/project'),
   });
 
   out.push({
@@ -377,7 +291,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
     subtitle: 'Open the markdown editor',
     group: 'Create',
     keywords: ['new', 'create', 'assignment', 'standalone', 'one-off', 'editor'],
-    run: () => navigate(`${wsPrefix}/assignments/new`),
+    run: () => navigate('/assignments/new'),
   });
 
   if (projectSlug) {
@@ -387,7 +301,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
       subtitle: projectSlug,
       group: 'Create',
       keywords: ['new', 'create', 'assignment', projectSlug],
-      run: () => navigate(`${wsPrefix}/projects/${projectSlug}/create/assignment`),
+      run: () => navigate(`/projects/${projectSlug}/create/assignment`),
     });
   }
 

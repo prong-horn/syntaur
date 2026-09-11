@@ -3,11 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function CreateAssignment() {
   const { slug } = useParams<{ slug: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -50,7 +48,7 @@ export function CreateAssignment() {
         return;
       }
 
-      navigate(`${wsPrefix}/projects/${slug}/assignments/${payload.slug}`);
+      navigate(`/projects/${slug}/assignments/${payload.slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -78,7 +76,7 @@ export function CreateAssignment() {
       error={error}
       title="Create Assignment"
       description="Assignments are the execution unit. Declare dependencies here, keep status pending until work starts, and use blocked later only for runtime obstacles."
-      onCancel={() => navigate(slug ? `${wsPrefix}/projects/${slug}` : `${wsPrefix}/projects`)}
+      onCancel={() => navigate(slug ? `/projects/${slug}` : `/projects`)}
       helpTitle="Assignment editing rules"
       helpBody="Use structured fields for priority, assignee, dependencies, and tags. Status can be changed through lifecycle actions, kanban drag, or the status override."
       allowSlugEdit

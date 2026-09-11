@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { useWorkspacePrefix } from '../hooks/useProjects';
+import { useNavigate } from 'react-router-dom';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 
 export function CreateProject() {
   const navigate = useNavigate();
-  const { workspace } = useParams<{ workspace?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -18,21 +15,14 @@ export function CreateProject() {
     fetch('/api/templates/project')
       .then((response) => response.json())
       .then((payload) => {
-        let templateContent = payload.content as string;
-        if (workspace && workspace !== '_ungrouped') {
-          templateContent = templateContent.replace(
-            /^(tags: \[\])$/m,
-            `$1\nworkspace: ${workspace}`,
-          );
-        }
-        setContent(templateContent);
+        setContent(payload.content as string);
         setLoading(false);
       })
       .catch((loadError: Error) => {
         setError(loadError.message);
         setLoading(false);
       });
-  }, [workspace]);
+  }, []);
 
   async function handleSave(markdownContent: string) {
     setSaving(true);
@@ -52,7 +42,7 @@ export function CreateProject() {
         return;
       }
 
-      navigate(`${wsPrefix}/projects/${payload.slug}`);
+      navigate(`/projects/${payload.slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -80,7 +70,7 @@ export function CreateProject() {
       error={error}
       title="Create Project"
       description="Projects hold the high-level objective, shared context, and human-authored overview. Put execution details in assignments instead of overloading project.md."
-      onCancel={() => navigate(`${wsPrefix}/projects`)}
+      onCancel={() => navigate('/projects')}
       helpTitle="Project editing rules"
       helpBody="Use this form for project intent, slug, tags, and overview content. If you ever need less common metadata, raw markdown mode still exposes the full file."
       allowSlugEdit

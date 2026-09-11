@@ -1,9 +1,9 @@
 /**
  * AQL-based board filtering for the dashboard.
  *
- * Pure — no React imports. Node-testable. The workspace / _ungrouped /
- * archived-exclude logic lives OUTSIDE the compiled query so it stays a page
- * option, not part of the AQL expression.
+ * Pure — no React imports. Node-testable. The archived-exclude logic lives
+ * OUTSIDE the compiled query so it stays a page option, not part of the AQL
+ * expression.
  */
 
 import type { AssignmentBoardItem } from '../hooks/useProjects';
@@ -72,8 +72,6 @@ export function boardItemToQueryItem(item: AssignmentBoardItem): QueryItem {
 // ── FilterBoardItemsOptions ───────────────────────────────────────────────────
 
 export interface FilterBoardItemsOptions {
-  /** When set, only items matching this workspace (or `_ungrouped` for null workspace) pass. */
-  workspace?: string | null;
   /** When true, archived items are included; otherwise they are excluded before AQL runs. */
   includeArchived?: boolean;
   /**
@@ -86,43 +84,33 @@ export interface FilterBoardItemsOptions {
 // ── filterBoardItems ──────────────────────────────────────────────────────────
 
 /**
- * Apply workspace / _ungrouped / archived-exclude pre-filters (page options),
- * then evaluate the compiled AQL predicate against each remaining item.
+ * Apply archived-exclude pre-filters (page options), then evaluate the compiled
+ * AQL predicate against each remaining item.
  *
- * The pre-filter logic mirrors `assignmentFilter.ts:109-127` exactly:
+ * The pre-filter logic mirrors `assignmentFilter.ts` exactly:
  *   - archived excluded by default unless `includeArchived` is true.
- *   - workspace='_ungrouped' keeps items with `projectWorkspace === null`.
- *   - workspace=<other> keeps items where `projectWorkspace === workspace`.
  *
  * `now` is threaded into `EvalContext` so timestamp/duration predicates
  * (e.g. `completedAt < -1mo`, `statusAge > 3d`) resolve deterministically.
  * Only defaulted to `Date.now()` at the call boundary — never inside the engine.
  *
  * When `compiled` is `null` (empty / invalid query), the AQL constraint is
- * skipped entirely — only the page-level pre-filters (archived-exclude +
- * workspace / `_ungrouped`) are applied. This is the "match-all" path: a
- * typo never blanks the board, but workspace / archived scoping still holds.
+ * skipped entirely — only the page-level archived-exclude pre-filter is applied.
+ * This is the "match-all" path: a typo never blanks the board, but archived
+ * scoping still holds.
  */
 export function filterBoardItems(
   items: AssignmentBoardItem[],
   compiled: CompiledQuery | null,
   opts: FilterBoardItemsOptions = {},
 ): AssignmentBoardItem[] {
-  const { workspace, includeArchived = false, now = Date.now() } = opts;
+  const { includeArchived = false, now = Date.now() } = opts;
 
   const ctx: EvalContext = { now };
 
   return items.filter((item) => {
     // ── page-level pre-filters (NOT part of AQL) ──────────────────────────
     if (item.archived === true && !includeArchived) return false;
-
-    if (workspace) {
-      if (workspace === '_ungrouped') {
-        if (item.projectWorkspace != null) return false;
-      } else if (item.projectWorkspace !== workspace) {
-        return false;
-      }
-    }
 
     // ── AQL predicate (skipped when compiled is null → pre-filters only) ──
     if (!compiled) return true;

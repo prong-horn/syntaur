@@ -4,7 +4,7 @@ import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from
 import { CopyButton } from '../components/CopyButton';
 import { ProjectWorkflowSection } from '../components/ProjectWorkflowSection';
 import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
-import { useProject, useWorkspaces, useWorkspacePrefix, type AssignmentSummary } from '../hooks/useProjects';
+import { useProject, type AssignmentSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -40,26 +40,24 @@ const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies
 const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
 
 export function ProjectDetail() {
-  const { slug, workspace } = useParams<{ workspace?: string; slug: string }>();
-  const wsPrefix = useWorkspacePrefix();
+  const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   useHotkeyScope('project');
   useHotkey({
     keys: 'a',
     scope: 'project',
     description: 'Create assignment',
-    handler: () => navigate(`${wsPrefix}/projects/${slug}/create/assignment`),
+    handler: () => navigate(`/projects/${slug}/create/assignment`),
   });
   useHotkey({
     keys: 'e',
     scope: 'project',
     description: 'Edit project',
-    handler: () => navigate(`${wsPrefix}/projects/${slug}/edit`),
+    handler: () => navigate(`/projects/${slug}/edit`),
   });
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
   const typesConfig = useTypesConfig();
-  const { data: workspacesData } = useWorkspaces();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
   // palette jumping from one project's overview to another's tab).
@@ -101,7 +99,7 @@ export function ProjectDetail() {
 
   useEffect(() => {
     setDateRange(null);
-  }, [slug, workspace]);
+  }, [slug]);
 
   // Re-hydrate when react-router reuses this component across project switches
   // (the doc comment above on lines 45-47 calls this out for the tab param).
@@ -208,7 +206,7 @@ export function ProjectDetail() {
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
       project.assignments.flatMap((assignment) => {
-        const route = `${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`;
+        const route = `/projects/${project.slug}/assignments/${assignment.slug}`;
         return [
           [assignment.slug, route],
           [assignment.title, route],
@@ -265,30 +263,8 @@ export function ProjectDetail() {
     }
   }
 
-  async function handleMoveWorkspace(workspace: string | null) {
-    setActionPending(true);
-    try {
-      const res = await fetch(`/api/projects/${slug}/move-workspace`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ workspace }),
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        showToast(payload?.error || `HTTP ${res.status}`, 'error');
-        return;
-      }
-      refetch();
-      showToast(workspace ? `Moved to "${workspace}"` : 'Moved to ungrouped', 'success');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to move workspace', 'error');
-    } finally {
-      setActionPending(false);
-    }
-  }
-
   if (loading) {
-    return <LoadingState label="Loading project workspace…" />;
+    return <LoadingState label="Loading project…" />;
   }
 
   if (error || !project) {
@@ -416,27 +392,7 @@ export function ProjectDetail() {
         >
           {project.archived ? 'Restore' : 'Archive'}
         </button>
-        {workspacesData && workspacesData.workspaces.length > 0 && (
-          <select
-            className="shell-action appearance-none bg-transparent text-sm disabled:cursor-not-allowed disabled:opacity-50"
-            value=""
-            disabled={actionPending}
-            onChange={(e) => {
-              if (e.target.value === '_ungrouped') handleMoveWorkspace(null);
-              else if (e.target.value) handleMoveWorkspace(e.target.value);
-            }}
-            title="Move project to a different workspace"
-          >
-            <option value="">Move to Workspace…</option>
-            {workspacesData.workspaces
-              .filter((w) => w !== project.workspace)
-              .map((w) => (
-                <option key={w} value={w}>{w}</option>
-              ))}
-            {project.workspace && <option value="_ungrouped">Ungrouped</option>}
-          </select>
-        )}
-        <Link className="shell-action" to={`${wsPrefix}/projects/${project.slug}/edit`}>
+        <Link className="shell-action" to={`/projects/${project.slug}/edit`}>
           <SquarePen className="h-4 w-4" />
           <span>Edit Project</span>
         </Link>
@@ -475,7 +431,7 @@ export function ProjectDetail() {
                           actions={
                             <Link
                               className="shell-action shell-action--cta"
-                              to={`${wsPrefix}/projects/${project.slug}/edit`}
+                              to={`/projects/${project.slug}/edit`}
                             >
                               <SquarePen className="h-4 w-4" />
                               <span>Add overview</span>
@@ -572,7 +528,7 @@ export function ProjectDetail() {
                           title="No assignments match these filters"
                           description="Clear the current filters or create a new assignment for this project."
                           actions={
-                            <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
+                            <Link className="shell-action shell-action--cta" to={`/projects/${project.slug}/create/assignment`}>
                               Create Assignment
                             </Link>
                           }
@@ -650,7 +606,7 @@ export function ProjectDetail() {
                                   {showCol('title') ? (
                                   <td className="py-4">
                                     <Link
-                                      to={`${wsPrefix}/projects/${project.slug}/assignments/${assignment.slug}`}
+                                      to={`/projects/${project.slug}/assignments/${assignment.slug}`}
                                       className="font-semibold text-foreground hover:text-primary"
                                     >
                                       {assignment.title}
@@ -750,11 +706,11 @@ export function ProjectDetail() {
 
           <SectionCard title="Quick Links">
             <div className="space-y-2 text-sm">
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/projects/${project.slug}/edit`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/edit`}>
                 <SquarePen className="h-4 w-4" />
                 Edit project source
               </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`${wsPrefix}/projects/${project.slug}/create/assignment`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/create/assignment`}>
                 <Plus className="h-4 w-4" />
                 Create assignment
               </Link>
@@ -801,10 +757,9 @@ function AssignmentCard({
   assignment: AssignmentSummary;
   onAssignmentChange?: () => void;
 }) {
-  const wsPrefix = useWorkspacePrefix();
   return (
     <Link
-      to={`${wsPrefix}/projects/${projectSlug}/assignments/${assignment.slug}`}
+      to={`/projects/${projectSlug}/assignments/${assignment.slug}`}
       className="vp-card block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">

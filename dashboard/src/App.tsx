@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Overview } from './pages/Overview';
 import { InboxPage } from './pages/InboxPage';
@@ -32,11 +32,19 @@ import { SettingsPage } from './pages/SettingsPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { HotkeyProvider } from './hotkeys';
 
+function WorkspacePrefixRedirect() {
+  const location = useLocation();
+  const stripped = location.pathname.replace(/^\/w\/[^/]+/, '') || '/';
+  const target = `${stripped}${location.search}${location.hash}`;
+  return <Navigate to={target} replace />;
+}
+
 export function App() {
   return (
     <BrowserRouter>
       <HotkeyProvider>
         <Routes>
+          <Route path="/w/:workspace/*" element={<WorkspacePrefixRedirect />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Overview />} />
             <Route path="/inbox" element={<InboxPage />} />
@@ -73,24 +81,6 @@ export function App() {
             <Route path="/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
-
-            {/* Workspace-scoped routes */}
-            <Route path="/w/:workspace/projects" element={<ProjectList />} />
-            <Route path="/w/:workspace/assignments" element={<AssignmentsPage />} />
-            <Route path="/w/:workspace/assignments/new" element={<CreateStandaloneAssignment />} />
-            <Route path="/w/:workspace/usage" element={<UsagePage />} />
-            <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
-            <Route path="/w/:workspace/agent-sessions/:id" element={<AgentSessionDetail />} />
-            <Route path="/w/:workspace/create/project" element={<CreateProject />} />
-            <Route path="/w/:workspace/projects/:slug" element={<ProjectDetail />} />
-            <Route path="/w/:workspace/projects/:slug/edit" element={<EditProject />} />
-            <Route path="/w/:workspace/projects/:slug/create/assignment" element={<CreateAssignment />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug" element={<AssignmentDetail />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/edit" element={<EditAssignment />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/plan/edit" element={<EditAssignmentPlan />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/scratchpad/edit" element={<EditAssignmentScratchpad />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/handoff/edit" element={<AppendAssignmentHandoff />} />
-            <Route path="/w/:workspace/projects/:slug/assignments/:aslug/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
 
             {/* Anything unmatched — a stale link or a retired page — says so instead of rendering nothing. */}
             <Route path="*" element={<NotFoundPage />} />

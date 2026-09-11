@@ -4,7 +4,7 @@ import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from
 import { CopyButton } from '../components/CopyButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
 import { cn } from '../lib/utils';
-import { useAgentSessions, useWorkspacePrefix } from '../hooks/useProjects';
+import { useAgentSessions } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -642,7 +642,6 @@ function SessionRow({
   expanded: boolean;
   onToggleExpand: () => void;
 }) {
-  const wsPrefix = useWorkspacePrefix();
   const shortId = session.sessionId.length > 12
     ? session.sessionId.slice(0, 8) + '...'
     : session.sessionId;
@@ -687,7 +686,7 @@ function SessionRow({
       <td className="py-2 pr-3">
         {session.projectSlug ? (
           <Link
-            to={`${wsPrefix}/projects/${session.projectSlug}`}
+            to={`/projects/${session.projectSlug}`}
             className="block truncate text-primary hover:underline"
             title={toTitleCase(session.projectSlug)}
           >
@@ -704,7 +703,7 @@ function SessionRow({
       <td className="py-2 pr-3">
         {session.projectSlug && session.assignmentSlug ? (
           <Link
-            to={`${wsPrefix}/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`}
+            to={`/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`}
             className="block truncate text-primary hover:underline"
             title={toTitleCase(session.assignmentSlug)}
           >
@@ -771,7 +770,7 @@ function SessionRow({
             </span>
           ) : (
             <Link
-              to={`${wsPrefix}/agent-sessions/${session.sessionId}`}
+              to={`/agent-sessions/${session.sessionId}`}
               className="block min-w-0 truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
               title={session.sessionId}
             >

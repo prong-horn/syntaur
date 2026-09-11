@@ -16,32 +16,14 @@ export interface PaletteEntry {
   subtitle?: string;
   keywords?: string[];
   route: string;
-  // AQL filter facts read by PALETTE_FIELDS (the entry IS the QueryItem the gate
-  // evaluates). Optional: entities lacking a field are correctly excluded by an
-  // atom referencing it. `assignmentType` is the assignment's frontmatter `type`,
-  // kept distinct from `type` (the entity kind, target of the `a:`/`p:`/… aliases).
   status?: string;
   tags?: string[];
   assignee?: string | null;
   assignmentType?: string | null;
   project?: string | null;
   externalIds?: ExternalIdInfo[];
-  // Content-hit rendering: the NEUTRAL snippet text plus snippet-local match
-  // ranges, so the palette can escape the text and wrap the ranges in `<mark>`
-  // (HTML-safe). Only set on `type: 'content'` entries.
   snippet?: string;
   snippetMatches?: ContentMatchRange[];
-}
-
-// R2: only these routes have workspace-prefixed variants in App.tsx.
-export const WORKSPACE_CAPABLE_ROUTES = new Set<string>([
-  '/projects',
-  '/assignments',
-  '/agent-sessions',
-]);
-
-export function resolveRoute(basePath: string, wsPrefix: string): string {
-  return WORKSPACE_CAPABLE_ROUTES.has(basePath) ? `${wsPrefix}${basePath}` : basePath;
 }
 
 export const STATIC_PAGES = [
@@ -59,21 +41,9 @@ interface BuildInput {
   projects?: ProjectSummary[];
   assignments?: AssignmentBoardItem[];
   playbooks?: PlaybookSummary[];
-  wsPrefix: string;
-  /**
-   * Fold external IDs into the index + carry the `externalIds` fact on entries.
-   * When false, both are dropped — which makes the `externalid:`/`jira:` haystack
-   * accessors (in paletteQuery.ts) return '' so those atoms (and bare-ID fuzzy
-   * hits) match nothing. Defaults to true (omitted === enabled).
-   */
   externalIds?: boolean;
 }
 
-/**
- * Flatten external IDs into fuzzy-searchable keywords: each id appears both bare
- * (`PROJ-123`) and system-qualified (`jira:PROJ-123`), so a prefixless query finds
- * the item via the ranker without an AQL atom.
- */
 function externalIdKeywords(ids?: ExternalIdInfo[]): string[] {
   if (!ids?.length) return [];
   const out: string[] = [];
@@ -88,8 +58,6 @@ function externalIdKeywords(ids?: ExternalIdInfo[]): string[] {
 export function buildIndex(input: BuildInput): PaletteEntry[] {
   const out: PaletteEntry[] = [];
 
-  // External-ID gating (default on). When off, drop both the fuzzy keywords and
-  // the `externalIds` entry fact so `externalid:`/`jira:`/bare-ID all match nothing.
   const indexExternalIds = input.externalIds !== false;
   const idKeywords = (ids?: ExternalIdInfo[]): string[] =>
     indexExternalIds ? externalIdKeywords(ids) : [];
@@ -102,20 +70,18 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: p.id,
       title: p.title,
       keywords: [...p.keywords],
-      route: resolveRoute(p.basePath, input.wsPrefix),
+      route: p.basePath,
     });
   }
 
   for (const m of input.projects ?? []) {
-    // Projects keep their own workspace; the route uses the project's workspace, not current prefix.
-    const projectWs = m.workspace ? `/w/${m.workspace}` : '';
     out.push({
       type: 'project',
       id: `project-${m.slug}`,
       title: m.title,
       subtitle: m.slug,
       keywords: [...(m.tags ?? []), ...idKeywords(m.externalIds)],
-      route: `${projectWs}/projects/${m.slug}`,
+      route: `/projects/${m.slug}`,
       tags: m.tags,
       project: m.slug,
       externalIds: idField(m.externalIds),
@@ -123,7 +89,6 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
   }
 
   for (const a of input.assignments ?? []) {
-    const assignWs = a.projectWorkspace ? `/w/${a.projectWorkspace}` : '';
     out.push({
       type: 'assignment',
       id: a.projectSlug === null ? `assignment-standalone-${a.id}` : `assignment-${a.projectSlug}-${a.slug}`,
@@ -134,7 +99,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       ),
       route: a.projectSlug === null
         ? `/assignments/${a.id}`
-        : `${assignWs}/projects/${a.projectSlug}/assignments/${a.slug}`,
+        : `/projects/${a.projectSlug}/assignments/${a.slug}`,
       status: a.status,
       tags: a.tags,
       assignee: a.assignee,
@@ -159,38 +124,13 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
   return out;
 }
 
-/**
- * The `/w/<workspace>` prefix to prepend to a content hit's route, derived from
- * the hit's OWN project workspace (never the current page's prefix). Only
- * project-nested *assignment-pane* hits get prefixed: those are the only routes
- * with a workspace-prefixed variant in App.tsx
- * (`/w/:workspace/projects/:slug/assignments/:aslug`). Standalone
- * (`/assignments/:id`) routes have NO `/w/...` variant, so prefixing them would
- * 404 — they stay unprefixed. Mirrors the per-entity prefixing at `paletteIndex.ts:106,129`.
- */
-function wsPrefixForHit(hit: ContentHit): string {
-  const eligible =
-    !hit.standalone &&
-    Boolean(hit.projectWorkspace);
-  return eligible ? `/w/${hit.projectWorkspace}` : '';
-}
-
-/**
- * Map server-ranked content hits (from `/api/search`) into `PaletteEntry[]` for
- * the command palette's separate "Content" group. The route is the hit's
- * precomputed UNPREFIXED `route` with the per-hit workspace prefix applied via
- * {@link wsPrefixForHit}. The neutral `snippet` + `matches` are carried through
- * for HTML-safe `<mark>` rendering — these entries are NOT run through the local
- * fuzzy ranker (they're already server-ranked).
- */
 export function contentHitsToEntries(hits: ContentHit[]): PaletteEntry[] {
   return hits.map((hit, idx) => ({
     type: 'content' as const,
-    // Path is unique per file; idx disambiguates multiple hits in one file.
     id: `content-${hit.path}-${idx}`,
     title: `${hit.assignmentSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
     subtitle: hit.projectSlug ?? (hit.standalone ? 'standalone' : undefined),
-    route: `${wsPrefixForHit(hit)}${hit.route}`,
+    route: hit.route,
     project: hit.projectSlug,
     snippet: hit.snippet,
     snippetMatches: hit.matches,

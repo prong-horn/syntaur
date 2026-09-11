@@ -59,13 +59,13 @@ describe('contentHitsToEntries', () => {
     for (const e of entries) expect(e.type).toBe('content');
   });
 
-  it('prefixes a project-nested assignment-pane hit with /w/<projectWorkspace>', () => {
+  it('uses the hit route verbatim for project-nested assignment-pane hits', () => {
     const e = entries[0];
-    expect(e.route).toBe('/w/syntaur/projects/acme/assignments/login?tab=comments#auth');
-    expect(e.route.startsWith('/w/syntaur/projects/')).toBe(true);
+    expect(e.route).toBe('/projects/acme/assignments/login?tab=comments#auth');
+    expect(e.route.startsWith('/w/')).toBe(false);
   });
 
-  it('leaves a standalone hit UNPREFIXED (route === hit.route, no /w/)', () => {
+  it('leaves a standalone hit UNPREFIXED (route === hit.route)', () => {
     const e = entries[1];
     expect(e.route).toBe(standaloneHit.route);
     expect(e.route.startsWith('/w/')).toBe(false);

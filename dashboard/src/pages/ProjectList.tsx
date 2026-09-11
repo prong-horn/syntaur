@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { Info, Pencil, ArrowRightLeft } from 'lucide-react';
-import { useProjects, useWorkspacePrefix, type ProjectSummary } from '../hooks/useProjects';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Info, Pencil } from 'lucide-react';
+import { useProjects, type ProjectSummary } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -16,13 +16,10 @@ import { formatDate } from '../lib/format';
 import { PROJECT_BOARD_COLUMNS, moveItem } from '../lib/kanban';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
-import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { useToast, Toaster } from '../components/Toast';
 
 export function ProjectList() {
-  const { workspace } = useParams<{ workspace?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const { data: projects, loading, error, refetch } = useProjects();
   const { toast, showToast, dismissToast } = useToast();
@@ -52,21 +49,12 @@ export function ProjectList() {
     project: ProjectSummary;
     anchor: { x: number; y: number };
   } | null>(null);
-  const [moveTarget, setMoveTarget] = useState<ProjectSummary | null>(null);
-
   const filtered = useMemo(() => {
     if (!projects) {
       return [];
     }
     return projects
       .filter((project) => {
-        if (workspace) {
-          if (workspace === '_ungrouped') {
-            if (project.workspace !== null) return false;
-          } else {
-            if (project.workspace !== workspace) return false;
-          }
-        }
         if (statusFilter !== 'all' && project.status !== statusFilter) {
           return false;
         }
@@ -81,7 +69,7 @@ export function ProjectList() {
         return haystack.includes(search.toLowerCase());
       })
       .sort((left, right) => sortProjects(left, right, sortBy));
-  }, [projects, search, statusFilter, tagFilter, sortBy, workspace]);
+  }, [projects, search, statusFilter, tagFilter, sortBy]);
 
   const filteredKey = filtered.map((project) => `${project.slug}:${project.status}`).join('|');
 
@@ -113,7 +101,7 @@ export function ProjectList() {
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:projects',
-    onOpen: (project) => navigate(`${wsPrefix}/projects/${project.slug}`),
+    onOpen: (project) => navigate(`/projects/${project.slug}`),
   });
   useHotkey({
     keys: '/',
@@ -192,7 +180,7 @@ export function ProjectList() {
               A project groups assignments under one objective. Markdown stays authoritative — the dashboard is just a view.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Link className="shell-action shell-action--solid" to={`${wsPrefix}/create/project`}>
+              <Link className="shell-action shell-action--solid" to={`/create/project`}>
                 Create your first project
               </Link>
               <Link className="shell-action" to="/help">
@@ -205,7 +193,7 @@ export function ProjectList() {
             title="No projects match these filters"
             description="Adjust the current search and filters or create a new project."
             actions={
-              <Link className="shell-action shell-action--solid" to={`${wsPrefix}/create/project`}>
+              <Link className="shell-action shell-action--solid" to={`/create/project`}>
                 Create Project
               </Link>
             }
@@ -216,7 +204,7 @@ export function ProjectList() {
           {filtered.map((project, i) => (
             <Link
               key={project.slug}
-              to={`${wsPrefix}/projects/${project.slug}`}
+              to={`/projects/${project.slug}`}
               className="block rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm transition hover:border-primary/40 hover:shadow-md"
               {...hotkeyRowProps(i)}
             >
@@ -276,7 +264,7 @@ export function ProjectList() {
                     {...hotkeyRowProps(i)}
                   >
                     <td className="py-4 pr-4">
-                      <Link to={`${wsPrefix}/projects/${project.slug}`} className="font-semibold text-foreground hover:text-primary">
+                      <Link to={`/projects/${project.slug}`} className="font-semibold text-foreground hover:text-primary">
                         {project.title}
                       </Link>
                       <div className="mt-1 flex flex-wrap gap-2">
@@ -373,38 +361,10 @@ export function ProjectList() {
             key: 'edit',
             label: 'Edit',
             icon: Pencil,
-            onSelect: () => navigate(`${wsPrefix}/projects/${contextMenu.project.slug}`),
-          },
-          {
-            key: 'move',
-            label: 'Move to workspace…',
-            icon: ArrowRightLeft,
-            onSelect: () => setMoveTarget(contextMenu.project),
+            onSelect: () => navigate(`/projects/${contextMenu.project.slug}`),
           },
         ] as OverflowMenuItem[]) : []}
         onClose={() => setContextMenu(null)}
-      />
-
-      <MoveToWorkspaceDialog
-        open={moveTarget !== null}
-        onOpenChange={(next) => {
-          if (!next) setMoveTarget(null);
-        }}
-        currentWorkspace={moveTarget?.workspace ?? null}
-        title="Move project to workspace"
-        onSubmit={async (target) => {
-          if (!moveTarget) return;
-          const res = await fetch(`/api/projects/${encodeURIComponent(moveTarget.slug)}/move-workspace`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workspace: target }),
-          });
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body.error || 'Failed to move project');
-          }
-          refetch();
-        }}
       />
 
       <div className="rounded-lg border border-border/60 bg-card/80 p-3 text-sm text-muted-foreground">
@@ -473,12 +433,11 @@ function ProjectBoardCard({
   project: ProjectSummary;
   dragging: boolean;
 }) {
-  const wsPrefix = useWorkspacePrefix();
   return (
     <div className="rounded-lg border border-border/60 bg-background/85 p-3 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <Link to={`${wsPrefix}/projects/${project.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
+          <Link to={`/projects/${project.slug}`} className="text-base font-semibold text-foreground hover:text-primary">
             {project.title}
           </Link>
           <p className="text-sm text-muted-foreground">Updated {formatDate(project.updated)}</p>

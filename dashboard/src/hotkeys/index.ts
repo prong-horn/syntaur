@@ -1,7 +1,6 @@
 export {
   HotkeyProvider,
   useHotkeyContext,
-  getWorkspaceFromPathname,
   HOTKEY_CHORD_TIMEOUT_MS,
 } from './HotkeyProvider';
 export type { HotkeyScope, HotkeyBinding, HotkeyConflict } from './HotkeyProvider';
@@ -16,8 +15,6 @@ export {
 export { rankAll, scoreField } from './fuzzy';
 export {
   buildIndex,
-  resolveRoute,
-  WORKSPACE_CAPABLE_ROUTES,
   STATIC_PAGES,
 } from './paletteIndex';
 export type { PaletteEntry, PaletteEntryType } from './paletteIndex';

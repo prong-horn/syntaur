@@ -6,8 +6,7 @@ import { useEffect, useRef, useState } from 'react';
  * MIRRORS the backend `SearchHit` in `src/search/types.ts`. The dashboard is a
  * separate TS project and cannot import backend types, so this is a local copy —
  * keep it in sync. `route` is the UNPREFIXED app path; the palette mapper
- * (`contentHitsToEntries`) prepends the per-hit `/w/<workspace>` prefix where one
- * exists. `snippet` is NEUTRAL text and `matches` are snippet-local char offsets;
+ * `snippet` is NEUTRAL text and `matches` are snippet-local char offsets;
  * the renderer escapes the text and wraps the ranges in `<mark>` (HTML-safe).
  */
 export interface ContentMatchRange {

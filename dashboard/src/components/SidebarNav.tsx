@@ -12,13 +12,11 @@ export interface SidebarNavItem {
 }
 
 // Shared nav row, used by both the flat `SidebarNav` and the collapsible
-// `SidebarNavGroup` so active styling, the badge pill, and the `/w/` guard stay
-// in one place.
+// `SidebarNavGroup` so active styling and the badge pill stay in one place.
 function SidebarNavLink({ item, onNavigate }: { item: SidebarNavItem; onNavigate?: () => void }) {
   const location = useLocation();
   const Icon = item.icon;
-  const isActive = isSidebarItemActive(location.pathname, item.to)
-    && !location.pathname.startsWith('/w/');
+  const isActive = isSidebarItemActive(location.pathname, item.to);
 
   return (
     <Link

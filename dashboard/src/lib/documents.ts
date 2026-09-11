@@ -9,7 +9,6 @@ interface FrontmatterModel {
 export interface ProjectEditorState {
   title: string;
   slug: string;
-  workspace: string;
   archived: boolean;
   archivedAt: string;
   archivedReason: string;
@@ -271,7 +270,6 @@ export function parseProjectEditorState(content: string): ProjectEditorState {
   return {
     title: getScalar(model, 'title'),
     slug: getScalar(model, 'slug'),
-    workspace: getScalar(model, 'workspace'),
     archived: getBoolean(model, 'archived'),
     archivedAt: getScalar(model, 'archivedAt'),
     archivedReason: getScalar(model, 'archivedReason'),
@@ -289,7 +287,6 @@ export function updateProjectContent(
 
   setScalar(model, 'title', next.title);
   setScalar(model, 'slug', next.slug);
-  setScalar(model, 'workspace', next.workspace || null);
   setScalar(model, 'archived', next.archived);
   setScalar(model, 'archivedAt', next.archivedAt || null);
   setScalar(model, 'archivedReason', next.archivedReason || null);

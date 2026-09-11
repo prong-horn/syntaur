@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AgentSession } from '../types';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 import { formatRelativeTime } from '../lib/format';
 import { CopyButton } from './CopyButton';
 import { DIALOG_COPY } from '../lib/overviewCopy';
@@ -44,10 +43,9 @@ interface SessionRowProps {
 }
 
 function SessionRow({ session }: SessionRowProps) {
-  const prefix = useWorkspacePrefix();
   const [fallback, setFallback] = useState(false);
 
-  const linkHref = sessionLink(session, prefix);
+  const linkHref = sessionLink(session);
   const linkLabel = sessionLinkLabel(session);
   const pathEmpty = !session.path;
 
@@ -83,15 +81,11 @@ function SessionRow({ session }: SessionRowProps) {
   );
 }
 
-function sessionLink(session: AgentSession, prefix: string): string {
+function sessionLink(session: AgentSession): string {
   if (session.projectSlug && session.assignmentSlug) {
-    return `${prefix}/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`;
+    return `/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`;
   }
-  if (!session.projectSlug && session.assignmentSlug) {
-    // Standalone assignments — no workspace prefix variant.
-    return `/agent-sessions`;
-  }
-  return `/agent-sessions`;
+  return '/agent-sessions';
 }
 
 function sessionLinkLabel(session: AgentSession): string {

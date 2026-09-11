@@ -1,10 +1,8 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function AppendAssignmentDecisionRecord() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
     ? `/api/assignments/${id}/decision-record/edit`
@@ -14,7 +12,7 @@ export function AppendAssignmentDecisionRecord() {
     : `/api/projects/${slug}/assignments/${aslug}/decision-record/entries`;
   const redirectTo = isStandalone
     ? `/assignments/${id}?tab=decisions`
-    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=decisions`;
+    : `/projects/${slug}/assignments/${aslug}?tab=decisions`;
 
   return (
     <AppendEntryPage

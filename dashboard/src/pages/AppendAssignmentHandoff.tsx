@@ -1,10 +1,8 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function AppendAssignmentHandoff() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
     ? `/api/assignments/${id}/handoff/edit`
@@ -14,7 +12,7 @@ export function AppendAssignmentHandoff() {
     : `/api/projects/${slug}/assignments/${aslug}/handoff/entries`;
   const redirectTo = isStandalone
     ? `/assignments/${id}?tab=handoff`
-    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=handoff`;
+    : `/projects/${slug}/assignments/${aslug}?tab=handoff`;
 
   return (
     <AppendEntryPage

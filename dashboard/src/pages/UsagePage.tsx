@@ -12,7 +12,7 @@ import {
   type UsageWidgetFilters,
   type UsageWindow,
 } from '@shared/usage-filters';
-import { useProjects, useWorkspaces, useUsageFacets } from '../hooks/useProjects';
+import { useProjects, useUsageFacets } from '../hooks/useProjects';
 
 interface UsageDailyRow {
   day: string;
@@ -64,7 +64,6 @@ export function UsagePage() {
   const groupBy: GroupBy = sp.get('groupBy') === 'assignment' ? 'assignment' : 'project';
 
   const { data: projects } = useProjects();
-  const { data: workspacesData } = useWorkspaces();
   const { data: facets } = useUsageFacets();
 
   const [data, setData] = useState<UsageResponse | null>(null);
@@ -163,28 +162,11 @@ export function UsagePage() {
         ) : null}
 
         <label className="flex flex-col gap-1 text-sm">
-          <span className="text-muted-foreground">Workspace</span>
-          <select
-            value={filters.workspace ?? ''}
-            onChange={(e) =>
-              update({ ...filters, workspace: e.target.value || undefined, project: undefined })
-            }
-            className={inputClass}
-          >
-            <option value="">All</option>
-            {workspacesData?.hasUngrouped ? <option value="_ungrouped">(ungrouped)</option> : null}
-            {(workspacesData?.workspaces ?? []).map((w) => (
-              <option key={w} value={w}>{w}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Project</span>
           <select
             value={filters.project ?? ''}
             onChange={(e) =>
-              update({ ...filters, project: e.target.value || undefined, workspace: undefined })
+              update({ ...filters, project: e.target.value || undefined })
             }
             className={inputClass}
           >

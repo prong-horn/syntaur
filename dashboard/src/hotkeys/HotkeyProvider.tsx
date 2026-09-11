@@ -17,7 +17,7 @@ import {
   usePlaybooks,
 } from '../hooks/useProjects';
 import { useSearchConfig } from '../hooks/useSearchConfig';
-import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
+import { buildIndex, type PaletteEntry } from './paletteIndex';
 import { buildActionsIndex, type Action } from './actionsIndex';
 import { CommandPalette } from './CommandPalette';
 import { ActionPalette } from './ActionPalette';
@@ -54,12 +54,6 @@ export interface HotkeyBinding {
 
 export const HOTKEY_CHORD_TIMEOUT_MS = 1500;
 
-// R1: parse workspace from pathname because useParams returns {} outside matched routes.
-export function getWorkspaceFromPathname(pathname: string): string {
-  const m = pathname.match(/^\/w\/([^/]+)(?:\/|$)/);
-  return m ? `/w/${m[1]}` : '';
-}
-
 export interface HotkeyConflict {
   /** Set when the combo collides with a built-in shortcut. */
   description?: string;
@@ -82,7 +76,6 @@ interface HotkeyContextValue {
   closeActionsPalette: () => void;
   actionsPaletteOpen: boolean;
   listBindings: () => HotkeyBinding[];
-  wsPrefix: string;
   paletteEntries: PaletteEntry[];
   actionEntries: Action[];
 
@@ -112,7 +105,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const { toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
-  const wsPrefix = getWorkspaceFromPathname(location.pathname);
 
   // Palette index data is fetched lazily: these hooks stay inert until the
   // command/actions palette is first opened. Previously they fired five
@@ -134,14 +126,12 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       projects,
       assignments,
       playbooks,
-      wsPrefix,
       externalIds: searchCfg.externalIds,
     });
   }, [
     projectsState.data,
     assignmentsState.data,
     playbooksState.data,
-    wsPrefix,
     searchCfg.externalIds,
   ]);
 
@@ -159,7 +149,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
         playbooks: playbooksState.data?.playbooks ?? [],
         projectSlug: currentProjectSlug,
         currentProjectTitle,
-        wsPrefix,
         refetchPlaybooks: playbooksState.refetch,
         navigate,
         toggleTheme,
@@ -169,7 +158,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       playbooksState.refetch,
       currentProjectSlug,
       currentProjectTitle,
-      wsPrefix,
       navigate,
       toggleTheme,
     ],
@@ -510,11 +498,11 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
         keys: `g ${c.suffix}`,
         scope: 'global',
         description: c.desc,
-        handler: () => navigate(resolveRoute(c.basePath, wsPrefix)),
+        handler: () => navigate(c.basePath),
       }),
     );
     return () => ids.forEach(unregister);
-  }, [register, unregister, navigate, wsPrefix]);
+  }, [register, unregister, navigate]);
 
   // Register user-bound canonical-action hotkeys. Re-registers whenever the
   // bindings or the action set changes.
@@ -559,7 +547,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       closeActionsPalette,
       actionsPaletteOpen,
       listBindings,
-      wsPrefix,
       paletteEntries,
       actionEntries,
       userBindings,
@@ -586,7 +573,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       closeActionsPalette,
       actionsPaletteOpen,
       listBindings,
-      wsPrefix,
       paletteEntries,
       actionEntries,
       userBindings,

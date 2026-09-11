@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { MoonStar, Plus, SunMedium, Menu, Search } from 'lucide-react';
 import { useTheme } from '../theme';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 import { useHotkeyContext, formatPatternForDisplay } from '../hotkeys';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
@@ -23,7 +22,6 @@ export function TopBar({
   projectSlug,
   onOpenMobileNav,
 }: TopBarProps) {
-  const wsPrefix = useWorkspacePrefix();
   const { resolvedTheme, toggleTheme } = useTheme();
   const { openPalette } = useHotkeyContext();
 
@@ -76,14 +74,14 @@ export function TopBar({
           <Link className="shell-action hidden sm:inline-flex" to="/help">
             Help
           </Link>
-          <Link className="shell-action" to={`${wsPrefix}/create/project`} aria-label="New Project">
+          <Link className="shell-action" to={`/create/project`} aria-label="New Project">
             <Plus className="h-4 w-4" />
             <span className="hidden sm:inline">New Project</span>
           </Link>
           {projectSlug ? (
             <Link
               className="shell-action"
-              to={`${wsPrefix}/projects/${projectSlug}/create/assignment`}
+              to={`/projects/${projectSlug}/create/assignment`}
               aria-label="New Assignment"
             >
               <Plus className="h-4 w-4" />

@@ -1,8 +1,7 @@
 import { useSyncExternalStore } from 'react';
 
-// Per-client persistence for the sidebar collapse state — both the global nav
-// groups (`library`/`board`/`operations`) and the workspace sections
-// (`ws:<name>`). Backed by a module-level external store read via
+// Per-client persistence for the sidebar collapse state — the global nav groups
+// (`work`/`library`/`board`/`operations`). Backed by a module-level external store read via
 // `useSyncExternalStore` so the two simultaneously-mounted `ShellSidebar`
 // instances (the CSS-hidden desktop `<aside>` and the mobile overlay) share one
 // source of truth and re-render together — plain `useState` would let them

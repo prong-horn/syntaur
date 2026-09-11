@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ArrowLeft, Eye, FileCode2, Save } from 'lucide-react';
-import { useWorkspaces, type EditableDocumentType } from '../hooks/useProjects';
+import type { EditableDocumentType } from '../hooks/useProjects';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { deriveStatusOptions } from '../lib/statusMeta';
 import {
@@ -278,10 +278,6 @@ function StructuredEditor({
               className="editor-input"
             />
           </Field>
-          <WorkspaceField
-            value={state.workspace}
-            onChange={(value) => onChange(normalizeEditorContent(documentType, content, { workspace: value }))}
-          />
         </FormGrid>
 
         <Field label="Project body">
@@ -562,26 +558,6 @@ function Field({
       <span className="text-sm font-medium text-foreground">{label}</span>
       {children}
     </label>
-  );
-}
-
-function WorkspaceField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const { data } = useWorkspaces();
-  const workspaces = data?.workspaces ?? [];
-
-  return (
-    <Field label="Workspace">
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="editor-input"
-      >
-        <option value="">Ungrouped</option>
-        {workspaces.map((w) => (
-          <option key={w} value={w}>{w}</option>
-        ))}
-      </select>
-    </Field>
   );
 }
 

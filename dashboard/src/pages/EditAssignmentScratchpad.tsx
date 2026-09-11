@@ -1,10 +1,8 @@
 import { useParams } from 'react-router-dom';
 import { DocumentEditorPage } from '../components/DocumentEditorPage';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function EditAssignmentScratchpad() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
     ? `/api/assignments/${id}/scratchpad/edit`
@@ -14,7 +12,7 @@ export function EditAssignmentScratchpad() {
     : `/api/projects/${slug}/assignments/${aslug}/scratchpad`;
   const redirectTo = isStandalone
     ? `/assignments/${id}?tab=scratchpad`
-    : `${wsPrefix}/projects/${slug}/assignments/${aslug}?tab=scratchpad`;
+    : `/projects/${slug}/assignments/${aslug}?tab=scratchpad`;
 
   return (
     <DocumentEditorPage

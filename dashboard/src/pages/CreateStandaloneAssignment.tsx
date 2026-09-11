@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { useWorkspacePrefix } from '../hooks/useProjects';
 
 export function CreateStandaloneAssignment() {
-  const { workspace } = useParams<{ workspace?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -15,11 +12,7 @@ export function CreateStandaloneAssignment() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const params = new URLSearchParams({ standalone: '1' });
-    if (workspace) {
-      params.set('workspace', workspace);
-    }
-    fetch(`/api/templates/assignment?${params.toString()}`)
+    fetch('/api/templates/assignment?standalone=1')
       .then((response) => response.json())
       .then((payload) => {
         setContent(payload.content);
@@ -29,7 +22,7 @@ export function CreateStandaloneAssignment() {
         setError(loadError.message);
         setLoading(false);
       });
-  }, [workspace]);
+  }, []);
 
   async function handleSave(markdownContent: string) {
     setSaving(true);
@@ -55,8 +48,6 @@ export function CreateStandaloneAssignment() {
         setSaving(false);
         return;
       }
-      // Standalone detail route is unscoped (`/assignments/:id`), even when
-      // reached from a workspace-scoped page — there is no `/w/<ws>/assignments/:id` route.
       navigate(`/assignments/${newId}`);
     } catch (saveError) {
       setError((saveError as Error).message);
@@ -84,14 +75,10 @@ export function CreateStandaloneAssignment() {
       saving={saving}
       error={error}
       title="Create Standalone Assignment"
-      description={
-        workspace
-          ? `Standalone assignments live outside any project. This one will be tagged with workspaceGroup: ${workspace} so it appears in this workspace's views.`
-          : 'Standalone assignments live outside any project. Add a workspaceGroup to make them appear in workspace-filtered views.'
-      }
-      onCancel={() => navigate(`${wsPrefix}/assignments`)}
+      description="Standalone assignments live outside any project."
+      onCancel={() => navigate('/assignments')}
       helpTitle="Standalone assignment editing rules"
-      helpBody="No project field is needed (it must remain null). Use workspaceGroup to group with other workspace work. Status, priority, and tags work the same as project-nested assignments."
+      helpBody="No project field is needed (it must remain null). Status, priority, and tags work the same as project-nested assignments."
       allowSlugEdit
     />
   );

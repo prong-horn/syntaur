@@ -47,8 +47,8 @@ describe('applyToggle', () => {
     expect(out).toEqual({ library: true, board: true });
   });
 
-  it('namespaces workspace keys independently of group ids', () => {
-    const out = applyToggle({ operations: true }, 'ws:syntaur');
-    expect(out).toEqual({ operations: true, 'ws:syntaur': true });
+  it('namespaces group ids independently', () => {
+    const out = applyToggle({ operations: true }, 'work');
+    expect(out).toEqual({ operations: true, work: true });
   });
 });

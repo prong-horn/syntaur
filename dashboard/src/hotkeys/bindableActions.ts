@@ -86,7 +86,6 @@ export function lookupReservedCombo(combo: string): BuiltinHotkeyEntry | null {
  * and the settings page when it can't resolve a live Action by id.
  */
 export const BINDABLE_ACTION_LABELS: Record<BindableActionKind, string> = {
-  'new-workspace': 'New Workspace',
   'new-project': 'New Project',
   'new-assignment': 'New Assignment',
 };

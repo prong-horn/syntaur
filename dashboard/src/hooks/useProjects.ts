@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
 import type { AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail } from '../types';
@@ -599,16 +598,6 @@ function useFetch<T>(
 
 export function useProjects(enabled = true): FetchState<ProjectSummary[]> {
   return useFetch<ProjectSummary[]>('/api/projects', 'projects', enabled);
-}
-
-export function useWorkspaces(): FetchState<{ workspaces: string[]; hasUngrouped: boolean }> {
-  return useFetch<{ workspaces: string[]; hasUngrouped: boolean }>('/api/workspaces', 'projects');
-}
-
-/** Returns the URL prefix for workspace-scoped links: '/w/syntaur' or '' */
-export function useWorkspacePrefix(): string {
-  const { workspace } = useParams<{ workspace?: string }>();
-  return workspace ? `/w/${workspace}` : '';
 }
 
 export function useOverview(options: { staleLimit?: number; staleOffset?: number } = {}): FetchState<OverviewResponse> {

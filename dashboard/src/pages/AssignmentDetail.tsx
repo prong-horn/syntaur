@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useProject, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignment, useProject, useAssignmentSessions, useAssignmentUsage, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
@@ -125,7 +125,6 @@ function WorkflowSelectRow({
 export function AssignmentDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
   const navigate = useNavigate();
-  const wsPrefix = useWorkspacePrefix();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useToast();
@@ -188,7 +187,7 @@ export function AssignmentDetail() {
     currentIndex >= 0 && currentIndex < siblingSlugs.length - 1
       ? siblingSlugs[currentIndex + 1]
       : null;
-  const baseRoute = `${wsPrefix}/projects/${slug}/assignments/${aslug}`;
+  const baseRoute = `/projects/${slug}/assignments/${aslug}`;
 
   useHotkey({
     keys: 'e',
@@ -226,7 +225,7 @@ export function AssignmentDetail() {
     description: 'Previous assignment in project',
     enabled: !!prevSlug,
     handler: () =>
-      prevSlug && navigate(`${wsPrefix}/projects/${slug}/assignments/${prevSlug}`),
+      prevSlug && navigate(`/projects/${slug}/assignments/${prevSlug}`),
   });
   useHotkey({
     keys: ']',
@@ -234,7 +233,7 @@ export function AssignmentDetail() {
     description: 'Next assignment in project',
     enabled: !!nextSlug,
     handler: () =>
-      nextSlug && navigate(`${wsPrefix}/projects/${slug}/assignments/${nextSlug}`),
+      nextSlug && navigate(`/projects/${slug}/assignments/${nextSlug}`),
   });
 
   const summarySections = useMemo(
@@ -328,7 +327,7 @@ export function AssignmentDetail() {
     setDeleteLoading(true);
     try {
       await deleteAssignment(projectSlug, assignmentSlug);
-      navigate(`${wsPrefix}/projects/${projectSlug}`);
+      navigate(`/projects/${projectSlug}`);
     } catch (err) {
       setTransitionError((err as Error).message);
       setDeleteLoading(false);
@@ -431,31 +430,31 @@ export function AssignmentDetail() {
       key: 'edit-assignment',
       label: 'Edit assignment source',
       icon: FilePenLine,
-      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/edit`,
+      href: `/projects/${slug}/assignments/${aslug}/edit`,
     },
     {
       key: 'edit-plan',
       label: 'Edit plan',
       icon: SendToBack,
-      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/plan/edit`,
+      href: `/projects/${slug}/assignments/${aslug}/plan/edit`,
     },
     {
       key: 'edit-scratchpad',
       label: 'Edit scratchpad',
       icon: NotebookPen,
-      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/scratchpad/edit`,
+      href: `/projects/${slug}/assignments/${aslug}/scratchpad/edit`,
     },
     {
       key: 'append-handoff',
       label: 'Append handoff',
       icon: ArrowUpRight,
-      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/handoff/edit`,
+      href: `/projects/${slug}/assignments/${aslug}/handoff/edit`,
     },
     {
       key: 'append-decision',
       label: 'Append decision',
       icon: Hammer,
-      href: `${wsPrefix}/projects/${slug}/assignments/${aslug}/decision-record/edit`,
+      href: `/projects/${slug}/assignments/${aslug}/decision-record/edit`,
     },
     {
       key: assignment.archived ? 'unarchive' : 'archive',
@@ -588,7 +587,7 @@ export function AssignmentDetail() {
               const href =
                 ref.sourceProjectSlug === null
                   ? `/assignments/${ref.sourceId}`
-                  : `${wsPrefix}/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`;
+                  : `/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`;
               return (
                 <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
                   <Link to={href} className="text-foreground hover:text-primary">
@@ -692,7 +691,7 @@ export function AssignmentDetail() {
                       title="Plan"
                       description="Shows plan.md only. Versioned plans (plan-v2.md, ...) are not yet rendered here — open them from the filesystem."
                       actions={
-                        <Link className="shell-action" to={`${wsPrefix}/projects/${slug}/assignments/${aslug}/plan/edit`}>
+                        <Link className="shell-action" to={`/projects/${slug}/assignments/${aslug}/plan/edit`}>
                           <NotebookPen className="h-4 w-4" />
                           <span>Edit Plan</span>
                         </Link>
@@ -719,7 +718,7 @@ export function AssignmentDetail() {
                   <SectionCard
                     title="Scratchpad"
                     actions={
-                      <Link className="shell-action" to={`${wsPrefix}/projects/${slug}/assignments/${aslug}/scratchpad/edit`}>
+                      <Link className="shell-action" to={`/projects/${slug}/assignments/${aslug}/scratchpad/edit`}>
                         <NotebookPen className="h-4 w-4" />
                         <span>Edit Scratchpad</span>
                       </Link>

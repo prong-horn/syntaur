@@ -37,13 +37,7 @@ function normalizePathname(pathname: string): string {
 }
 
 export function getSidebarSection(pathname: string): SidebarSection | null {
-  let normalized = normalizePathname(pathname);
-
-  // Strip /w/:workspace prefix to match base sections
-  const wsMatch = normalized.match(/^\/w\/[^/]+(\/.*)?$/);
-  if (wsMatch) {
-    normalized = wsMatch[1] || '/';
-  }
+  const normalized = normalizePathname(pathname);
 
   if (normalized === '/') {
     return '/';
@@ -105,30 +99,22 @@ export function isSidebarItemActive(pathname: string, itemTo: SidebarSection): b
 
 export function buildShellMeta(pathname: string): ShellMeta {
   const normalized = normalizePathname(pathname);
-  let parts = normalized.split('/').filter(Boolean);
+  const parts = normalized.split('/').filter(Boolean);
   const breadcrumbs: Breadcrumb[] = [];
   let title = 'Overview';
   let projectSlug: string | null = null;
-
-  // Extract workspace prefix if present
-  let workspacePrefix = '';
-  if (parts[0] === 'w' && parts[1]) {
-    workspacePrefix = `/w/${parts[1]}`;
-    breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/projects` });
-    parts = parts.slice(2); // Remove 'w' and workspace name
-  }
 
   if (parts.length === 0) {
     return { title, breadcrumbs, projectSlug };
   }
 
   if (parts[0] === 'projects') {
-    breadcrumbs.push({ label: 'Projects', path: `${workspacePrefix}/projects` });
+    breadcrumbs.push({ label: 'Projects', path: '/projects' });
     title = 'Projects';
 
     if (parts[1]) {
       projectSlug = parts[1];
-      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `${workspacePrefix}/projects/${parts[1]}` });
+      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/projects/${parts[1]}` });
       title = toTitleCase(parts[1]);
     }
 
@@ -139,7 +125,7 @@ export function buildShellMeta(pathname: string): ShellMeta {
     } else if (parts[2] === 'assignments' && parts[3]) {
       breadcrumbs.push({
         label: toTitleCase(parts[3]),
-        path: `${workspacePrefix}/projects/${parts[1]}/assignments/${parts[3]}`,
+        path: `/projects/${parts[1]}/assignments/${parts[3]}`,
       });
       title = toTitleCase(parts[3]);
 
@@ -156,23 +142,23 @@ export function buildShellMeta(pathname: string): ShellMeta {
       }
     }
   } else if (parts[0] === 'agents') {
-    breadcrumbs.push({ label: 'Agents', path: `${workspacePrefix}/agents` });
+    breadcrumbs.push({ label: 'Agents', path: '/agents' });
     title = 'Agents';
     if (parts[1] === 'new') {
       title = 'New agent';
     } else if (parts[1] && parts[2] === 'edit') {
-      breadcrumbs.push({ label: parts[1], path: `${workspacePrefix}/agents/${parts[1]}/edit` });
+      breadcrumbs.push({ label: parts[1], path: `/agents/${parts[1]}/edit` });
       title = 'Edit agent';
     }
   } else if (parts[0] === 'usage') {
     title = 'Usage';
-    breadcrumbs.push({ label: 'Usage', path: `${workspacePrefix}/usage` });
+    breadcrumbs.push({ label: 'Usage', path: '/usage' });
   } else if (parts[0] === 'agent-sessions') {
     title = 'Agent Sessions';
-    breadcrumbs.push({ label: 'Agent Sessions', path: `${workspacePrefix}/agent-sessions` });
+    breadcrumbs.push({ label: 'Agent Sessions', path: '/agent-sessions' });
   } else if (parts[0] === 'assignments') {
     title = 'Assignments';
-    breadcrumbs.push({ label: 'Assignments', path: `${workspacePrefix}/assignments` });
+    breadcrumbs.push({ label: 'Assignments', path: '/assignments' });
   } else if (parts[0] === 'archive') {
     title = 'Archive';
     breadcrumbs.push({ label: 'Archive', path: '/archive' });
@@ -200,7 +186,7 @@ export function buildShellMeta(pathname: string): ShellMeta {
     breadcrumbs.push({ label: 'Workflow', path: '/workflow' });
   } else if (parts[0] === 'create' && parts[1] === 'project') {
     title = 'Create Project';
-    breadcrumbs.push({ label: 'Create Project', path: `${workspacePrefix}/create/project` });
+    breadcrumbs.push({ label: 'Create Project', path: '/create/project' });
   }
 
   return { title, breadcrumbs, projectSlug };

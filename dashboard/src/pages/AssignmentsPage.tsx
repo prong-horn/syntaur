@@ -1,13 +1,12 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
-import { Link, useNavigate, useSearchParams, useParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FilterX, FolderKanban, Plus, Pencil, Trash2, ArrowRightLeft } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { ChevronDown, ChevronUp, FilterX, FolderKanban, Plus, Pencil, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
 import { buildWorkflowLanes } from '../lib/workflow-board';
 import { cn } from '../lib/utils';
 import {
   useAssignmentsBoard,
-  useWorkspacePrefix,
   type AssignmentBoardItem,
   type AssignmentTransitionAction,
 } from '../hooks/useProjects';
@@ -36,7 +35,6 @@ import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../compon
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
-import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { TypeChip } from '../components/TypeChip';
@@ -97,8 +95,6 @@ function areSearchParamsEqual(left: URLSearchParams, right: URLSearchParams): bo
 }
 
 export function AssignmentsPage() {
-  const { workspace } = useParams<{ workspace?: string }>();
-  const wsPrefix = useWorkspacePrefix();
   const navigate = useNavigate();
   const searchRef = useRef<HTMLInputElement>(null);
   useHotkeyScope('list:assignments');
@@ -107,9 +103,7 @@ export function AssignmentsPage() {
   const typesConfig = useTypesConfig();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Namespace the scope key so workspace-scoped prefs cannot collide with
-  // project-detail prefs if a workspace name and a project slug ever match.
-  const scope: string | null = workspace ? `w:${workspace}` : null;
+  const scope: string | null = null;
   const prefs = useViewPrefs(scope);
   // Tracks which scope the URL has been bootstrapped for. `undefined` = never.
   // Reset implicitly when `scope` changes (we re-bootstrap for the new scope).
@@ -241,16 +235,9 @@ export function AssignmentsPage() {
   } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
-  const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
   }, [data]);
-
-  // Ephemeral date/search filters: don't leak across workspace scopes.
-  useEffect(() => {
-    setDateRange(null);
-    setSearch('');
-  }, [workspace]);
 
   // Track the URL params we last reacted to, so we can tell a genuine URL-driven
   // change (back/forward nav, an external link, the bootstrap seed) apart from a
@@ -647,46 +634,32 @@ export function AssignmentsPage() {
   // state + the "advanced query" indicator. Memoized on `query` only.
   const chipsRepresentable = useMemo(() => queryToViewFilters(query) !== null, [query]);
 
-  // Filter-bar option lists must be scoped to the current workspace (the board
-  // applies workspace filtering at match time), or /w/<ws> dropdowns would offer
-  // dead cross-workspace assignees/projects that get persisted into prefs/views.
-  const workspaceItems = useMemo(
-    () =>
-      boardItems.filter((a) =>
-        !workspace
-          ? true
-          : workspace === '_ungrouped'
-            ? a.projectWorkspace === null
-            : a.projectWorkspace === workspace,
-      ),
-    [boardItems, workspace],
-  );
   const uniqueStatuses = useMemo(
-    () => Array.from(new Set(workspaceItems.map((a) => a.status))).sort(),
-    [workspaceItems],
+    () => Array.from(new Set(boardItems.map((a) => a.status))).sort(),
+    [boardItems],
   );
   const uniquePriorities = useMemo(
-    () => Array.from(new Set(workspaceItems.map((a) => a.priority))).sort(),
-    [workspaceItems],
+    () => Array.from(new Set(boardItems.map((a) => a.priority))).sort(),
+    [boardItems],
   );
   const uniqueAssignees = useMemo(
-    () => Array.from(new Set(workspaceItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
-    [workspaceItems],
+    () => Array.from(new Set(boardItems.map((a) => a.assignee ?? '__unassigned__'))).sort(),
+    [boardItems],
   );
   const uniqueProjects = useMemo(
     () =>
       Array.from(
         new Map(
-          workspaceItems
+          boardItems
             .filter((a): a is typeof a & { projectSlug: string; projectTitle: string } => a.projectSlug !== null)
             .map((a) => [a.projectSlug, a.projectTitle]),
         ),
       ).sort(([, a], [, b]) => a.localeCompare(b)),
-    [workspaceItems],
+    [boardItems],
   );
   const uniqueTags = useMemo(
-    () => Array.from(new Set(workspaceItems.flatMap((a) => a.tags ?? []))).sort(),
-    [workspaceItems],
+    () => Array.from(new Set(boardItems.flatMap((a) => a.tags ?? []))).sort(),
+    [boardItems],
   );
 
   // Client AQL field registry: built-in assignment vocabulary + any custom-fact
@@ -706,13 +679,12 @@ export function AssignmentsPage() {
     return result.query; // CompiledQuery on success, null on parse/compile error
   }, [query, registry]);
 
-  // Apply the compiled predicate through the AQL evaluator. Workspace + archived
-  // stay OUTSIDE the query (page options), exactly as before. compiled === null
-  // (empty/invalid) → match-all via filterBoardItems' null-predicate path: only
-  // the page-level pre-filters (archived-exclude + workspace / _ungrouped) run.
+  // Apply the compiled predicate through the AQL evaluator. Archived exclusion
+  // stays OUTSIDE the query (page option). compiled === null (empty/invalid) →
+  // match-all via filterBoardItems' null-predicate path.
   const filteredItems = useMemo(
-    () => filterBoardItems(boardItems, compiled, { workspace }),
-    [boardItems, compiled, workspace],
+    () => filterBoardItems(boardItems, compiled),
+    [boardItems, compiled],
   );
 
   const sortedItems = useMemo(
@@ -844,12 +816,7 @@ export function AssignmentsPage() {
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:assignments',
     onOpen: (assignment) => {
-      if (assignment.projectSlug === null) {
-        navigate(`/assignments/${assignment.id}`);
-        return;
-      }
-      const assignWs = assignment.projectWorkspace ? `/w/${assignment.projectWorkspace}` : wsPrefix;
-      navigate(`${assignWs}/projects/${assignment.projectSlug}/assignments/${assignment.slug}`);
+      navigate(assignmentDetailHref(assignment));
     },
   });
   useHotkey({
@@ -1112,7 +1079,7 @@ export function AssignmentsPage() {
     <div className="space-y-5" data-density={prefs.density}>
       <div className="flex items-center justify-end">
         <Link
-          to={`${wsPrefix}/assignments/new`}
+          to={`/assignments/new`}
           className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-foreground/90"
         >
           <Plus className="h-4 w-4" />
@@ -1258,7 +1225,7 @@ export function AssignmentsPage() {
           title="No assignments yet"
           description="Assignments appear here once projects contain concrete work items."
           actions={
-            <Link className="shell-action shell-action--cta" to={`${wsPrefix}/projects`}>
+            <Link className="shell-action shell-action--cta" to={`/projects`}>
               <FolderKanban className="h-4 w-4" />
               <span>Browse Projects</span>
             </Link>
@@ -1601,17 +1568,8 @@ export function AssignmentsPage() {
       <ContextMenuPopover
         anchor={contextMenu?.anchor ?? null}
         items={contextMenu ? buildAssignmentContextMenu(contextMenu.item, {
-          wsPrefix,
-          onEdit: () => {
-            const item = contextMenu.item;
-            const href =
-              item.projectSlug === null
-                ? `/assignments/${item.id}`
-                : `${item.projectWorkspace ? `/w/${item.projectWorkspace}` : wsPrefix}/projects/${item.projectSlug}/assignments/${item.slug}`;
-            navigate(href);
-          },
+          onEdit: () => navigate(assignmentDetailHref(contextMenu.item)),
           onDelete: () => setDeleteTarget(contextMenu.item),
-          onMove: () => setMoveTarget(contextMenu.item),
         }) : []}
         onClose={() => setContextMenu(null)}
       />
@@ -1657,57 +1615,24 @@ export function AssignmentsPage() {
         }}
       />
 
-      <MoveToWorkspaceDialog
-        open={moveTarget !== null}
-        onOpenChange={(next) => {
-          if (!next) setMoveTarget(null);
-        }}
-        currentWorkspace={moveTarget?.projectWorkspace ?? null}
-        title="Move assignment to workspace"
-        description="Standalone assignments belong to a project-workspace via the workspaceGroup frontmatter field."
-        onSubmit={async (target) => {
-          if (!moveTarget) return;
-          const res = await fetch(`/api/assignments/${encodeURIComponent(moveTarget.id)}/move-workspace`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workspaceGroup: target }),
-          });
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body.error || 'Failed to move assignment');
-          }
-          refetch();
-        }}
-      />
     </div>
   );
 }
 
 function buildAssignmentContextMenu(
   item: AssignmentBoardItem,
-  handlers: { wsPrefix: string; onEdit: () => void; onDelete: () => void; onMove: () => void },
+  handlers: { onEdit: () => void; onDelete: () => void },
 ): OverflowMenuItem[] {
   const items: OverflowMenuItem[] = [
     { key: 'edit', label: 'Edit', icon: Pencil, onSelect: handlers.onEdit },
   ];
   if (item.projectSlug !== null) {
-    // Project-scoped: delete is wired to the existing nested DELETE route.
     items.push({
       key: 'delete',
       label: 'Delete',
       icon: Trash2,
       destructive: true,
       onSelect: handlers.onDelete,
-    });
-    // Move is omitted: project-scoped assignments inherit their workspace from
-    // the parent project. The server enforces this with a 400.
-  } else {
-    // Standalone: no DELETE /api/assignments/:id route yet, so omit Delete.
-    items.push({
-      key: 'move',
-      label: 'Move to workspace…',
-      icon: ArrowRightLeft,
-      onSelect: handlers.onMove,
     });
   }
   return items;

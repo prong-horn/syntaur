@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Archive, ArchiveRestore, ArrowRightLeft, ExternalLink } from 'lucide-react';
+import { Archive, ArchiveRestore, ExternalLink } from 'lucide-react';
 import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUsage, type ExternalIdInfo } from '../hooks/useProjects';
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { LoadingState } from '../components/LoadingState';
@@ -16,7 +16,6 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
-import { MoveToWorkspaceDialog } from '../components/MoveToWorkspaceDialog';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
 import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
 import { ChatTab } from '../components/chat/ChatTab';
@@ -48,7 +47,6 @@ export function StandaloneAssignmentDetail() {
     error: eventsError,
     refetch: refetchEvents,
   } = useAssignmentEvents(eventsUrl);
-  const [moveOpen, setMoveOpen] = useState(false);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useToast();
 
@@ -99,14 +97,6 @@ export function StandaloneAssignmentDetail() {
                 onCreated={() => refetch()}
               />
             )}
-            <button
-              type="button"
-              onClick={() => setMoveOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-            >
-              <ArrowRightLeft className="h-3 w-3" />
-              Move to workspace…
-            </button>
             <Link
               to={`/assignments/${assignment.id}/edit`}
               className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
@@ -394,25 +384,6 @@ export function StandaloneAssignmentDetail() {
         </div>
       </div>
 
-      <MoveToWorkspaceDialog
-        open={moveOpen}
-        onOpenChange={setMoveOpen}
-        currentWorkspace={assignment.projectWorkspace}
-        title="Move assignment to workspace"
-        description="Standalone assignments belong to a project-workspace via the workspaceGroup frontmatter field."
-        onSubmit={async (target) => {
-          const res = await fetch(`/api/assignments/${encodeURIComponent(assignment.id)}/move-workspace`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ workspaceGroup: target }),
-          });
-          if (!res.ok) {
-            const body = await res.json().catch(() => ({}));
-            throw new Error(body.error || 'Failed to move assignment');
-          }
-          refetch();
-        }}
-      />
     </div>
   );
 }

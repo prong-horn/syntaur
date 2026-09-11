@@ -13,7 +13,7 @@ const project = {
 } as unknown as ProjectSummary;
 
 function projectEntry(externalIds?: boolean): PaletteEntry {
-  const entries = buildIndex({ projects: [project], wsPrefix: '', externalIds });
+  const entries = buildIndex({ projects: [project], externalIds });
   const entry = entries.find((e) => e.id === 'project-acme');
   if (!entry) throw new Error('project entry not built');
   return entry;
