@@ -1,27 +1,32 @@
 ---
-description: Register, refresh, remove, or list tracked tmux sessions for the Syntaur dashboard.
+description: Register this Codex session as an agent session in the Syntaur dashboard
 ---
 
 # /track-session
 
-Track a tmux session so its dev servers appear in the Syntaur dashboard.
+Register the current Codex session as an agent session in the Syntaur dashboard. Works standalone or linked to a project/assignment.
+
+Only real agent-runtime session IDs are accepted — no synthesis. Source the id from the matching Codex rollout file and pass `--transcript-path` from the same file.
 
 ## Usage
 
-- `/track-session <session-name>` - register a session and scan it
-- `/track-session --refresh [session-name]` - refresh one or all sessions
-- `/track-session --remove <session-name>` - stop tracking a session
-- `/track-session --list` - list tracked sessions
+- `/track-session` — register a standalone session
+- `/track-session --description "exploring auth patterns"` — with a description
+- `/track-session --project <slug> --assignment <slug>` — linked to a project
+- `/track-session --description "auth work" --project <slug> --assignment <slug>` — both
 
 ## Workflow
 
-1. Prefer the `track-session` skill logic for all variants.
-2. For register:
-   - verify the tmux session exists
-   - create or update `~/.syntaur/servers/<sanitized-name>.md`
-3. For refresh:
-   - update `last_refreshed`
-4. For remove:
-   - delete the registration file
-5. For list:
-   - show tracked sessions pulled from frontmatter
+Prefer the `track-session` skill logic. Run:
+
+```bash
+syntaur track-session --agent codex \
+  --session-id <real-id> \
+  --transcript-path <rollout-path> \
+  --path "$(pwd)" \
+  --pid "$$" \
+  [--description "<text>"] \
+  [--project <slug>] [--assignment <slug>]
+```
+
+Both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize.

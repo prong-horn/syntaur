@@ -39,10 +39,8 @@ You are working within the Syntaur protocol for multi-agent project coordination
           handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md # Agent-writable: append-only decision log
       resources/
-        _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
       memories/
-        _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
   assignments/
     <assignment-id>/         # Standalone assignments — folder = UUID, \`project: null\`, slug display-only

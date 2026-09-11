@@ -53,8 +53,6 @@ All files prefixed with `_` are derived and rebuilt by tooling:
 - `_index-plans.md`
 - `_index-decisions.md`
 - `_status.md`
-- `resources/_index.md`
-- `memories/_index.md`
 - `~/.syntaur/playbooks/manifest.md`
 
 ## Workspace Files

@@ -26,7 +26,7 @@ When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm 
 
 ## Codex + Syntaur
 
-- When the task is about Syntaur missions, assignments, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-assignment`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `track-session`, `track-server`.
+- When the task is about Syntaur missions, assignments, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-assignment`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `track-session`.
 - For broad Syntaur protocol work in Codex, prefer the dedicated `syntaur-operator` agent from `platforms/codex/agents/syntaur-operator.md`.
 - Keep the Codex plugin text in `platforms/codex/`, the Claude plugin text in `platforms/claude-code/`, the canonical skill text in `<repo>/skills/`, and the generated Codex adapter in `src/templates/codex-agents.ts` aligned when protocol behavior changes.
 - `agent.md` is universal per-mission guidance and stays human-authored and read-only. `claude.md` may still hold mission-specific context worth reading, but Codex-only behavior should live in the Codex plugin or `AGENTS.md`.

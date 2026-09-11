@@ -107,7 +107,7 @@ A full install (CLI + both plugins + skills) touches the following locations:
 | `~/.npm/_npx/<hash>/` | npx-cached copy of the `syntaur` package | npm |
 | `$(npm root -g)/syntaur/` | Globally-installed copy of the `syntaur` package | `npm install -g` |
 | `~/.claude/plugins/.../syntaur/` | Claude Code plugin directory (slash commands, hooks, agent, marketplace entry) | `syntaur install-plugin` |
-| `~/.claude/skills/<skill>/` | Protocol skills (11 of them, including `save-session-summary`) | `npx skills add prong-horn/syntaur` OR `syntaur install-plugin --force-skills` (skipped by default when the plugin is enabled) |
+| `~/.claude/skills/<skill>/` | Protocol skills (18 of them) | `npx skills add prong-horn/syntaur` OR `syntaur install-plugin --force-skills` (skipped by default when the plugin is enabled) |
 | `~/.claude/plugins/marketplaces/<name>/plugins/syntaur/skills/` | Plugin-loaded skills (preferred path when the plugin is enabled) | `syntaur install-plugin` mirrors `<repo>/skills/` here |
 | `~/.codex/plugins/syntaur/` (or chosen dir) | Codex plugin directory (commands, hooks, mirrored skills) | `syntaur install-codex-plugin` |
 | `~/.codex/skills/<skill>/` | Protocol skills (when not using the plugin path) | `npx skills add prong-horn/syntaur -a codex` OR `syntaur install-codex-plugin --force-skills` |
@@ -181,7 +181,7 @@ syntaur uninstall --all
 
 ### Search
 
-`syntaur search <query>` runs full-text search across the markdown bodies of all Syntaur content — assignments, plans (latest plan version only), progress, comments, handoffs, decision records, scratchpads, project memories, and resources. Archived items are excluded unless you pass `--all`.
+`syntaur search <query>` runs full-text search across the markdown bodies of all Syntaur assignment content — assignments, plans (latest plan version only), progress, comments, handoffs, decision records, and scratchpads. Archived items are excluded unless you pass `--all`.
 
 ```bash
 # Search across everything
@@ -257,7 +257,7 @@ Any of these can be prefixed with `npx syntaur@latest` if you chose not to insta
 
 All Syntaur skills live at `<repo>/skills/<name>/SKILL.md` — one canonical source. The full set ships with the package and includes:
 
-`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`, `manage-statuses`, `clear-assignment`, `track-session` (Claude Code agent session registration), `track-server` (tmux dev-server tracking).
+`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`, `manage-statuses`, `clear-assignment`, `track-session`, `replan`, `resume-session`, `syntaur-worktree`, `list-assignments`, `log-progress`, `set-workspace`, `run-playbook`, `views`, `doctor-syntaur`.
 
 There are three install paths, all backed by the same `<repo>/skills/`:
 
@@ -313,29 +313,6 @@ syntaur doctor --only integrations.claude-marketplace-registered
 ```
 
 Symlinks created by `npx skills add` are recognized and never overwritten by the syntaur CLI.
-
----
-
-## Resource Leases
-
-Coordinate access to shared finite resources (dev envs, test DBs, API keys with rate limits, capacity-1 named locks) across multiple parallel agents. Atomic claim with opaque lease tokens, CAS-guarded release/extend, TTL-driven expiry.
-
-```bash
-syntaur lease create-inventory dev-envs --kind dev-env --default-ttl 30m
-syntaur lease member add dev-envs box-1 -m url=https://box-1.example.test
-syntaur lease member add dev-envs box-2 -m url=https://box-2.example.test
-
-syntaur lease claim dev-envs --json         # → { lease_id, member_id, expires_at, metadata }
-syntaur lease release <lease_id>
-syntaur lease list                          # pool overview
-syntaur lease --help                        # full subcommand list
-```
-
-Four skills wrap this for agents: **claim-resource**, **release-resource**, **extend-resource**, and **list-resources** — see [`docs/leases/skills.md`](docs/leases/skills.md).
-
-Admin and cleanup commands (`revoke`, `release-all --for`, `inventory delete`, `inventory update`, `member list`, `history`, plus `claim --wait`) are documented in [`docs/leases/cli-reference.md`](docs/leases/cli-reference.md).
-
-**v1 scope:** static inventories (you register members), atomic claim, TTL expiry, dashboard view, optional `claim --wait`, fail-fast by default (capacity-1 inventory works as a named lock). **Not in v1:** automatic provisioning / recycling, an in-process plugin SDK, cross-host coordination, SessionEnd auto-release. Members are recycled by the caller's own scripts between leases for now.
 
 ---
 

@@ -1,7 +1,7 @@
 {
   "name": "syntaur",
   "version": "0.79.0",
-  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, session/server tracking, save-session-summary continuity, and write-boundary enforcement.",
+  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, agent session tracking, and write-boundary enforcement.",
   "author": {
     "name": "Brennen"
   },

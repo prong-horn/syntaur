@@ -85,11 +85,3 @@ Protocol version: **2.0**
 8. Progress is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
 9. Comments are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly.
 10. On resume, read any open `handoff.md` (assignment-level cross-ticket outbound) plus `assignment.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.
-
-## Proof artifacts (opt-in)
-
-Agents can attach typed evidence to an assignment so a human reviewer can verify the work in seconds without re-running it.
-
-- `syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] [--transcribe] [target]` — record an artifact for the active assignment. Criterion linkage is optional (0-based index into the `## Acceptance Criteria` checklist). For `--kind=text`, supply `--note` and omit `--file`. `--transcribe` is video-only and writes a sibling `<id>.transcript.md` (requires `ELEVENLABS_API_KEY` + `ffmpeg`).
-- `syntaur proof build [target]` — render `proof.html` and `proof.md` at the assignment dir, walking the `## Acceptance Criteria` list and embedding tagged artifacts inline beneath each criterion. Untagged or stale (out-of-range) captures land in a final "Other artifacts" section. Atomic overwrite — safe to re-run.
-- Artifacts are stored under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>`. The DB row lives in `~/.syntaur/syntaur.db` alongside session tracking. No completion gate — proof is purely opt-in for v1.

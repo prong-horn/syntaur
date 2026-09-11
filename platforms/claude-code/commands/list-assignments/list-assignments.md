@@ -1,6 +1,6 @@
 ---
 name: list-assignments
-description: List Syntaur assignments across projects with filters by status, project, tag, age (scriptable; not the interactive browse TUI)
+description: List Syntaur assignments across projects with filters by status, project, tag, age (scriptable output)
 arguments:
   - name: args
     description: "[--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--json]"

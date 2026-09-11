@@ -177,7 +177,7 @@ describe('v10 → v11 migration (drops the launch columns and launch_reservation
     expect(columns()).not.toContain('pid_started_at');
     expect(columns()).not.toContain('activity');
     expect(columns()).toContain('transcript_path');
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
   });
 
   it('preserves every surviving column of every row', () => {
@@ -249,7 +249,7 @@ describe('v10 → v11 migration (drops the launch columns and launch_reservation
     ).map((i) => i.name);
     expect(indexes).toContain('idx_sessions_status');
     expect(indexes).toContain('idx_sessions_started');
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
     expect(columns()).toEqual(V11_SESSION_COLUMNS);
   });
 });

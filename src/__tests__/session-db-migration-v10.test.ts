@@ -240,25 +240,25 @@ describe('v9 → head migration (curation flags in, launch columns out)', () => 
     // actually covers it — without it, paging silently full-scans.
     expect(indexNames()).toContain('idx_sessions_started');
 
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
   });
 
-  it('fresh install has the head shape directly and version 11', () => {
+  it('fresh install has the head shape directly and version 12', () => {
     initSessionDb(dbPath); // no prior file
     // Proves SCHEMA_SQL and the rebuild DDL stayed column-for-column in sync.
     expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
     expect(indexNames()).toContain('idx_sessions_status');
     expect(indexNames()).toContain('idx_sessions_started');
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
   });
 
-  it('re-init after upgrade is idempotent (no throw, still version 11)', () => {
+  it('re-init after upgrade is idempotent (no throw, still version 12)', () => {
     buildV9Db(dbPath);
     initSessionDb(dbPath);
     closeSessionDb();
 
     expect(() => initSessionDb(dbPath)).not.toThrow();
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
     expect(columns()).toEqual(HEAD_SESSION_COLUMNS);
   });
 
@@ -289,6 +289,6 @@ describe('v9 → head migration (curation flags in, launch columns out)', () => 
       archived_at: null,
     });
 
-    expect(schemaVersion()).toBe('11');
+    expect(schemaVersion()).toBe('12');
   });
 });

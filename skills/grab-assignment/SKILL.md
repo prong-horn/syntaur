@@ -85,7 +85,7 @@ If `workspace.repository` and `workspace.worktreePath` are both null, set them t
 
 `.syntaur/context.json` is a WORKSPACE MARKER — it records the repository/branch/worktree so tooling can recognize this directory as a Syntaur workspace. It is NOT the active-assignment source of truth: the assignment binds via the session's open engagement (Step 6, `track-session`). Do NOT write `projectSlug` / `assignmentSlug` / `assignmentDir` / `projectDir` / `title` — those scalars are non-authoritative.
 
-Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`, or a worktree skill wrote lease fields), preserve those fields.
+Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`), preserve those fields.
 
 ```bash
 mkdir -p .syntaur

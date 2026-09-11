@@ -468,19 +468,6 @@ calls `session/set_config_option`, writes a thin `system` row, and closes the
 turn without a prompt. `prefixPrompt` commands (for example `/goal`) are sent as
 text like claude commands.
 
-## Scheduled messages
-
-A schedule can post into a chat unattended. `syntaur schedule create --assignment
-<id> --message "<text>" [--agent <id>] --cron '0 3 * * *'` sends that message on
-every fire — in-process when the dashboard's own tick runs it, otherwise over the
-chat REST route on the running dashboard. The attempt is tracked by the returned
-`messageId` alone: it is "running" while the message is queued or a turn it
-triggered is open, and `syntaur schedule kill` withdraws the queued message or
-cancels the running turn.
-
-A schedule whose assignment has no attached agent — or whose dashboard is not
-running — records an error on the schedule. There is no terminal fallback.
-
 ## Not in this phase
 
 Per-agent mode and model pickers and ACP v2 (both adapters

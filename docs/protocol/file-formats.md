@@ -57,8 +57,6 @@ generated: "2026-03-18T15:00:00Z"
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
 - [Status](./_status.md)
-- [Resources](./resources/_index.md)
-- [Memories](./memories/_index.md)
 ```
 
 ---
@@ -970,87 +968,7 @@ graph TD
 
 ---
 
-## 15. resources/_index.md
-
-**Ownership:** Derived (rebuild script only)
-
-Listing of all resource files in the project.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `project` | string | project slug | required | — | The parent project. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When this file was last rebuilt. |
-| `total` | number (integer) | >= 0 | required | — | Total number of resource files. |
-
-### Body Sections
-
-| Section | Purpose | Who Writes |
-|---------|---------|------------|
-| Resources table | Tabular listing of all resource files | Rebuild script |
-
-**Table columns:** Name (linked to the resource file), Category, Source, Related Assignments, Updated.
-
-### Example
-
-```markdown
----
-project: build-auth-system
-generated: "2026-03-18T15:00:00Z"
-total: 1
----
-
-# Resources
-
-| Name | Category | Source | Related Assignments | Updated |
-|------|----------|--------|---------------------|---------|
-| [auth-requirements](./auth-requirements.md) | documentation | human | design-auth-schema, implement-jwt-middleware | 2026-03-16T09:00:00Z |
-```
-
----
-
-## 16. memories/_index.md
-
-**Ownership:** Derived (rebuild script only)
-
-Listing of all memory files in the project.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `project` | string | project slug | required | — | The parent project. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When this file was last rebuilt. |
-| `total` | number (integer) | >= 0 | required | — | Total number of memory files. |
-
-### Body Sections
-
-| Section | Purpose | Who Writes |
-|---------|---------|------------|
-| Memories table | Tabular listing of all memory files | Rebuild script |
-
-**Table columns:** Name (linked to the memory file), Source, Scope, Source Assignment, Updated.
-
-### Example
-
-```markdown
----
-project: build-auth-system
-generated: "2026-03-18T15:00:00Z"
-total: 1
----
-
-# Memories
-
-| Name | Source | Scope | Source Assignment | Updated |
-|------|--------|-------|------------------|---------|
-| [postgres-connection-pooling](./postgres-connection-pooling.md) | claude-2 | project | design-auth-schema | 2026-03-17T11:00:00Z |
-```
-
----
-
-## 17. Resource Files
+## 15. Resource Files
 
 **Ownership:** Shared-writable (humans and agents)
 
@@ -1121,7 +1039,7 @@ Product requirements for the authentication system, summarized from the PRD.
 
 ---
 
-## 18. Memory Files
+## 16. Memory Files
 
 **Ownership:** Shared-writable (humans and agents)
 

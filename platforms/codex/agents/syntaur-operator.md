@@ -42,7 +42,7 @@ Project-nested assignments live at `~/.syntaur/projects/<slug>/assignments/<aslu
 
 - `project.md`
 - `manifest.md`
-- any underscore-prefixed derived file such as `_index-assignments.md`, `_status.md`, `resources/_index.md`, or `memories/_index.md`
+- any underscore-prefixed derived file such as `_index-assignments.md` or `_status.md`
 - other agents' assignment folders, except via CLI-mediated channels
 
 ### You may write directly
@@ -97,9 +97,7 @@ Use these commands directly when needed:
 - `syntaur plan version --assignment <slug> [--project <slug>]` — bump to `plan-v<N>.md` per Plan Versioning playbook
 - `syntaur session resume [--json]` — re-orient on the active assignment from context.json + open handoff (idempotent)
 - `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--assignment <slug>] [--project <slug>]` — repo-local `<repository>/.worktrees/<branch>` convention
-- `syntaur resource add --project <slug> --name <name> --source <url> [--category <name>] [--related-assignments <slug,slug>]` — writes resource file + regenerates `_index.md`
-- `syntaur memory add --project <slug> --name <name> --source <text> [--scope <scope>] [--source-assignment <slug>] [--related-assignments <slug,slug>]` — writes memory file + regenerates `_index.md`
-- `syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--json]` — cross-project filtered listing (non-interactive; for the TUI use `syntaur browse`)
+- `syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--json]` — cross-project filtered listing (non-interactive; scriptable output)
 - `syntaur doctor --assignment <path> --json` — validate a single assignment.md frontmatter and emit `{ok, errors[], warnings[]}` (used by the `set-workspace` skill before writing)
 
 ## Standard Workflows

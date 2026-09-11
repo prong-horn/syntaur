@@ -70,7 +70,7 @@ For standalone assignments use the UUID (the folder name) in place of the slug, 
 
 Closing the session's open engagement is what drops the active-assignment binding — that is the operation that "clears" the assignment. The dashboard status PATCH in Step 5 (to `cleared`) closes the open engagement for a live session.
 
-Do NOT delete or rewrite `.syntaur/context.json` to clear the assignment — it is a workspace marker and no longer carries the active assignment. Leave its repository/branch/worktree, session, and lease fields intact so other tooling keeps recognizing the workspace. Do not delete the `.syntaur/` directory.
+Do NOT delete or rewrite `.syntaur/context.json` to clear the assignment — it is a workspace marker and no longer carries the active assignment. Leave its repository/branch/worktree and session fields intact so other tooling keeps recognizing the workspace. Do not delete the `.syntaur/` directory.
 
 ## Step 5: Close Session (optional)
 

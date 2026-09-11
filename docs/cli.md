@@ -82,26 +82,6 @@ syntaur unassign <assignment> [--project <slug>] [--dir <path>]
 
 For standalone assignments pass the UUID and omit `--project`.
 
-## `syntaur resource`
-
-Manage project-level resources under `<projectDir>/resources/`. Every mutation regenerates `_index.md`.
-
-- `syntaur resource add --project <slug> --name <name> --source <url-or-path> [--category <name>] [--slug <slug>] [--related-assignments <slugs>] [--force]`
-- `syntaur resource list --project <slug> [--json]`
-- `syntaur resource show <slug> --project <slug> [--json]`
-- `syntaur resource update <slug> --project <slug> [--name] [--source] [--category] [--related-assignments]`
-- `syntaur resource remove <slug> --project <slug> [--force]`
-
-## `syntaur memory`
-
-Manage project-level memories under `<projectDir>/memories/`. Every mutation regenerates `_index.md`.
-
-- `syntaur memory add --project <slug> --name <name> --source <text> [--scope <scope>] [--source-assignment <slug>] [--slug <slug>] [--related-assignments <slugs>] [--force]`
-- `syntaur memory list --project <slug> [--json]`
-- `syntaur memory show <slug> --project <slug> [--json]`
-- `syntaur memory update <slug> --project <slug> [--name] [--source] [--scope] [--source-assignment] [--related-assignments]`
-- `syntaur memory remove <slug> --project <slug> [--force]`
-
 ## `syntaur worktree`
 
 Manage git worktrees bound to assignments.
@@ -228,8 +208,6 @@ syntaur search <query> [options]
 | `handoff` | `handoff.md` |
 | `decision-record` | `decision-record.md` |
 | `scratchpad` | `scratchpad.md` |
-| `memory` | Project memory files under `<projectDir>/memories/` |
-| `resource` | Project resource files under `<projectDir>/resources/` |
 
 ### Options
 

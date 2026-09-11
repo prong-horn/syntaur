@@ -15,7 +15,7 @@ When answering questions, read the actual source files rather than relying solel
 - **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md` (or `~/.claude/skills/syntaur-protocol/references/protocol-summary.md` for the installed skill version)
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,track-session,track-server,replan,resume-session,syntaur-worktree,add-resource,add-memory,list-assignments,log-progress,set-workspace}/`
+- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,track-session,replan,resume-session,syntaur-worktree,list-assignments,log-progress,set-workspace,run-playbook,views,doctor-syntaur}/`
 - **Protocol skills source (vendored via submodule):** `<syntaur-repo>/vendor/syntaur-skills/skills/` — standalone repo at https://github.com/prong-horn/syntaur-skills
 - **Slash commands (ship in plugin):** `${CLAUDE_PLUGIN_ROOT}/commands/` — thin wrappers that invoke the corresponding installed skill
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`
@@ -103,7 +103,7 @@ Only the assigned agent may write to its own assignment folder.
 - `memories/<slug>.md` — learnings discovered
 
 ### Derived (NEVER edit manually)
-- `manifest.md`, `_index-*.md`, `_status.md`, `resources/_index.md`, `memories/_index.md`
+- `manifest.md`, `_index-*.md`, `_status.md`
 - All files prefixed with `_` are rebuilt by tooling from canonical sources
 
 ---
@@ -215,7 +215,6 @@ plugin/
     create-project/create-project.md           # Slash wrapper for create-project skill
     track-session/track-session.md             # Claude-specific session registration
     doctor-syntaur/...                         # Diagnose install
-    track-server/...                           # Register a running server
   hooks/
     hooks.json                  # Hook definitions
     session-start.sh            # Merge real session_id + transcript_path into existing .syntaur/context.json
@@ -269,11 +268,10 @@ syntaur                    # Dashboard is the default command
 
 ### Features
 - **Overview page:** Project stats, quick actions, attention items
-- **Project detail:** Assignment listing, resources, memories, status
+- **Project detail:** Assignment listing and status
 - **Assignment detail:** Full assignment view with all fields, criteria checklist
 - **Kanban board:** Drag assignments between status columns
 - **Agent sessions:** Track active/completed/stopped agent sessions
-- **Server tracking:** Discover running dev servers via tmux session scanning
 - **Real-time updates:** WebSocket pushes file changes to the browser
 - **Markdown editing:** Edit project.md, assignment.md, plan files, scratchpad.md in-browser
 - **Attention queue:** Highlights blocked, failed, and review-pending items

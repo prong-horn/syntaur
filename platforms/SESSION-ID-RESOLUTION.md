@@ -39,7 +39,7 @@ floor that discovers sessions nobody registered, no `lsof` liveness and no
 `claude agents --json` join. What replaces the scanner's idle sweep is a
 time-based one: an `active`, non-`acp` row whose `updated_at` has not moved for
 `session.idleSweepHours` (default 6) is marked `stopped` and its open engagement
-closed with reason `stale-sweep`, on the dashboard's autodiscovery interval.
+closed with reason `stale-sweep`, on the dashboard's maintenance loop interval.
 
 **Codex terminal sessions are therefore no longer discovered automatically.**
 Codex has no SessionStart hook, so a codex session tracked today is one the chat

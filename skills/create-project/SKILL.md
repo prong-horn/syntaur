@@ -1,8 +1,8 @@
 ---
 name: create-project
 description: >-
-  Create a new Syntaur project with full scaffolding (manifest, indexes,
-  resources, memories). Use when the user wants to start a new project or
+  Create a new Syntaur project with full scaffolding (manifest, indexes).
+  Use when the user wants to start a new project or
   initiative in Syntaur.
 license: MIT
 metadata:
@@ -50,7 +50,6 @@ Tell the user:
   - `project.md` — human-authored goal and context (edit this).
   - `manifest.md` — derived root navigation (do not edit directly).
   - `_index-assignments.md`, `_index-plans.md`, `_index-decisions.md`, `_status.md` — derived indexes.
-  - `resources/_index.md` and `memories/_index.md` — shared-writable area scaffolding.
 - Per-project `agent.md` / `claude.md` are NOT created — protocol v2.0 removed them. Agent-level conventions live at the repo root in `CLAUDE.md` / `AGENTS.md`, and user-defined behavioral rules live in `~/.syntaur/playbooks/<slug>.md`.
 - Suggest they edit `project.md` to fill in the goal, scope, and context sections.
 - Suggest running `create-assignment "<title>" --project <slug>` to add assignments to this project. Or `create-assignment "<title>" --one-off` for standalone work at `~/.syntaur/assignments/<uuid>/`.

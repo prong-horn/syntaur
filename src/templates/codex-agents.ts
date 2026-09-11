@@ -31,12 +31,10 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`resume-session\` -- re-orient on the active assignment from \`.syntaur/context.json\` and any open handoff so a fresh session picks up without re-reading the transcript
 - \`replan\` -- bump the active assignment to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
 - \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
-- \`add-resource\` -- register a project-level resource (link to dashboard / doc / ticket); CLI regenerates \`_index.md\` server-side
-- \`add-memory\` -- capture a project-level Syntaur memory; CLI regenerates \`_index.md\` server-side (distinct from user-global Claude Code auto-memory)
-- \`list-assignments\` -- cross-project listing with filters by status, project, tag, age (scriptable; not the interactive \`browse\` TUI)
+- \`list-assignments\` -- cross-project listing with filters by status, project, tag, age (scriptable output for automation)
 - \`log-progress\` -- append a timestamped entry to the active \`progress.md\` and bump frontmatter (Keep Records Updated playbook)
 - \`set-workspace\` -- populate the four \`workspace.*\` fields in \`assignment.md\`; validates via \`syntaur doctor --assignment --json\` before writing
-- \`track-session\` -- manage tracked tmux sessions for the dashboard
+- \`track-session\` -- register an agent session with the dashboard
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
 
@@ -80,10 +78,8 @@ Before starting work, read these files in order:
           handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
           decision-record.md # Agent-writable: append-only decision log
       resources/
-        _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
       memories/
-        _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
   assignments/
     <assignment-id>/         # Standalone assignments — folder = UUID, \`project: null\`, slug display-only

@@ -16,8 +16,6 @@ tags:
 - Append a new entry to `progress.md` with what you did
 - Progress entries live in `progress.md` (reverse-chronological order, newest first with a `## <ISO 8601 timestamp>` heading). Do NOT add a `## Progress` section to `assignment.md` — that section is removed as of protocol v2.0.
 - Bump `entryCount` and `updated` in `progress.md`'s frontmatter.
-- If the change is visually or behaviorally observable, run `syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>]` to attach a proof artifact. Linkage to a specific criterion is optional.
-
 ## When you complete an acceptance criterion:
 - Check it off in the `## Acceptance Criteria` section of `assignment.md` immediately
 - Do not batch these up -- mark them as you go

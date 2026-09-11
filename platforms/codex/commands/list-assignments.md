@@ -4,7 +4,7 @@ description: List Syntaur assignments across projects with filters (status, proj
 
 # /list-assignments
 
-Cross-project assignment listing via `syntaur ls`. Supports `--status`, `--project`, `--tag`, `--age`, `--json`. Different from the interactive `syntaur browse` TUI — emits scriptable output.
+Cross-project assignment listing via `syntaur ls`. Supports `--status`, `--project`, `--tag`, `--age`, `--json`. Emits scriptable output for automation.
 
 Follow the `list-assignments` skill in full. Summary:
 

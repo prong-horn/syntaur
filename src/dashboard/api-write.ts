@@ -314,7 +314,7 @@ export async function assertRepoRoot(
 /**
  * Shared body for both worktree-create routes. Validates inputs, runs the
  * disk-collision and parent-branch pre-flights, then calls the same
- * `createWorktreeAndRecord` helper the CLI / browse TUI use. Returns
+ * `createWorktreeAndRecord` helper the CLI uses. Returns
  * `{ assignment }` shaped via `reload` on success.
  */
 async function handleWorktreeCreate(
@@ -1415,7 +1415,7 @@ export function createWriteRouter(
   });
 
   // --- Worktree creation + candidate discovery ---
-  // Mirrors the existing CLI flow (`syntaur worktree create`) and the browse
+  // Mirrors the existing CLI flow (`syntaur worktree create`) and the
   // TUI's `runCreate`. All three paths call `createWorktreeAndRecord` so the
   // assignment.md frontmatter ends up identical regardless of entry point.
 

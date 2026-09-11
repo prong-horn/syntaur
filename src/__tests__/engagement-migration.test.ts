@@ -104,7 +104,7 @@ describe('v5 → v6 migration shape', () => {
 
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('11');
+    ).toBe('12');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='engagement_schema_version'").get() as { value: string }).value,
     ).toBe('1');
@@ -185,7 +185,7 @@ describe('backfill', () => {
     const db = getSessionDb();
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string }).value,
-    ).toBe('11');
+    ).toBe('12');
     expect(
       (db.prepare('SELECT COUNT(*) AS n FROM engagement').get() as { n: number }).n,
     ).toBe(4);

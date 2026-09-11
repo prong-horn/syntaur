@@ -32,7 +32,7 @@ Respect file ownership boundaries. The Codex plugin enforces them with a PreTool
    - `~/.syntaur/projects/<project>/resources/<slug>.md`
    - `~/.syntaur/projects/<project>/memories/<slug>.md`
 3. **Workspace files** inside the assignment's configured `workspace.worktreePath` / `workspace.repository`.
-4. **Workspace marker:** `.syntaur/context.json` in the current working directory (repository/branch/worktree markers plus legacy session/lease bookkeeping — not the active-assignment source of truth).
+4. **Workspace marker:** `.syntaur/context.json` in the current working directory (repository/branch/worktree markers plus legacy session bookkeeping — not the active-assignment source of truth).
 
 ### Files written only via CLI (never edit directly)
 
@@ -52,7 +52,7 @@ Per-project `agent.md` / `claude.md` do NOT exist in protocol v2.0. Agent-level 
 
 The **active assignment** is resolved from the session's OPEN engagement — the assignment this session is currently bound to (established by `syntaur track-session`). It is NOT read from `.syntaur/context.json`. To learn the active assignment, run `syntaur session resume` (or `--json`); to bind a different one, `grab-assignment` (which calls `track-session`).
 
-`.syntaur/context.json` is a WORKSPACE MARKER file — it identifies the workspace directory and carries legacy session and resource-lease bookkeeping. It is NOT authoritative for the active assignment. Read it for workspace markers and leases; do NOT treat `projectSlug` / `assignmentSlug` / `assignmentDir` as the active-assignment source of truth (any such scalars are non-authoritative legacy hints). Fields you may see:
+`.syntaur/context.json` is a WORKSPACE MARKER file — it identifies the workspace directory and may carry legacy session bookkeeping. It is NOT authoritative for the active assignment. Read it for workspace markers; do NOT treat `projectSlug` / `assignmentSlug` / `assignmentDir` as the active-assignment source of truth (any such scalars are non-authoritative legacy hints). Fields you may see:
 
 - `repository` — workspace repository (path or remote URL)
 - `branch` — workspace branch, if known
@@ -60,7 +60,6 @@ The **active assignment** is resolved from the session's OPEN engagement — the
 - `workspaceRoot` — absolute path to the code workspace
 - `sessionId` — real agent-runtime session id (legacy hint; never a synthesized UUID, and a co-tenant can clobber it — not authoritative for identity)
 - `transcriptPath` — absolute path to the agent's rollout/transcript file, if known
-- `leases` — array of active resource-lease records (managed by `/claim-resource` and `/release-resource`). Entry shape: `{ lease_id, inventory_slug, member_id, expires_at, metadata, claimed_at }`. Leases are NOT auto-released on session end or assignment completion in v1 — call `/release-resource` explicitly (or let the TTL expire).
 
 ## Required Reading Order
 
@@ -109,10 +108,6 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 - Record questions / notes / feedback via `syntaur comment` — never edit `comments.md` directly. Do NOT set status to `blocked` just because there is an open question; block only for a real external dependency with a `--reason`.
 - Write handoffs with enough context for another agent or human to continue cleanly. Record decisions in `decision-record.md` with Status / Context / Decision / Consequences — downstream dependents auto-load these during grab.
 - Commit frequently with messages referencing the assignment slug.
-
-### Proof artifacts (opt-in)
-
-Agents can attach typed evidence so a human reviewer can verify work in seconds without re-running it. Use `syntaur capture` after a meaningful change is verified, then `syntaur proof build` to render `proof.html` at the assignment dir. Artifact kinds at v1: `screenshot`, `video`, `asciinema`, `http`, `text`. Criterion linkage is optional (0-based index into `## Acceptance Criteria`); untagged or stale-out-of-range artifacts render in a final "Other artifacts" section. Files live under `<assignmentDir>/proof/<criterion|untagged>/<id>.<ext>`. The `complete-assignment` skill mentions the proof page in its final report. **No completion gate** — proof is purely opt-in for v1.
 
 ## References
 
