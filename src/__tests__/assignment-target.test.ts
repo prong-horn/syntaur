@@ -252,18 +252,6 @@ describe('resolveAssignmentTarget', () => {
     ).rejects.toThrow(/missing assignment/);
   });
 
-  it('surfaces a bundle-context error instead of resolving an assignment', async () => {
-    await writeContextJson(cwdRoot, { bundleId: 'b123', bundleSlug: 'my-bundle' });
-
-    await expect(
-      resolveAssignmentTarget(undefined, {
-        cwd: cwdRoot,
-        dir: projectsDir,
-        resolveEngagement: async () => null,
-      }),
-    ).rejects.toThrow(/bound to bundle/);
-  });
-
   it('does not let a workspace-marker-only context.json resolve an assignment', async () => {
     // context.json with only workspace markers (the demoted shape) must NOT
     // resolve a target — only the open engagement can.

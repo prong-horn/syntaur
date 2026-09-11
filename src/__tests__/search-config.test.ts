@@ -127,7 +127,7 @@ describe('DELETE /api/config/search', () => {
     await fetch(baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ defaultScope: 'todo', aliases: {}, externalIds: false }),
+      body: JSON.stringify({ defaultScope: 'project', aliases: {}, externalIds: false }),
     });
 
     const delRes = await fetch(baseUrl, { method: 'DELETE' });
@@ -146,7 +146,7 @@ describe('config.md persistence round-trip', () => {
   it('writeSearchConfig emits a search: block that readConfig parses back', async () => {
     const cfg = {
       defaultScope: 'assignment' as const,
-      aliases: { a: 'assignment' as const, t: 'todo' as const },
+      aliases: { a: 'assignment' as const, p: 'project' as const },
       externalIds: false,
     };
     await writeSearchConfig(cfg);
@@ -229,7 +229,7 @@ describe('parseSearchConfig robustness', () => {
       'version: "2.0"',
       'defaultProjectDir: ~/projects',
       'search:',
-      '  defaultScope: "todo"',
+      '  defaultScope: "project"',
       '  aliases:',
       '    a: assignment',
       '  externalIds: true',
@@ -238,6 +238,6 @@ describe('parseSearchConfig robustness', () => {
     ].join('\n');
     await writeFile(configPath(), md);
     const config = await readConfig();
-    expect(config.searchConfig?.defaultScope).toBe('todo');
+    expect(config.searchConfig?.defaultScope).toBe('project');
   });
 });

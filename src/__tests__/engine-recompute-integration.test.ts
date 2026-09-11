@@ -295,7 +295,7 @@ describe('runEngineTransition / runEngineOverride — the CLI+dashboard adapters
   it('fail is refused (never moves to a success terminal) when there is no failure terminal', async () => {
     await markStagesMigrated();
     // A workflow with only a SUCCESS terminal — a `fail` must NOT fall back to it
-    // (codex review major 1), else it would auto-complete linked todos.
+    // (codex review major 1), else it would move to the success terminal.
     const noFail = `id: feature\nstages:\n  - id: building\n    gate:\n      - { check: acAllChecked }\n    next: [{ to: done }]\n  - id: done\n    terminal: true\n`;
     await writeFile(join(home, 'workflows', 'feature.md'), noFail, 'utf-8');
     invalidateWorkflowLibraryCache();

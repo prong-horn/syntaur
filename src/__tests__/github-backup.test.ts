@@ -112,8 +112,8 @@ describe('github-backup validation helpers', () => {
       const originalWarn = console.warn;
       console.warn = (msg: string) => warnings.push(msg);
       try {
-        const result = validateCategories(['projects', 'bogus', 'todos']);
-        expect(result).toEqual(['projects', 'todos']);
+        const result = validateCategories(['projects', 'bogus', 'servers']);
+        expect(result).toEqual(['projects', 'servers']);
         expect(warnings.some((w) => w.includes('bogus'))).toBe(true);
       } finally {
         console.warn = originalWarn;
@@ -133,10 +133,10 @@ describe('github-backup validation helpers', () => {
 
   describe('parseCategories', () => {
     it('parses comma-separated string', () => {
-      expect(parseCategories('projects, playbooks, todos')).toEqual([
+      expect(parseCategories('projects, playbooks, servers')).toEqual([
         'projects',
         'playbooks',
-        'todos',
+        'servers',
       ]);
     });
 
@@ -145,7 +145,7 @@ describe('github-backup validation helpers', () => {
     });
 
     it('handles extra whitespace', () => {
-      expect(parseCategories('  projects  ,  todos  ')).toEqual(['projects', 'todos']);
+      expect(parseCategories('  projects  ,  servers  ')).toEqual(['projects', 'servers']);
     });
 
     it('returns empty array for empty string', () => {
@@ -157,7 +157,6 @@ describe('github-backup validation helpers', () => {
     expect(VALID_CATEGORIES).toEqual([
       'projects',
       'playbooks',
-      'todos',
       'servers',
       'workflows',
       'config',
@@ -207,10 +206,8 @@ describe('github-backup category path resolution', () => {
     expect(result.isFile).toBe(true);
   });
 
-  it('resolves todos and servers under syntaur root', async () => {
-    const todos = await resolveCategoryPath('todos');
+  it('resolves servers under syntaur root', async () => {
     const servers = await resolveCategoryPath('servers');
-    expect(todos.sourcePath).toBe(resolve(homeDir, '.syntaur', 'todos'));
     expect(servers.sourcePath).toBe(resolve(homeDir, '.syntaur', 'servers'));
   });
 
@@ -310,7 +307,7 @@ describe('backup config round-trip', () => {
 
     const status = await getBackupStatus();
     expect(status.repo).toBeNull();
-    expect(status.categories).toBe('projects, playbooks, todos, servers, workflows, config');
+    expect(status.categories).toBe('projects, playbooks, servers, workflows, config');
     expect(status.lastBackup).toBeNull();
     expect(status.lastRestore).toBeNull();
     expect(status.locked).toBe(false);
@@ -336,7 +333,7 @@ describe('parseCategoriesStrict', () => {
   });
 
   it('returns valid categories when all are known', () => {
-    expect(parseCategoriesStrict(['projects', 'todos'])).toEqual(['projects', 'todos']);
+    expect(parseCategoriesStrict(['projects', 'servers'])).toEqual(['projects', 'servers']);
   });
 
   it('throws even if some entries are valid', () => {

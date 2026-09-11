@@ -62,11 +62,10 @@ describe('isReservedCombo', () => {
 });
 
 describe('BindableActionKind', () => {
-  it('exposes all four canonical kinds', () => {
+  it('exposes all three canonical kinds', () => {
     expect(BINDABLE_ACTION_KINDS).toEqual([
       'new-workspace',
       'new-project',
-      'new-todo',
       'new-assignment',
     ]);
   });
@@ -121,19 +120,19 @@ describe('effectiveBindings', () => {
 
   it('overlays custom bindings on top of defaults', () => {
     const custom: Partial<Record<BindableActionKind, string>> = {
-      'new-todo': 'mod+x',
+      'new-assignment': 'mod+x',
     };
     const out = effectiveBindings(custom);
-    expect(out['new-todo']).toBe('mod+x');
+    expect(out['new-assignment']).toBe('mod+x');
     expect(out['new-project']).toBe(DEFAULT_BINDABLE_HOTKEYS['new-project']);
   });
 
   it('isDefaultBinding reports custom vs default correctly', () => {
-    expect(isDefaultBinding({}, 'new-todo')).toBe(true);
+    expect(isDefaultBinding({}, 'new-assignment')).toBe(true);
     expect(
-      isDefaultBinding({ 'new-todo': 'mod+x' }, 'new-todo'),
+      isDefaultBinding({ 'new-assignment': 'mod+x' }, 'new-assignment'),
     ).toBe(false);
-    expect(isDefaultBinding({ 'new-todo': '' }, 'new-todo')).toBe(true);
+    expect(isDefaultBinding({ 'new-assignment': '' }, 'new-assignment')).toBe(true);
   });
 });
 
@@ -145,7 +144,7 @@ describe('BUILTIN_RESERVED_COMBOS catalog completeness', () => {
   });
 
   it('includes all g-chord prefixes', () => {
-    for (const k of ['g', 'g o', 'g m', 'g a', 'g t', 'g s', 'g !', 'g ,']) {
+    for (const k of ['g', 'g o', 'g m', 'g a', 'g s', 'g !', 'g ,']) {
       expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
     }
   });

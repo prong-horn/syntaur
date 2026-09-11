@@ -37,7 +37,7 @@ describe('hotkeys block in config.md', () => {
   it('writeHotkeyBindingsConfig persists canonicalized combos', async () => {
     await writeHotkeyBindingsConfig({
       bindings: {
-        'new-todo': 'Shift+Mod+N',
+        'new-workspace': 'Shift+Mod+N',
         'new-assignment': 'Alt+a',
       },
     });
@@ -45,11 +45,11 @@ describe('hotkeys block in config.md', () => {
     const content = await readConfigFile();
     expect(content).toContain('hotkeys:');
     expect(content).toContain('bindings:');
-    expect(content).toContain('new-todo: "mod+shift+n"');
+    expect(content).toContain('new-workspace: "mod+shift+n"');
     expect(content).toContain('new-assignment: "alt+a"');
 
     const cfg = await readConfig();
-    expect(cfg.hotkeys?.bindings['new-todo']).toBe('mod+shift+n');
+    expect(cfg.hotkeys?.bindings['new-workspace']).toBe('mod+shift+n');
     expect(cfg.hotkeys?.bindings['new-assignment']).toBe('alt+a');
   });
 
@@ -59,13 +59,13 @@ describe('hotkeys block in config.md', () => {
         // Reserved — must be dropped silently.
         'new-project': 'Mod+K',
         // Valid — must persist.
-        'new-todo': 'Shift+Alt+t',
+        'new-assignment': 'Shift+Alt+t',
       },
     });
 
     const cfg = await readConfig();
     expect(cfg.hotkeys?.bindings['new-project']).toBeUndefined();
-    expect(cfg.hotkeys?.bindings['new-todo']).toBe('alt+shift+t');
+    expect(cfg.hotkeys?.bindings['new-assignment']).toBe('alt+shift+t');
   });
 
   it('coexists with the theme: block', async () => {
@@ -87,14 +87,14 @@ describe('hotkeys block in config.md', () => {
 
   it('round-trips: write -> read -> write -> read', async () => {
     await writeHotkeyBindingsConfig({
-      bindings: { 'new-todo': 'Mod+Shift+t' },
+      bindings: { 'new-assignment': 'Mod+Shift+t' },
     });
     await writeHotkeyBindingsConfig({
-      bindings: { 'new-todo': 'Mod+Shift+t', 'new-project': 'Alt+p' },
+      bindings: { 'new-assignment': 'Mod+Shift+t', 'new-project': 'Alt+p' },
     });
 
     const cfg = await readConfig();
-    expect(cfg.hotkeys?.bindings['new-todo']).toBe('mod+shift+t');
+    expect(cfg.hotkeys?.bindings['new-assignment']).toBe('mod+shift+t');
     expect(cfg.hotkeys?.bindings['new-project']).toBe('alt+p');
   });
 
@@ -125,14 +125,14 @@ version: "2.0"
 defaultProjectDir: ${testDir}/projects
 hotkeys:
   bindings:
-    new-todo: "mod+shift+t"
+    new-assignment: "mod+shift+t"
     bogus-action: "alt+x"
 ---
 `,
     );
 
     const cfg = await readConfig();
-    expect(cfg.hotkeys?.bindings['new-todo']).toBe('mod+shift+t');
+    expect(cfg.hotkeys?.bindings['new-assignment']).toBe('mod+shift+t');
     // @ts-expect-error — proving unknown kinds get filtered out.
     expect(cfg.hotkeys?.bindings['bogus-action']).toBeUndefined();
   });

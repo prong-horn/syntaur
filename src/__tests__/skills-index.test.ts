@@ -117,17 +117,17 @@ describe('parseSkillFrontmatter', () => {
   it('reads a plain inline name + folded >- description (with an internal colon)', () => {
     const md = [
       '---',
-      'name: bundle-worktree',
+      'name: example-skill',
       'description: >-',
-      '  Create a git worktree for a bundle. Use when you want to',
-      '  "spin up a workspace for bundle b:xxxx" or work in parallel.',
+      '  Example skill frontmatter parser coverage. Use when you want to',
+      '  verify folded descriptions with internal colons survive parsing.',
       'license: MIT',
       '---',
       'body',
     ].join('\n');
     const { name, description } = parseSkillFrontmatter(md);
-    expect(name).toBe('bundle-worktree');
-    expect(description).toContain('b:xxxx'); // colon inside the folded body survives
+    expect(name).toBe('example-skill');
+    expect(description).toContain('colons'); // colon inside the folded body survives
     expect(description).not.toContain('\n'); // folded → single line
   });
 

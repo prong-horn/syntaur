@@ -1324,7 +1324,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `terminal` | string (enum) or null | `terminal-app`, `iterm`, `ghostty`, `alacritty`, `warp`, `kitty`, `cmux` | optional | `null` (platform default) | Which terminal `syntaur open` opens at a worktree. |
 | `session.idleSweepHours` | number | > 0 | optional | `6` | How long an `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
 | `backup.repo` | string or null | repo path or URL | optional | `null` | Backup git repo for `syntaur backup` / `syntaur restore`. |
-| `backup.categories` | string | comma-separated | optional | `"projects, playbooks, todos, servers, config"` | Categories included in backups. |
+| `backup.categories` | string | comma-separated | optional | `"projects, playbooks, servers, workflows, config"` | Categories included in backups. |
 | `backup.lastBackup` | string (RFC 3339) or null | | optional | `null` | Last backup timestamp. |
 | `backup.lastRestore` | string (RFC 3339) or null | | optional | `null` | Last restore timestamp. |
 | `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
@@ -1370,7 +1370,7 @@ session:
   idleSweepHours: 6
 backup:
   repo: null
-  categories: projects, playbooks, todos, servers, config
+  categories: projects, playbooks, servers, workflows, config
   lastBackup: null
   lastRestore: null
 ---
