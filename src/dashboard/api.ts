@@ -1782,14 +1782,6 @@ async function countMentionsInAssignment(
 ): Promise<number> {
   const bodies: string[] = [];
 
-  // Todos section (from assignment.md)
-  const assignmentMd = resolve(sourceDir, 'assignment.md');
-  if (await fileExists(assignmentMd)) {
-    const content = await readFile(assignmentMd, 'utf-8');
-    const todosMatch = content.match(/^## Todos\s*$([\s\S]*?)(?=^## |$(?![\r\n]))/m);
-    if (todosMatch) bodies.push(todosMatch[1]);
-  }
-
   for (const filename of ['progress.md', 'comments.md', 'handoff.md']) {
     const path = resolve(sourceDir, filename);
     if (await fileExists(path)) {

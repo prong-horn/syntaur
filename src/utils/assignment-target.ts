@@ -6,7 +6,6 @@ import { readConfig } from './config.js';
 import { isValidSlug } from './slug.js';
 import { resolveAssignmentById, type ResolvedAssignment } from './assignment-resolver.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
-import type { BundleScope } from '../todos/types.js';
 import type { EngagementBinding } from './engagement-binding.js';
 
 export interface AssignmentTargetOptions {
@@ -39,14 +38,6 @@ export interface ContextJsonShape {
   // PRESENCE vs absence is still a stable signal for classification.
   sessionId?: string | null;
   transcriptPath?: string | null;
-  // Bundle-scoped context (set by bundle worktree / grab-bundle). A bundle
-  // worktree is NOT an assignment target — see classifyContext().
-  bundleId?: string | null;
-  bundleSlug?: string | null;
-  bundleScope?: BundleScope | null;
-  bundleScopeId?: string | null;
-  todoIds?: string[] | null;
-  planDir?: string | null;
   // Workspace markers.
   branch?: string | null;
   worktreePath?: string | null;
@@ -54,12 +45,11 @@ export interface ContextJsonShape {
   boundAt?: string | null;
 }
 
-export type ContextKind = 'bundle' | 'standalone' | 'empty';
+export type ContextKind = 'standalone' | 'empty';
 
 export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
   if (!ctx) return 'empty';
-  if (ctx.bundleId) return 'bundle';
-  // Standalone = a session-only context with no bundle binding. Classify on the
+  // Standalone = a session-only context. Classify on the
   // PRESENCE of session metadata (sessionId or transcriptPath), not the specific
   // id value — the value is a clobberable hint, but presence-vs-absence is
   // stable under co-tenancy.
@@ -74,17 +64,6 @@ async function readAssignmentFrontmatterId(assignmentDir: string): Promise<strin
     const content = await readFile(path, 'utf-8');
     const [fm] = extractFrontmatter(content);
     return getField(fm, 'id');
-  } catch {
-    return null;
-  }
-}
-
-async function readContextJson(cwd: string): Promise<ContextJsonShape | null> {
-  const path = resolve(cwd, '.syntaur', 'context.json');
-  if (!(await fileExists(path))) return null;
-  try {
-    const raw = await readFile(path, 'utf-8');
-    return JSON.parse(raw) as ContextJsonShape;
   } catch {
     return null;
   }
@@ -163,19 +142,6 @@ export async function resolveAssignmentTarget(
   }
 
   // Case 3: no positional → resolve from the session's OPEN engagement.
-  const cwd = opts.cwd ?? process.cwd();
-  const ctx = await readContextJson(cwd);
-
-  // Bundle context guard: surface a clear error so assignment-only flows (e.g.
-  // /plan-assignment, /complete-assignment) don't misfire inside a bundle
-  // worktree. The bundle-aware flows resolve via different helpers. context.json
-  // still carries the bundle marker; only the assignment scalar was demoted.
-  if (ctx && classifyContext(ctx) === 'bundle' && ctx.bundleId) {
-    throw new AssignmentTargetError(
-      `Context is bound to bundle b:${ctx.bundleId}, not an assignment. Use \`syntaur todo bundle show ${ctx.bundleId}\`.`,
-    );
-  }
-
   const binding = opts.resolveEngagement ? await opts.resolveEngagement() : null;
   if (binding) {
     return reconstructFromBinding(binding, baseDir);

@@ -484,37 +484,3 @@ export function formatRollbackError(opts: {
   return `Failed to update ${subject}: ${writeMsg}. Rolled back git worktree at ${worktreePath} and branch "${branch}".`;
 }
 
-export interface CreateWorktreeForBundleOptions extends CreateWorktreeOptions {
-  record: () => Promise<void>;
-}
-
-/**
- * Bundle-scoped sibling of createWorktreeAndRecord. Creates the worktree,
- * then runs the caller-supplied record() callback (which writes bundle
- * storage + checklist + .syntaur/context.json). On record() failure, rolls
- * back the worktree and branch and throws a formatted error tagged
- * `subject: 'bundle storage'` so users see a bundle-specific message.
- */
-export async function createWorktreeForBundle(
-  opts: CreateWorktreeForBundleOptions,
-): Promise<void> {
-  const { repository, branch, worktreePath, parentBranch, record } = opts;
-  await createWorktree({ repository, branch, worktreePath, parentBranch });
-  try {
-    await record();
-  } catch (writeErr) {
-    const cleanup = await removeWorktree(repository, worktreePath, { force: true });
-    const branchCleanup = await deleteBranch(repository, branch);
-    const writeMsg = writeErr instanceof Error ? writeErr.message : String(writeErr);
-    throw new Error(
-      formatRollbackError({
-        writeMsg,
-        worktreePath,
-        branch,
-        worktreeCleanup: cleanup,
-        branchCleanup,
-        subject: 'bundle storage',
-      }),
-    );
-  }
-}

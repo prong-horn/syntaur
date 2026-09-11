@@ -15,7 +15,7 @@ session:
   idleSweepHours: 6
 backup:
   repo: null
-  categories: projects, playbooks, todos, servers, workflows, config
+  categories: projects, playbooks, servers, workflows, config
   lastBackup: null
   lastRestore: null
 ---

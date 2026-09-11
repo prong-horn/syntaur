@@ -108,8 +108,8 @@ const crossAgentSkillsCheck: Check = {
     const canonicalSkillsDir = await getSkillsDir();
     // Derive the expected skill set from the canonical tree (the same set the
     // cross-agent install actually copies — `discoverSkillNames`), NOT the
-    // hand-pinned KNOWN_SKILLS, which lags behind newly-added skills (e.g. the
-    // bundle-* skills) and would let them silently escape integrity checks.
+    // hand-pinned KNOWN_SKILLS, which lags behind newly-added skills and would
+    // let them silently escape integrity checks.
     let knownSkills: readonly string[];
     try {
       const discovered = await discoverSkillNames(canonicalSkillsDir);

@@ -44,7 +44,6 @@ export interface WatcherOptions {
   assignmentsDir?: string;
   serversDir?: string;
   playbooksDir?: string;
-  todosDir?: string;
   /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
    * workflows invalidate the workflow-library cache and fire `onConfigChanged`
    * (the same recompute-all signal a config.md change triggers) — the config
@@ -77,7 +76,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     assignmentsDir,
     serversDir,
     playbooksDir,
-    todosDir,
     workflowsDir,
     dbPath,
     configPath,
@@ -104,46 +102,33 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
 
     const projectSlug = parts[0];
     let assignmentSlug: string | undefined;
-    let isProjectTodos = false;
 
     if (parts.length >= 3 && parts[1] === 'assignments') {
       assignmentSlug = parts[2];
-    } else if (parts.length >= 2 && parts[1] === 'todos') {
-      isProjectTodos = true;
     }
 
-    const debounceKey = isProjectTodos
-      ? `todos:${projectSlug}`
-      : assignmentSlug
-        ? `${projectSlug}/${assignmentSlug}`
-        : projectSlug;
+    const debounceKey = assignmentSlug
+      ? `${projectSlug}/${assignmentSlug}`
+      : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
     // Session events are now emitted by the API write path, not the file watcher
-    const messageType: WsMessage['type'] = isProjectTodos
-      ? 'todos-updated'
-      : assignmentSlug
-        ? 'assignment-updated'
-        : 'project-updated';
+    const messageType: WsMessage['type'] = assignmentSlug
+      ? 'assignment-updated'
+      : 'project-updated';
 
     pendingEvents.set(
       debounceKey,
       setTimeout(() => {
         pendingEvents.delete(debounceKey);
-        const message: WsMessage = isProjectTodos
-          ? {
-              type: 'todos-updated',
-              projectSlug,
-              timestamp: new Date().toISOString(),
-            }
-          : {
-              type: messageType,
-              projectSlug,
-              assignmentSlug,
-              timestamp: new Date().toISOString(),
-            };
+        const message: WsMessage = {
+          type: messageType,
+          projectSlug,
+          assignmentSlug,
+          timestamp: new Date().toISOString(),
+        };
         onMessage(message);
         if (assignmentSlug && onAssignmentChanged) {
           onAssignmentChanged(projectSlug, assignmentSlug);
@@ -267,40 +252,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     playbooksWatcher.on('unlink', handlePlaybookChange);
   }
 
-  // --- Todos watcher ---
-  let todosWatcher: ReturnType<typeof watch> | null = null;
-
-  if (todosDir) {
-    todosWatcher = watch(todosDir, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 1,
-      ignored: ignoreDotSegmentsBelow(todosDir),
-    });
-
-    function handleTodoChange(): void {
-      const debounceKey = '__todos__';
-      const existing = pendingEvents.get(debounceKey);
-      if (existing) clearTimeout(existing);
-
-      pendingEvents.set(
-        debounceKey,
-        setTimeout(() => {
-          pendingEvents.delete(debounceKey);
-          const message: WsMessage = {
-            type: 'todos-updated',
-            timestamp: new Date().toISOString(),
-          };
-          onMessage(message);
-        }, debounceMs),
-      );
-    }
-
-    todosWatcher.on('change', handleTodoChange);
-    todosWatcher.on('add', handleTodoChange);
-    todosWatcher.on('unlink', handleTodoChange);
-  }
-
   // --- Workflows watcher (per-file stage workflows) ---
   // Per-file workflows live in ~/.syntaur/workflows/*.md. The config watcher is
   // depth:0 on config.md, so a workflow-file edit fires nothing today. Model this
@@ -418,7 +369,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       if (standaloneWatcher) await standaloneWatcher.close();
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
-      if (todosWatcher) await todosWatcher.close();
       if (workflowsWatcher) await workflowsWatcher.close();
       if (leasesDbWatcher) await leasesDbWatcher.close();
       if (configWatcher) await configWatcher.close();

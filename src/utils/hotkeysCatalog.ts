@@ -7,13 +7,11 @@
 export type BindableActionKind =
   | 'new-workspace'
   | 'new-project'
-  | 'new-todo'
   | 'new-assignment';
 
 export const BINDABLE_ACTION_KINDS: readonly BindableActionKind[] = [
   'new-workspace',
   'new-project',
-  'new-todo',
   'new-assignment',
 ];
 
@@ -155,7 +153,6 @@ export function isReservedCombo(combo: string): boolean {
 export const DEFAULT_BINDABLE_HOTKEYS: Readonly<Record<BindableActionKind, string>> = {
   'new-workspace': canonicalizeCombo('Mod+Shift+Alt+w'),
   'new-project': canonicalizeCombo('Mod+Shift+Alt+p'),
-  'new-todo': canonicalizeCombo('Mod+Shift+Alt+t'),
   'new-assignment': canonicalizeCombo('Mod+Shift+Alt+a'),
 };
 

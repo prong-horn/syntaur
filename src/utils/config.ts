@@ -1917,7 +1917,7 @@ export async function updateBackupConfig(
   const current = (await readConfig()).backup;
   const nextBackup: BackupConfig = {
     repo: current?.repo ?? null,
-    categories: current?.categories ?? 'projects, playbooks, todos, servers, workflows, config',
+    categories: current?.categories ?? 'projects, playbooks, servers, workflows, config',
     lastBackup: current?.lastBackup ?? null,
     lastRestore: current?.lastRestore ?? null,
     ...backup,
@@ -2038,7 +2038,7 @@ export async function readConfig(): Promise<SyntaurConfig> {
     backup: fm['backup.repo'] || fm['backup.categories']
       ? {
           repo: fm['backup.repo'] && fm['backup.repo'] !== 'null' ? fm['backup.repo'] : null,
-          categories: fm['backup.categories'] || 'projects, playbooks, todos, servers, workflows, config',
+          categories: fm['backup.categories'] || 'projects, playbooks, servers, workflows, config',
           lastBackup: fm['backup.lastBackup'] && fm['backup.lastBackup'] !== 'null' ? fm['backup.lastBackup'] : null,
           lastRestore: fm['backup.lastRestore'] && fm['backup.lastRestore'] !== 'null' ? fm['backup.lastRestore'] : null,
         }

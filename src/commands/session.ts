@@ -35,14 +35,6 @@ interface ContextFile {
   workspaceRoot?: string;
   title?: string;
   branch?: string;
-  // Bundle-scoped fields tolerated for forward-compat; this reader only
-  // surfaces assignment-scoped fields.
-  bundleId?: string;
-  bundleSlug?: string;
-  bundleScope?: string;
-  bundleScopeId?: string;
-  todoIds?: string[];
-  planDir?: string;
   worktreePath?: string;
   repository?: string;
   boundAt?: string;

@@ -10,13 +10,12 @@
  * See `claude-info/plans/2026-06-15-command-palette-ui-design.md`.
  */
 
-/** The five searchable entity kinds an alias prefix can target. */
-export type EntityKind = 'assignment' | 'project' | 'todo' | 'server' | 'playbook';
+/** The four searchable entity kinds an alias prefix can target. */
+export type EntityKind = 'assignment' | 'project' | 'server' | 'playbook';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'assignment',
   'project',
-  'todo',
   'server',
   'playbook',
 ];
@@ -35,7 +34,7 @@ export interface SearchConfig {
 
 export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   defaultScope: 'all',
-  aliases: { a: 'assignment', p: 'project', t: 'todo', s: 'server', pb: 'playbook' },
+  aliases: { a: 'assignment', p: 'project', s: 'server', pb: 'playbook' },
   externalIds: true,
 };
 
@@ -119,7 +118,7 @@ export function normalizeSearchConfig(raw: unknown): SearchConfig {
 /**
  * Strict alias validation (POST path). Each key must be lowercase `[a-z][a-z0-9]*`,
  * must not be the reserved `all`, must not collide with a `SEARCH_FIELD_NAMES`
- * member, and must map to one of the five entity kinds. Returns every violation so
+ * member, and must map to one of the four entity kinds. Returns every violation so
  * the router can 400 with the full list and the SPA can show inline feedback.
  */
 export function validateAliases(

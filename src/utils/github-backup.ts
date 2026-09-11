@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { cp, mkdtemp, rm, readFile, writeFile, unlink, stat, open, rename } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { syntaurRoot, playbooksDir, todosDir, serversDir, workflowsDir } from './paths.js';
+import { syntaurRoot, playbooksDir, serversDir, workflowsDir } from './paths.js';
 import { ensureDir, fileExists } from './fs.js';
 import { readConfig, updateBackupConfig, type BackupConfig } from './config.js';
 
@@ -12,7 +12,6 @@ const exec = promisify(execFile);
 export const VALID_CATEGORIES = [
   'projects',
   'playbooks',
-  'todos',
   'servers',
   'workflows',
   'config',
@@ -74,8 +73,6 @@ export async function resolveCategoryPath(
     }
     case 'playbooks':
       return { sourcePath: playbooksDir(), repoPath: 'playbooks', isFile: false };
-    case 'todos':
-      return { sourcePath: todosDir(), repoPath: 'todos', isFile: false };
     case 'servers':
       return { sourcePath: serversDir(), repoPath: 'servers', isFile: false };
     case 'workflows':
@@ -190,7 +187,7 @@ export async function backupToGithub(overrides?: {
     throw new Error(`Invalid repo URL: "${rawRepo}". Must start with https:// or git@.`);
   }
 
-  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, todos, servers, workflows, config';
+  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, servers, workflows, config';
   const categories = overrides?.categories ?? resolveCategoriesStrict(categoriesCsv);
   if (categories.length === 0) {
     throw new Error('No valid backup categories selected.');
@@ -365,7 +362,7 @@ export async function restoreFromGithub(overrides?: {
     throw new Error(`Invalid repo URL: "${rawRepo}".`);
   }
 
-  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, todos, servers, workflows, config';
+  const categoriesCsv = config.backup?.categories ?? 'projects, playbooks, servers, workflows, config';
   const categories = overrides?.categories ?? resolveCategoriesStrict(categoriesCsv);
   if (categories.length === 0) {
     throw new Error('No valid restore categories selected.');
@@ -436,7 +433,7 @@ export async function getBackupStatus(): Promise<{
   const locked = await fileExists(lockPath);
   return {
     repo: config.backup?.repo ?? null,
-    categories: config.backup?.categories ?? 'projects, playbooks, todos, servers, workflows, config',
+    categories: config.backup?.categories ?? 'projects, playbooks, servers, workflows, config',
     lastBackup: config.backup?.lastBackup ?? null,
     lastRestore: config.backup?.lastRestore ?? null,
     locked,

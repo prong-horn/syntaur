@@ -37,7 +37,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'syntaur.db-wal', // sqlite WAL
   'targets', // user-descriptors.ts
   'tier3-violations.log', // hermes plugin write-boundary violations (platforms/hermes)
-  'todos', // paths.ts
   'view-prefs.json', // paths.ts
   'workflows', // paths.ts
   'worktrees', // worktree-defaults.ts
@@ -89,38 +88,6 @@ const playbooksDir: Check = {
           suggestion: 'Run `syntaur init` to restore the standard layout',
           command: 'syntaur init',
         },
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-    return pass(this);
-  },
-};
-
-const todosDirValid: Check = {
-  id: 'structure.todos-dir-valid',
-  category: CATEGORY,
-  title: 'todos/ directory is readable (if present)',
-  async run(ctx) {
-    const p = resolve(ctx.syntaurRoot, 'todos');
-    if (!(await fileExists(p))) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'skipped',
-        detail: 'todos/ not present (created lazily on first use)',
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-    const s = await stat(p);
-    if (!s.isDirectory()) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'error',
-        detail: 'todos/ exists but is not a directory',
-        affected: [p],
         autoFixable: false,
       } satisfies CheckResult;
     }
@@ -193,7 +160,6 @@ const knownFilesRecognized: Check = {
 export const structureChecks: Check[] = [
   projectsDir,
   playbooksDir,
-  todosDirValid,
   serversDirValid,
   knownFilesRecognized,
 ];
