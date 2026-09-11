@@ -176,7 +176,7 @@ This is the most important rule in the protocol. The `status`, `priority`, `assi
 
 Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from assignment states and written to `_status.md` by the rebuild script.
 
-**Workspace naming note:** The term "workspace" has three distinct meanings in the protocol. On `project.md`, `workspace` is an **optional string** used for organizational grouping (e.g., `workspace: syntaur`). On `assignment.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`). On standalone `assignment.md` (project-less), `workspaceGroup` is an **optional scalar string** that serves as the standalone-assignment analog of `project.workspace` — it lets workspace-filtered dashboard views include project-less work. Only applicable when `project` is `null`; omitted entirely when unset (not `null`). The YAML types differ (scalar string vs mapping vs scalar string with a different key), so there is no parse ambiguity, but implementors should be aware of the distinction.
+**Workspace naming note:** On `assignment.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`) — the git worktree where the assignment's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
 
 ---
 

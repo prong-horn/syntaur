@@ -166,41 +166,23 @@ describe('stale attestation → export facts false → excluded', () => {
   });
 });
 
-// ── workspace / archived live OUTSIDE the query ───────────────────────────────
-describe('workspace + archived pre-filters (page options, not AQL)', () => {
-  const a = makeItem({ slug: 'ws-syntaur', projectWorkspace: 'syntaur' });
-  const b = makeItem({ slug: 'ws-other', projectWorkspace: 'other' });
-  const c = makeItem({ slug: 'ungrouped', projectWorkspace: null });
-  const archived = makeItem({ slug: 'archived', projectWorkspace: 'syntaur', archived: true });
-
-  it('workspace filter excludes other-workspace items regardless of the query', () => {
-    const matched = filterBoardItems([a, b, c, archived], compile('*'), {
-      workspace: 'syntaur',
-      now: NOW,
-    });
-    // archived is excluded by default even though it is in the syntaur workspace.
-    expect(slugsOf(matched)).toEqual(['ws-syntaur']);
-  });
-
-  it('workspace _ungrouped keeps only null-workspace items', () => {
-    const matched = filterBoardItems([a, b, c], compile('*'), { workspace: '_ungrouped', now: NOW });
-    expect(slugsOf(matched)).toEqual(['ungrouped']);
-  });
+// ── archived lives OUTSIDE the query ──────────────────────────────────────────
+describe('archived pre-filters (page options, not AQL)', () => {
+  const active = makeItem({ slug: 'active' });
+  const archived = makeItem({ slug: 'archived', archived: true });
 
   it('archived items are excluded by default but kept with includeArchived', () => {
-    expect(slugsOf(filterBoardItems([a, archived], compile('*'), { now: NOW }))).toEqual([
-      'ws-syntaur',
+    expect(slugsOf(filterBoardItems([active, archived], compile('*'), { now: NOW }))).toEqual([
+      'active',
     ]);
     expect(
-      slugsOf(filterBoardItems([a, archived], compile('*'), { includeArchived: true, now: NOW })),
-    ).toEqual(['archived', 'ws-syntaur']);
+      slugsOf(filterBoardItems([active, archived], compile('*'), { includeArchived: true, now: NOW })),
+    ).toEqual(['active', 'archived']);
   });
 
   it('compiled = null (empty/invalid query) matches all, subject to pre-filters only', () => {
-    const all = filterBoardItems([a, b, c, archived], null, { now: NOW });
-    expect(slugsOf(all)).toEqual(['ungrouped', 'ws-other', 'ws-syntaur']); // archived still excluded
-    const scoped = filterBoardItems([a, b, c, archived], null, { workspace: 'syntaur', now: NOW });
-    expect(slugsOf(scoped)).toEqual(['ws-syntaur']);
+    const all = filterBoardItems([active, archived], null, { now: NOW });
+    expect(slugsOf(all)).toEqual(['active']); // archived still excluded
   });
 });
 
