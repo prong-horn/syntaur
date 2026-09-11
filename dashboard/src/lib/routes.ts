@@ -17,7 +17,6 @@ const SIDEBAR_SECTIONS = [
   '/projects',
   '/archive',
   '/assignments',
-  '/servers',
   '/agents',
   '/usage',
   '/agent-sessions',
@@ -66,10 +65,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/assignments')) {
     return '/assignments';
-  }
-
-  if (normalized.startsWith('/servers')) {
-    return '/servers';
   }
 
   if (normalized.startsWith('/agents')) {
@@ -187,9 +182,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
         title = parts[2] === 'memories' ? 'Edit Memory' : 'Edit Resource';
       }
     }
-  } else if (parts[0] === 'servers') {
-    title = 'Servers';
-    breadcrumbs.push({ label: 'Servers', path: `${workspacePrefix}/servers` });
   } else if (parts[0] === 'agents') {
     breadcrumbs.push({ label: 'Agents', path: `${workspacePrefix}/agents` });
     title = 'Agents';

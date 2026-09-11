@@ -144,7 +144,7 @@ describe('BUILTIN_RESERVED_COMBOS catalog completeness', () => {
   });
 
   it('includes all g-chord prefixes', () => {
-    for (const k of ['g', 'g o', 'g m', 'g a', 'g s', 'g !', 'g ,']) {
+    for (const k of ['g', 'g o', 'g m', 'g a', 'g !', 'g ,']) {
       expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
     }
   });

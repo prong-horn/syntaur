@@ -50,7 +50,6 @@ const KNOWN_SKILL_NAMES = [
   'clear-assignment',
   'save-session-summary',
   'track-session',
-  'track-server',
   'capture-artifacts',
   'replan',
   'resume-session',

@@ -24,10 +24,6 @@ export function assignmentsDir(): string {
   return resolve(syntaurRoot(), 'assignments');
 }
 
-export function serversDir(): string {
-  return resolve(syntaurRoot(), 'servers');
-}
-
 export function playbooksDir(): string {
   return resolve(syntaurRoot(), 'playbooks');
 }

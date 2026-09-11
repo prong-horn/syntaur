@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import type { Check, CheckResult } from '../types.js';
 
@@ -19,7 +19,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'projects', // paths.ts
   'runtime', // session-id.ts
   'saved-views.json', // paths.ts
-  'servers', // paths.ts
   'stages-migrated', // stages-marker.ts
   'statusline.backup.json', // install-statusline.ts
   'statusline.conf', // install-statusline.ts
@@ -89,38 +88,6 @@ const playbooksDir: Check = {
   },
 };
 
-const serversDirValid: Check = {
-  id: 'structure.servers-dir-valid',
-  category: CATEGORY,
-  title: 'servers/ directory is readable (if present)',
-  async run(ctx) {
-    const p = resolve(ctx.syntaurRoot, 'servers');
-    if (!(await fileExists(p))) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'skipped',
-        detail: 'servers/ not present',
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-    const s = await stat(p);
-    if (!s.isDirectory()) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'error',
-        detail: 'servers/ exists but is not a directory',
-        affected: [p],
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-    return pass(this);
-  },
-};
-
 const knownFilesRecognized: Check = {
   id: 'structure.known-files-recognized',
   category: CATEGORY,
@@ -154,7 +121,6 @@ const knownFilesRecognized: Check = {
 export const structureChecks: Check[] = [
   projectsDir,
   playbooksDir,
-  serversDirValid,
   knownFilesRecognized,
 ];
 

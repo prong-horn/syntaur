@@ -10,13 +10,12 @@
  * See `claude-info/plans/2026-06-15-command-palette-ui-design.md`.
  */
 
-/** The four searchable entity kinds an alias prefix can target. */
-export type EntityKind = 'assignment' | 'project' | 'server' | 'playbook';
+/** The searchable entity kinds an alias prefix can target. */
+export type EntityKind = 'assignment' | 'project' | 'playbook';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'assignment',
   'project',
-  'server',
   'playbook',
 ];
 
@@ -34,7 +33,7 @@ export interface SearchConfig {
 
 export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   defaultScope: 'all',
-  aliases: { a: 'assignment', p: 'project', s: 'server', pb: 'playbook' },
+  aliases: { a: 'assignment', p: 'project', pb: 'playbook' },
   externalIds: true,
 };
 

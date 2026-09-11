@@ -58,13 +58,13 @@ const A_REFUND = {
   externalIds: [] as Array<{ system: string; id: string; url: string | null }>,
   keywords: [] as string[],
 };
-const SERVER = { type: 'server', id: 'sv', title: 'dev-1', keywords: [] as string[] };
+const PLAYBOOK = { type: 'playbook', id: 'pb-1', title: 'Commit Discipline', keywords: [] as string[] };
 
-const INDEX = [PAGE, PROJECT, A_PAYMENT, A_REFUND, SERVER];
+const INDEX = [PAGE, PROJECT, A_PAYMENT, A_REFUND, PLAYBOOK];
 const titles = (rows: Array<{ title: string }>) => rows.map((r) => r.title);
 
 describe('palette gate + rank integration', () => {
-  it('status:done excludes pages/servers/projects (no status field)', () => {
+  it('status:done excludes pages/playbooks/projects (no status field)', () => {
     expect(titles(runPalette('status:done', INDEX))).toEqual(['Refund logic']);
   });
 
@@ -99,7 +99,7 @@ describe('palette gate + rank integration', () => {
   it('negation of a missing field includes field-less entities, excludes the matched one', () => {
     const t = titles(runPalette('-status:done', INDEX));
     expect(t).toContain('Settings'); // page, no status → NOT(false) → kept
-    expect(t).toContain('dev-1'); // server, no status → kept
+    expect(t).toContain('Commit Discipline'); // playbook, no status → kept
     expect(t).toContain('Payment flow'); // status in_progress ≠ done → kept
     expect(t).not.toContain('Refund logic'); // status done → excluded
   });

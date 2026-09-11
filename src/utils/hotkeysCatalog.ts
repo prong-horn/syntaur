@@ -44,7 +44,6 @@ export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
   'g o',
   'g m',
   'g a',
-  'g s',
   'g !',
   'g ,',
   // list-scope navigation

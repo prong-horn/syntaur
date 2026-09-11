@@ -523,12 +523,6 @@ export interface OverviewResponse {
   recentSessions: AgentSession[];
   recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
-  serverStats?: {
-    trackedSessions: number;
-    aliveSessions: number;
-    deadSessions: number;
-    totalPorts: number;
-  };
 }
 
 export interface HelpCommand {
@@ -641,7 +635,6 @@ export interface EditableDocumentResponse {
 export type WsMessageType =
   | 'project-updated'
   | 'assignment-updated'
-  | 'servers-updated'
   | 'agent-sessions-updated'
   | 'playbooks-updated'
   | 'chat-item'
@@ -663,58 +656,6 @@ export interface WsMessage {
    * filter by `payload.assignmentId`.
    */
   payload?: unknown;
-}
-
-// --- Server Tracker Types ---
-
-export interface TrackedSession {
-  name: string;
-  kind?: SessionKind;
-  registered: string;
-  lastRefreshed: string;
-  scannedAt: string;
-  alive: boolean;
-  windows: TrackedWindow[];
-}
-
-export interface TrackedWindow {
-  index: number;
-  name: string;
-  panes: TrackedPane[];
-}
-
-export interface TrackedPane {
-  index: number;
-  command: string;
-  cwd: string;
-  branch: string | null;
-  worktree: boolean;
-  ports: number[];
-  urls: string[];
-  assignment: {
-    project: string | null;
-    slug: string;
-    title: string;
-  } | null;
-}
-
-export interface ServersResponse {
-  sessions: TrackedSession[];
-  tmuxAvailable: boolean;
-}
-
-export type SessionKind = 'tmux' | 'process';
-
-export interface SessionFileData {
-  session: string;
-  registered: string;
-  lastRefreshed: string;
-  overrides: Record<string, { project: string; assignment: string }>;
-  auto?: boolean;
-  kind?: SessionKind;
-  pid?: number;
-  ports?: number[];
-  cwd?: string;
 }
 
 // --- Agent Session Types ---

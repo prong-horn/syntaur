@@ -8,7 +8,7 @@ describe('dashboard route helpers', () => {
     expect(buildShellMeta('/agent-sessions').title).toBe('Agent Sessions');
     expect(getSidebarSection('/agent-sessions')).toBe('/agent-sessions');
     expect(isSidebarItemActive('/agent-sessions', '/agent-sessions')).toBe(true);
-    expect(isSidebarItemActive('/agent-sessions', '/servers')).toBe(false);
+    expect(isSidebarItemActive('/agent-sessions', '/agents')).toBe(false);
   });
 
   it('keeps the workspace-prefixed agent sessions route mapping to the global nav entry', () => {
@@ -36,8 +36,7 @@ describe('dashboard route helpers', () => {
     const entry = STATIC_PAGES.find((page) => page.basePath === '/agent-sessions');
     expect(entry).toBeDefined();
     expect(entry?.title).toBe('Agent Sessions');
-    // Without this the only palette hit for "sessions" was Servers, which
-    // claims the keyword for tracked dev servers.
+    // Agent Sessions should own the "sessions" keyword in the palette index.
     expect(entry?.keywords).toContain('sessions');
   });
 });

@@ -15,7 +15,7 @@ import {
   rectSortingStrategy,
   SortableContext,
 } from '@dnd-kit/sortable';
-import { Monitor, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useHelp, useOverview } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -288,18 +288,6 @@ export function Overview() {
         <Plus className="h-4 w-4" />
         Add slot
       </button>
-
-      {overview?.serverStats ? (
-        <p className="flex items-center gap-2 text-xs text-muted-foreground">
-          <Monitor className="h-3 w-3" aria-hidden="true" />
-          <span>
-            ● {overview.serverStats.totalPorts} ports ·{' '}
-            {overview.serverStats.deadSessions > 0
-              ? `${overview.serverStats.deadSessions} dead`
-              : 'all healthy'}
-          </span>
-        </p>
-      ) : null}
 
       <WidgetPicker
         open={pickerOpen}

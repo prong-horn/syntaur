@@ -42,7 +42,6 @@ export function ignoreDotSegmentsBelow(
 export interface WatcherOptions {
   projectsDir: string;
   assignmentsDir?: string;
-  serversDir?: string;
   playbooksDir?: string;
   /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
    * workflows invalidate the workflow-library cache and fire `onConfigChanged`
@@ -74,7 +73,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   const {
     projectsDir,
     assignmentsDir,
-    serversDir,
     playbooksDir,
     workflowsDir,
     dbPath,
@@ -182,40 +180,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     standaloneWatcher.on('change', handleStandaloneChange);
     standaloneWatcher.on('add', handleStandaloneChange);
     standaloneWatcher.on('unlink', handleStandaloneChange);
-  }
-
-  // --- Servers watcher (new) ---
-  let serversWatcher: ReturnType<typeof watch> | null = null;
-
-  if (serversDir) {
-    serversWatcher = watch(serversDir, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 1,
-      ignored: ignoreDotSegmentsBelow(serversDir),
-    });
-
-    function handleServerChange(): void {
-      const debounceKey = '__servers__';
-      const existing = pendingEvents.get(debounceKey);
-      if (existing) clearTimeout(existing);
-
-      pendingEvents.set(
-        debounceKey,
-        setTimeout(() => {
-          pendingEvents.delete(debounceKey);
-          const message: WsMessage = {
-            type: 'servers-updated',
-            timestamp: new Date().toISOString(),
-          };
-          onMessage(message);
-        }, debounceMs),
-      );
-    }
-
-    serversWatcher.on('change', handleServerChange);
-    serversWatcher.on('add', handleServerChange);
-    serversWatcher.on('unlink', handleServerChange);
   }
 
   // --- Playbooks watcher ---
@@ -366,7 +330,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       pendingEvents.clear();
       await projectsWatcher.close();
       if (standaloneWatcher) await standaloneWatcher.close();
-      if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (workflowsWatcher) await workflowsWatcher.close();
       if (sessionsDbWatcher) await sessionsDbWatcher.close();

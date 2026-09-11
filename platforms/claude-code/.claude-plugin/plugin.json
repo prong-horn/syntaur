@@ -17,7 +17,6 @@
     "./skills/clear-assignment",
     "./skills/save-session-summary",
     "./skills/track-session",
-    "./skills/track-server",
     "./skills/capture-artifacts",
     "./skills/replan",
     "./skills/resume-session",

@@ -986,7 +986,6 @@ export async function deleteWorkspace(
  */
 export async function getOverview(
   projectsDir: string,
-  serversDir?: string,
   assignmentsDir?: string,
   options: { staleLimit?: number; staleOffset?: number } = {},
 ): Promise<OverviewResponse> {
@@ -1027,33 +1026,6 @@ export async function getOverview(
     recentSessions = all.slice(0, RECENT_SESSIONS_LIMIT);
   } catch {
     // Sessions failure should not break overview.
-  }
-
-  let serverStats: OverviewResponse['serverStats'];
-  if (serversDir) {
-    try {
-      const { scanAllSessions } = await import('./scanner.js');
-      const servers = await timed(traces, 'scan-tmux-sessions', () =>
-        // Overview only needs aggregate counts — never block its render on a
-        // live scan; serve last-known stats and let the scan refresh in the
-        // background (stale-while-revalidate).
-        scanAllSessions(serversDir, projectsDir, { assignmentsDir, nonBlocking: true }),
-      );
-      if (servers.tmuxAvailable) {
-        const alive = servers.sessions.filter(s => s.alive).length;
-        const totalPorts = servers.sessions.reduce((sum, s) =>
-          sum + s.windows.reduce((ws, w) =>
-            ws + w.panes.reduce((ps, p) => ps + p.ports.length, 0), 0), 0);
-        serverStats = {
-          trackedSessions: servers.sessions.length,
-          aliveSessions: alive,
-          deadSessions: servers.sessions.length - alive,
-          totalPorts,
-        };
-      }
-    } catch {
-      // Server scanning failure should not break overview
-    }
   }
 
   if (traces) {
@@ -1100,7 +1072,6 @@ export async function getOverview(
       .sort((left, right) => compareTimestamps(right.updated, left.updated))
       .slice(0, RECENT_PROJECTS_LIMIT),
     recentActivity: recentActivity.slice(0, RECENT_ACTIVITY_LIMIT),
-    serverStats,
   };
 }
 

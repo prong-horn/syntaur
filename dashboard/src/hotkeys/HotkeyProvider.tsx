@@ -15,7 +15,6 @@ import {
   useProjects,
   useAssignmentsBoard,
   usePlaybooks,
-  useServers,
 } from '../hooks/useProjects';
 import { useSearchConfig } from '../hooks/useSearchConfig';
 import { buildIndex, resolveRoute, type PaletteEntry } from './paletteIndex';
@@ -117,7 +116,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 
   // Palette index data is fetched lazily: these hooks stay inert until the
   // command/actions palette is first opened. Previously they fired five
-  // requests (projects, assignments, playbooks, servers) on *every* page load,
+  // requests (projects, assignments, playbooks) on *every* page load,
   // which is what made the overview slow
   // on every load, not just the first. Global hotkeys and g-chord navigation
   // don't need this data, so deferring it doesn't affect them.
@@ -125,19 +124,16 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
   const projectsState = useProjects(paletteDataEnabled);
   const assignmentsState = useAssignmentsBoard(paletteDataEnabled);
   const playbooksState = usePlaybooks(paletteDataEnabled);
-  const serversState = useServers(paletteDataEnabled);
   const { search: searchCfg } = useSearchConfig();
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
     const projects = projectsState.data ?? [];
     const assignments = assignmentsState.data?.assignments ?? [];
     const playbooks = playbooksState.data?.playbooks ?? [];
-    const servers = serversState.data?.sessions ?? [];
     return buildIndex({
       projects,
       assignments,
       playbooks,
-      servers,
       wsPrefix,
       externalIds: searchCfg.externalIds,
     });
@@ -145,7 +141,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     projectsState.data,
     assignmentsState.data,
     playbooksState.data,
-    serversState.data,
     wsPrefix,
     searchCfg.externalIds,
   ]);
@@ -508,7 +503,6 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
       { suffix: 'o', basePath: '/',            desc: 'Go to Overview' },
       { suffix: 'm', basePath: '/projects',    desc: 'Go to Projects' },
       { suffix: 'a', basePath: '/assignments', desc: 'Go to Assignments' },
-      { suffix: 's', basePath: '/servers',     desc: 'Go to Servers' },
       { suffix: ',', basePath: '/settings',    desc: 'Go to Settings' },
     ];
     const ids = chords.map((c) =>

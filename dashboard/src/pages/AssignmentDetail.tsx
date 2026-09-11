@@ -12,7 +12,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useProject, useServers, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useAssignment, useProject, useAssignmentSessions, useAssignmentUsage, useWorkspacePrefix, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
 import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
@@ -146,7 +146,6 @@ export function AssignmentDetail() {
   const statusConfig = useStatusConfig();
   const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
   const { data: project } = useProject(slug);
-  const { data: serversData } = useServers();
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessions(slug, aslug);
   const { data: usageData, loading: usageLoading, error: usageError } = useAssignmentUsage(slug, aslug);
   const eventsUrl =
@@ -294,23 +293,6 @@ export function AssignmentDetail() {
     TRANSITION_PRECEDENCE.map((cmd) => enabledTransitions.find((a) => a.command === cmd)).find(Boolean) ??
     enabledTransitions[0] ??
     null;
-
-  const linkedPanes: Array<{ sessionName: string; command: string; urls: string[] }> = [];
-  if (serversData?.sessions) {
-    for (const session of serversData.sessions) {
-      for (const win of session.windows) {
-        for (const pane of win.panes) {
-          if (pane.assignment?.project === slug && pane.assignment?.slug === aslug) {
-            linkedPanes.push({
-              sessionName: session.name,
-              command: pane.command,
-              urls: pane.urls,
-            });
-          }
-        }
-      }
-    }
-  }
 
   async function handleStatusOverride(status: string) {
     setTransitionError(null);
@@ -924,42 +906,6 @@ export function AssignmentDetail() {
               ))}
             </dl>
           </SectionCard>
-
-          {linkedPanes.length > 0 && (
-            <SectionCard title="Servers">
-              <div className="space-y-2">
-                {linkedPanes.map((lp, i) => (
-                  <div key={i} className="flex min-w-0 flex-wrap items-center gap-2 text-sm">
-                    <span
-                      className="min-w-0 max-w-full truncate rounded bg-muted/60 px-1.5 py-0.5 font-mono text-xs"
-                      title={lp.command}
-                    >
-                      {lp.command}
-                    </span>
-                    <span
-                      className="min-w-0 max-w-full truncate text-xs text-muted-foreground"
-                      title={lp.sessionName}
-                    >
-                      {lp.sessionName}
-                    </span>
-                    {lp.urls.map(url => (
-                      <a
-                        key={url}
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={url}
-                        className="inline-flex min-w-0 max-w-full items-center gap-1 rounded border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs font-medium text-primary hover:bg-primary/10 dark:border-primary/40 dark:bg-primary/10 dark:hover:bg-primary/20"
-                      >
-                        <span className="min-w-0 truncate">{url.replace('http://localhost:', ':')}</span>
-                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-                      </a>
-                    ))}
-                  </div>
-                ))}
-              </div>
-            </SectionCard>
-          )}
 
           <AgentSessionsSection
             sessions={sessionsData?.sessions}

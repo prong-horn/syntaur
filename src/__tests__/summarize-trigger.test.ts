@@ -3,11 +3,11 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
-  reconcile,
+  runMaintenanceTick,
   runSummarizePass,
-  stopAutodiscovery,
+  stopMaintenanceLoop,
   _resetSummarizeInFlightForTests,
-} from '../dashboard/autodiscovery.js';
+} from '../dashboard/maintenance-loop.js';
 import {
   initSessionDb,
   closeSessionDb,
@@ -22,25 +22,20 @@ import {
 import type { AgentSession } from '../dashboard/types.js';
 
 let sandbox: string;
-let serversDir: string;
 let projectsDir: string;
+let assignmentsDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-sum-trigger-'));
-  serversDir = resolve(sandbox, 'servers');
   projectsDir = resolve(sandbox, 'projects');
+  assignmentsDir = resolve(sandbox, 'assignments');
   dbPath = resolve(sandbox, 'syntaur.db');
-  await mkdir(serversDir, { recursive: true });
   await mkdir(projectsDir, { recursive: true });
+  await mkdir(assignmentsDir, { recursive: true });
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = resolve(sandbox, 'home');
-  // `session.autoTrack: off` makes reconcile's scanSessions() short-circuit
-  // instead of walking the real ~/.claude transcript tree — these tests exercise
-  // the SUMMARIZE wiring, and a real scan would be slow and nondeterministic
-  // under parallel load. Individual tests that need the config (autoSummarize
-  // gating) overwrite it.
   await mkdir(resolve(sandbox, 'home'), { recursive: true });
   await writeFile(resolve(sandbox, 'home', 'config.md'), '---\nsession.autoTrack: off\n---\n');
   resetSessionDb();
@@ -48,10 +43,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  // Drain any detached summarize pass BEFORE closing the DB, so a leaked pass
-  // from one test can neither hit a closed DB nor leave `summarizeInFlight` set
-  // (which would make the next test's runSummarizePass no-op and fail).
-  await stopAutodiscovery();
+  await stopMaintenanceLoop();
   _resetSummarizeInFlightForTests();
   closeSessionDb();
   if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
@@ -59,50 +51,45 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
-describe('reconcile wiring', () => {
+describe('maintenance tick wiring', () => {
   it('invokes the injected summarize pass with a small batch cap', async () => {
-    // reconcile runs the real scanner (guarded on DB init), so this only checks
-    // the wiring; the fire/skip logic is unit-tested via runSummarizePass below.
-    // The summarize pass is FIRE-AND-FORGET (reconcile must not block on LLM
-    // calls), so the injected fn signals when it has been invoked.
     initSessionDb(dbPath);
     const calls: Array<{ limit: number }> = [];
     let signalCalled!: () => void;
     const called = new Promise<void>((r) => {
       signalCalled = r;
     });
-    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async (opts) => {
-      calls.push(opts);
-      signalCalled();
-      return [];
+    await runMaintenanceTick({
+      projectsDir,
+      assignmentsDir,
+      summarizeAfterScan: async (opts) => {
+        calls.push(opts);
+        signalCalled();
+        return [];
+      },
     });
-    await called; // wait for the detached pass to actually run
+    await called;
 
     expect(calls).toHaveLength(1);
-    // Each item is a paid LLM call, so the per-tick batch stays small.
-    expect(calls[0].limit).toBeGreaterThan(0);
-    expect(calls[0].limit).toBeLessThanOrEqual(5);
+    expect(calls[0].limit).toBe(2);
   });
 
-  it('returns from reconcile WITHOUT waiting for a slow summarize pass', async () => {
-    // The regression this guards: awaiting the pass would stall discovery for
-    // minutes behind sequential ~120s LLM calls. The gate below is NEVER
-    // released before reconcile resolves — so if reconcile awaited the pass,
-    // `await reconcile(...)` would hang forever and the test would time out.
-    // Reaching the line after the await is itself the proof of non-blocking (no
-    // wall-clock threshold, which would be flaky against the real scanner).
+  it('returns from runMaintenanceTick WITHOUT waiting for a slow summarize pass', async () => {
     initSessionDb(dbPath);
     let released!: () => void;
     const gate = new Promise<void>((r) => {
       released = r;
     });
     let passEntered = false;
-    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
-      passEntered = true;
-      await gate; // would hang forever if reconcile awaited the pass
-      return [];
+    await runMaintenanceTick({
+      projectsDir,
+      assignmentsDir,
+      summarizeAfterScan: async () => {
+        passEntered = true;
+        await gate;
+        return [];
+      },
     });
-    // reconcile resolved while the (gated, still-running) pass is detached.
     expect(passEntered).toBe(true);
     released();
     _resetSummarizeInFlightForTests();
@@ -111,17 +98,17 @@ describe('reconcile wiring', () => {
   it('does not surface a rejection from the detached summarize pass', async () => {
     initSessionDb(dbPath);
     await expect(
-      reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
-        throw new Error('backend exploded');
+      runMaintenanceTick({
+        projectsDir,
+        assignmentsDir,
+        summarizeAfterScan: async () => {
+          throw new Error('backend exploded');
+        },
       }),
     ).resolves.toBeUndefined();
   });
 
   it('a second tick does not strand the first pass: shutdown still drains the REAL in-flight pass', async () => {
-    // Regression: reconcile used to reassign the tracked promise + aborter on
-    // EVERY tick, even when runSummarizePass no-op'd (already in flight). The
-    // no-op's finally() then cleared the globals, leaving the real pass
-    // untracked → shutdown closed the DB under it.
     initSessionDb(dbPath);
     let release!: () => void;
     const gate = new Promise<void>((r) => {
@@ -131,54 +118,59 @@ describe('reconcile wiring', () => {
     let firstFinished = false;
     let secondEntered = false;
 
-    // Tick 1: the real, long-running pass. Honors the abort signal (finding 3).
-    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async ({ signal }) => {
-      firstEntered = true;
-      await new Promise<void>((res) => {
-        signal?.addEventListener('abort', () => res(), { once: true });
-        void gate.then(res);
-      });
-      firstFinished = true;
-      return [];
+    await runMaintenanceTick({
+      projectsDir,
+      assignmentsDir,
+      summarizeAfterScan: async ({ signal }) => {
+        firstEntered = true;
+        await new Promise<void>((res) => {
+          signal?.addEventListener('abort', () => res(), { once: true });
+          void gate.then(res);
+        });
+        firstFinished = true;
+        return [];
+      },
     });
     expect(firstEntered).toBe(true);
 
-    // Tick 2: must NO-OP (in-flight guard) without touching the tracked pass.
-    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
-      secondEntered = true;
-      return [];
+    await runMaintenanceTick({
+      projectsDir,
+      assignmentsDir,
+      summarizeAfterScan: async () => {
+        secondEntered = true;
+        return [];
+      },
     });
     expect(secondEntered).toBe(false);
 
-    // Shutdown must still find + drain tick 1's real pass. The abort resolves it.
-    await stopAutodiscovery();
+    await stopMaintenanceLoop();
     expect(firstFinished).toBe(true);
 
     release();
     _resetSummarizeInFlightForTests();
   });
 
-  it('stopAutodiscovery drains the detached summarize pass before returning (no closed-DB access)', async () => {
-    // The pass is detached from reconcile, so shutdown must drain it separately —
-    // otherwise the caller closes the session DB while a paid call is still
-    // writing to it.
+  it('stopMaintenanceLoop drains the detached summarize pass before returning (no closed-DB access)', async () => {
     initSessionDb(dbPath);
     let release!: () => void;
     const gate = new Promise<void>((r) => {
       release = r;
     });
     let passFinished = false;
-    await reconcile(serversDir, projectsDir, undefined, undefined, undefined, async () => {
-      await gate;
-      passFinished = true;
-      return [];
+    await runMaintenanceTick({
+      projectsDir,
+      assignmentsDir,
+      summarizeAfterScan: async () => {
+        await gate;
+        passFinished = true;
+        return [];
+      },
     });
 
     let stopResolved = false;
-    const stopping = stopAutodiscovery().then(() => {
+    const stopping = stopMaintenanceLoop().then(() => {
       stopResolved = true;
     });
-    // Let microtasks flush: stop must still be waiting on the gated pass.
     await new Promise((r) => setImmediate(r));
     expect(stopResolved).toBe(false);
     expect(passFinished).toBe(false);
@@ -200,8 +192,6 @@ describe('runSummarizePass (WS-refresh decision)', () => {
         notified++;
       },
     );
-    // Summary-only writes don't change any row the scan watches, so without this
-    // the dashboard would show stale rows until the next row-changing scan.
     expect(notified).toBe(1);
   });
 
@@ -235,14 +225,14 @@ describe('runSummarizePass (WS-refresh decision)', () => {
     };
 
     const first = runSummarizePass(slow, undefined);
-    await entered; // first batch is genuinely in flight
-    await runSummarizePass(slow, undefined); // second tick — should be skipped
+    await entered;
+    await runSummarizePass(slow, undefined);
     expect(started).toBe(1);
 
     release();
     await first;
 
-    await runSummarizePass(slow, undefined); // latch cleared — runs again
+    await runSummarizePass(slow, undefined);
     expect(started).toBe(2);
   });
 });
@@ -269,8 +259,6 @@ describe('persistent retry pacing across processes', () => {
     claimSummarize('p1', 'worker');
     recordSummarizeFailure('p1', 'worker', 'boom', 60 * 60 * 1000);
 
-    // Simulate the LaunchAgent: a fresh process, same DB file. Any in-memory
-    // cooldown would be lost here — only persisted state survives.
     closeSessionDb();
     resetSessionDb();
     initSessionDb(dbPath);
@@ -281,4 +269,3 @@ describe('persistent retry pacing across processes', () => {
     expect(listSessionsNeedingSummary(10, later).map((s) => s.sessionId)).toContain('p1');
   });
 });
-

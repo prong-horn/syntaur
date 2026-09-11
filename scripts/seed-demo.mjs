@@ -865,7 +865,7 @@ const assignmentsByMission = {
   ],
 };
 
-// --- Playbooks, servers, sessions ---
+// --- Playbooks, sessions ---
 
 const playbooks = [
   {
@@ -966,30 +966,6 @@ Behavioral rules for AI agents. Read and follow all playbooks before starting wo
 
 ${lines}
 `;
-}
-
-// auto: false so autodiscovery's liveness-cleanup won't wipe them when the
-// underlying process or tmux session doesn't actually exist on this machine.
-const servers = [
-  { session: 'demo-webapp', kind: 'tmux', auto: false },
-  { session: 'demo-billing-api', kind: 'process', auto: false, ports: [4174], cwd: '/Users/brennen/demo-billing' },
-  { session: 'demo-search-index', kind: 'process', auto: false, ports: [8001], cwd: '/Users/brennen/demo-search' },
-  { session: 'demo-admin-console', kind: 'process', auto: false, ports: [6403], cwd: '/Users/brennen/demo-admin' },
-  { session: 'demo-worker-queue', kind: 'tmux', auto: false },
-];
-
-function renderServer(s) {
-  const lines = [
-    `session: ${s.session}`,
-    `registered: ${iso(daysAgo(2))}`,
-    `last_refreshed: ${iso(hoursAgo(1))}`,
-    `auto: ${s.auto ? 'true' : 'false'}`,
-    `kind: ${s.kind}`,
-  ];
-  if (s.pid) lines.push(`pid: ${s.pid}`);
-  if (s.ports) lines.push(`ports: [${s.ports.join(', ')}]`);
-  if (s.cwd) lines.push(`cwd: ${s.cwd}`);
-  return `---\n${lines.join('\n')}\n---\n`;
 }
 
 // --- Agent sessions seeded into SQLite ---
@@ -1147,11 +1123,9 @@ async function main() {
 
   const projectsDir = resolve(TARGET, 'projects');
   const playbooksDir = resolve(TARGET, 'playbooks');
-  const serversDir = resolve(TARGET, 'servers');
   await ensureDir(TARGET);
   await ensureDir(projectsDir);
   await ensureDir(playbooksDir);
-  await ensureDir(serversDir);
   await ensureDir(resolve(TARGET, 'assignments'));
 
   await writeText(resolve(TARGET, 'config.md'), renderConfigMd(projectsDir));
@@ -1227,11 +1201,6 @@ async function main() {
   }
   await writeText(resolve(playbooksDir, 'manifest.md'), renderPlaybooksManifest(playbooks));
 
-  // Servers
-  for (const s of servers) {
-    await writeText(resolve(serversDir, `${s.session}.md`), renderServer(s));
-  }
-
   // Agent sessions (SQLite)
   const dbPath = resolve(TARGET, 'syntaur.db');
   seedAgentSessions(dbPath, projects);
@@ -1240,7 +1209,7 @@ async function main() {
   const totalAssignments = Object.values(assignmentsByMission).reduce((n, arr) => n + arr.length, 0);
   console.log(`\n✓ Demo workspace seeded at: ${TARGET}`);
   console.log(`  ${projects.length} projects, ${totalAssignments} assignments`);
-  console.log(`  ${playbooks.length} playbooks, ${servers.length} servers`);
+  console.log(`  ${playbooks.length} playbooks`);
   console.log(`  agent sessions seeded into syntaur.db`);
   console.log(`\nLaunch the dashboard against it with:`);
   console.log(`  SYNTAUR_HOME=${TARGET.replace(homedir(), '~')} syntaur dashboard`);

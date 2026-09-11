@@ -10,7 +10,6 @@ export interface WsMessage {
   type:
     | 'project-updated'
     | 'assignment-updated'
-    | 'servers-updated'
     | 'agent-sessions-updated'
     | 'playbooks-updated'
     | 'chat-item'

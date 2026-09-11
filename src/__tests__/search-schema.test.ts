@@ -78,7 +78,7 @@ describe('search-schema', () => {
           x: 'assignment', // ok
           A: 'project', // bad key shape (uppercase)
           status: 'todo', // collides with a field name
-          all: 'server', // reserved
+          all: 'playbook', // reserved
           y: 'notakind', // bad value
           '2bad': 'todo', // must start with a letter
         },

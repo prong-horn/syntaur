@@ -1,12 +1,11 @@
 import type { ProjectSummary, AssignmentBoardItem, ExternalIdInfo } from '../hooks/useProjects';
-import type { PlaybookSummary, TrackedSession } from '../types';
+import type { PlaybookSummary } from '../types';
 import type { ContentHit, ContentMatchRange } from '../hooks/useContentSearch';
 
 export type PaletteEntryType =
   | 'project'
   | 'assignment'
   | 'playbook'
-  | 'server'
   | 'page'
   | 'content';
 
@@ -38,7 +37,6 @@ export interface PaletteEntry {
 export const WORKSPACE_CAPABLE_ROUTES = new Set<string>([
   '/projects',
   '/assignments',
-  '/servers',
   '/agent-sessions',
 ]);
 
@@ -50,7 +48,6 @@ export const STATIC_PAGES = [
   { id: 'page-overview',    title: 'Overview',    basePath: '/',            keywords: ['home', 'dashboard'] },
   { id: 'page-projects',    title: 'Projects',    basePath: '/projects',    keywords: [] },
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
-  { id: 'page-servers',     title: 'Servers',     basePath: '/servers',     keywords: ['sessions'] },
   { id: 'page-agent-sessions', title: 'Agent Sessions', basePath: '/agent-sessions', keywords: ['sessions', 'runs', 'claude', 'codex'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
   { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
@@ -64,7 +61,6 @@ interface BuildInput {
   projects?: ProjectSummary[];
   assignments?: AssignmentBoardItem[];
   playbooks?: PlaybookSummary[];
-  servers?: TrackedSession[];
   wsPrefix: string;
   /**
    * Fold external IDs into the index + carry the `externalIds` fact on entries.
@@ -159,16 +155,6 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       keywords: p.tags,
       route: `/playbooks/${p.slug}`,
       tags: p.tags,
-    });
-  }
-
-  for (const s of input.servers ?? []) {
-    out.push({
-      type: 'server',
-      id: `server-${s.name}`,
-      title: s.name,
-      subtitle: s.alive ? 'alive' : 'dead',
-      route: `${resolveRoute('/servers', input.wsPrefix)}#server-${encodeURIComponent(s.name)}`,
     });
   }
 

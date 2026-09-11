@@ -317,7 +317,7 @@ export function createPiBackend(
 
 /**
  * Single construction point for backends, shared by the CLI and the
- * autodiscovery sweep so both resolve identically.
+ * maintenance-loop sweep so both resolve identically.
  *
  * Precedence: explicit flag > configured default > 'claude'.
  */

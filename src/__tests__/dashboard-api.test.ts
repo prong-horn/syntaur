@@ -15,7 +15,6 @@ import {
   getHelp,
   clearStatusConfigCache,
 } from '../dashboard/api.js';
-import { clearScanCache } from '../dashboard/scanner.js';
 import { createAgentSessionsRouter } from '../dashboard/api-agent-sessions.js';
 import {
   initSessionDb,
@@ -1120,7 +1119,7 @@ describe('overview', () => {
       { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
     ]);
 
-    const overview = await getOverview(testDir, undefined, undefined, { staleLimit: 1, staleOffset: 0 });
+    const overview = await getOverview(testDir, undefined, { staleLimit: 1, staleOffset: 0 });
     expect(overview.segments.stale.limit).toBe(1);
     expect(overview.segments.stale.offset).toBe(0);
     expect(overview.segments.stale.items.length).toBeLessThanOrEqual(1);
@@ -1163,11 +1162,7 @@ describe('overview performance', () => {
   beforeEach(() => {
     // Reset module-level caches so each perf run starts from a known
     // cold state and does not get spuriously fast wall-clock from another
-    // test's warm caches. `clearScanCache()` is no-op when the scanner has
-    // not been exercised (we don't pass a serversDir) but keeping it here
-    // matches the plan's cache-reset requirement.
     clearStatusConfigCache();
-    clearScanCache();
   });
 
   function buildPerfProjectMd(slug: string): string {
@@ -1685,7 +1680,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   it('getOverview excludes archived projects + individually-archived (incl. standalone) from stats', async () => {
     const assignmentsDir = resolve(testDir, '.assignments');
     await seed(assignmentsDir);
-    const overview = await getOverview(testDir, undefined, assignmentsDir);
+    const overview = await getOverview(testDir, assignmentsDir);
     // proj-b is archived → not counted as an active project.
     expect(overview.recentProjects.map((p) => p.slug)).toEqual(['proj-a']);
     // in-progress count: only a-active (a-arch hidden, proj-b cascade-hidden).

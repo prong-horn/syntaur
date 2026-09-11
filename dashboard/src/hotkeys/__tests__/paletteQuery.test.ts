@@ -8,7 +8,6 @@ describe('splitPaletteQuery — alias expansion', () => {
   it('bare alias → kind atom, no fuzzy', () => {
     expect(split('a:')).toEqual({ aqlExpr: 'kind:assignment', fuzzy: '' });
     expect(split('p:')).toEqual({ aqlExpr: 'kind:project', fuzzy: '' });
-    expect(split('s:')).toEqual({ aqlExpr: 'kind:server', fuzzy: '' });
     expect(split('pb:')).toEqual({ aqlExpr: 'kind:playbook', fuzzy: '' });
   });
 
@@ -205,11 +204,11 @@ describe('PALETTE_FIELDS semantics', () => {
   it('assignee/project noneSentinel matches null but NOT entities lacking the field', () => {
     expect(matches('assignee:none', { assignee: null })).toBe(true);
     expect(matches('assignee:none', { assignee: 'claude' })).toBe(false);
-    // A page/server entry has no `assignee` key at all → must NOT match `:none`
-    // (otherwise every page/server/playbook would leak into `assignee:none`).
+    // A page/playbook entry has no `assignee` key at all → must NOT match `:none`
+    // (otherwise every page/playbook would leak into `assignee:none`).
     expect(matches('assignee:none', { type: 'page' })).toBe(false);
     expect(matches('project:none', { project: null })).toBe(true); // standalone assignment
-    expect(matches('project:none', { type: 'server' })).toBe(false); // no project key
+    expect(matches('project:none', { type: 'playbook' })).toBe(false); // no project key
   });
 
   it('jira substring with case-insensitive system selection', () => {
@@ -263,7 +262,7 @@ describe('splitPaletteQuery — default-scope injection', () => {
       aqlExpr: 'kind:assignment',
       fuzzy: 'payment',
     });
-    expect(scope('kind:server', 'project')).toEqual({ aqlExpr: 'kind:server', fuzzy: '' });
+    expect(scope('kind:playbook', 'project')).toEqual({ aqlExpr: 'kind:playbook', fuzzy: '' });
   });
 
   it('the empty box and whitespace-only box search everything', () => {

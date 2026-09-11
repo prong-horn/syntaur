@@ -66,7 +66,6 @@ import {
 import { createSavedViewsRouter, createDashboardLayoutRouter } from './api-saved-views.js';
 import { withLock } from './write-locks.js';
 import { createWriteRouter } from './api-write.js';
-import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
@@ -86,7 +85,7 @@ import {
 } from '../utils/fs-migration.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
-import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
+import { startMaintenanceLoop, stopMaintenanceLoop } from './maintenance-loop.js';
 import { startUsageCollector, stopUsageCollector } from './usage-collector.js';
 import type { WsMessage } from './types.js';
 
@@ -98,7 +97,6 @@ export interface DashboardServerOptions {
    * Standalone assignments have `project: null` and live in folders named by UUID.
    */
   assignmentsDir: string;
-  serversDir: string;
   playbooksDir: string;
   serveStaticUi: boolean;
   /** Absolute path to the built dashboard UI (dashboard/dist). Required when serveStaticUi is true. */
@@ -106,7 +104,7 @@ export interface DashboardServerOptions {
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, projectsDir, assignmentsDir, serversDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, assignmentsDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -193,7 +191,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const staleOffsetRaw = req.query.staleOffset;
       const staleLimit = typeof staleLimitRaw === 'string' ? Number(staleLimitRaw) : undefined;
       const staleOffset = typeof staleOffsetRaw === 'string' ? Number(staleOffsetRaw) : undefined;
-      const overview = await getOverview(projectsDir, serversDir, assignmentsDir, {
+      const overview = await getOverview(projectsDir, assignmentsDir, {
         staleLimit,
         staleOffset,
       });
@@ -704,9 +702,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Write API (create projects/assignments) ---
   app.use(createWriteRouter(projectsDir, assignmentsDir));
 
-  // --- Servers API ---
-  app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
-
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
 
@@ -886,7 +881,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
       watcherHandle = createWatcher({
         projectsDir,
         assignmentsDir,
-        serversDir,
         playbooksDir,
         workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
@@ -905,13 +899,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
       // immediately; the sweep converges derived state in the background.
       void sweepAll('boot-reconcile');
 
-      startAutodiscovery({
-        serversDir,
+      startMaintenanceLoop({
         projectsDir,
         assignmentsDir,
-        excludePids: new Set([process.pid]),
         // Same WS frame the REST mutations emit, so the UI refreshes when the
-        // stale sweep stops a row. Autodiscovery's immediate first run covers
+        // stale sweep stops a row. The loop's immediate first tick covers
         // "sweep at dashboard start".
         onAgentSessionsChanged: () =>
           broadcast({ type: 'agent-sessions-updated', timestamp: new Date().toISOString() }),
@@ -987,7 +979,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       // groups — all of which WRITE, so it has to happen while the session and
       // usage DBs are still open.
       await chatBroker.stopAll().catch(() => {});
-      await stopAutodiscovery();
+      await stopMaintenanceLoop();
       await stopUsageCollector();
       if (watcherHandle) {
         await watcherHandle.close();

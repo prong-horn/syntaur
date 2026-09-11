@@ -76,7 +76,7 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 /**
  * Lease + retry state for the session summarizer, one row per session.
  *
- * Summarization is triggered by the dashboard autodiscovery interval and by
+ * Summarization is triggered by the dashboard maintenance loop and by
  * `syntaur session summarize` run by hand, and each LLM call costs money, so the
  * claim must be atomic ACROSS processes. `claim_token` makes ownership explicit:
  * release and finalization are token-matched, so a worker whose lease went stale

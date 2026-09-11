@@ -119,7 +119,7 @@ export function filterSessions(
             pass = true; // all items from /api/agent-sessions are tracked
             break;
           case 'untracked':
-            // MVP: untracked requires merging /api/servers scan data, so it
+            // MVP: untracked is not yet supported in the dashboard filter model, so it
             // never matches a DB-tracked session. Deferred (see decision-record).
             break;
           default:

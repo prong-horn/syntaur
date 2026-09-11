@@ -17,13 +17,12 @@ import type { EntityKind, DefaultScope } from '@shared/search-schema';
 const TYPE_ALIASES: Record<string, EntityKind> = {
   a: 'assignment',
   p: 'project',
-  s: 'server',
   pb: 'playbook',
 };
 
 /**
  * Sentinel returned by the `assignee`/`project` accessors when the entry does not
- * carry that property at all (page/server/playbook). It is non-"none" so the
+ * carry that property at all (page/playbook). It is non-"none" so the
  * `noneSentinel` `:none` check does NOT match field-less entities — only entities
  * that genuinely have the field set to null/'' match `field:none`. Restores the
  * design invariant "an atom referencing a field an entity lacks is false for it".

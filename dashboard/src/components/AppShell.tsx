@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Monitor, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, Library, ListTodo, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
@@ -56,9 +56,9 @@ interface SidebarNavGroupDef {
 }
 
 // The rest of the global nav, organized into labeled collapsible groups.
-// Servers stays workspace-scoped (see WORKSPACE_SCOPED_LABELS); Agent Sessions
-// does not — many sessions carry projectSlug: null and belong to no workspace
-// at all, so filing the page under one workspace was actively misleading.
+// Agent Sessions stays in the global Operations group rather than workspace-scoped —
+// many sessions carry projectSlug: null and belong to no workspace at all, so filing
+// the page under one workspace was actively misleading.
 const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
   {
     id: 'library',
@@ -97,7 +97,6 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
 const WORKSPACE_SCOPED_LABELS: Array<{ suffix: string; label: string; icon: LucideIcon }> = [
   { suffix: '/projects', label: 'Projects', icon: FolderKanban },
   { suffix: '/assignments', label: 'Assignments', icon: ListTodo },
-  { suffix: '/servers', label: 'Servers', icon: Monitor },
 ];
 
 const UTILITY_NAV_ITEMS: SidebarNavItem[] = [

@@ -321,11 +321,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         description:
           'A tracked AI session tied to assignment work. Sessions are registered via the track-session CLI command or the Claude Code plugin and visible on the Agent Sessions page.',
       },
-      {
-        term: 'Server',
-        description:
-          'A tracked tmux session with automatic port discovery, branch detection, and assignment linking. The Servers page shows all tracked sessions with their windows, panes, and discovered services.',
-      },
     ],
     workflow: WORKFLOW,
     statusGuide: await buildStatusGuide(),
@@ -371,11 +366,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         label: 'Assignments',
         description: 'Cross-project kanban board of all assignments. Drag cards between columns to change status, or filter by project, assignee, or status.',
         href: '/assignments',
-      },
-      {
-        label: 'Servers',
-        description: 'Tracked tmux sessions with auto-discovered ports, URLs, git branches, and links to related assignments. Register sessions manually or let autodiscovery find them.',
-        href: '/servers',
       },
       {
         label: 'Agent Sessions',
@@ -444,11 +434,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         answer:
           'When an AI agent starts working on an assignment, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked assignments and duration.',
       },
-      {
-        question: 'How does server tracking work?',
-        answer:
-          'Syntaur tracks tmux sessions to discover running dev servers, their ports, git branches, and linked assignments. Register sessions on the Servers page or let autodiscovery find them. Pane info refreshes automatically.',
-      },
     ],
     firstProjectChecklist: [
       {
@@ -486,7 +471,6 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       { label: 'Overview', href: '/' },
       { label: 'Project Directory', href: '/projects' },
       { label: 'Assignments Board', href: '/assignments' },
-      { label: 'Servers', href: '/servers' },
       { label: 'Agent Sessions', href: '/agent-sessions' },
       { label: 'Playbooks', href: '/playbooks' },
       { label: 'Settings', href: '/settings' },

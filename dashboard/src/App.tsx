@@ -19,7 +19,6 @@ import { EditAssignmentPlan } from './pages/EditAssignmentPlan';
 import { EditAssignmentScratchpad } from './pages/EditAssignmentScratchpad';
 import { AppendAssignmentHandoff } from './pages/AppendAssignmentHandoff';
 import { AppendAssignmentDecisionRecord } from './pages/AppendAssignmentDecisionRecord';
-import { ServersPage } from './pages/ServersPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { AgentEditorPage } from './pages/AgentEditorPage';
 import { UsagePage } from './pages/UsagePage';
@@ -61,7 +60,6 @@ export function App() {
             <Route path="/assignments/:id/scratchpad/edit" element={<EditAssignmentScratchpad />} />
             <Route path="/assignments/:id/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/assignments/:id/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
-            <Route path="/servers" element={<ServersPage />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/new" element={<AgentEditorPage />} />
             <Route path="/agents/:id/edit" element={<AgentEditorPage />} />
@@ -100,7 +98,6 @@ export function App() {
             <Route path="/w/:workspace/projects" element={<ProjectList />} />
             <Route path="/w/:workspace/assignments" element={<AssignmentsPage />} />
             <Route path="/w/:workspace/assignments/new" element={<CreateStandaloneAssignment />} />
-            <Route path="/w/:workspace/servers" element={<ServersPage />} />
             <Route path="/w/:workspace/usage" element={<UsagePage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/agent-sessions/:id" element={<AgentSessionDetail />} />

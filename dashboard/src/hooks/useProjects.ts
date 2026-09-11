@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail } from '../types';
+import type { AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail } from '../types';
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 import type { SessionSort } from '@shared/session-sort';
 import type { SessionAttribution } from '@shared/session-attribution';
@@ -454,12 +454,6 @@ export interface OverviewResponse {
   recentSessions: AgentSession[];
   recentProjects: ProjectSummary[];
   recentActivity: RecentActivityItem[];
-  serverStats?: {
-    trackedSessions: number;
-    aliveSessions: number;
-    deadSessions: number;
-    totalPorts: number;
-  };
 }
 
 export interface HelpCommand {
@@ -545,7 +539,7 @@ interface FetchState<T> {
 
 function useFetch<T>(
   url: string | null,
-  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks',
+  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'agent-sessions' | 'playbooks',
   enabled = true,
   // By default `data` is retained across URL changes so filter-driven views
   // (e.g. UsagePage's date range) update smoothly without flashing empty. Set
@@ -640,10 +634,6 @@ function useFetch<T>(
       refetch();
     }
 
-    if (message.type === 'servers-updated' && websocketScope === 'servers') {
-      refetch();
-    }
-
     if (
       message.type === 'agent-sessions-updated'
       && (websocketScope === 'agent-sessions' || websocketScope === 'overview')
@@ -733,19 +723,6 @@ export function useEditableDocument(
   // Entity-keyed (per-document): reset on URL change so an edit/append page never
   // shows a prior document's content under a new save URL.
   return useFetch<EditableDocumentResponse>(url, undefined, true, true);
-}
-
-export function useServers(enabled = true): FetchState<ServersResponse> {
-  return useFetch<ServersResponse>('/api/servers', 'servers', enabled);
-}
-
-export function useServer(name: string | null): FetchState<TrackedSession> {
-  return useFetch<TrackedSession>(
-    name ? `/api/servers/${encodeURIComponent(name)}` : null,
-    'servers',
-    true,
-    true,
-  );
 }
 
 /**
