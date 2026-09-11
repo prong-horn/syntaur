@@ -63,7 +63,7 @@ export interface WatcherOptions {
   onConfigChanged?: () => void;
   /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
    * for changes to this file and its WAL siblings (-wal, -shm) and broadcast
-   * `leases-updated`. chokidar 4 removed glob support so we must filter by
+   * `agent-sessions-updated`. chokidar 4 removed glob support so we must filter by
    * basename in the change handler. */
   dbPath?: string;
   onMessage: (message: WsMessage) => void;
@@ -289,18 +289,18 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     workflowsWatcher.on('unlink', handleWorkflowsChange);
   }
 
-  // --- DB watcher (leases + agent sessions share syntaur.db) ---
+  // --- DB watcher (agent sessions share syntaur.db) ---
   // SQLite WAL-mode writes mostly go to `<db>-wal`, not the main file. Watch
   // the parent directory and filter by basename to catch the main DB and its
   // -wal / -shm siblings. chokidar 4 has no glob support, so a literal pattern
   // like `${dbPath}*` would be silently a no-op.
-  let leasesDbWatcher: ReturnType<typeof watch> | null = null;
+  let sessionsDbWatcher: ReturnType<typeof watch> | null = null;
 
   if (dbPath) {
     const dbDir = dirname(dbPath);
     const dbBase = basename(dbPath);
 
-    leasesDbWatcher = watch(dbDir, {
+    sessionsDbWatcher = watch(dbDir, {
       ignoreInitial: true,
       persistent: true,
       depth: 0,
@@ -309,7 +309,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
 
     function handleDbChange(filePath: string): void {
       if (!basename(filePath).startsWith(dbBase)) return;
-      const debounceKey = '__leases-db__';
+      const debounceKey = '__sessions-db__';
       const existing = pendingEvents.get(debounceKey);
       if (existing) clearTimeout(existing);
 
@@ -318,7 +318,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         setTimeout(() => {
           pendingEvents.delete(debounceKey);
           const timestamp = new Date().toISOString();
-          onMessage({ type: 'leases-updated', timestamp });
           // Session register/stop now write the DB directly from hook/CLI
           // processes (no REST mutation to broadcast), so the file watcher is
           // the dashboard's only realtime signal for those rows.
@@ -327,9 +326,9 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       );
     }
 
-    leasesDbWatcher.on('change', handleDbChange);
-    leasesDbWatcher.on('add', handleDbChange);
-    leasesDbWatcher.on('unlink', handleDbChange);
+    sessionsDbWatcher.on('change', handleDbChange);
+    sessionsDbWatcher.on('add', handleDbChange);
+    sessionsDbWatcher.on('unlink', handleDbChange);
   }
 
   // --- config.md watcher (derive rules → recompute-all) ---
@@ -370,7 +369,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       if (serversWatcher) await serversWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (workflowsWatcher) await workflowsWatcher.close();
-      if (leasesDbWatcher) await leasesDbWatcher.close();
+      if (sessionsDbWatcher) await sessionsDbWatcher.close();
       if (configWatcher) await configWatcher.close();
     },
   };

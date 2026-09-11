@@ -20,7 +20,6 @@ interface WidgetPickerProps {
 // which is selected via the Saved Views section).
 const BUILT_IN_KINDS: ReadonlyArray<Exclude<WidgetKind, 'saved-view'>> = [
   'agent-sessions',
-  'inventories',
   'token-usage',
   'spend',
 ];

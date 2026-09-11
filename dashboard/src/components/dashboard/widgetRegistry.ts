@@ -1,10 +1,9 @@
 import type { ComponentType, ReactNode } from 'react';
 import { createElement } from 'react';
-import { Activity, Boxes, Coins, Hash, LayoutTemplate, type LucideIcon } from 'lucide-react';
+import { Activity, Coins, Hash, LayoutTemplate, type LucideIcon } from 'lucide-react';
 import type { WidgetConfig } from '@shared/saved-views-schema';
 import { SavedViewWidget } from './widgets/SavedViewWidget';
 import { AgentSessionsWidget } from './widgets/AgentSessionsWidget';
-import { InventoriesWidget } from './widgets/InventoriesWidget';
 import { UsageWidget } from './widgets/UsageWidget';
 import { UsageWidgetConfigDialog } from './widgets/UsageWidgetConfigDialog';
 
@@ -58,11 +57,6 @@ export const widgetRegistry: Record<WidgetConfig['kind'], WidgetRenderer> = {
         onPickAnother: ctx.onPickAnother,
       });
     },
-  },
-  inventories: {
-    title: 'Inventories',
-    icon: Boxes,
-    render: () => createElement(InventoriesWidget),
   },
   'token-usage': {
     title: 'Token Usage',

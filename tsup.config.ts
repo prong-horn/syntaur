@@ -4,7 +4,6 @@ export default defineConfig({
   entry: [
     'src/index.ts',
     'src/dashboard/server.ts',
-    'src/db/leases-db.ts',
   ],
   format: ['esm'],
   target: 'node20',

@@ -17,7 +17,7 @@ import {
 
 /**
  * Token-usage dashboard API. Read-only; localhost-only per existing
- * dashboard convention (no auth). Mirrors `api-leases.ts`'s router shape.
+ * dashboard convention (no auth). Mirrors other read-only dashboard routers.
  *
  * Endpoints — all accept `?since=YYYY-MM-DD&until=YYYY-MM-DD&tool=&groupBy=`:
  *   GET /                                            — top-level summary

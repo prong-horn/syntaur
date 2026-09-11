@@ -5,12 +5,14 @@ import { syntaurRoot, savedViewsFile } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
 import {
   DEFAULT_SAVED_VIEWS_FILE,
+  WIDGET_KINDS,
   isDashboardSlot,
   isSavedView,
   type DashboardSlot,
   type SavedView,
   type SavedViewConfig,
   type SavedViewsFile,
+  type WidgetConfig,
 } from './saved-views-schema.js';
 
 export type {
@@ -41,6 +43,37 @@ function isSavedViewsFileShape(value: unknown): value is SavedViewsFile {
 
 function cloneDefault(): SavedViewsFile {
   return JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE)) as SavedViewsFile;
+}
+
+const registeredWidgetKinds = new Set<string>(WIDGET_KINDS);
+
+function normalizeWidget(widget: unknown): WidgetConfig | null {
+  if (widget === null) return null;
+  if (!widget || typeof widget !== 'object') return null;
+  const kind = (widget as Record<string, unknown>).kind;
+  if (typeof kind !== 'string' || !registeredWidgetKinds.has(kind)) {
+    return null;
+  }
+  return widget as WidgetConfig;
+}
+
+function normalizeSavedViewsFile(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const obj = value as Record<string, unknown>;
+  if (!obj.dashboard || typeof obj.dashboard !== 'object') return value;
+  const dash = obj.dashboard as Record<string, unknown>;
+  if (!Array.isArray(dash.slots)) return value;
+  return {
+    ...obj,
+    dashboard: {
+      ...dash,
+      slots: dash.slots.map((slot) => {
+        if (!slot || typeof slot !== 'object') return slot;
+        const s = slot as Record<string, unknown>;
+        return { ...s, widget: normalizeWidget(s.widget) };
+      }),
+    },
+  };
 }
 
 // Returns the parsed file when readable + valid.
@@ -76,14 +109,15 @@ export async function readSavedViewsFile(): Promise<SavedViewsFile> {
       return cloneDefault();
     }
   }
-  if (!isSavedViewsFileShape(parsed)) {
+  const normalizedParsed = normalizeSavedViewsFile(parsed);
+  if (!isSavedViewsFileShape(normalizedParsed)) {
     await backupCorrupt(path);
     return cloneDefault();
   }
   const normalized: SavedViewsFile = {
-    ...parsed,
+    ...(normalizedParsed as SavedViewsFile),
     version: 1,
-    dashboard: { ...parsed.dashboard, version: 1 },
+    dashboard: { ...(normalizedParsed as SavedViewsFile).dashboard, version: 1 },
   };
   return normalized;
 }

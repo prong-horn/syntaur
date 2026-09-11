@@ -25,8 +25,7 @@ const SCHEMA_VERSION = '11';
 // `activity` columns, which lost their last reader when `computeIsLive`, the
 // transcript scanner and the Agent View went (phase 4, Decision 6).
 // `transcript_path` STAYS: the summarizer chain, `listSessionsNeedingSummary`,
-// the session commands, the doctor workspace check, context leases and
-// engagement backfill all read it.
+// the session commands, the doctor workspace check, and engagement backfill all read it.
 //
 // v9 base schema: v8 plus `launch_reservations` — pending-launch reservation
 // records, never sessions rows; a failed dispatch must never strand an active

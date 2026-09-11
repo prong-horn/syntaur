@@ -13,7 +13,6 @@ export interface WsMessage {
     | 'servers-updated'
     | 'agent-sessions-updated'
     | 'playbooks-updated'
-    | 'leases-updated'
     | 'schedules-updated'
     | 'chat-item'
     | 'chat-session'

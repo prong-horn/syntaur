@@ -80,14 +80,12 @@ export interface SavedView {
 export type WidgetConfig =
   | { kind: 'saved-view'; viewId: string }
   | { kind: 'agent-sessions'; viewId?: string }
-  | { kind: 'inventories' }
   | { kind: 'token-usage'; filters?: UsageWidgetFilters }
   | { kind: 'spend'; filters?: UsageWidgetFilters };
 
 export const WIDGET_KINDS = [
   'saved-view',
   'agent-sessions',
-  'inventories',
   'token-usage',
   'spend',
 ] as const;
@@ -197,7 +195,7 @@ export const DEFAULT_SAVED_VIEWS_FILE: SavedViewsFile = {
       { id: 'slot-1', widget: { kind: 'saved-view', viewId: 'default-recently-updated' } },
       { id: 'slot-2', widget: { kind: 'saved-view', viewId: 'default-high-priority' } },
       { id: 'slot-3', widget: { kind: 'saved-view', viewId: 'default-stale' } },
-      { id: 'slot-4', widget: { kind: 'inventories' } },
+      { id: 'slot-4', widget: null },
     ],
   },
 };
@@ -218,7 +216,7 @@ export function isWidgetConfig(value: unknown): value is WidgetConfig {
     // `filters` is optional; when present it must be a valid UsageWidgetFilters.
     return obj.filters === undefined || isUsageWidgetFilters(obj.filters);
   }
-  return obj.kind === 'inventories';
+  return false;
 }
 
 function isListSectionVisibility(value: unknown): value is ListSectionVisibility {

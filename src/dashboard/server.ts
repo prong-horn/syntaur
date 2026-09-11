@@ -72,7 +72,6 @@ import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
-import { createLeasesRouter } from './api-leases.js';
 import { createSchedulesRouter } from './api-schedules.js';
 import { runTick } from '../schedules/tick.js';
 import { inProcessDispatcher } from '../schedules/dispatch.js';
@@ -90,7 +89,6 @@ import {
 } from '../utils/fs-migration.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
-import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
 import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { startAutodiscovery, stopAutodiscovery } from './autodiscovery.js';
 import { startUsageCollector, stopUsageCollector } from './usage-collector.js';
@@ -169,9 +167,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   migrateFromMarkdown(projectsDir).catch((err) => {
     console.error('Session migration from markdown failed:', err);
   });
-
-  // --- Initialize leases database (shares syntaur.db) ---
-  initLeasesDb();
 
   // --- Initialize usage database (shares syntaur.db) ---
   initUsageDb();
@@ -716,9 +711,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
 
-  // --- Leases API ---
-  app.use('/api/leases', createLeasesRouter(broadcast));
-
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
 
@@ -1047,7 +1039,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
         await watcherHandle.close();
       }
       closeSessionDb();
-      closeLeasesDb();
       closeUsageDb();
       for (const client of clients) {
         client.terminate();

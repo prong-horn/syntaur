@@ -31,7 +31,7 @@ describe('ignoreDotSegmentsBelow', () => {
     expect(ignore('/tmp/.syntaur/projects/..foo')).toBe(true);
   });
 
-  it('handles the leases-db root whose own basename is `.syntaur`', () => {
+  it('handles the session-db root whose own basename is `.syntaur`', () => {
     // dbDir = dirname(~/.syntaur/syntaur.db) === ~/.syntaur — the root basename
     // is `.syntaur`, which must NOT be treated as an ignorable dot-segment.
     const ignore = ignoreDotSegmentsBelow('/tmp/.syntaur');

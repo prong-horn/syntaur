@@ -1,7 +1,7 @@
 /**
  * Token-usage tracking database module.
  *
- * Shares `~/.syntaur/syntaur.db` with `session-db.ts`, `leases-db.ts`, and
+ * Shares `~/.syntaur/syntaur.db` with `session-db.ts` and
  * `proof-db.ts`. Each module owns its own schema-version row in the shared
  * `meta` table; init order is irrelevant.
  *

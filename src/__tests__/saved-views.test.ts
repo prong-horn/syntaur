@@ -133,6 +133,24 @@ describe('saved-views storage', () => {
     const raw = await readFile(viewsPath, 'utf-8');
     expect(JSON.parse(raw).version).toBe(99);
   });
+
+  it('(g) normalizes unknown widget kinds to null instead of quarantining the file', async () => {
+    const legacy = JSON.parse(JSON.stringify(DEFAULT_SAVED_VIEWS_FILE)) as Record<string, unknown>;
+    const dashboard = legacy.dashboard as Record<string, unknown>;
+    dashboard.slots = [
+      { id: 'slot-0', widget: { kind: 'agent-sessions' } },
+      { id: 'slot-1', widget: { kind: 'inventories' } },
+      { id: 'slot-2', widget: null },
+      { id: 'slot-3', widget: null },
+      { id: 'slot-4', widget: null },
+    ];
+    await writeFile(viewsPath, JSON.stringify(legacy));
+    const file = await readSavedViewsFile();
+    expect(file.dashboard.slots[1].widget).toBe(null);
+    const entries = await readdir(resolve(homeDir, '.syntaur'));
+    expect(entries.filter((e) => e.startsWith('saved-views.corrupt-'))).toHaveLength(0);
+    expect(entries).toContain('saved-views.json');
+  });
 });
 
 describe('saved-views CRUD helpers', () => {
@@ -213,7 +231,7 @@ describe('saved-views CRUD helpers', () => {
       { id: 'slot-0', widget: { kind: 'saved-view' as const, viewId: file.views[0].id } },
       { id: 'slot-1', widget: null },
       { id: 'slot-2', widget: { kind: 'agent-sessions' as const } },
-      { id: 'slot-3', widget: { kind: 'inventories' as const } },
+      { id: 'slot-3', widget: { kind: 'token-usage' as const } },
       { id: 'slot-4', widget: null },
     ];
     const result = setDashboardLayout(file, newSlots);
@@ -310,7 +328,7 @@ describe('saved-views CRUD helpers', () => {
   it('setDashboardLayout round-trips slot sizes and leaves size-less slots untouched', () => {
     const sized: DashboardSlot[] = [
       { id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' },
-      { id: 'slot-1', widget: { kind: 'inventories' }, size: 'wide' },
+      { id: 'slot-1', widget: { kind: 'token-usage' }, size: 'wide' },
       { id: 'slot-2', widget: null, size: 'tall' },
       { id: 'slot-3', widget: null }, // no size — back-compat
     ];
@@ -563,7 +581,7 @@ describe('saved-views HTTP routes', () => {
   it('PUT /api/dashboard accepts valid built-in widget slots', async () => {
     const slots = [
       { id: 'slot-0', widget: { kind: 'agent-sessions' } },
-      { id: 'slot-1', widget: { kind: 'inventories' } },
+      { id: 'slot-1', widget: { kind: 'token-usage' } },
       { id: 'slot-2', widget: null },
       { id: 'slot-3', widget: null },
       { id: 'slot-4', widget: null },
@@ -581,7 +599,7 @@ describe('saved-views HTTP routes', () => {
   it('PUT /api/dashboard round-trips slot sizes (incl. a legacy size-less slot)', async () => {
     const slots = [
       { id: 'slot-0', widget: { kind: 'agent-sessions' }, size: 'large' },
-      { id: 'slot-1', widget: { kind: 'inventories' }, size: 'wide' },
+      { id: 'slot-1', widget: { kind: 'token-usage' }, size: 'wide' },
       { id: 'slot-2', widget: null, size: 'tall' },
       { id: 'slot-3', widget: null }, // legacy, no size
       { id: 'slot-4', widget: null },

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useWebSocket } from './useWebSocket';
 import type { WsMessage } from './useWebSocket';
-import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail, InventoriesResponse, InventoryDetail } from '../types';
+import type { ServersResponse, TrackedSession, AgentSessionsResponse, AgentSessionDetailResponse, AgentSession, PlaybooksResponse, PlaybookDetail } from '../types';
 import { buildUsageApiQuery, type UsageWidgetFilters } from '@shared/usage-filters';
 import type { SessionSort } from '@shared/session-sort';
 import type { SessionAttribution } from '@shared/session-attribution';
@@ -545,7 +545,7 @@ interface FetchState<T> {
 
 function useFetch<T>(
   url: string | null,
-  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks' | 'inventories',
+  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'servers' | 'agent-sessions' | 'playbooks',
   enabled = true,
   // By default `data` is retained across URL changes so filter-driven views
   // (e.g. UsagePage's date range) update smoothly without flashing empty. Set
@@ -656,10 +656,6 @@ function useFetch<T>(
     if (message.type === 'playbooks-updated' && websocketScope === 'playbooks') {
       refetch();
     }
-
-    if (message.type === 'leases-updated' && websocketScope === 'inventories') {
-      refetch();
-    }
   });
 
   return { data, loading, error, refetch };
@@ -747,19 +743,6 @@ export function useServer(name: string | null): FetchState<TrackedSession> {
   return useFetch<TrackedSession>(
     name ? `/api/servers/${encodeURIComponent(name)}` : null,
     'servers',
-    true,
-    true,
-  );
-}
-
-export function useInventories(): FetchState<InventoriesResponse> {
-  return useFetch<InventoriesResponse>('/api/leases', 'inventories');
-}
-
-export function useInventory(slug: string | null): FetchState<InventoryDetail> {
-  return useFetch<InventoryDetail>(
-    slug ? `/api/leases/${encodeURIComponent(slug)}` : null,
-    'inventories',
     true,
     true,
   );
