@@ -7,8 +7,26 @@
 import { mkdir, readdir, readFile, rename, lstat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, extname, resolve } from 'node:path';
-import { sanitizeAttachmentName } from '../todos/attachments.js';
 import { chatDir } from './store.js';
+
+export function sanitizeAttachmentName(name: string): string {
+  // Drop quotes, backslash, and forward slash (defense for both the stored filename
+  // and the eventual Content-Disposition header).
+  let n = basename(name || '').replace(/["'\\/]/g, '_');
+  // Replace control chars and DEL by code point (avoids embedding control-char
+  // literals in the source / a no-control-regex lint).
+  n = Array.from(n, (ch) => {
+    const code = ch.charCodeAt(0);
+    return code < 0x20 || code === 0x7f ? '_' : ch;
+  }).join('');
+  n = n.trim();
+  if (!n || n === '.' || n === '..') n = 'file';
+  if (n.length > 120) {
+    const ext = extname(n);
+    n = n.slice(0, Math.max(1, 120 - ext.length)) + ext;
+  }
+  return n;
+}
 
 export class ChatAttachmentError extends Error {
   readonly status: number;

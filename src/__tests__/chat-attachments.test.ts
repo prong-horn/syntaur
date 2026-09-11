@@ -3,12 +3,33 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
-import { resolveChatAttachment, writeChatAttachment } from '../chat/attachments.js';
+import {
+  resolveChatAttachment,
+  sanitizeAttachmentName,
+  writeChatAttachment,
+} from '../chat/attachments.js';
 
 const PNG_1X1 = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
   'base64',
 );
+
+describe('sanitizeAttachmentName', () => {
+  it('keeps a plain filename', () => {
+    expect(sanitizeAttachmentName('screenshot.png')).toBe('screenshot.png');
+  });
+
+  it('strips path separators and dots', () => {
+    expect(sanitizeAttachmentName('../evil/../../name.png')).toBe('name.png');
+    expect(sanitizeAttachmentName('foo\\bar.png')).toBe('foo_bar.png');
+  });
+
+  it('falls back for empty or dotfile input', () => {
+    expect(sanitizeAttachmentName('')).toBe('file');
+    expect(sanitizeAttachmentName('.')).toBe('file');
+    expect(sanitizeAttachmentName('..')).toBe('file');
+  });
+});
 
 describe('resolveChatAttachment', () => {
   it('ignores .tmp siblings and serves the real file', async () => {

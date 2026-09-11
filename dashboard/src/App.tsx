@@ -41,8 +41,6 @@ import { CreateResource } from './pages/CreateResource';
 import { EditResource } from './pages/EditResource';
 import { SettingsPage } from './pages/SettingsPage';
 import { WorkflowPage } from './pages/WorkflowPage';
-import { TodosPage } from './pages/TodosPage';
-import { WorkspaceTodosPage } from './pages/WorkspaceTodosPage';
 import { SavedViewsPage } from './pages/SavedViewsPage';
 import { SavedViewPage } from './pages/SavedViewPage';
 import { HotkeyProvider } from './hotkeys';
@@ -86,7 +84,6 @@ export function App() {
             <Route path="/resources/new" element={<CreateResource />} />
             <Route path="/projects/:slug/resources/:itemSlug" element={<ResourceDetail />} />
             <Route path="/projects/:slug/resources/:itemSlug/edit" element={<EditResource />} />
-            <Route path="/todos" element={<TodosPage />} />
             <Route path="/views" element={<SavedViewsPage />} />
             <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />
@@ -112,7 +109,6 @@ export function App() {
             <Route path="/w/:workspace/usage" element={<UsagePage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/agent-sessions/:id" element={<AgentSessionDetail />} />
-            <Route path="/w/:workspace/todos" element={<WorkspaceTodosPage />} />
             <Route path="/w/:workspace/views" element={<SavedViewsPage />} />
             <Route path="/w/:workspace/views/:id" element={<SavedViewPage />} />
             <Route path="/w/:workspace/create/project" element={<CreateProject />} />

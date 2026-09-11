@@ -64,7 +64,7 @@ import {
   isViewPrefsDefaults,
 } from '../utils/view-prefs.js';
 import { createSavedViewsRouter, createDashboardLayoutRouter } from './api-saved-views.js';
-import { withLock } from './todos-locks.js';
+import { withLock } from './write-locks.js';
 import { createWriteRouter } from './api-write.js';
 import { createServersRouter } from './api-servers.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
@@ -88,10 +88,6 @@ import {
   migrateLegacyConfig,
   summarizeMigration,
 } from '../utils/fs-migration.js';
-import { createTodosRouter } from './api-todos.js';
-import { createProjectTodosRouter } from './api-project-todos.js';
-import { createBundlesRouter } from './api-bundles.js';
-import { createProjectBundlesRouter } from './api-project-bundles.js';
 import { createBackupRouter } from './api-backup.js';
 import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
 import { initLeasesDb, closeLeasesDb } from '../db/leases-db.js';
@@ -110,14 +106,13 @@ export interface DashboardServerOptions {
   assignmentsDir: string;
   serversDir: string;
   playbooksDir: string;
-  todosDir: string;
   serveStaticUi: boolean;
   /** Absolute path to the built dashboard UI (dashboard/dist). Required when serveStaticUi is true. */
   dashboardDistPath?: string;
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, projectsDir, assignmentsDir, serversDir, playbooksDir, todosDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, assignmentsDir, serversDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -716,7 +711,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   // --- Write API (create projects/assignments) ---
-  app.use(createWriteRouter(projectsDir, assignmentsDir, todosDir));
+  app.use(createWriteRouter(projectsDir, assignmentsDir));
 
   // --- Servers API ---
   app.use('/api/servers', createServersRouter(serversDir, projectsDir, assignmentsDir));
@@ -791,14 +786,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
       res.status(500).json({ error: `Failed to load resources: ${(error as Error).message}` });
     }
   });
-
-  // --- Todos API ---
-  app.use('/api/todos', createTodosRouter(todosDir, broadcast, projectsDir));
-  app.use('/api/projects/:projectId/todos', createProjectTodosRouter(projectsDir, broadcast, todosDir));
-
-  // --- Bundles API (read-only in v1) ---
-  app.use('/api/bundles', createBundlesRouter(todosDir, broadcast));
-  app.use('/api/projects/:projectId/bundles', createProjectBundlesRouter(projectsDir, broadcast));
 
   // --- Backup API ---
   app.use('/api/backup', createBackupRouter());
@@ -949,7 +936,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
         assignmentsDir,
         serversDir,
         playbooksDir,
-        todosDir,
         workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
         configPath: resolve(syntaurRoot(), 'config.md'),

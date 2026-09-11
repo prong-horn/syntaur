@@ -36,40 +36,12 @@ export function workflowsDir(): string {
   return resolve(syntaurRoot(), 'workflows');
 }
 
-export function todosDir(): string {
-  return resolve(syntaurRoot(), 'todos');
-}
-
 export function viewPrefsFile(): string {
   return resolve(syntaurRoot(), 'view-prefs.json');
 }
 
 export function savedViewsFile(): string {
   return resolve(syntaurRoot(), 'saved-views.json');
-}
-
-export function projectTodosDir(projectsDir: string, projectSlug: string): string {
-  return resolve(projectsDir, projectSlug, 'todos');
-}
-
-export function todoPlanDir(todosDir: string, workspaceOrProject: string, todoId: string): string {
-  return resolve(todosDir, 'plans', workspaceOrProject, todoId);
-}
-
-// Bundle plan files live under `plans/<scopeOrProject>/bundles/<bundleId>/`,
-// keeping them disjoint from todo plans (which omit the `bundles/` segment).
-export function bundlePlanDir(todosDir: string, scopeOrProject: string, bundleId: string): string {
-  return resolve(todosDir, 'plans', scopeOrProject, 'bundles', bundleId);
-}
-
-// Bundle storage lives under a `bundles/` subdirectory so the workspace-checklist
-// discovery glob (which scans top-level *.md files in todosDir) does not pick it up.
-export function bundlesDir(todosDir: string): string {
-  return resolve(todosDir, 'bundles');
-}
-
-export function bundlesPath(todosDir: string): string {
-  return resolve(todosDir, 'bundles', 'index.md');
 }
 
 export function proofDir(assignmentDir: string): string {

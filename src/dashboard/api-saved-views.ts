@@ -13,7 +13,7 @@ import {
   deleteSavedView,
   setDashboardLayout,
 } from '../utils/saved-views.js';
-import { withLock } from './todos-locks.js';
+import { withLock } from './write-locks.js';
 import { getUnionQueryRegistry } from './api.js';
 import { validateQuery } from '../utils/query/index.js';
 

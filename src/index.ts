@@ -49,7 +49,6 @@ import { enablePlaybookCommand } from './commands/enable-playbook.js';
 import { disablePlaybookCommand } from './commands/disable-playbook.js';
 import { deletePlaybookCommand } from './commands/delete-playbook.js';
 import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
-import { todoCommand } from './commands/todo.js';
 import { backupCommand } from './commands/backup.js';
 import { doctorCommand } from './commands/doctor.js';
 import { commentCommand } from './commands/comment.js';
@@ -58,7 +57,6 @@ import { proofCommand } from './commands/proof.js';
 import { leaseCommand } from './commands/lease.js';
 import { scheduleCommand } from './commands/schedule.js';
 import { usageCommand } from './commands/usage.js';
-import { requestCommand } from './commands/request.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
 import { worktreeCommand } from './commands/worktree.js';
@@ -148,7 +146,6 @@ program
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
-  .option('--with-todos', 'Scaffold a ## Todos section in assignment.md (omitted by default; typically populated by /plan-assignment)')
   .option('--workspace <slug>', 'Workspace group slug (only valid with --one-off; mutually exclusive with --project)')
   .option('--ready', 'Create the assignment directly as ready_for_planning (skips the draft phase)')
   .action(
@@ -197,20 +194,6 @@ program
         ...options,
         commandArgv: captureDashDashArgv,
       });
-    }),
-  );
-
-program
-  .command('request')
-  .description('Append a todo to another assignment (cross-assignment work request)')
-  .argument('<target>', 'Target assignment slug (with --project) or UUID (standalone)')
-  .argument('<text>', 'Todo text')
-  .option('--project <slug>', 'Project slug if the target is project-nested')
-  .option('--from <source>', 'Source assignment (default: $SYNTAUR_ASSIGNMENT)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (target, text, options) => {
-      await requestCommand(target, text, options);
     }),
   );
 
@@ -815,7 +798,6 @@ program
     }),
   );
 
-program.addCommand(todoCommand);
 program.addCommand(backupCommand);
 program.addCommand(doctorCommand);
 program.addCommand(proofCommand);
