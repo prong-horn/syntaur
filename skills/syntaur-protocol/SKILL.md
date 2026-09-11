@@ -17,7 +17,7 @@ You are working within the Syntaur protocol — a coordination system for AI age
 
 ## Write Boundary Rules
 
-Respect file ownership boundaries. The Claude Code and Codex plugins enforce them via PreToolUse hooks; other agents are on the honor system but the dashboard surfaces violations.
+Respect file ownership boundaries. The Codex plugin enforces them with a PreToolUse hook; Claude Code and every other harness are on the honor system, and the dashboard surfaces violations.
 
 ### Files you may write
 

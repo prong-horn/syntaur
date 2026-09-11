@@ -91,5 +91,6 @@
     "src/__tests__/inbox-snooze.test.ts",
     "src/__tests__/home-path-hygiene.test.ts",
     "src/__tests__/doctor-known-top-level.test.ts",
+    "src/__tests__/skill-registry.test.ts",
   ]
 }

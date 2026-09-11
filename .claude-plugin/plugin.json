@@ -19,6 +19,7 @@
     "./skills/save-session-summary",
     "./skills/track-session",
     "./skills/track-server",
+    "./skills/capture-artifacts",
     "./skills/replan",
     "./skills/resume-session",
     "./skills/syntaur-worktree",
@@ -32,6 +33,7 @@
     "./skills/extend-resource",
     "./skills/list-resources",
     "./skills/run-playbook",
-    "./skills/views"
+    "./skills/views",
+    "./skills/doctor-syntaur"
   ]
 }

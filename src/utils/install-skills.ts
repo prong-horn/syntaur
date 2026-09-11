@@ -66,6 +66,7 @@ const KNOWN_SKILL_NAMES = [
   'list-resources',
   'run-playbook',
   'views',
+  'doctor-syntaur',
 ] as const;
 
 export const KNOWN_SKILLS = KNOWN_SKILL_NAMES;

@@ -172,7 +172,7 @@ export async function resolveAssignmentTarget(
   // still carries the bundle marker; only the assignment scalar was demoted.
   if (ctx && classifyContext(ctx) === 'bundle' && ctx.bundleId) {
     throw new AssignmentTargetError(
-      `Context is bound to bundle b:${ctx.bundleId}, not an assignment. Use \`syntaur todo bundle show ${ctx.bundleId}\` or the complete-bundle skill.`,
+      `Context is bound to bundle b:${ctx.bundleId}, not an assignment. Use \`syntaur todo bundle show ${ctx.bundleId}\`.`,
     );
   }
 

@@ -227,7 +227,6 @@ plugin/
     hooks.json                  # Hook definitions
     session-start.sh            # Merge real session_id + transcript_path into existing .syntaur/context.json
     session-cleanup.sh          # Mark sessions stopped on exit
-    enforce-boundaries.sh       # Write boundary enforcement
   references/
     protocol-summary.md         # One-page protocol quick reference
     file-ownership.md           # Write boundary rules
@@ -261,7 +260,7 @@ Slash commands (`/grab-assignment` etc.) are thin wrappers that delegate to the 
 | PostToolUse: ExitPlanMode | User exits plan mode | Prompts to write the plan to the next unused `plan-v<N>.md` (or `plan.md` if none exists) and append a linked todo in the `## Todos` section of `assignment.md` |
 | SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active assignment). |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
-| PreToolUse: enforce-boundaries | Edit/Write/MultiEdit | Validates target path is within assignment boundaries |
+| PreToolUse | — | No write-boundary hook in Claude Code; boundaries are documentation-enforced (Codex enforces via its own PreToolUse hook) |
 
 ---
 
