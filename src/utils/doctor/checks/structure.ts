@@ -36,6 +36,7 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'syntaur.db-shm', // sqlite WAL
   'syntaur.db-wal', // sqlite WAL
   'targets', // user-descriptors.ts
+  'tier3-violations.log', // hermes plugin write-boundary violations (platforms/hermes)
   'todos', // paths.ts
   'view-prefs.json', // paths.ts
   'workflows', // paths.ts
