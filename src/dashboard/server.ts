@@ -14,13 +14,8 @@ import {
   getAssignmentDetailById,
   getOverview,
   getHelp,
-  listWorkspaces,
-  createWorkspace,
-  deleteWorkspace,
   invalidateRecordsCache,
   clearStatusConfigCache,
-  WorkspaceBlockedError,
-  resolveWorkspaceMembers,
 } from './api.js';
 import { resolveAssignmentById } from '../utils/assignment-resolver.js';
 import { listSessionsByAssignment, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
@@ -66,7 +61,6 @@ import { createWriteRouter } from './api-write.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
-import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
 import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
@@ -271,8 +265,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.use('/api/config/search', createSearchConfigRouter());
   app.use('/api/search', createContentSearchRouter(projectsDir, assignmentsDir));
-  app.use('/api/config/workspace-visibility', createWorkspaceVisibilityConfigRouter());
-
   app.get('/api/config/hotkeys', async (_req, res) => {
     try {
       const config = await readConfig();
@@ -527,17 +519,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/projects', async (req, res) => {
+  app.get('/api/projects', async (_req, res) => {
     try {
-      let projects = await listProjects(projectsDir);
-      const workspaceParam = req.query.workspace as string | undefined;
-      if (workspaceParam) {
-        if (workspaceParam === '_ungrouped') {
-          projects = projects.filter((m) => m.workspace === null);
-        } else {
-          projects = projects.filter((m) => m.workspace === workspaceParam);
-        }
-      }
+      const projects = await listProjects(projectsDir);
       res.json(projects);
     } catch (error) {
       console.error('Error listing projects:', error);
@@ -545,67 +529,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/workspaces', async (_req, res) => {
-    try {
-      const result = await listWorkspaces(projectsDir, assignmentsDir);
-      res.json(result);
-    } catch (error) {
-      console.error('Error listing workspaces:', error);
-      res.status(500).json({ error: 'Failed to list workspaces' });
-    }
-  });
-
-  app.post('/api/workspaces', async (req, res) => {
-    try {
-      const { name } = req.body;
-      if (!name || typeof name !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
-        res.status(400).json({ error: 'Invalid workspace name. Use lowercase letters, numbers, and hyphens.' });
-        return;
-      }
-      await createWorkspace(projectsDir, name);
-      broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
-      res.json({ name });
-    } catch (error) {
-      console.error('Error creating workspace:', error);
-      res.status(500).json({ error: 'Failed to create workspace' });
-    }
-  });
-
-  app.delete('/api/workspaces/:name', async (req, res) => {
-    try {
-      const cascade = req.query.cascade === 'true';
-      const result = await deleteWorkspace(projectsDir, req.params.name, {
-        cascade,
-        assignmentsDir,
-      });
-      // Watchers emit project-updated / assignment-updated for any rewritten
-      // file; only broadcast explicitly when the delete touched solely the
-      // registry (which sits outside any watched tree).
-      if (!result.rewroteFiles) {
-        broadcast({ type: 'project-updated', projectSlug: '', timestamp: new Date().toISOString() });
-      }
-      res.json({ ok: true, rewroteFiles: result.rewroteFiles });
-    } catch (error) {
-      if (error instanceof WorkspaceBlockedError) {
-        res.status(409).json({ error: error.message, blockedBy: error.blockedBy });
-        return;
-      }
-      console.error('Error deleting workspace:', error);
-      res.status(500).json({ error: 'Failed to delete workspace' });
-    }
-  });
-
-  app.get('/api/assignments', async (req, res) => {
+  app.get('/api/assignments', async (_req, res) => {
     try {
       const result = await listAssignmentsBoard(projectsDir, assignmentsDir);
-      const workspaceParam = req.query.workspace as string | undefined;
-      if (workspaceParam) {
-        if (workspaceParam === '_ungrouped') {
-          result.assignments = result.assignments.filter((a) => a.projectWorkspace === null);
-        } else {
-          result.assignments = result.assignments.filter((a) => a.projectWorkspace === workspaceParam);
-        }
-      }
       res.json(result);
     } catch (error) {
       console.error('Error listing assignments:', error);
@@ -723,9 +649,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Agent Sessions API ---
   app.use(
     '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir, {
-      resolveWorkspaceMembers,
-    }),
+    createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir),
   );
 
   // --- Agents Config API ---

@@ -129,16 +129,11 @@ describe('buildIndex', () => {
     expect(zetaDocs.some((d) => d.fileKind === 'assignment')).toBe(true);
   });
 
-  it('stamps the project workspace on every project-owned doc', async () => {
+  it('marks standalone assignments on indexed docs', async () => {
     const docs = await buildIndex({ projectsDir, assignmentsDir });
-    const alphaDocs = docs.filter((d) => d.projectSlug === 'alpha');
-    expect(alphaDocs.length).toBeGreaterThan(0);
-    for (const d of alphaDocs) {
-      expect(d.projectWorkspace).toBe('alpha-ws');
-    }
     const standalone = find(docs, 'assignment', 'uuid-standalone');
-    expect(standalone?.projectWorkspace).toBeNull();
     expect(standalone?.standalone).toBe(true);
+    expect(standalone?.projectSlug).toBeNull();
   });
 
   it('propagates assignment identity/filter fields onto sidecars', async () => {

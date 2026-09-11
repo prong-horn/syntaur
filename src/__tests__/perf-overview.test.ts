@@ -20,7 +20,6 @@ import {
   getOverview,
   listProjects,
   listAssignmentsBoard,
-  listWorkspaces,
 } from '../dashboard/api.js';
 import { assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
 
@@ -169,7 +168,6 @@ async function runStartupSet(
     getOverview(projectsDir, assignmentsDir),
     listProjects(projectsDir),
     listAssignmentsBoard(projectsDir, assignmentsDir),
-    listWorkspaces(projectsDir, assignmentsDir),
   ]);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console

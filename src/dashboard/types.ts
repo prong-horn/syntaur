@@ -27,7 +27,6 @@ export interface ProjectSummary {
   externalIds: ExternalIdInfo[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  workspace: string | null;
   /** Project-level default workflow id (binding); absent when unset. Populated
    * by the API materializer once binding is surfaced (Task 9/13). */
   defaultWorkflow?: string | null;
@@ -106,8 +105,6 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
-  /** Workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. */
-  projectWorkspace: string | null;
 }
 
 /** One archived assignment row shown on the canonical Archive page. */
@@ -163,7 +160,6 @@ export interface ProjectDetail {
   needsAttention: NeedsAttention;
   assignments: AssignmentSummary[];
   dependencyGraph: string | null;
-  workspace: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
   /** Project-level default workflow id (binding); absent when unset. Populated
@@ -228,8 +224,6 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
-  /** Project-workspace this assignment belongs to. Sourced from `project.workspace` for project-nested assignments, from `workspaceGroup` for standalone assignments. `null` when neither is set. Distinct from `workspace` above, which is the assignment-workspace block (repo/worktree/branch). */
-  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   archived: boolean;

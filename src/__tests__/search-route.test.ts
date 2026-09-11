@@ -32,7 +32,6 @@ function hit(partial: Partial<SearchHit>): SearchHit {
   return {
     path: '/x',
     projectSlug: null,
-    projectWorkspace: null,
     assignmentSlug: null,
     assignmentId: null,
     standalone: false,

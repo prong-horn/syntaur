@@ -12,7 +12,6 @@ externalIds:
     id: AUTH-42
     url: https://jira.example.com/browse/AUTH-42
 tags: []
-workspace: sample-project
 ---
 
 # Build Authentication System

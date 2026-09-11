@@ -16,9 +16,6 @@ let server: ReturnType<express.Express['listen']>;
 let baseUrl: string;
 let originalEnv: string | undefined;
 
-/** Workspace membership stub — the real one reads project frontmatter from disk. */
-const workspaceMembers: Record<string, { projectSlugs: string[]; standaloneAssignmentIds: string[] }> = {};
-
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-sessions-paging-'));
   projectsDir = resolve(sandbox, 'projects');
@@ -29,17 +26,10 @@ beforeEach(async () => {
   resetSessionDb();
   initSessionDb();
   initUsageDb();
-  for (const key of Object.keys(workspaceMembers)) delete workspaceMembers[key];
 
   const app = express();
   app.use(express.json());
-  app.use(
-    '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, undefined, undefined, {
-      resolveWorkspaceMembers: async (_p, _a, workspace) =>
-        workspaceMembers[workspace] ?? { projectSlugs: [], standaloneAssignmentIds: [] },
-    }),
-  );
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir));
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res());
   });
@@ -433,63 +423,7 @@ describe('spend and token sorts', () => {
   });
 });
 
-describe('workspace scoping', () => {
-  it('includes standalone-assignment sessions in a named workspace', async () => {
-    // A named workspace can hold standalone assignments, which have no project —
-    // filtering on project slug alone would drop them.
-    await seedSession('in-project', { projectSlug: 'alpha', assignmentSlug: 'task' });
-    // Both engagement paths must carry assignmentId: 'active' goes through
-    // ensureOpenEngagement, 'stopped' through insertClosedEngagement — which
-    // used to drop it, orphaning standalone sessions from their workspace.
-    await seedSession('standalone-open', {
-      assignmentId: 'sa-1', assignmentSlug: 'loose-task', status: 'active',
-    });
-    await seedSession('standalone-closed', {
-      assignmentId: 'sa-1', assignmentSlug: 'loose-task', status: 'stopped',
-    });
-    await seedSession('elsewhere', { projectSlug: 'beta', assignmentSlug: 'other' });
-    workspaceMembers['gridiron'] = { projectSlugs: ['alpha'], standaloneAssignmentIds: ['sa-1'] };
-
-    const body = await get('?pageSize=50&workspace=gridiron');
-    expect(body.sessions.map((s) => s.sessionId).sort()).toEqual([
-      'in-project', 'standalone-closed', 'standalone-open',
-    ]);
-  });
-
-  it('puts unattributed and usage-only rows in _ungrouped, not a named workspace', async () => {
-    await seedSession('bound', { projectSlug: 'alpha', assignmentSlug: 'task' });
-    await seedSession('unbound');
-    seedUsage('orphan-x', { cost: 1 });
-    workspaceMembers['gridiron'] = { projectSlugs: ['alpha'], standaloneAssignmentIds: [] };
-    workspaceMembers['_ungrouped'] = { projectSlugs: [], standaloneAssignmentIds: [] };
-
-    const named = await get('?pageSize=50&workspace=gridiron&includeUsageOnly=1');
-    expect(named.sessions.map((s) => s.sessionId)).toEqual(['bound']);
-
-    const ungrouped = await get('?pageSize=50&workspace=_ungrouped&includeUsageOnly=1');
-    expect(ungrouped.sessions.map((s) => s.sessionId).sort()).toEqual(['orphan-x', 'unbound']);
-  });
-
-  it('does not resurface a filtered-out tracked session as a synthetic orphan', async () => {
-    // Regression: "orphan" means "a usage id with no sessions row". If that set
-    // is computed from the POST-FILTER session list, any tracked session the
-    // filter excluded re-enters as a fake usageOnly row — with null project,
-    // wrong metadata, and an inflated totalCount.
-    await seedSession('alpha-sess', { projectSlug: 'alpha', assignmentSlug: 'task' });
-    seedUsage('alpha-sess', { cost: 3 });
-    workspaceMembers['gridiron'] = { projectSlugs: ['alpha'], standaloneAssignmentIds: [] };
-    workspaceMembers['_ungrouped'] = { projectSlugs: [], standaloneAssignmentIds: [] };
-
-    const ungrouped = await get('?pageSize=50&workspace=_ungrouped&includeUsageOnly=1');
-    expect(ungrouped.sessions).toHaveLength(0);
-    expect(ungrouped.page?.totalCount).toBe(0);
-
-    // And it is still correctly present in its own workspace, as a real row.
-    const named = await get('?pageSize=50&workspace=gridiron&includeUsageOnly=1');
-    expect(named.sessions.map((s) => s.sessionId)).toEqual(['alpha-sess']);
-    expect(named.sessions[0].usageOnly).toBeFalsy();
-  });
-
+describe('usage-only orphan filtering', () => {
   it('does not resurface a search-excluded tracked session as an orphan', async () => {
     // Same defect via a different filter: the session is excluded by `search`,
     // but its id/cwd could still satisfy the orphan haystack.
@@ -500,14 +434,6 @@ describe('workspace scoping', () => {
     // It matches on sessionId, so it must come back exactly once, as a real row.
     expect(body.sessions).toHaveLength(1);
     expect(body.sessions[0].usageOnly).toBeFalsy();
-  });
-
-  it('returns nothing for a workspace with no members rather than everything', async () => {
-    await seedMany(3);
-    workspaceMembers['empty-ws'] = { projectSlugs: [], standaloneAssignmentIds: [] };
-    const body = await get('?pageSize=50&workspace=empty-ws');
-    expect(body.sessions).toHaveLength(0);
-    expect(body.page?.totalCount).toBe(0);
   });
 });
 

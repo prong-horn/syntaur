@@ -149,10 +149,6 @@ describe('filterAssignment — multi-value membership', () => {
     expect(filterAssignment(item({ projectSlug: 'alpha' }), { project: ['__standalone__', 'beta'] })).toBe(false);
     expect(filterAssignment(item({ projectSlug: 'beta' }), { project: ['__standalone__', 'beta'] })).toBe(true);
   });
-  it('workspace option still scopes (incl. _ungrouped)', () => {
-    expect(filterAssignment(item({ projectWorkspace: 'other' }), {}, { workspace: 'syntaur' })).toBe(false);
-    expect(filterAssignment(item({ projectWorkspace: null }), {}, { workspace: '_ungrouped' })).toBe(true);
-  });
   it('activity still works alongside multi-value fields', () => {
     const old = new Date(Date.now() - 30 * 86400_000).toISOString();
     expect(filterAssignment(item({ updated: old }), { activity: 'stale' })).toBe(true);

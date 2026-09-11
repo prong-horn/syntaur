@@ -62,16 +62,15 @@ describe('isReservedCombo', () => {
 });
 
 describe('BindableActionKind', () => {
-  it('exposes all three canonical kinds', () => {
+  it('exposes all canonical kinds', () => {
     expect(BINDABLE_ACTION_KINDS).toEqual([
-      'new-workspace',
       'new-project',
       'new-assignment',
     ]);
   });
 
   it('isBindableActionKind validates membership', () => {
-    expect(isBindableActionKind('new-workspace')).toBe(true);
+    expect(isBindableActionKind('new-project')).toBe(true);
     expect(isBindableActionKind('new-frobnicator')).toBe(false);
     expect(isBindableActionKind(42)).toBe(false);
     expect(isBindableActionKind(null)).toBe(false);

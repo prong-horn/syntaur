@@ -28,26 +28,24 @@ let server: ReturnType<typeof express>['listen'] extends (port: number) => infer
 let baseUrl: string;
 let originalEnv: string | undefined;
 
-/** Write a minimal project.md so listProjects/resolveWorkspaceMembers can see it. */
-async function writeProject(slug: string, workspace: string | null): Promise<void> {
+/** Write a minimal project.md so listProjects can see it. */
+async function writeProject(slug: string): Promise<void> {
   const dir = resolve(projectsDir, slug);
   await mkdir(dir, { recursive: true });
-  const ws = workspace === null ? '' : `\nworkspace: ${workspace}`;
   await writeFile(
     resolve(dir, 'project.md'),
-    `---\nslug: ${slug}\ntitle: ${slug}\ncreated: "2026-05-01"\nupdated: "2026-05-01"${ws}\n---\n\n# ${slug}\n`,
+    `---\nslug: ${slug}\ntitle: ${slug}\ncreated: "2026-05-01"\nupdated: "2026-05-01"\n---\n\n# ${slug}\n`,
     'utf-8',
   );
 }
 
 /** Write a minimal standalone assignment.md (folder name = id). */
-async function writeStandalone(id: string, workspaceGroup: string | null, archived = false): Promise<void> {
+async function writeStandalone(id: string, archived = false): Promise<void> {
   const dir = resolve(assignmentsDir, id);
   await mkdir(dir, { recursive: true });
-  const wg = workspaceGroup === null ? '' : `\nworkspaceGroup: ${workspaceGroup}`;
   await writeFile(
     resolve(dir, 'assignment.md'),
-    `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\nstatus: pending\npriority: medium\ncreated: "2026-05-01T00:00:00Z"\nupdated: "2026-05-01T00:00:00Z"\narchived: ${archived}${wg}\ntags: []\n---\n\n# ${id}\n`,
+    `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\nstatus: pending\npriority: medium\ncreated: "2026-05-01T00:00:00Z"\nupdated: "2026-05-01T00:00:00Z"\narchived: ${archived}\ntags: []\n---\n\n# ${id}\n`,
     'utf-8',
   );
 }
@@ -400,54 +398,5 @@ describe('GET /api/usage/facets', () => {
     const body = await res.json();
     expect(body.models).toEqual(['claude-opus-4-7', 'claude-sonnet-4-6']);
     expect(body.tools).toEqual(['claude']);
-  });
-});
-
-describe('GET /api/usage?workspace=', () => {
-  it('unions member projects + standalones, excludes others and unattributed', async () => {
-    await writeProject('p1', 'backend');
-    await writeProject('p2', null);
-    await writeStandalone('s1', 'backend');
-    await writeStandalone('s2', null);
-    seed('p1', 'a1', 100, 0.5); // member (project)
-    seed('p2', 'a1', 200, 1.0); // other project
-    seed('', 's1', 300, 1.5); // member (standalone)
-    seed('', 's2', 400, 2.0); // other standalone
-    seed('', '', 999, 9.9); // unattributed
-    runRollup();
-
-    const res = await fetch(`${baseUrl}/api/usage?workspace=backend`);
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    const tokens = body.daily.reduce((acc: number, r: { total_tokens: number }) => acc + r.total_tokens, 0);
-    expect(tokens).toBe(400); // 100 (p1) + 300 (s1) only
-    expect(body.daily.some((r: { project_slug: string }) => r.project_slug === 'p2')).toBe(false);
-    expect(
-      body.daily.some((r: { project_slug: string; assignment_slug: string }) =>
-        r.project_slug === '' && r.assignment_slug === '',
-      ),
-    ).toBe(false);
-  });
-
-  it('_ungrouped selects null-workspace projects + null-group standalones', async () => {
-    await writeProject('p1', 'backend');
-    await writeProject('p2', null);
-    await writeStandalone('s2', null);
-    seed('p1', 'a1', 100, 0.5);
-    seed('p2', 'a1', 200, 1.0);
-    seed('', 's2', 400, 2.0);
-    runRollup();
-
-    const res = await fetch(`${baseUrl}/api/usage?workspace=_ungrouped`);
-    const body = await res.json();
-    const tokens = body.daily.reduce((acc: number, r: { total_tokens: number }) => acc + r.total_tokens, 0);
-    expect(tokens).toBe(600); // p2 (200) + s2 (400)
-  });
-
-  it('rejects project + workspace together with 400', async () => {
-    const res = await fetch(`${baseUrl}/api/usage?workspace=backend&project=p1`);
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body.error).toMatch(/not both/);
   });
 });

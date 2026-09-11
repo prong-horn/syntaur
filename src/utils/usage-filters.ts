@@ -27,13 +27,12 @@ export interface UsageWidgetFilters {
   /** `YYYY-MM-DD`. Only meaningful when `window === 'custom'`. */
   until?: string;
   project?: string;
-  workspace?: string;
   model?: string;
   tool?: string;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const STRING_FIELDS = ['project', 'workspace', 'model', 'tool'] as const;
+const STRING_FIELDS = ['project', 'model', 'tool'] as const;
 const WINDOW_DAYS: Record<'7d' | '30d' | '90d', number> = { '7d': 7, '30d': 30, '90d': 90 };
 
 /** True only for a real `YYYY-MM-DD` calendar date (rejects e.g. `2026-13-40`). */
@@ -175,7 +174,7 @@ export function parseFilters(sp: URLSearchParams): UsageWidgetFilters {
 /**
  * Build the concrete `GET /api/usage` query params for a filter set — resolves
  * the window to `since`/`until` (the API takes dates, not a `window` token) and
- * forwards `project`/`workspace`/`model`/`tool`. Shared by the widget data hook
+ * forwards `project`/`model`/`tool`. Shared by the widget data hook
  * and the `/usage` page so both query the API identically.
  */
 export function buildUsageApiQuery(filters: UsageWidgetFilters, now: Date = new Date()): URLSearchParams {
@@ -204,7 +203,6 @@ export function filterSummaryLabel(filters: UsageWidgetFilters): string {
   const window = f.window ?? DEFAULT_WINDOW;
   const parts: string[] = [];
   parts.push(window === 'custom' ? `${f.since ?? '…'} → ${f.until ?? '…'}` : WINDOW_LABEL[window]);
-  if (f.workspace) parts.push(`workspace: ${f.workspace}`);
   if (f.project) parts.push(`project: ${f.project}`);
   if (f.model) parts.push(`model: ${f.model}`);
   if (f.tool) parts.push(`tool: ${f.tool}`);

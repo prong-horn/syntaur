@@ -9,7 +9,6 @@ export interface AssignmentParams {
   dependsOn: string[];
   links: string[];
   project?: string | null;
-  workspaceGroup?: string | null;
   type?: string;
   /** Explicit lifecycle-workflow override; emitted only when provided. */
   workflow?: string | null;
@@ -28,9 +27,6 @@ export function renderAssignment(params: AssignmentParams): string {
       ? 'links: []'
       : `links:\n  - ${params.links.join('\n  - ')}`;
   const projectYaml = `project: ${params.project == null ? 'null' : params.project}`;
-  const workspaceGroupLine = params.workspaceGroup
-    ? `\nworkspaceGroup: ${params.workspaceGroup}`
-    : '';
   const typeYaml = `type: ${params.type ?? 'feature'}`;
   const workflowLine = params.workflow ? `\nworkflow: ${params.workflow}` : '';
   const seedStatus = params.status ?? 'draft';
@@ -45,7 +41,7 @@ export function renderAssignment(params: AssignmentParams): string {
 id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
-${projectYaml}${workspaceGroupLine}
+${projectYaml}
 ${typeYaml}${workflowLine}
 status: ${seedStatus}
 priority: ${params.priority}

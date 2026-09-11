@@ -6,8 +6,6 @@ import { useTheme } from '../theme';
 import { HotkeyBindingsSection } from './HotkeyBindingsSection';
 import { ViewDefaultsSection } from './ViewDefaultsSection';
 import { SearchSection } from './SearchSection';
-import { WorkspaceVisibilitySection } from './WorkspaceVisibilitySection';
-
 export function SettingsPage() {
   const { preset, setPreset, resetPreset } = useTheme();
   const [themeSaving, setThemeSaving] = useState(false);
@@ -133,10 +131,6 @@ export function SettingsPage() {
 
 
       <SearchSection />
-
-      <WorkspaceVisibilitySection />
-
-
 
       <ViewDefaultsSection />
 

@@ -5,7 +5,6 @@ export interface ProjectParams {
   slug: string;
   title: string;
   timestamp: string;
-  workspace?: string;
   /**
    * Repository paths the project spans. Each entry is YAML-escaped on
    * render so paths with spaces / colons / quotes don't corrupt the
@@ -47,7 +46,6 @@ function renderWorkflowBinding(
 
 export function renderProject(params: ProjectParams): string {
   const safeTitle = escapeYamlString(params.title);
-  const workspaceLine = params.workspace ? `\nworkspace: ${params.workspace}` : '';
   const repositoriesBlock = renderRepositoriesBlock(params.repositories);
   const workflowBindingBlock = renderWorkflowBinding(
     params.defaultWorkflow,
@@ -64,7 +62,7 @@ created: "${params.timestamp}"
 updated: "${params.timestamp}"
 externalIds: []
 tags: []
-${repositoriesBlock}${workspaceLine}${workflowBindingBlock}
+${repositoriesBlock}${workflowBindingBlock}
 ---
 
 # ${params.title}

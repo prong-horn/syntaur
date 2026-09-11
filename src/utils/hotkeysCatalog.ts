@@ -5,12 +5,10 @@
 // dashboard/vite.config.ts.
 
 export type BindableActionKind =
-  | 'new-workspace'
   | 'new-project'
   | 'new-assignment';
 
 export const BINDABLE_ACTION_KINDS: readonly BindableActionKind[] = [
-  'new-workspace',
   'new-project',
   'new-assignment',
 ];
@@ -149,7 +147,6 @@ export function isReservedCombo(combo: string): boolean {
  * top, so a custom binding always wins.
  */
 export const DEFAULT_BINDABLE_HOTKEYS: Readonly<Record<BindableActionKind, string>> = {
-  'new-workspace': canonicalizeCombo('Mod+Shift+Alt+w'),
   'new-project': canonicalizeCombo('Mod+Shift+Alt+p'),
   'new-assignment': canonicalizeCombo('Mod+Shift+Alt+a'),
 };

@@ -72,7 +72,6 @@ describe('validateFilters', () => {
         since: '2026-01-01',
         until: '2026-02-01',
         project: 'p',
-        workspace: 'w',
         model: 'claude-opus-4-8',
         tool: 'claude',
       }).ok,
@@ -130,7 +129,7 @@ describe('serializeFilters / parseFilters round-trip', () => {
     { window: '7d' },
     { window: 'all', project: 'syntaur-meta' },
     { window: 'custom', since: '2026-01-01', until: '2026-02-01', model: 'claude-opus-4-8', tool: 'claude' },
-    { window: '30d', workspace: 'backend' },
+    { window: '30d', tool: 'claude' },
   ];
   for (const f of cases) {
     it(`round-trips ${JSON.stringify(f)}`, () => {
@@ -156,10 +155,10 @@ describe('buildUsageApiQuery', () => {
     expect(sp.get('window')).toBeNull();
   });
   it('omits date bounds for the all window', () => {
-    const sp = buildUsageApiQuery({ window: 'all', workspace: 'w' }, NOW);
+    const sp = buildUsageApiQuery({ window: 'all', project: 'p' }, NOW);
     expect(sp.get('since')).toBeNull();
     expect(sp.get('until')).toBeNull();
-    expect(sp.get('workspace')).toBe('w');
+    expect(sp.get('project')).toBe('p');
   });
 });
 
@@ -170,6 +169,6 @@ describe('filterSummaryLabel', () => {
     expect(filterSummaryLabel({ window: 'custom', since: '2026-01-01', until: '2026-02-01' })).toBe(
       '2026-01-01 → 2026-02-01',
     );
-    expect(filterSummaryLabel({ window: '7d', workspace: 'w' })).toBe('Last 7 days · workspace: w');
+    expect(filterSummaryLabel({ window: '7d', tool: 'claude' })).toBe('Last 7 days · tool: claude');
   });
 });

@@ -37,7 +37,7 @@ describe('hotkeys block in config.md', () => {
   it('writeHotkeyBindingsConfig persists canonicalized combos', async () => {
     await writeHotkeyBindingsConfig({
       bindings: {
-        'new-workspace': 'Shift+Mod+N',
+        'new-project': 'Shift+Mod+N',
         'new-assignment': 'Alt+a',
       },
     });
@@ -45,11 +45,11 @@ describe('hotkeys block in config.md', () => {
     const content = await readConfigFile();
     expect(content).toContain('hotkeys:');
     expect(content).toContain('bindings:');
-    expect(content).toContain('new-workspace: "mod+shift+n"');
+    expect(content).toContain('new-project: "mod+shift+n"');
     expect(content).toContain('new-assignment: "alt+a"');
 
     const cfg = await readConfig();
-    expect(cfg.hotkeys?.bindings['new-workspace']).toBe('mod+shift+n');
+    expect(cfg.hotkeys?.bindings['new-project']).toBe('mod+shift+n');
     expect(cfg.hotkeys?.bindings['new-assignment']).toBe('alt+a');
   });
 
@@ -71,18 +71,18 @@ describe('hotkeys block in config.md', () => {
   it('coexists with the theme: block', async () => {
     await writeThemeConfig({ preset: 'ocean' });
     await writeHotkeyBindingsConfig({
-      bindings: { 'new-workspace': 'Mod+Shift+w' },
+      bindings: { 'new-project': 'Mod+Shift+w' },
     });
 
     const content = await readConfigFile();
     expect(content).toContain('theme:');
     expect(content).toContain('preset: ocean');
     expect(content).toContain('hotkeys:');
-    expect(content).toContain('new-workspace: "mod+shift+w"');
+    expect(content).toContain('new-project: "mod+shift+w"');
 
     const cfg = await readConfig();
     expect(cfg.theme?.preset).toBe('ocean');
-    expect(cfg.hotkeys?.bindings['new-workspace']).toBe('mod+shift+w');
+    expect(cfg.hotkeys?.bindings['new-project']).toBe('mod+shift+w');
   });
 
   it('round-trips: write -> read -> write -> read', async () => {
@@ -101,7 +101,7 @@ describe('hotkeys block in config.md', () => {
   it('deleteHotkeyBindingsConfig removes the block but leaves theme intact', async () => {
     await writeThemeConfig({ preset: 'sunset' });
     await writeHotkeyBindingsConfig({
-      bindings: { 'new-workspace': 'Mod+Shift+w' },
+      bindings: { 'new-project': 'Mod+Shift+w' },
     });
 
     await deleteHotkeyBindingsConfig();

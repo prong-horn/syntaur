@@ -110,7 +110,6 @@ program
   .argument('<title>', 'Project title')
   .option('--slug <slug>', 'Override auto-generated slug')
   .option('--dir <path>', 'Override default project directory')
-  .option('--workspace <workspace>', 'Workspace for organizational grouping')
   .action(
     runCommand(async (title, options) => {
       await createProjectCommand(title, options);
@@ -134,7 +133,6 @@ program
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
   .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
-  .option('--workspace <slug>', 'Workspace group slug (only valid with --one-off; mutually exclusive with --project)')
   .option('--ready', 'Create the assignment directly as ready_for_planning (skips the draft phase)')
   .action(
     runCommand(async (title, options) => {

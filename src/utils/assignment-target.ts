@@ -126,7 +126,6 @@ export async function resolveAssignmentTarget(
       assignmentSlug: input,
       id,
       standalone: false,
-      workspaceGroup: null,
     };
   }
 
@@ -190,7 +189,6 @@ async function reconstructFromBinding(
       assignmentSlug: binding.assignmentSlug,
       id,
       standalone: false,
-      workspaceGroup: null,
       stage: binding.stage,
     };
   }
@@ -229,7 +227,6 @@ async function reconstructFromBinding(
     assignmentSlug: standaloneId,
     id,
     standalone: true,
-    workspaceGroup: null,
     stage: binding.stage,
   };
 }

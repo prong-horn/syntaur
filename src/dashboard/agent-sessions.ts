@@ -597,21 +597,6 @@ export async function listAllSessions(
   return rows.map(rowToSession);
 }
 
-/**
- * Workspace membership, resolved from disk by the caller.
- *
- * Project slugs alone are not enough: a named workspace can contain STANDALONE
- * assignments (which have no project), and `_ungrouped` means projects with no
- * workspace *plus* standalones with no workspaceGroup. See
- * `resolveWorkspaceMembers` in `api.ts`, which returns both halves.
- */
-export interface WorkspaceScope {
-  projectSlugs: string[];
-  standaloneAssignmentIds: string[];
-  /** True for the `_ungrouped` pseudo-workspace, which also claims orphan rows. */
-  ungrouped: boolean;
-}
-
 export interface SessionPageQuery {
   page: number;
   pageSize: number;
@@ -619,7 +604,6 @@ export interface SessionPageQuery {
   /** Inclusive UTC instant bounds, precomputed by the route from local dates. */
   startedFromUtc?: string;
   startedToUtc?: string;
-  workspaceScope?: WorkspaceScope | null;
   sort: SessionSort;
   /** Which population to include; see session-attribution.ts. */
   attribution?: SessionAttribution;
@@ -736,31 +720,6 @@ function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknow
     clauses.push('s.archived_at IS NULL');
   } else if (archived === 'only') {
     clauses.push('s.archived_at IS NOT NULL');
-  }
-
-  const scope = q.workspaceScope;
-  if (scope) {
-    // A session belongs to the workspace if its chosen engagement points at one
-    // of the workspace's projects OR at one of its standalone assignments.
-    const parts: string[] = [];
-    if (scope.projectSlugs.length > 0) {
-      parts.push(`e.project_slug IN (${scope.projectSlugs.map(() => '?').join(', ')})`);
-      params.push(...scope.projectSlugs);
-    }
-    if (scope.standaloneAssignmentIds.length > 0) {
-      parts.push(`e.assignment_id IN (${scope.standaloneAssignmentIds.map(() => '?').join(', ')})`);
-      params.push(...scope.standaloneAssignmentIds);
-    }
-    if (scope.ungrouped) {
-      // Unattributed sessions (no engagement, or an engagement with neither a
-      // project nor an assignment) read as workspace-less, which is exactly what
-      // `_ungrouped` means. This mirrors the client's old lookup, where a null
-      // projectSlug resolved to a null workspace.
-      parts.push('(e.project_slug IS NULL AND e.assignment_id IS NULL)');
-    }
-    // No members at all: a named workspace with nothing in it matches nothing,
-    // rather than degrading into "no filter".
-    clauses.push(parts.length > 0 ? `(${parts.join(' OR ')})` : '0');
   }
 
   return { sql: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '', params };

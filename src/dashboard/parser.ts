@@ -149,7 +149,6 @@ export interface ParsedProject {
   created: string;
   updated: string;
   tags: string[];
-  workspace: string | null;
   /**
    * Repositories the project spans. Empty array when the field is absent —
    * existing project.md files predate this field, so callers must treat
@@ -182,7 +181,6 @@ export function parseProject(fileContent: string): ParsedProject {
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     tags: parseListField(fm, 'tags'),
-    workspace: getField(fm, 'workspace'),
     repositories: parseListField(fm, 'repositories').map(unquoteYamlString),
     externalIds: parseExternalIds(fm),
     defaultWorkflow: getField(fm, 'defaultWorkflow'),
@@ -270,7 +268,6 @@ export interface ParsedAssignmentFull {
   slug: string;
   title: string;
   project: string | null;
-  workspaceGroup: string | null;
   type: string | null;
   /** Explicit lifecycle-workflow override (`workflow:` id); null when unset. */
   workflow: string | null;
@@ -580,7 +577,6 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     project: getField(fm, 'project'),
-    workspaceGroup: getField(fm, 'workspaceGroup'),
     type: getField(fm, 'type'),
     workflow: getField(fm, 'workflow'),
     status: getField(fm, 'status') ?? 'pending',

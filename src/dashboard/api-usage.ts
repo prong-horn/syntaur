@@ -8,7 +8,6 @@ import {
   type ListDailyFilter,
   type ListEventsFilter,
 } from '../db/usage-db.js';
-import { resolveWorkspaceMembers } from './api.js';
 import {
   assignmentWindowCost,
   projectWindowCosts,
@@ -49,15 +48,6 @@ export function createUsageRouter(
     try {
       initUsageDb();
       const filter: ListDailyFilter = extractCommonFilter(req.query);
-      const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
-      if (workspace) {
-        // Workspace is mutually exclusive with project/assignment scoping.
-        if (filter.projectSlug !== undefined || filter.assignmentSlug !== undefined) {
-          res.status(400).json({ error: 'Specify either project/assignment or workspace, not both' });
-          return;
-        }
-        filter.workspaceMembers = await resolveWorkspaceMembers(projectsDir, assignmentsDir, workspace);
-      }
       const rows = listDaily(filter);
       res.json({
         daily: rows,

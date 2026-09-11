@@ -27,42 +27,6 @@ import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignm
 import { latestPlanFile } from '../lifecycle/facts.js';
 import { invalidateIndex } from '../search/index.js';
 
-/**
- * Thrown by `deleteWorkspace` when references exist and cascade is false.
- * Routers map this to a 409 response carrying the blocker payload.
- */
-export class WorkspaceBlockedError extends Error {
-  readonly blockedBy: { projects: string[]; standalones: string[] };
-  constructor(blockedBy: { projects: string[]; standalones: string[] }) {
-    super(
-      `Workspace is referenced by ${blockedBy.projects.length} project(s) and ${blockedBy.standalones.length} standalone(s).`,
-    );
-    this.name = 'WorkspaceBlockedError';
-    this.blockedBy = blockedBy;
-  }
-}
-
-/**
- * Clear a single top-level frontmatter scalar field (regex-replace; assumes
- * the file already starts with `---` and the field exists). Used by the
- * cascade workspace delete to set `workspace:`/`workspaceGroup:` to `null`.
- */
-function clearFrontmatterField(content: string, key: string): string {
-  const fieldRegex = new RegExp(`^(${escapeRegExp(key)}:)\\s*.*$`, 'm');
-  return content.replace(fieldRegex, `$1 null`);
-}
-
-function setUpdatedField(content: string, value: string): string {
-  const fieldRegex = /^(updated:)\s*.*$/m;
-  if (fieldRegex.test(content)) {
-    return content.replace(fieldRegex, `$1 "${value}"`);
-  }
-  return content;
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 import {
   parseProject,
   parseStatus,
@@ -714,91 +678,6 @@ export async function listProjects(projectsDir: string): Promise<ProjectSummary[
 }
 
 /**
- * Read the workspace registry file (~/.syntaur/workspaces.json).
- * Returns an array of explicitly registered workspace names.
- */
-async function readWorkspaceRegistry(projectsDir: string): Promise<string[]> {
-  const registryPath = resolve(dirname(projectsDir), 'workspaces.json');
-  try {
-    const raw = await readFile(registryPath, 'utf-8');
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((w): w is string => typeof w === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-async function writeWorkspaceRegistry(projectsDir: string, workspaces: string[]): Promise<void> {
-  const registryPath = resolve(dirname(projectsDir), 'workspaces.json');
-  await writeFile(registryPath, JSON.stringify(workspaces, null, 2) + '\n', 'utf-8');
-}
-
-/**
- * List all workspaces: merge registry (explicit) with workspaces discovered from
- * project `workspace:` fields and standalone-assignment `workspaceGroup` fields.
- * Standalones with no `workspaceGroup` contribute to `hasUngrouped`.
- * GET /api/workspaces
- */
-export async function listWorkspaces(
-  projectsDir: string,
-  assignmentsDir?: string,
-): Promise<{ workspaces: string[]; hasUngrouped: boolean }> {
-  const [projectRecords, registered, standaloneRecords] = await Promise.all([
-    listProjectRecords(projectsDir),
-    readWorkspaceRegistry(projectsDir),
-    listStandaloneRecords(assignmentsDir),
-  ]);
-  const workspaceSet = new Set<string>(registered);
-  let hasUngrouped = false;
-  for (const record of projectRecords) {
-    if (record.project.workspace) {
-      workspaceSet.add(record.project.workspace);
-    } else {
-      hasUngrouped = true;
-    }
-  }
-  for (const sr of standaloneRecords) {
-    if (sr.record.workspaceGroup) {
-      workspaceSet.add(sr.record.workspaceGroup);
-    } else {
-      hasUngrouped = true;
-    }
-  }
-  const workspaces = Array.from(workspaceSet).sort();
-  return { workspaces, hasUngrouped };
-}
-
-/**
- * Expand a workspace name to the usage rows it owns: member project slugs +
- * standalone assignment ids (folder UUIDs). `_ungrouped` selects projects with a
- * null `workspace` and standalones with no `workspaceGroup` (matching the
- * `/api/projects` and `/api/workspaces` semantics). Archived members are
- * excluded (`listProjects` already drops archived projects; standalones are
- * filtered here). The usage router turns the result into a WHERE clause that is
- * the disjoint union of project-scoped and standalone-scoped rows; unattributed
- * rows (`project_slug = '' AND assignment_slug = ''`) are never members.
- */
-export async function resolveWorkspaceMembers(
-  projectsDir: string,
-  assignmentsDir: string | undefined,
-  workspace: string,
-): Promise<{ projectSlugs: string[]; standaloneAssignmentIds: string[] }> {
-  const [projects, standalones] = await Promise.all([
-    listProjects(projectsDir), // archived projects already excluded
-    listStandaloneRecords(assignmentsDir),
-  ]);
-  const ungrouped = workspace === '_ungrouped';
-  const projectSlugs = projects
-    .filter((p) => (ungrouped ? p.workspace === null : p.workspace === workspace))
-    .map((p) => p.slug);
-  const standaloneAssignmentIds = standalones
-    .filter((sr) => sr.record.archived !== true)
-    .filter((sr) => (ungrouped ? !sr.record.workspaceGroup : sr.record.workspaceGroup === workspace))
-    .map((sr) => sr.id);
-  return { projectSlugs, standaloneAssignmentIds };
-}
-
-/**
  * Worktree/branch records for the server scanner's tmux pane auto-linking,
  * derived from the cached records snapshot instead of a second file fan-out
  * (the scanner previously re-read every assignment.md on each cold scan). A
@@ -854,98 +733,6 @@ export async function listWorkspaceRecords(
   }
 
   return records;
-}
-
-/**
- * Create an empty workspace by registering it.
- * POST /api/workspaces
- */
-export async function createWorkspace(projectsDir: string, name: string): Promise<void> {
-  const registered = await readWorkspaceRegistry(projectsDir);
-  if (!registered.includes(name)) {
-    registered.push(name);
-    registered.sort();
-    await writeWorkspaceRegistry(projectsDir, registered);
-  }
-}
-
-/**
- * Delete a workspace from the registry.
- *
- * Modes:
- * - `cascade: false` (default): if any project or standalone still references
- *   this workspace, throw `WorkspaceBlockedError` with the blocker lists.
- *   Otherwise remove from the registry.
- * - `cascade: true`: rewrite every referencing project's `workspace:` field
- *   and every referencing standalone's `workspaceGroup:` field to `null`,
- *   then remove the registry entry.
- *
- * Returns `{ rewroteFiles }` so callers (server.ts) can decide whether the
- * explicit registry-level broadcast is still needed (watchers already emit
- * project-updated/assignment-updated for rewritten files).
- *
- * DELETE /api/workspaces/:name[?cascade=true]
- */
-export async function deleteWorkspace(
-  projectsDir: string,
-  name: string,
-  opts: { cascade?: boolean; assignmentsDir?: string } = {},
-): Promise<{ rewroteFiles: boolean }> {
-  const cascade = Boolean(opts.cascade);
-  const projectRecords = await listProjectRecords(projectsDir);
-  const standaloneRecords = await listStandaloneRecords(opts.assignmentsDir);
-
-  const projectsReferencing = projectRecords
-    .filter((record) => record.project.workspace === name)
-    .map((record) => record.project.slug);
-  const standalonesReferencing = standaloneRecords
-    .filter((record) => record.record.workspaceGroup === name)
-    .map((record) => record.id);
-
-  if (projectsReferencing.length + standalonesReferencing.length > 0 && !cascade) {
-    throw new WorkspaceBlockedError({
-      projects: projectsReferencing,
-      standalones: standalonesReferencing,
-    });
-  }
-
-  let rewroteFiles = false;
-  if (cascade) {
-    const timestamp = nowTimestamp();
-
-    for (const slug of projectsReferencing) {
-      const path = resolve(projectsDir, slug, 'project.md');
-      const raw = await readFile(path, 'utf-8');
-      let next = clearFrontmatterField(raw, 'workspace');
-      next = setUpdatedField(next, timestamp);
-      await writeFileForce(path, next);
-      rewroteFiles = true;
-    }
-
-    for (const id of standalonesReferencing) {
-      if (!opts.assignmentsDir) break;
-      const path = resolve(opts.assignmentsDir, id, 'assignment.md');
-      const raw = await readFile(path, 'utf-8');
-      let next = clearFrontmatterField(raw, 'workspaceGroup');
-      next = setUpdatedField(next, timestamp);
-      await writeFileForce(path, next);
-      rewroteFiles = true;
-    }
-  }
-
-  const registered = await readWorkspaceRegistry(projectsDir);
-  const filtered = registered.filter((w) => w !== name);
-  await writeWorkspaceRegistry(projectsDir, filtered);
-
-  // Cascade rewrote project/assignment frontmatter (workspace fields), so the
-  // cached records snapshot is stale. This is a library function invoked
-  // directly by a server.ts route (outside the write router), so invalidate
-  // here rather than relying on a router wrapper.
-  if (rewroteFiles) {
-    invalidateRecordsCache();
-  }
-
-  return { rewroteFiles };
 }
 
 /**
@@ -1187,7 +974,6 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
-    projectWorkspace: sr.record.workspaceGroup ?? null,
     availableTransitions: await getStandaloneAvailableTransitions(sr.record),
     facts,
   };
@@ -1379,7 +1165,6 @@ export async function getProjectDetail(
     needsAttention: rollup.needsAttention,
     assignments: assignmentSummaries,
     dependencyGraph,
-    workspace: project.workspace,
     repositories: project.repositories,
   };
 }
@@ -1432,13 +1217,6 @@ export async function getAssignmentDetail(
 
   const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
   const assignment = parseAssignmentFull(assignmentContent);
-
-  let projectWorkspace: string | null = null;
-  const projectMdPath = resolve(projectsDir, projectSlug, 'project.md');
-  if (await fileExists(projectMdPath)) {
-    const projectContent = await readFile(projectMdPath, 'utf-8');
-    projectWorkspace = parseProject(projectContent).workspace;
-  }
 
   let plan: AssignmentDetail['plan'] = null;
   const planFile = await latestPlanFile(assignmentDir);
@@ -1534,7 +1312,6 @@ export async function getAssignmentDetail(
     enrichedLinks: [],
     blockedReason: assignment.blockedReason,
     workspace: assignment.workspace,
-    projectWorkspace,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
     archived: assignment.archived,
@@ -1874,7 +1651,6 @@ async function buildStandaloneAssignmentDetail(
     enrichedLinks: [],
     blockedReason: assignment.blockedReason,
     workspace: assignment.workspace,
-    projectWorkspace: assignment.workspaceGroup,
     externalIds: assignment.externalIds,
     tags: assignment.tags,
     archived: assignment.archived,
@@ -1987,7 +1763,6 @@ async function computeProjectRecords(
           externalIds: project.externalIds,
           progress: rollup.progress,
           needsAttention: rollup.needsAttention,
-          workspace: project.workspace,
         },
       };
     }),
@@ -2365,7 +2140,6 @@ async function toAssignmentBoardItem(
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,
-    projectWorkspace: projectRecord.project.workspace,
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectRecord.summary.slug,

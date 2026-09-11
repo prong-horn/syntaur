@@ -6,6 +6,7 @@ import {
   applyViewPrefsPatch,
   isViewPrefsDefaults,
   mergePatch,
+  pruneWorkspaceScopeKeys,
   readViewPrefsFile,
   resetViewPrefsFile,
   writeViewPrefsFile,
@@ -308,6 +309,26 @@ describe('view-prefs storage', () => {
     const next = mergePatch(current, { global: { filters: { status: [] } } });
     expect(next.global.filters.status).toEqual([]);
     expect(isViewPrefsDefaults(next)).toBe(true);
+  });
+
+  it('prunes legacy w: scope keys on read', async () => {
+    const payload = {
+      version: 1,
+      global: DEFAULT_VIEW_PREFS_FILE.global,
+      projects: {
+        foo: { defaultView: 'table' },
+        'w:syntaur': { defaultView: 'kanban' },
+        'w:_ungrouped': { sortField: 'priority' },
+      },
+    };
+    await writeFile(prefsPath, JSON.stringify(payload));
+    const result = await readViewPrefsFile();
+    expect(result.projects.foo).toEqual({ defaultView: 'table' });
+    expect(result.projects['w:syntaur']).toBeUndefined();
+    expect(result.projects['w:_ungrouped']).toBeUndefined();
+    expect(pruneWorkspaceScopeKeys(payload as ViewPrefsFile).projects).toEqual({
+      foo: { defaultView: 'table' },
+    });
   });
 
   it('round-trips multi-value array filters through write/read', async () => {

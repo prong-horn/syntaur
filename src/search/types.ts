@@ -54,11 +54,6 @@ export interface SearchDoc {
   // ── filter + route identity (carried from frontmatter) ──────────────────
   /** Owning project slug; `null` for standalone assignments. */
   projectSlug: string | null;
-  /**
-   * The owning project's `workspace` field (from project.md) — drives the
-   * `/w/<ws>` route prefix the palette applies. `null` for standalone.
-   */
-  projectWorkspace: string | null;
   /** Owning assignment slug. */
   assignmentSlug: string | null;
   /** Owning assignment id (uuid). */
@@ -82,12 +77,11 @@ export interface MatchRange {
 /**
  * One ranked search result. `snippet` is NEUTRAL text (no markers); callers
  * apply `matches` to highlight. `route` is the precomputed UNPREFIXED deep-link
- * (the palette prepends the per-hit `/w/<workspace>` prefix).
+ * (the palette prepends route prefixes when needed).
  */
 export interface SearchHit {
   path: string;
   projectSlug: string | null;
-  projectWorkspace: string | null;
   assignmentSlug: string | null;
   assignmentId: string | null;
   standalone: boolean;

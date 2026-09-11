@@ -247,7 +247,6 @@ describe.sequential('throwaway harness refresh and agent test', () => {
       assignmentSlug: 'probe',
       id: assignId,
       standalone: false,
-      workspaceGroup: null,
     };
     makeBroker({ availableCommands: probeCommands });
     await broker.refreshHarness('claude');
@@ -337,7 +336,6 @@ const assignment = (): ResolvedAssignment => ({
   assignmentSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
   standalone: false,
-  workspaceGroup: null,
 });
 
 const sessionKey = (agentId: string) => `${ASSIGNMENT_ID}:${agentId}`;

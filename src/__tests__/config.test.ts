@@ -29,6 +29,19 @@ describe('config integrations', () => {
     await rm(homeDir, { recursive: true, force: true });
   });
 
+  it('ignores a legacy workspaceVisibility block without error', async () => {
+    const configPath = resolve(homeDir, '.syntaur', 'config.md');
+    await writeFile(
+      configPath,
+      '---\nversion: "2.0"\ndefaultProjectDir: ~/.syntaur/projects\nworkspaceVisibility:\n  hidden:\n    - "old-workspace"\n---\n',
+    );
+
+    const config = await readConfig();
+
+    expect(config.defaultProjectDir).toBe(resolve(homeDir, '.syntaur', 'projects'));
+    expect('workspaceVisibility' in config).toBe(false);
+  });
+
   it('ignores a legacy backup block without error', async () => {
     const configPath = resolve(homeDir, '.syntaur', 'config.md');
     await writeFile(

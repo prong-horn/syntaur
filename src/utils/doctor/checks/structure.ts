@@ -32,7 +32,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'view-prefs.json', // paths.ts
   'workflows', // paths.ts
   'worktrees', // worktree-defaults.ts
-  'workspaces.json', // init
 ]);
 
 const projectsDir: Check = {

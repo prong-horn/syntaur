@@ -584,7 +584,7 @@ Keep this paragraph.`, 'utf-8');
     expect(response.statusCode).toBe(501);
   });
 
-  it('POST /api/assignments accepts {content} markdown form and writes workspaceGroup', async () => {
+  it('POST /api/assignments accepts {content} markdown form for standalone assignments', async () => {
     const assignmentsDir = resolve(testDir, 'standalone');
     await mkdir(assignmentsDir, { recursive: true });
     const router = createWriteRouter(testDir, assignmentsDir);
@@ -594,7 +594,6 @@ id: placeholder-id
 slug: ui-created
 title: UI Created Standalone
 project: null
-workspaceGroup: syntaur
 status: pending
 priority: medium
 created: "2026-04-25T12:00:00Z"
@@ -615,64 +614,12 @@ updated: "2026-04-25T12:00:00Z"
     expect(response.statusCode).toBe(201);
     const id = (response.payload as any).assignment.id as string;
     const onDisk = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
-    expect(onDisk).toContain('workspaceGroup: syntaur');
     expect(onDisk).toContain('project: null');
     expect(onDisk).toContain(`id: ${id}`);
     expect(onDisk).not.toContain('id: placeholder-id');
   });
 
-  it('POST /api/assignments {content} omits workspaceGroup when not in frontmatter', async () => {
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
-    const router = createWriteRouter(testDir, assignmentsDir);
-
-    const content = `---
-id: placeholder-id
-slug: plain-standalone
-title: Plain Standalone
-project: null
-status: pending
-priority: medium
-created: "2026-04-25T12:00:00Z"
-updated: "2026-04-25T12:00:00Z"
----
-
-# Plain Standalone
-`;
-
-    const response = await invokeRoute(router, 'post', '/api/assignments', {}, { content });
-    expect(response.statusCode).toBe(201);
-    const id = (response.payload as any).assignment.id as string;
-    const onDisk = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
-    expect(onDisk).not.toContain('workspaceGroup:');
-  });
-
-  it('POST /api/assignments {content} rejects invalid workspaceGroup slug', async () => {
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
-    const router = createWriteRouter(testDir, assignmentsDir);
-
-    const content = `---
-id: placeholder
-slug: bad-ws
-title: Bad
-project: null
-workspaceGroup: INVALID!
-status: pending
-priority: medium
-created: "2026-04-25T12:00:00Z"
-updated: "2026-04-25T12:00:00Z"
----
-
-# Bad
-`;
-
-    const response = await invokeRoute(router, 'post', '/api/assignments', {}, { content });
-    expect(response.statusCode).toBe(400);
-    expect((response.payload as any).error).toContain('Invalid workspace slug');
-  });
-
-  it('POST /api/assignments {content} rejects when project is set alongside workspaceGroup', async () => {
+  it('POST /api/assignments {content} rejects when project is set on a standalone', async () => {
     const assignmentsDir = resolve(testDir, 'standalone');
     await mkdir(assignmentsDir, { recursive: true });
     const router = createWriteRouter(testDir, assignmentsDir);
@@ -682,7 +629,6 @@ id: placeholder
 slug: bad-combo
 title: Bad
 project: some-project
-workspaceGroup: syntaur
 status: pending
 priority: medium
 created: "2026-04-25T12:00:00Z"
@@ -713,7 +659,7 @@ updated: "2026-04-25T12:00:00Z"
     expect((response.payload as any).assignment.title).toBe('Programmatic create');
   });
 
-  it('GET /api/templates/assignment?standalone=1 returns project: null with no workspaceGroup', async () => {
+  it('GET /api/templates/assignment?standalone=1 returns project: null', async () => {
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(router, 'get', '/api/templates/assignment', {}, undefined, {
       standalone: '1',
@@ -721,29 +667,6 @@ updated: "2026-04-25T12:00:00Z"
     expect(response.statusCode).toBe(200);
     const content = (response.payload as any).content as string;
     expect(content).toContain('project: null');
-    expect(content).not.toContain('workspaceGroup:');
-  });
-
-  it('GET /api/templates/assignment?standalone=1&workspace=syntaur pre-fills workspaceGroup', async () => {
-    const router = createWriteRouter(testDir);
-    const response = await invokeRoute(router, 'get', '/api/templates/assignment', {}, undefined, {
-      standalone: '1',
-      workspace: 'syntaur',
-    });
-    expect(response.statusCode).toBe(200);
-    const content = (response.payload as any).content as string;
-    expect(content).toContain('project: null');
-    expect(content).toContain('workspaceGroup: syntaur');
-  });
-
-  it('GET /api/templates/assignment rejects an invalid workspace slug', async () => {
-    const router = createWriteRouter(testDir);
-    const response = await invokeRoute(router, 'get', '/api/templates/assignment', {}, undefined, {
-      standalone: '1',
-      workspace: 'INVALID!',
-    });
-    expect(response.statusCode).toBe(400);
-    expect((response.payload as any).error).toContain('Invalid workspace slug');
   });
 
   it('rejects resolve toggle for a non-question comment', async () => {
@@ -768,175 +691,6 @@ updated: "2026-04-25T12:00:00Z"
     );
     expect(toggle.statusCode).toBe(400);
     expect((toggle.payload as any).error).toContain('Only questions');
-  });
-
-  describe('POST /api/assignments/:id/move-workspace', () => {
-    async function setupStandalone(workspaceGroup?: string | null): Promise<{
-      router: Router;
-      id: string;
-      assignmentsDir: string;
-    }> {
-      const assignmentsDir = resolve(testDir, 'standalone');
-      await mkdir(assignmentsDir, { recursive: true });
-      const router = createWriteRouter(testDir, assignmentsDir);
-      const create = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments',
-        {},
-        {
-          title: 'Mover',
-          ...(workspaceGroup !== undefined ? { workspaceGroup } : {}),
-        },
-      );
-      const id = (create.payload as any).assignment.id as string;
-      return { router, id, assignmentsDir };
-    }
-
-    it('sets workspaceGroup on a standalone assignment', async () => {
-      const { router, id, assignmentsDir } = await setupStandalone();
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id },
-        { workspaceGroup: 'alpha-ws' },
-      );
-      expect(res.statusCode).toBe(200);
-      const content = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
-      expect(content).toContain('workspaceGroup: alpha-ws');
-    });
-
-    it('clears workspaceGroup to null (Ungrouped target)', async () => {
-      const { router, id, assignmentsDir } = await setupStandalone('beta-ws');
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id },
-        { workspaceGroup: null },
-      );
-      expect(res.statusCode).toBe(200);
-      const content = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
-      expect(content).toContain('workspaceGroup: null');
-    });
-
-    it('rejects project-nested assignments with 400', async () => {
-      await createAssignmentFixture();
-      const assignmentsDir = resolve(testDir, 'standalone');
-      await mkdir(assignmentsDir, { recursive: true });
-      const router = createWriteRouter(testDir, assignmentsDir);
-      // The project-nested fixture uses id `assignment-1` (see createAssignmentFixture).
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id: 'assignment-1' },
-        { workspaceGroup: 'alpha' },
-      );
-      expect(res.statusCode).toBe(400);
-      expect((res.payload as any).error).toMatch(/inherit workspace from their parent project/);
-    });
-
-    it('returns 404 for unknown id', async () => {
-      const assignmentsDir = resolve(testDir, 'standalone');
-      await mkdir(assignmentsDir, { recursive: true });
-      const router = createWriteRouter(testDir, assignmentsDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id: 'ghost-id' },
-        { workspaceGroup: 'foo' },
-      );
-      expect(res.statusCode).toBe(404);
-    });
-
-    it('returns 501 when assignmentsDir is not configured', async () => {
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id: 'anything' },
-        { workspaceGroup: 'foo' },
-      );
-      expect(res.statusCode).toBe(501);
-    });
-
-    it('rejects invalid workspaceGroup body (empty string)', async () => {
-      const { router, id } = await setupStandalone();
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id },
-        { workspaceGroup: '   ' },
-      );
-      expect(res.statusCode).toBe(400);
-    });
-
-    it('rejects workspaceGroup containing YAML metacharacters (frontmatter-injection guard)', async () => {
-      const { router, id, assignmentsDir } = await setupStandalone();
-      // Newline-bearing value would otherwise be emitted verbatim by formatYamlValue
-      // and inject `status: completed` as a separate frontmatter field.
-      const injection = 'alpha\nstatus: completed';
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/assignments/:id/move-workspace',
-        { id },
-        { workspaceGroup: injection },
-      );
-      expect(res.statusCode).toBe(400);
-      const content = await readFile(resolve(assignmentsDir, id, 'assignment.md'), 'utf-8');
-      expect(content).not.toMatch(/^status:\s*completed$/m);
-    });
-  });
-
-  describe('POST /api/projects/:slug/move-workspace input validation', () => {
-    it('rejects workspace containing YAML metacharacters (frontmatter-injection guard)', async () => {
-      await createAssignmentFixture();
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/projects/:slug/move-workspace',
-        { slug: 'test-project' },
-        { workspace: 'foo\nstatus: archived' },
-      );
-      expect(res.statusCode).toBe(400);
-      const content = await readFile(resolve(testDir, 'test-project', 'project.md'), 'utf-8');
-      expect(content).not.toMatch(/^status:\s*archived$/m);
-    });
-
-    it('rejects workspace with uppercase or special chars', async () => {
-      await createAssignmentFixture();
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/projects/:slug/move-workspace',
-        { slug: 'test-project' },
-        { workspace: 'Bad Slug!' },
-      );
-      expect(res.statusCode).toBe(400);
-    });
-
-    it('accepts a valid slug', async () => {
-      await createAssignmentFixture();
-      const router = createWriteRouter(testDir);
-      const res = await invokeRoute(
-        router,
-        'post',
-        '/api/projects/:slug/move-workspace',
-        { slug: 'test-project' },
-        { workspace: 'syntaur' },
-      );
-      expect(res.statusCode).toBe(200);
-      const content = await readFile(resolve(testDir, 'test-project', 'project.md'), 'utf-8');
-      expect(content).toMatch(/^workspace: syntaur$/m);
-    });
   });
 
   describe('PATCH /api/projects/:slug/assignments/:aslug/assignee', () => {

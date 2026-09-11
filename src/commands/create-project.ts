@@ -17,7 +17,6 @@ import {
 export interface CreateProjectOptions {
   slug?: string;
   dir?: string;
-  workspace?: string;
 }
 
 export async function createProjectCommand(
@@ -59,7 +58,7 @@ export async function createProjectCommand(
     ],
     [
       resolve(projectDir, 'project.md'),
-      renderProject({ id, slug, title, timestamp, workspace: options.workspace }),
+      renderProject({ id, slug, title, timestamp }),
     ],
     [
       resolve(projectDir, '_index-assignments.md'),

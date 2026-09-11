@@ -59,7 +59,6 @@ const assignment = (): ResolvedAssignment => ({
   assignmentSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
   standalone: false,
-  workspaceGroup: null,
 });
 
 /** Poll rather than sleep, so the tests stay fast and deterministic. */

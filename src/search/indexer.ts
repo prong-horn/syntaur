@@ -39,7 +39,6 @@ interface AssignmentIdentity {
   assignmentId: string | null;
   assignmentSlug: string;
   projectSlug: string | null;
-  projectWorkspace: string | null;
   standalone: boolean;
   type?: string;
   status?: string;
@@ -63,8 +62,6 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   const { projectsDir, assignmentsDir, includeArchived = false } = opts;
   const docs: SearchDoc[] = [];
 
-  // ── per-project workspace lookup (read each project.md once) ────────────
-  const projectWorkspace = new Map<string, string | null>();
   const projectArchived = new Map<string, boolean>();
   if (await fileExists(projectsDir)) {
     const projects = await readdir(projectsDir, { withFileTypes: true });
@@ -72,18 +69,15 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
       const projectMdPath = resolve(projectsDir, m.name, 'project.md');
-      let workspace: string | null = null;
       let archived = false;
       if (await fileExists(projectMdPath)) {
         try {
           const parsed = parseProject(await readFile(projectMdPath, 'utf-8'));
-          workspace = parsed.workspace;
           archived = parsed.archived;
         } catch {
-          // tolerate a malformed project.md — workspace stays null
+          // tolerate a malformed project.md — archived stays false
         }
       }
-      projectWorkspace.set(m.name, workspace);
       projectArchived.set(m.name, archived);
     }
   }
@@ -109,12 +103,10 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
 
     if (!includeArchived && archived) continue;
 
-    const workspace = entry.projectSlug ? projectWorkspace.get(entry.projectSlug) ?? null : null;
     const identity: AssignmentIdentity = {
       assignmentId: assignment.id || null,
       assignmentSlug: entry.assignmentSlug,
       projectSlug: entry.projectSlug,
-      projectWorkspace: workspace,
       standalone: entry.standalone,
       type: assignment.type ?? undefined,
       status: assignment.status,
@@ -168,7 +160,6 @@ function makeAssignmentDoc(
     title,
     body,
     projectSlug: identity.projectSlug,
-    projectWorkspace: identity.projectWorkspace,
     assignmentSlug: identity.assignmentSlug,
     assignmentId: identity.assignmentId,
     standalone: identity.standalone,

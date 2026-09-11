@@ -344,7 +344,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Projects',
-        description: 'Browse, search, filter, and sort the project directory. Create new projects and drill into project workspaces.',
+        description: 'Browse, search, filter, and sort the project directory. Create new projects and drill into individual project pages.',
         href: '/projects',
       },
       {
@@ -374,7 +374,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Project page',
-        description: 'The project workspace shows health stats, assignment list, and dependency graph.',
+        description: 'The project page shows health stats, assignment list, and dependency graph.',
         href: '/projects',
       },
       {

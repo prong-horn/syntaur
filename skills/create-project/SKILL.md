@@ -21,14 +21,13 @@ Expects arguments from the user:
 - First (required): the project title (e.g., `"Build Auth System"`)
 - `--slug <slug>` (optional): override the auto-generated slug
 - `--dir <path>` (optional): override the default project directory
-- `--workspace <workspace>` (optional): workspace grouping label (e.g., `syntaur`, `reeva`)
 
 If no title was provided, ask the user what the project should be called.
 
 ## Step 1: Run the CLI
 
 ```bash
-syntaur create-project "<title>" [--slug <slug>] [--dir <path>] [--workspace <workspace>]
+syntaur create-project "<title>" [--slug <slug>] [--dir <path>]
 ```
 
 If the command fails (e.g., slug collision, empty title), report the error and suggest fixes.

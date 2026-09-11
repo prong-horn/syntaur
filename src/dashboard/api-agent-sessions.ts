@@ -8,7 +8,6 @@ import {
   listAllSessionIds,
   type SessionPageQuery,
   type SessionSortKey,
-  type WorkspaceScope,
   listProjectSessions,
   appendSession,
   updateSessionStatus,
@@ -54,24 +53,6 @@ import type {
   AgentSessionWithLiveness,
   WsMessage,
 } from './types.js';
-
-/** Phase D browser-attach seams: the shared token registry + the daemon join
- * (injectable so the detail/mint routes are unit-testable without a daemon). */
-export interface AgentSessionsRouterDeps {
-  /**
-   * Workspace membership lookup, injected rather than imported: it lives in
-   * `api.ts`, which already imports THIS module to mount the router, so a direct
-   * import would close a cycle. Defaults to a no-member scope, which makes an
-   * un-wired router behave as if every workspace were empty rather than
-   * silently ignoring the filter.
-   */
-  resolveWorkspaceMembers?: (
-    projectsDir: string,
-    assignmentsDir: string | undefined,
-    workspace: string,
-  ) => Promise<{ projectSlugs: string[]; standaloneAssignmentIds: string[] }>;
-}
-
 
 /**
  * Attach per-session spend to enriched session rows, and — only when the caller
@@ -185,11 +166,6 @@ function orphanPassesFilters(
   // archived. Without this the archived-only view returns every orphan and its
   // attribution counts are inflated to match.
   if ((q.archived ?? DEFAULT_ARCHIVED_FILTER) === 'only') return false;
-
-  // An orphan has no engagement, so it is workspace-less: claimed by
-  // `_ungrouped`, excluded from every named workspace. This mirrors the old
-  // client behavior, where a null projectSlug resolved to a null workspace.
-  if (q.workspaceScope && !q.workspaceScope.ungrouped) return false;
 
   const search = q.search?.trim().toLowerCase();
   if (search) {
@@ -359,12 +335,8 @@ export function createAgentSessionsRouter(
   projectsDir: string,
   broadcast?: (msg: WsMessage) => void,
   assignmentsDir?: string,
-  deps: AgentSessionsRouterDeps = {},
 ): Router {
   const router = Router();
-  const resolveWorkspaceMembers =
-    deps.resolveWorkspaceMembers
-    ?? (async () => ({ projectSlugs: [], standaloneAssignmentIds: [] }));
 
   /**
    * One page of the session list.
@@ -601,21 +573,8 @@ export function createAgentSessionsRouter(
           ? localDateToUtcBounds(req.query.startedTo, offsetTo, 'end')
           : undefined;
 
-      // Workspace membership is resolved from disk (project frontmatter +
-      // standalone records), once per request — never per row.
-      let workspaceScope: WorkspaceScope | null = null;
-      const workspace = typeof req.query.workspace === 'string' ? req.query.workspace : undefined;
-      if (workspace) {
-        const members = await resolveWorkspaceMembers(projectsDir, assignmentsDir, workspace);
-        workspaceScope = {
-          projectSlugs: members.projectSlugs,
-          standaloneAssignmentIds: members.standaloneAssignmentIds,
-          ungrouped: workspace === '_ungrouped',
-        };
-      }
-
       const query = {
-        page, pageSize, search, startedFromUtc, startedToUtc, workspaceScope, sort, attribution,
+        page, pageSize, search, startedFromUtc, startedToUtc, sort, attribution,
         archived,
       };
       const result = await pageSessions(query);

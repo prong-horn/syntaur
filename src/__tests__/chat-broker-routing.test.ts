@@ -37,7 +37,6 @@ const assignment = (): ResolvedAssignment => ({
   assignmentSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
   standalone: false,
-  workspaceGroup: null,
 });
 
 async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
