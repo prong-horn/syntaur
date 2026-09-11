@@ -43,7 +43,3 @@ export function viewPrefsFile(): string {
 export function savedViewsFile(): string {
   return resolve(syntaurRoot(), 'saved-views.json');
 }
-
-export function proofDir(assignmentDir: string): string {
-  return resolve(assignmentDir, 'proof');
-}

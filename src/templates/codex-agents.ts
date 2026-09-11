@@ -29,7 +29,6 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`plan-assignment\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
 - \`complete-assignment\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
 - \`save-session-summary\` -- write per-session continuity at \`<assignmentDir>/sessions/<sessionId>/summary.md\` for resume across sessions of the same agent. Codex has no \`PreCompact\` hook event — invoke this manually before compaction or session end.
-- \`capture-artifacts\` -- capture typed proof artifacts (screenshot/video/asciinema/http/text) for the active assignment. Criterion linkage is optional. Run \`syntaur proof build\` to render \`proof.html\`.
 - \`resume-session\` -- counterpart to \`save-session-summary\`; loads the latest summary, \`.syntaur/context.json\`, and any open handoff so a fresh session re-orients without re-reading the transcript
 - \`replan\` -- bump the active assignment to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
 - \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
@@ -164,8 +163,6 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur unblock ${params.assignmentSlug} --project ${params.projectSlug}\` -- unblock
 - \`syntaur fail ${params.assignmentSlug} --project ${params.projectSlug}\` -- mark as failed
 - \`syntaur comment ${params.assignmentSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
-- \`syntaur capture --kind <screenshot|video|asciinema|http|text> [--file <path>] [--criterion <index>] [--note <text>] [--transcribe] ${params.assignmentSlug} --project ${params.projectSlug}\` -- record a proof artifact. \`--kind=text\` requires \`--note\` and forbids \`--file\`. Criterion linkage is optional. \`--transcribe\` is video-only and writes a sibling \`<id>.transcript.md\` (requires \`ELEVENLABS_API_KEY\` + \`ffmpeg\`).
-- \`syntaur proof build ${params.assignmentSlug} --project ${params.projectSlug}\` -- render \`proof.html\` and \`proof.md\` at the assignment dir. Atomic overwrite — safe to re-run.
 
 ## Troubleshooting
 

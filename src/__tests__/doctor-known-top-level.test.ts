@@ -19,7 +19,6 @@ const REQUIRED_DISCOVERED = [
   'worktrees',
   'npx-install.json',
   'inbox-snoozes.json',
-  'recording.pid',
   'runtime',
 ] as const;
 

@@ -51,8 +51,6 @@ import { deletePlaybookCommand } from './commands/delete-playbook.js';
 import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
 import { doctorCommand } from './commands/doctor.js';
 import { commentCommand } from './commands/comment.js';
-import { captureCommand } from './commands/capture.js';
-import { proofCommand } from './commands/proof.js';
 import { usageCommand } from './commands/usage.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
@@ -72,7 +70,6 @@ import { progressCommand } from './commands/progress.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './utils/install-detection.js';
-import { spliceDashDashFromArgv } from './utils/argv-split.js';
 import { readPackageVersion } from './utils/version.js';
 import { runCommand } from './errors.js';
 
@@ -92,8 +89,6 @@ import { runCommand } from './errors.js';
     await maybeNudgeForNpxInstall(import.meta.url);
   }
 }
-
-let captureDashDashArgv: string[] = [];
 
 const program = new Command();
 const version = (await readPackageVersion(import.meta.url)) ?? '0.0.0';
@@ -164,33 +159,6 @@ program
   .action(
     runCommand(async (assignment, text, options) => {
       await commentCommand(assignment, text, options);
-    }),
-  );
-
-program
-  .command('capture')
-  .description('Capture a typed proof artifact for an assignment')
-  .argument('[target]', 'Assignment slug (with --project) or UUID; defaults to the session open engagement')
-  .option('--kind <type>', 'Artifact kind: screenshot | video | asciinema | http | text')
-  .option('--file <path>', 'Source file to ingest (forbidden for --kind=text)')
-  .option('--criterion <index>', 'Optional 0-based criterion index to tag')
-  .option('--note <text>', 'Optional note (required for --kind=text)')
-  .option('--project <slug>', 'Project slug if the target is project-nested')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--interactive', 'Interactive mode: drag a region (--kind=screenshot) or record a TTY (--kind=asciinema)')
-  .option('--window', 'Screenshot mode: window picker (macOS only)')
-  .option('--fullscreen', 'Screenshot mode: silent full-screen capture (macOS only)')
-  .option('--start', 'Start ffmpeg screen recording in the background (macOS only). Stop with --stop.')
-  .option('--stop', 'Stop the running ffmpeg recording and attach the mp4.')
-  .option('--device <index>', 'AVFoundation video device index for --start (default: 1). List devices: ffmpeg -f avfoundation -list_devices true -i ""')
-  .option('--fps <n>', 'Frame rate for --start (default: 30)')
-  .option('--transcribe', 'Auto-transcribe captured video to a <id>.transcript.md sidecar (kind=video only; requires ELEVENLABS_API_KEY + ffmpeg)')
-  .action(
-    runCommand(async (target, options) => {
-      await captureCommand(target, {
-        ...options,
-        commandArgv: captureDashDashArgv,
-      });
     }),
   );
 
@@ -796,7 +764,6 @@ program
   );
 
 program.addCommand(doctorCommand);
-program.addCommand(proofCommand);
 program.addCommand(planCommand);
 program.addCommand(sessionCommand);
 program.addCommand(worktreeCommand);
@@ -835,5 +802,4 @@ if (process.argv.length <= 2) {
   process.argv.push(await getDefaultCommandName());
 }
 
-captureDashDashArgv = spliceDashDashFromArgv(process.argv);
 await program.parseAsync();

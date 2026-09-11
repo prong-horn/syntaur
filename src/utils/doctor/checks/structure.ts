@@ -17,9 +17,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'npx-install.json', // npx-prompt.ts
   'playbooks', // paths.ts
   'projects', // paths.ts
-  'recording.json', // recording.ts
-  'recording.log', // recording.ts
-  'recording.pid', // recording.ts
   'runtime', // session-id.ts
   'saved-views.json', // paths.ts
   'servers', // paths.ts

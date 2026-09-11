@@ -23,5 +23,4 @@ _site/
 # Ad-hoc screenshots and pack artifacts at repo root
 /*.png
 /*.tgz
-.proof/
 .DS_Store
