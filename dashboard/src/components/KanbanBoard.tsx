@@ -20,17 +20,6 @@ interface MovePayload<T> {
   toIndex: number;
 }
 
-/**
- * Closed union of types that external drop targets (e.g., sidebar workspace rows)
- * understand. Producers (kanban consumers) set this via `getExternalDragData`.
- */
-export type ExternalDragType = 'project' | 'project-assignment' | 'standalone-assignment';
-
-export interface ExternalDragData {
-  type: ExternalDragType;
-  id: string;
-}
-
 interface KanbanBoardProps<T> {
   columns: KanbanColumn[];
   items: T[];
@@ -39,12 +28,6 @@ interface KanbanBoardProps<T> {
   renderCard: (item: T, state: { dragging: boolean }) => ReactNode;
   canDrop?: (payload: { item: T; fromColumnId: string; toColumnId: string }) => DropValidation;
   onMove?: (payload: MovePayload<T>) => void | Promise<void>;
-  /**
-   * Optional. When set, drag-start additionally emits an `application/json` payload so
-   * external drop targets (sidebar rows etc.) can branch on the item type. Independent
-   * of `onMove` — a board can support external drag without in-board reordering.
-   */
-  getExternalDragData?: (item: T) => ExternalDragData | null;
   /**
    * Optional. Fires on right-click of a card whose target is not a nested `<a>` /
    * `<button>` / `[role="button"]` (those keep the native menu). The handler is
@@ -106,7 +89,6 @@ export function KanbanBoard<T>({
   renderCard,
   canDrop,
   onMove,
-  getExternalDragData,
   onCardContextMenu,
   emptyMessage = 'No cards in this column.',
   hiddenColumnIds,
@@ -158,24 +140,12 @@ export function KanbanBoard<T>({
     setDropTarget(null);
   }
 
-  function handleDragStart(event: DragEvent<HTMLDivElement>, item: T, itemId: string) {
-    if (dragDisabled) return;
-    const external = getExternalDragData?.(item) ?? null;
-
-    if (!onMove && !external) {
-      return;
-    }
+  function handleDragStart(event: DragEvent<HTMLDivElement>, _item: T, itemId: string) {
+    if (dragDisabled || !onMove) return;
 
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', itemId);
-
-    if (external) {
-      event.dataTransfer.setData('application/json', JSON.stringify(external));
-    }
-
-    if (onMove) {
-      setDraggedId(itemId);
-    }
+    setDraggedId(itemId);
   }
 
   function handleDragOver(event: DragEvent<HTMLElement>, columnId: string, index: number) {
@@ -351,7 +321,7 @@ export function KanbanBoard<T>({
                         onDrop={(event) => handleDrop(event, column.id, index)}
                       />
                       <div
-                        draggable={!dragDisabled && Boolean(onMove || getExternalDragData)}
+                        draggable={!dragDisabled && Boolean(onMove)}
                         onMouseDown={(e) => {
                           mouseDownTarget.current = e.target;
                         }}
@@ -375,7 +345,7 @@ export function KanbanBoard<T>({
                         }}
                         className={cn(
                           'transition',
-                          !dragDisabled && (onMove || getExternalDragData) ? 'cursor-grab active:cursor-grabbing' : '',
+                          !dragDisabled && onMove ? 'cursor-grab active:cursor-grabbing' : '',
                           isDragging ? 'scale-[0.98] opacity-50' : '',
                         )}
                       >

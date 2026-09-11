@@ -26,7 +26,6 @@ export interface AssignmentFilterItem {
   slug?: string;
   projectSlug?: string | null;
   projectTitle?: string | null;
-  projectWorkspace?: string | null;
   archived?: boolean;
 }
 

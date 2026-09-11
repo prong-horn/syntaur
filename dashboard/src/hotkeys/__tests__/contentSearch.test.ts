@@ -5,7 +5,6 @@ import type { ContentHit } from '../../hooks/useContentSearch';
 const nestedHit: ContentHit = {
   path: '/p/acme/assignments/login/comments.md',
   projectSlug: 'acme',
-  projectWorkspace: 'syntaur',
   assignmentSlug: 'login',
   assignmentId: 'a-1',
   standalone: false,
@@ -22,7 +21,6 @@ const nestedHit: ContentHit = {
 const standaloneHit: ContentHit = {
   path: '/assignments/uuid-9/plan.md',
   projectSlug: null,
-  projectWorkspace: null,
   assignmentSlug: 'oneoff',
   assignmentId: 'uuid-9',
   standalone: true,
@@ -35,10 +33,9 @@ const standaloneHit: ContentHit = {
   route: '/assignments/uuid-9?tab=plan',
 };
 
-const nestedNoWorkspaceHit: ContentHit = {
+const nestedPlanHit: ContentHit = {
   path: '/p/acme/assignments/login/plan.md',
   projectSlug: 'acme',
-  projectWorkspace: null,
   assignmentSlug: 'login',
   assignmentId: 'a-1',
   standalone: false,
@@ -52,7 +49,7 @@ const nestedNoWorkspaceHit: ContentHit = {
 };
 
 describe('contentHitsToEntries', () => {
-  const entries = contentHitsToEntries([nestedHit, standaloneHit, nestedNoWorkspaceHit]);
+  const entries = contentHitsToEntries([nestedHit, standaloneHit, nestedPlanHit]);
 
   it('maps every hit to a content-typed entry', () => {
     expect(entries).toHaveLength(3);
@@ -71,7 +68,7 @@ describe('contentHitsToEntries', () => {
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 
-  it('leaves a nested hit without projectWorkspace UNPREFIXED', () => {
+  it('leaves a nested plan hit UNPREFIXED', () => {
     const e = entries[2];
     expect(e.route).toBe('/projects/acme/assignments/login?tab=plan');
     expect(e.route.startsWith('/w/')).toBe(false);
@@ -80,8 +77,8 @@ describe('contentHitsToEntries', () => {
   it('carries the snippet + match ranges for HTML-safe <mark> rendering', () => {
     expect(entries[0].snippet).toBe(nestedHit.snippet);
     expect(entries[0].snippetMatches).toEqual(nestedHit.matches);
-    expect(entries[2].snippet).toBe(nestedNoWorkspaceHit.snippet);
-    expect(entries[2].snippetMatches).toEqual(nestedNoWorkspaceHit.matches);
+    expect(entries[2].snippet).toBe(nestedPlanHit.snippet);
+    expect(entries[2].snippetMatches).toEqual(nestedPlanHit.matches);
   });
 
   it('builds a "<slug> › <section ?? fileKind>" title', () => {

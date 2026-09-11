@@ -31,7 +31,7 @@ import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
-import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
@@ -1493,11 +1493,6 @@ export function AssignmentsPage() {
           }}
           onMove={effectiveKanbanGrouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
           dragDisabled={effectiveKanbanGrouping === 'type'}
-          getExternalDragData={(item): ExternalDragData | null =>
-            item.projectSlug === null
-              ? { type: 'standalone-assignment', id: item.id }
-              : { type: 'project-assignment', id: item.id }
-          }
           onCardContextMenu={(item, event) => {
             event.preventDefault();
             setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });

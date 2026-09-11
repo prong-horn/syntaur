@@ -103,7 +103,6 @@ interface Item {
   title?: string;
   updated: string;
   projectSlug?: string | null;
-  projectWorkspace?: string | null;
 }
 const FRESH = new Date().toISOString();
 function item(p: Partial<Item> = {}): Item {
@@ -114,7 +113,6 @@ function item(p: Partial<Item> = {}): Item {
     type: 'feature',
     updated: FRESH,
     projectSlug: 'alpha',
-    projectWorkspace: 'syntaur',
     ...p,
   };
 }

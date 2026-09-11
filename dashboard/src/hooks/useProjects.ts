@@ -29,7 +29,6 @@ export interface ProjectSummary {
   externalIds: ExternalIdInfo[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  workspace: string | null;
 }
 
 export interface EnrichedLink {
@@ -92,7 +91,6 @@ export interface AssignmentBoardItem extends AssignmentSummary {
   projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: AssignmentTransitionAction[];
-  projectWorkspace: string | null;
 }
 
 export interface ArchivedAssignmentItem {
@@ -144,7 +142,6 @@ export interface ProjectDetail {
   needsAttention: NeedsAttention;
   assignments: AssignmentSummary[];
   dependencyGraph: string | null;
-  workspace: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
 }
@@ -213,8 +210,6 @@ export interface AssignmentDetail {
   enrichedLinks: EnrichedLink[];
   blockedReason: string | null;
   workspace: WorkspaceInfo;
-  /** Project-workspace this assignment belongs to. Distinct from `workspace` above, which is the assignment-workspace block. */
-  projectWorkspace: string | null;
   externalIds: ExternalIdInfo[];
   tags: string[];
   archived: boolean;
@@ -673,7 +668,6 @@ export interface AgentSessionsQuery {
   search?: string;
   startedFrom?: string;
   startedTo?: string;
-  workspace?: string | null;
   sort?: SessionSort;
   attribution?: SessionAttribution;
   /** Archived visibility. Defaults to 'hide'; only the Agent Sessions page sets it. */
@@ -698,7 +692,6 @@ export function useAgentSessions(
   if (options.search) params.set('search', options.search);
   if (options.startedFrom) params.set('startedFrom', options.startedFrom);
   if (options.startedTo) params.set('startedTo', options.startedTo);
-  if (options.workspace) params.set('workspace', options.workspace);
   if (options.sort) params.set('sort', options.sort);
   if (options.attribution) params.set('attribution', options.attribution);
   // Only sent when non-default, so the Overview widget's URL — and therefore its

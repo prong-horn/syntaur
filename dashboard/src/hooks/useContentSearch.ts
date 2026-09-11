@@ -17,7 +17,6 @@ export interface ContentMatchRange {
 export interface ContentHit {
   path: string;
   projectSlug: string | null;
-  projectWorkspace: string | null;
   assignmentSlug: string | null;
   assignmentId: string | null;
   standalone: boolean;

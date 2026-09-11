@@ -9,7 +9,7 @@ import { FilterBar } from '../components/FilterBar';
 import { SearchInput } from '../components/SearchInput';
 import { ViewToggle } from '../components/ViewToggle';
 import { SectionCard } from '../components/SectionCard';
-import { KanbanBoard, type KanbanColumn, type ExternalDragData } from '../components/KanbanBoard';
+import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { ProgressBar } from '../components/ProgressBar';
 import { formatDate } from '../lib/format';
@@ -337,7 +337,6 @@ export function ProjectList() {
               showToast(err instanceof Error ? err.message : 'Failed to move project', 'error');
             }
           }}
-          getExternalDragData={(project): ExternalDragData => ({ type: 'project', id: project.slug })}
           onCardContextMenu={(project, event) => {
             event.preventDefault();
             setContextMenu({ project, anchor: { x: event.clientX, y: event.clientY } });

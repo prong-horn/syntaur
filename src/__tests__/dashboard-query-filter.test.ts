@@ -57,7 +57,6 @@ function makeItem(overrides: Partial<AssignmentBoardItem> = {}): AssignmentBoard
     projectTitle: 'Syntaur',
     blockedReason: null,
     availableTransitions: [],
-    projectWorkspace: null,
     ...overrides,
   };
 }

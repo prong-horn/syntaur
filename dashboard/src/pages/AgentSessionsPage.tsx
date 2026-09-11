@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { Activity, CheckSquare, ChevronDown, ChevronRight, Square, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { SessionActionButtons } from '../components/SessionActionButtons';
@@ -89,7 +89,6 @@ interface PendingDelete {
 }
 
 export function AgentSessionsPage() {
-  const { workspace } = useParams<{ workspace?: string }>();
   const [search, setSearch] = useState('');
   const [startedFrom, setStartedFrom] = useState('');
   const [startedTo, setStartedTo] = useState('');
@@ -110,7 +109,7 @@ export function AgentSessionsPage() {
   // user — otherwise narrowing a filter while on page 12 shows an empty table.
   useEffect(() => {
     setPage(0);
-  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, workspace, attribution, archived]);
+  }, [debouncedSearch, startedFrom, startedTo, sort, pageSize, attribution, archived]);
 
   const { data, loading, error, refetch } = useAgentSessions({
     // No `includeUsageOnly`: `attribution` supersedes it and is explicit about
@@ -120,7 +119,6 @@ export function AgentSessionsPage() {
     search: debouncedSearch || undefined,
     startedFrom: startedFrom || undefined,
     startedTo: startedTo || undefined,
-    workspace: workspace ?? undefined,
     sort,
     attribution,
     archived,
