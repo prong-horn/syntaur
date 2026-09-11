@@ -257,7 +257,7 @@ Any of these can be prefixed with `npx syntaur@latest` if you chose not to insta
 
 All Syntaur skills live at `<repo>/skills/<name>/SKILL.md` — one canonical source. The full set ships with the package and includes:
 
-`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`, `manage-statuses`, `clear-assignment`, `track-session`, `replan`, `resume-session`, `syntaur-worktree`, `list-assignments`, `log-progress`, `set-workspace`, `run-playbook`, `views`, `doctor-syntaur`.
+`syntaur-protocol`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `create-assignment`, `create-project`, `manage-statuses`, `clear-assignment`, `track-session`, `replan`, `resume-session`, `syntaur-worktree`, `list-assignments`, `log-progress`, `set-workspace`, `run-playbook`, `doctor-syntaur`.
 
 There are three install paths, all backed by the same `<repo>/skills/`:
 

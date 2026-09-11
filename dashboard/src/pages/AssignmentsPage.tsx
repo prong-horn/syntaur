@@ -28,8 +28,6 @@ import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
 import { TableColumnPicker } from '../components/TableColumnPicker';
-import { SaveViewDialog } from '../components/SaveViewDialog';
-import { SavedViewPicker } from '../components/SavedViewPicker';
 import { SectionCard } from '../components/SectionCard';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -61,12 +59,12 @@ import {
   type Grouping,
   type Activity as ActivityFilter,
   type ProjectViewPrefs,
+  type TableColumnId,
+  type ViewFilters,
 } from '@shared/view-prefs-schema';
-import { type TableColumnId, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { fetchViewPrefs, saveGlobalViewPrefs, saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { mergeForScope } from '@shared/view-prefs-schema';
-import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig, mergeUpdatedConfig, minimizeDateRange, expandDateRange, type DateRangeUiState } from '../lib/savedViews';
+import { minimizeDateRange, expandDateRange, type DateRangeUiState } from '../lib/dateRange';
 import { MultiSelect } from '../components/ui/MultiSelect';
 import { DateRangeControl } from '../components/ui/DateRangeControl';
 import { QueryInput } from '../components/QueryInput';
@@ -74,8 +72,6 @@ import { filterBoardItems } from '../lib/queryFilter';
 import { buildQueryRegistry } from '@shared/fact-registry';
 import { compileQuery } from '@shared/query';
 import { viewFiltersToQuery, queryToViewFilters } from '@shared/view-filters-query';
-import type { ViewFilters } from '@shared/saved-views-schema';
-
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
 interface PendingAssignmentMove {
@@ -246,44 +242,12 @@ export function AssignmentsPage() {
   const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<AssignmentBoardItem | null>(null);
-  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
-
-  const viewScope: ViewScope = workspace
-    ? { kind: 'workspace', workspace }
-    : { kind: 'global' };
-
-  const loadViewParam = searchParams.get('loadView');
-  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(
-    loadViewParam,
-  );
-  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
-  // Track the last id we already applied so we don't double-apply on re-render.
-  const lastAppliedLoadViewRef = useRef<string | null>(null);
-
   useEffect(() => {
     setBoardItems(data?.assignments ?? []);
   }, [data]);
 
-  // If the currently-loaded view disappears (deleted in /views or another tab),
-  // clear loadedViewId so Update doesn't PATCH a 404. Skip while still loading
-  // or on transient fetch error so a brief network blip doesn't drop state.
+  // Ephemeral date/search filters: don't leak across workspace scopes.
   useEffect(() => {
-    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
-      setLoadedViewId(null);
-    }
-  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
-
-  // Clear loadedViewId on workspace change. The component is reused across
-  // /assignments and /w/:workspace/assignments via react-router; a view loaded
-  // in one workspace must not appear as "loaded" in another (Update would PATCH
-  // the source view with the wrong surface's filter state).
-  useEffect(() => {
-    setLoadedViewId(null);
-    lastAppliedLoadViewRef.current = null;
-    // Ephemeral saved-view-only filters: don't leak across scopes (the component
-    // is reused across /assignments and /w/:workspace/assignments).
     setDateRange(null);
     setSearch('');
   }, [workspace]);
@@ -682,228 +646,6 @@ export function AssignmentsPage() {
   // Is the canonical query expressible by the chips? Drives the chip disabled
   // state + the "advanced query" indicator. Memoized on `query` only.
   const chipsRepresentable = useMemo(() => queryToViewFilters(query) !== null, [query]);
-
-  const buildViewState = useCallback(
-    () => {
-      // `query` is the canonical filter and is ALWAYS persisted. When it is
-      // chip-representable, ALSO persist the legacy chip keys so summarizeFilters /
-      // inferLandingRoute / ProjectDetail (chips-only) keep working. When it is NOT
-      // representable, persist ONLY the query and omit the untranslatable chip keys
-      // (minimizeFilters drops empty arrays / 'all', so empties here === omitted).
-      const representable = queryToViewFilters(query) !== null;
-      const chipFilters: ViewFilters = representable
-        ? {
-            status: statusFilter,
-            priority: priorityFilter,
-            type: typeFilter,
-            assignee: assigneeFilter,
-            project: projectFilter,
-            tags: tagsFilter,
-            activity: activityFilter,
-            dateRange: minimizeDateRange(dateRange),
-            search,
-          }
-        : {};
-      return {
-        viewMode: view,
-        filters: {
-          ...chipFilters,
-          query,
-        },
-        sortField,
-        sortDirection,
-        listSectionVisibility: { collapsed: [...collapsedGroups] },
-        kanbanColumnVisibility,
-        tableColumnVisibility,
-      };
-    },
-    [
-      view,
-      query,
-      statusFilter,
-      priorityFilter,
-      typeFilter,
-      assigneeFilter,
-      projectFilter,
-      tagsFilter,
-      activityFilter,
-      dateRange,
-      search,
-      sortField,
-      sortDirection,
-      collapsedGroups,
-      kanbanColumnVisibility,
-      tableColumnVisibility,
-    ],
-  );
-
-  const applyViewToState = useCallback(
-    (v: SavedView) => {
-      // IMPORTANT: applyConfig sets `query` (the canonical filter) AND the chip
-      // states. The chips must be set via the RAW state setters here — NOT the
-      // handleSetX onChange wrappers — because those recompute `query` from chip
-      // state and would clobber the view's stored (possibly non-chip-representable)
-      // query during the apply burst. We still persist the applied chip values to
-      // prefs, mirroring the historical apply behavior, but we never let the chip
-      // path overwrite the canonical query that applyConfig set from the view.
-      applyConfig(v, {
-        setViewMode: setView,
-        setQuery,
-        setStatusFilter: (val) => { setStatusFilter(val); persistField({ filters: { status: val } }); },
-        setPriorityFilter: (val) => { setPriorityFilter(val); persistField({ filters: { priority: val } }); },
-        setTypeFilter: (val) => { setTypeFilter(val); persistField({ filters: { type: val } }); },
-        setAssigneeFilter: (val) => { setAssigneeFilter(val); persistField({ filters: { assignee: val } }); },
-        setProjectFilter: (val) => { setProjectFilter(val); persistField({ filters: { project: val } }); },
-        setTagsFilter: (val) => { setTagsFilter(val); persistField({ filters: { tags: val } }); },
-        setActivityFilter: (val) => { setActivityFilter(val); persistField({ filters: { activity: val } }); },
-        setDateRange,
-        setSearch,
-        setSortField: handleSetSortField,
-        setSortDirection: handleSetSortDirection,
-        setListSectionVisibility: (vis) => setCollapsedGroups(new Set(vis.collapsed)),
-        setKanbanColumnVisibility,
-        setTableColumnVisibility,
-      });
-      setLoadedViewId(v.id);
-    },
-    [
-      setView,
-      persistField,
-      handleSetSortField,
-      handleSetSortDirection,
-    ],
-  );
-
-  const handleApplyView = useCallback(
-    (v: SavedView) => {
-      applyViewToState(v);
-      // Mark as already applied so the loadView effect doesn't re-apply.
-      lastAppliedLoadViewRef.current = v.id;
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set('loadView', v.id);
-          return next;
-        },
-        { replace: true },
-      );
-    },
-    [applyViewToState, setSearchParams],
-  );
-
-  const handleSave = useCallback(
-    async (name: string) => {
-      try {
-        const payload = captureCurrentView({
-          name,
-          context: { workspace: workspace ?? null, projectSlug: null },
-          state: buildViewState(),
-        });
-        const file = await createSavedView(payload);
-        const created = file.views[file.views.length - 1];
-        setLoadedViewId(created?.id ?? null);
-        if (created) {
-          lastAppliedLoadViewRef.current = created.id;
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              next.set('loadView', created.id);
-              return next;
-            },
-            { replace: true },
-          );
-        }
-        setSaveDialogOpen(false);
-        setSaveAsNewMode(false);
-        showToast(`Saved view "${name}"`, 'success');
-      } catch (err) {
-        showToast(
-          err instanceof Error ? err.message : 'Failed to save view',
-          'error',
-        );
-        throw err;
-      }
-    },
-    [buildViewState, setSearchParams, showToast, workspace],
-  );
-
-  const handleUpdateView = useCallback(async () => {
-    if (!loadedViewId || !loadedView) return;
-    try {
-      const payload = captureCurrentView({
-        name: loadedView.name,
-        context: { workspace: workspace ?? null, projectSlug: null },
-        state: buildViewState(),
-      });
-      // Merge onto the existing config: visibility from the live capture, but
-      // unknown top-level + filter keys preserved from the loaded view.
-      const config = mergeUpdatedConfig(loadedView.config, payload.config, payload.config);
-      await updateSavedView(loadedViewId, { config });
-      showToast('View updated', 'success');
-    } catch (err) {
-      showToast(
-        err instanceof Error ? err.message : 'Failed to update view',
-        'error',
-      );
-    }
-  }, [buildViewState, loadedView, loadedViewId, showToast, workspace]);
-
-  // ?loadView= handler. Tracks lastAppliedLoadViewRef to avoid re-applying on
-  // every render while waiting for the file to load.
-  useEffect(() => {
-    if (!loadViewParam) {
-      lastAppliedLoadViewRef.current = null;
-      return;
-    }
-    if (lastAppliedLoadViewRef.current === loadViewParam) return;
-    // Clear loadedViewId eagerly so Update doesn't point at the prior view.
-    if (loadedViewId && loadedViewId !== loadViewParam) {
-      setLoadedViewId(null);
-    }
-    if (pendingViewLoading) return;
-    if (pendingViewError) {
-      // Don't mark as applied — a later refetch may succeed, and we want
-      // this effect to re-run when `pendingView` / `pendingViewError` flips.
-      // The param stays in the URL so the recovery is automatic on next fetch.
-      showToast("Couldn't load saved view — try again", 'error');
-      return;
-    }
-    if (pendingView) {
-      lastAppliedLoadViewRef.current = loadViewParam;
-      applyViewToState(pendingView);
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('loadView');
-          return next;
-        },
-        { replace: true },
-      );
-      return;
-    }
-    // !loading && !error && view === null → genuine orphan: server returned
-    // 200 with no matching id in file.views. Strip the param and mark applied
-    // so we don't re-toast on each render.
-    lastAppliedLoadViewRef.current = loadViewParam;
-    showToast('Saved view no longer exists', 'error');
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('loadView');
-        return next;
-      },
-      { replace: true },
-    );
-  }, [
-    loadViewParam,
-    pendingView,
-    pendingViewLoading,
-    pendingViewError,
-    loadedViewId,
-    applyViewToState,
-    setSearchParams,
-    showToast,
-  ]);
 
   // Filter-bar option lists must be scoped to the current workspace (the board
   // applies workspace filtering at match time), or /w/<ws> dropdowns would offer
@@ -1509,43 +1251,6 @@ export function AssignmentsPage() {
             onChange={setTableColumnVisibility}
           />
         ) : null}
-        <SavedViewPicker
-          scope={viewScope}
-          loadedViewId={loadedViewId}
-          onApply={handleApplyView}
-          onOpenSaveDialog={() => {
-            setSaveAsNewMode(false);
-            setSaveDialogOpen(true);
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            if (loadedView) {
-              void handleUpdateView();
-            } else {
-              setSaveAsNewMode(false);
-              setSaveDialogOpen(true);
-            }
-          }}
-          className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
-          title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
-        >
-          {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
-        </button>
-        {loadedView ? (
-          <button
-            type="button"
-            onClick={() => {
-              setSaveAsNewMode(true);
-              setSaveDialogOpen(true);
-            }}
-            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
-            title="Save as new view"
-          >
-            Save as new…
-          </button>
-        ) : null}
       </FilterBar>
 
       {data.assignments.length === 0 ? (
@@ -1863,17 +1568,6 @@ export function AssignmentsPage() {
       )}
 
       <Toaster toast={toast} onDismiss={dismissToast} />
-
-      <SaveViewDialog
-        open={saveDialogOpen}
-        onOpenChange={(open) => {
-          setSaveDialogOpen(open);
-          if (!open) setSaveAsNewMode(false);
-        }}
-        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
-        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
-        onSubmit={handleSave}
-      />
 
       <AssignmentTransitionDialog
         open={pendingMove !== null}

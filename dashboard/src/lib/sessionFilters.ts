@@ -138,12 +138,8 @@ export function filterSessions(
  * Sort sessions by the given field and direction, with PINNED sessions leading
  * regardless of field or direction.
  *
- * This mirrors the server's `PINNED_FIRST` ORDER BY prefix. It is load-bearing
- * for one path: a saved-view-bound Overview widget re-sorts the unpaged
- * response through here (`SessionViewResults`), which would otherwise discard
- * the server's pin ordering and drop an old pinned session below newer
- * unpinned ones. The unbound rail passes the server order through untouched
- * and does not depend on this.
+ * This mirrors the server's `PINNED_FIRST` ORDER BY prefix when client-side
+ * re-sorting is needed so pinned sessions stay first.
  *
  * Unknown sort fields fall back to `started` desc (defensive).
  * Returns a new array — does not mutate input.

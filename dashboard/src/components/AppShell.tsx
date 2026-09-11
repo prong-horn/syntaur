@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import type { LucideIcon } from 'lucide-react';
-import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LayoutTemplate, LifeBuoy, ListTodo, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
+import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LifeBuoy, ListTodo, Plus, Settings, Workflow, X, ChevronDown, Trash2 } from 'lucide-react';
 import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useToast, Toaster } from './Toast';
@@ -71,7 +71,6 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
     id: 'board',
     label: 'Board',
     items: [
-      { to: '/views', label: 'Saved Views', icon: LayoutTemplate },
       { to: '/archive', label: 'Archive', icon: Archive },
     ],
   },

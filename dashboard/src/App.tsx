@@ -30,8 +30,6 @@ import { CreatePlaybook } from './pages/CreatePlaybook';
 import { EditPlaybook } from './pages/EditPlaybook';
 import { SettingsPage } from './pages/SettingsPage';
 import { WorkflowPage } from './pages/WorkflowPage';
-import { SavedViewsPage } from './pages/SavedViewsPage';
-import { SavedViewPage } from './pages/SavedViewPage';
 import { HotkeyProvider } from './hotkeys';
 
 export function App() {
@@ -62,8 +60,6 @@ export function App() {
             <Route path="/playbooks/create" element={<CreatePlaybook />} />
             <Route path="/playbooks/:slug" element={<PlaybookDetail />} />
             <Route path="/playbooks/:slug/edit" element={<EditPlaybook />} />
-            <Route path="/views" element={<SavedViewsPage />} />
-            <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/workflow" element={<WorkflowPage />} />
@@ -85,8 +81,6 @@ export function App() {
             <Route path="/w/:workspace/usage" element={<UsagePage />} />
             <Route path="/w/:workspace/agent-sessions" element={<AgentSessionsPage />} />
             <Route path="/w/:workspace/agent-sessions/:id" element={<AgentSessionDetail />} />
-            <Route path="/w/:workspace/views" element={<SavedViewsPage />} />
-            <Route path="/w/:workspace/views/:id" element={<SavedViewPage />} />
             <Route path="/w/:workspace/create/project" element={<CreateProject />} />
             <Route path="/w/:workspace/projects/:slug" element={<ProjectDetail />} />
             <Route path="/w/:workspace/projects/:slug/edit" element={<EditProject />} />

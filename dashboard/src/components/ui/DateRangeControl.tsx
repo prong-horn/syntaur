@@ -5,7 +5,7 @@ import {
   type DateRangeField,
   type DateRangePreset,
 } from '@shared/view-prefs-schema';
-import type { DateRangeUiState } from '../../lib/savedViews';
+import type { DateRangeUiState } from '../../lib/dateRange';
 import { cn } from '../../lib/utils';
 
 const PRESET_LABEL: Record<DateRangePreset, string> = {

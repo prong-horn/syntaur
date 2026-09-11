@@ -23,7 +23,6 @@
     "./skills/log-progress",
     "./skills/set-workspace",
     "./skills/run-playbook",
-    "./skills/views",
     "./skills/doctor-syntaur"
   ]
 }

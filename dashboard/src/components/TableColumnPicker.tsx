@@ -4,7 +4,7 @@ import {
   TABLE_COLUMN_IDS,
   type TableColumnId,
   type TableColumnVisibility,
-} from '@shared/saved-views-schema';
+} from '@shared/view-prefs-schema';
 import {
   Dialog,
   DialogContent,

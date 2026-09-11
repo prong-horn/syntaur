@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { matchesDateRange } from '../../dashboard/src/lib/assignmentFilter';
 import { sortAssignments } from '../../dashboard/src/lib/sortAssignments';
 import { isDateRange, isDateRangePreset } from '../utils/view-prefs-schema.js';
-import { minimizeDateRange, expandDateRange, type DateRangeUiState } from '../../dashboard/src/lib/savedViews';
+import { minimizeDateRange, expandDateRange, type DateRangeUiState } from '../../dashboard/src/lib/dateRange';
 
 const DAY = 24 * 60 * 60 * 1000;
 // Fixed "now" for deterministic preset tests.

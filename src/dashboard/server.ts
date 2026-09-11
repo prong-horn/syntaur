@@ -61,7 +61,6 @@ import {
   resetViewPrefsFile,
   isViewPrefsDefaults,
 } from '../utils/view-prefs.js';
-import { createSavedViewsRouter, createDashboardLayoutRouter } from './api-saved-views.js';
 import { withLock } from './write-locks.js';
 import { createWriteRouter } from './api-write.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
@@ -527,9 +526,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
       res.status(500).json({ error: 'Failed to reset view-prefs' });
     }
   });
-
-  app.use('/api/saved-views', createSavedViewsRouter());
-  app.use('/api/dashboard', createDashboardLayoutRouter());
 
   app.get('/api/projects', async (req, res) => {
     try {

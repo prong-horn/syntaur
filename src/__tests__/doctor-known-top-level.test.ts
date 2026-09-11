@@ -10,7 +10,6 @@ const CRITERION_NAMES = [
   'agents',
   'workflows',
   'targets',
-  'saved-views.json',
   'view-prefs.json',
   'inbox-snoozes.json',
 ] as const;

@@ -21,7 +21,6 @@ const SIDEBAR_SECTIONS = [
   '/usage',
   '/agent-sessions',
   '/playbooks',
-  '/views',
   '/help',
   '/settings',
   '/workflow',
@@ -79,10 +78,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/playbooks')) {
     return '/playbooks';
-  }
-
-  if (normalized.startsWith('/views')) {
-    return '/views';
   }
 
   if (normalized.startsWith('/help')) {
@@ -193,13 +188,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
     } else if (parts[1]) {
       breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/playbooks/${parts[1]}` });
       title = toTitleCase(parts[1]);
-    }
-  } else if (parts[0] === 'views') {
-    title = 'Saved Views';
-    breadcrumbs.push({ label: 'Saved Views', path: `${workspacePrefix}/views` });
-    if (parts[1]) {
-      // /views/:id — the detail page sets its own title from the view name.
-      title = 'View';
     }
   } else if (parts[0] === 'help') {
     title = 'Help';

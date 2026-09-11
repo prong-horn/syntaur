@@ -4,13 +4,7 @@ import {
   isFilterValue,
   sameFilterValues,
 } from '../utils/view-prefs-schema.js';
-import {
-  isProjectDetailCompatible,
-  scopeMatches,
-  isViewFilters,
-  type SavedView,
-  type SavedViewConfig,
-} from '../utils/saved-views-schema.js';
+import { isViewFilters } from '../utils/view-prefs-schema.js';
 // Predicate lives in the dashboard lib (loads under node via the @shared alias).
 import { filterAssignment } from '../../dashboard/src/lib/assignmentFilter';
 
@@ -166,50 +160,3 @@ describe('filterAssignment — multi-value membership', () => {
   });
 });
 
-function cfg(filters: SavedViewConfig['filters'], viewMode: SavedViewConfig['viewMode'] = 'kanban'): SavedViewConfig {
-  return {
-    viewMode,
-    filters,
-    sortField: 'updated',
-    sortDirection: 'desc',
-    listSectionVisibility: { collapsed: [] },
-    kanbanColumnVisibility: { hidden: [] },
-    tableColumnVisibility: { hidden: [] },
-  };
-}
-function view(workspace: string | null, config: SavedViewConfig): SavedView {
-  return { id: 'v1', name: 'n', workspace, config, createdAt: 'x', updatedAt: 'x' };
-}
-
-describe('isProjectDetailCompatible', () => {
-  it('empty project set + no activity is compatible', () => {
-    expect(isProjectDetailCompatible(cfg({}), 'foo')).toBe(true);
-  });
-  it('exactly [slug] + no activity is compatible (list ok — coerced at apply)', () => {
-    expect(isProjectDetailCompatible(cfg({ project: ['foo'] }, 'list'), 'foo')).toBe(true);
-  });
-  it('foreign slug, multi-project, __standalone__, or any activity is incompatible', () => {
-    expect(isProjectDetailCompatible(cfg({ project: ['bar'] }), 'foo')).toBe(false);
-    expect(isProjectDetailCompatible(cfg({ project: ['foo', 'bar'] }), 'foo')).toBe(false);
-    expect(isProjectDetailCompatible(cfg({ project: ['__standalone__'] }), 'foo')).toBe(false);
-    expect(isProjectDetailCompatible(cfg({ activity: 'stale' }), 'foo')).toBe(false);
-    expect(isProjectDetailCompatible(cfg({ project: ['foo'], activity: 'stale' }), 'foo')).toBe(false);
-  });
-});
-
-describe('scopeMatches (project surface uses the shared compatibility rule)', () => {
-  const scope = { kind: 'project' as const, slug: 'foo', workspace: 'syntaur' };
-  it('same-workspace, compatible view matches', () => {
-    expect(scopeMatches(view('syntaur', cfg({ project: ['foo'], status: ['review'] })), scope)).toBe(true);
-  });
-  it('global (null-workspace) compatible view matches a project scope', () => {
-    expect(scopeMatches(view(null, cfg({})), scope)).toBe(true);
-  });
-  it('foreign-workspace view does NOT match', () => {
-    expect(scopeMatches(view('other', cfg({ project: ['foo'] })), scope)).toBe(false);
-  });
-  it('activity-bearing or multi-project view does NOT match', () => {
-    expect(scopeMatches(view('syntaur', cfg({ activity: 'stale' })), scope)).toBe(false);
-    expect(scopeMatches(view('syntaur', cfg({ project: ['foo', 'bar'] })), scope)).toBe(false);
-  });
-});

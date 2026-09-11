@@ -322,3 +322,43 @@ export function mergePatch(current: ViewPrefsFile, patch: ViewPrefsPatch): ViewP
     projects: nextProjects,
   };
 }
+
+export type TableColumnId =
+  | 'title'
+  | 'status'
+  | 'priority'
+  | 'assignee'
+  | 'dependencies'
+  | 'created'
+  | 'updated';
+
+export const TABLE_COLUMN_IDS: readonly TableColumnId[] = [
+  'title',
+  'status',
+  'priority',
+  'assignee',
+  'dependencies',
+  'created',
+  'updated',
+];
+
+export function isTableColumnId(value: unknown): value is TableColumnId {
+  return typeof value === 'string' && (TABLE_COLUMN_IDS as readonly string[]).includes(value);
+}
+
+export interface TableColumnVisibility {
+  hidden: TableColumnId[];
+}
+
+export function isViewFilters(value: unknown): value is ViewFilters {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const obj = value as Record<string, unknown>;
+  for (const key of ['status', 'type', 'priority', 'assignee', 'project', 'tags'] as const) {
+    if (obj[key] !== undefined && !isFilterValue(obj[key])) return false;
+  }
+  if (obj.activity !== undefined && !isActivity(obj.activity)) return false;
+  if (obj.dateRange !== undefined && !isDateRange(obj.dateRange)) return false;
+  if (obj.search !== undefined && typeof obj.search !== 'string') return false;
+  if (obj.query !== undefined && typeof obj.query !== 'string') return false;
+  return true;
+}

@@ -56,7 +56,6 @@ const KNOWN_SKILL_NAMES = [
   'log-progress',
   'set-workspace',
   'run-playbook',
-  'views',
   'doctor-syntaur',
 ] as const;
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
@@ -30,13 +30,10 @@ import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
 import { getAssignmentColumns } from '../lib/kanban';
 import { sortAssignments } from '../lib/sortAssignments';
 import { filterAssignment } from '../lib/assignmentFilter';
-import { SaveViewDialog } from '../components/SaveViewDialog';
-import { SavedViewPicker } from '../components/SavedViewPicker';
 import { MultiSelect, type MultiSelectOption } from '../components/ui/MultiSelect';
 import { DateRangeControl } from '../components/ui/DateRangeControl';
-import { useSavedView, createSavedView, updateSavedView } from '../hooks/useSavedViews';
-import { captureCurrentView, applyConfig, inferLandingRoute, mergeUpdatedConfig, minimizeDateRange, type DateRangeUiState } from '../lib/savedViews';
-import { scopeMatches, type SavedView, type ViewScope } from '@shared/saved-views-schema';
+import { minimizeDateRange, type DateRangeUiState } from '../lib/dateRange';
+import type { TableColumnId } from '@shared/view-prefs-schema';
 import { useToast, Toaster } from '../components/Toast';
 
 const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies']);
@@ -97,47 +94,13 @@ export function ProjectDetail() {
   const [grouping, setGrouping] = useState<Grouping>(() => prefs.grouping);
   const [sortField, setSortField] = useState<SortField>(() => prefs.sortField);
   const [sortDirection, setSortDirection] = useState<SortDirection>(() => prefs.sortDirection);
-  // List visibility state — kept for saved-view round-trips even though
-  // ProjectDetail doesn't currently expose toggles for these. (Decision: keep
-  // captured state symmetric with AssignmentsPage so applying a view here
-  // doesn't silently drop the user's choices.)
-  const [listSectionVisibility, setListSectionVisibility] = useState<{ collapsed: string[] }>(() => ({ collapsed: [] }));
   const [kanbanColumnVisibility, setKanbanColumnVisibility] = useState<{ hidden: string[] }>(() => ({ hidden: [] }));
-  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: import('@shared/saved-views-schema').TableColumnId[] }>(() => ({ hidden: [] }));
+  const [tableColumnVisibility, setTableColumnVisibility] = useState<{ hidden: TableColumnId[] }>(() => ({ hidden: [] }));
 
-  const [loadedViewId, setLoadedViewId] = useState<string | null>(null);
-  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  const [saveAsNewMode, setSaveAsNewMode] = useState(false);
   const { toast, showToast, dismissToast } = useToast();
 
-  const viewScope: ViewScope = {
-    kind: 'project',
-    slug: slug ?? '',
-    workspace: workspace ?? null,
-  };
-
-  const loadViewParam = searchParams.get('loadView');
-  const { view: pendingView, loading: pendingViewLoading, error: pendingViewError } = useSavedView(loadViewParam);
-  const { view: loadedView, loading: loadedViewLoading, error: loadedViewError } = useSavedView(loadedViewId);
-  const lastAppliedLoadViewRef = useRef<string | null>(null);
-
-  // Clear loadedViewId if the view disappears (deleted elsewhere). Skip while
-  // still loading or on transient fetch error so a brief network blip doesn't
-  // drop state.
   useEffect(() => {
-    if (loadedViewId && !loadedViewLoading && !loadedViewError && !loadedView) {
-      setLoadedViewId(null);
-    }
-  }, [loadedView, loadedViewError, loadedViewId, loadedViewLoading]);
-
-  // Clear loadedViewId on project or workspace change. The component is reused
-  // across /projects/:slug and /w/:workspace/projects/:slug via react-router; a
-  // view loaded for one project must not appear as "loaded" on another
-  // (Update would PATCH the source view's filters.project, swapping its scope).
-  useEffect(() => {
-    setLoadedViewId(null);
-    lastAppliedLoadViewRef.current = null;
-    setDateRange(null); // ephemeral saved-view-only filter; reset only on scope change
+    setDateRange(null);
   }, [slug, workspace]);
 
   // Re-hydrate when react-router reuses this component across project switches
@@ -231,212 +194,6 @@ export function ProjectDetail() {
     },
     [persistField],
   );
-
-  const buildViewState = useCallback(
-    () => ({
-      // ProjectDetail uses only 'kanban' | 'table'. The saved view ViewMode union
-      // includes 'list'; either value here is valid. Round-trip applies
-      // coerceProjectDetailView on the way back in.
-      viewMode: assignmentView,
-      filters: {
-        status: statusFilter,
-        priority: priorityFilter,
-        type: typeFilter,
-        assignee: assigneeFilter,
-        tags: tagsFilter,
-        // project filter is forced via context.projectSlug below — value here is ignored
-        project: 'all',
-        activity: 'all' as const,
-        dateRange: minimizeDateRange(dateRange),
-      },
-      sortField,
-      sortDirection,
-      listSectionVisibility,
-      kanbanColumnVisibility,
-      tableColumnVisibility,
-    }),
-    [
-      assignmentView,
-      statusFilter,
-      priorityFilter,
-      typeFilter,
-      assigneeFilter,
-      tagsFilter,
-      dateRange,
-      sortField,
-      sortDirection,
-      listSectionVisibility,
-      kanbanColumnVisibility,
-      tableColumnVisibility,
-    ],
-  );
-
-  const applyViewToState = useCallback(
-    (v: SavedView) => {
-      applyConfig(v, {
-        setViewMode: (mode) => setAssignmentView(coerceProjectDetailView(mode)),
-        setStatusFilter: handleSetStatusFilter,
-        setPriorityFilter: handleSetPriorityFilter,
-        setTypeFilter: handleSetTypeFilter,
-        setAssigneeFilter: handleSetAssigneeFilter,
-        setTagsFilter: handleSetTagsFilter,
-        setDateRange,
-        // setProjectFilter / setSearch intentionally omitted — slug is URL-derived
-        // and ProjectDetail has no search box (search-bearing views route elsewhere).
-        setSortField: handleSetSortField,
-        setSortDirection: handleSetSortDirection,
-        setListSectionVisibility,
-        setKanbanColumnVisibility,
-        setTableColumnVisibility,
-      });
-      setLoadedViewId(v.id);
-    },
-    [
-      handleSetStatusFilter,
-      handleSetPriorityFilter,
-      handleSetTypeFilter,
-      handleSetAssigneeFilter,
-      handleSetTagsFilter,
-      handleSetSortField,
-      handleSetSortDirection,
-    ],
-  );
-
-  const handleApplyView = useCallback(
-    (v: SavedView) => {
-      applyViewToState(v);
-      lastAppliedLoadViewRef.current = v.id;
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set('loadView', v.id);
-          return next;
-        },
-        { replace: true },
-      );
-    },
-    [applyViewToState, setSearchParams],
-  );
-
-  const handleSave = useCallback(
-    async (name: string) => {
-      try {
-        const payload = captureCurrentView({
-          name,
-          context: { workspace: workspace ?? null, projectSlug: slug ?? null },
-          state: buildViewState(),
-        });
-        const file = await createSavedView(payload);
-        const created = file.views[file.views.length - 1];
-        setLoadedViewId(created?.id ?? null);
-        if (created) {
-          lastAppliedLoadViewRef.current = created.id;
-          setSearchParams(
-            (prev) => {
-              const next = new URLSearchParams(prev);
-              next.set('loadView', created.id);
-              return next;
-            },
-            { replace: true },
-          );
-        }
-        setSaveDialogOpen(false);
-        setSaveAsNewMode(false);
-        showToast(`Saved view "${name}"`, 'success');
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : 'Failed to save view', 'error');
-        throw err;
-      }
-    },
-    [buildViewState, setSearchParams, showToast, slug, workspace],
-  );
-
-  const handleUpdateView = useCallback(async () => {
-    if (!loadedViewId || !loadedView) return;
-    try {
-      // Preserve the LOADED view's project scope on Update — do NOT force the
-      // route slug (Save/Update never silently changes a view). A global view
-      // applied here stays global; a [slug]-scoped one stays scoped. (New Save
-      // below intentionally scopes to this project via slug.)
-      const loadedProject = toFilterValues(loadedView.config.filters.project)[0] ?? null;
-      const payload = captureCurrentView({
-        name: loadedView.name,
-        context: { workspace: workspace ?? null, projectSlug: loadedProject },
-        state: buildViewState(),
-      });
-      // Merge onto the existing config: visibility from the live capture, unknown
-      // top-level + filter keys preserved from the loaded view.
-      const config = mergeUpdatedConfig(loadedView.config, payload.config, payload.config);
-      await updateSavedView(loadedViewId, { config });
-      showToast('View updated', 'success');
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Failed to update view', 'error');
-    }
-  }, [buildViewState, loadedView, loadedViewId, showToast, workspace]);
-
-  useEffect(() => {
-    if (!loadViewParam) {
-      lastAppliedLoadViewRef.current = null;
-      return;
-    }
-    if (lastAppliedLoadViewRef.current === loadViewParam) return;
-    if (loadedViewId && loadedViewId !== loadViewParam) {
-      setLoadedViewId(null);
-    }
-    if (pendingViewLoading) return;
-    if (pendingViewError) {
-      // Don't mark as applied — a later refetch may succeed. The param stays
-      // in the URL so recovery is automatic on next fetch.
-      showToast("Couldn't load saved view — try again", 'error');
-      return;
-    }
-    if (pendingView) {
-      lastAppliedLoadViewRef.current = loadViewParam;
-      // ProjectDetail can't render every view (no activity setter; project is
-      // pinned to the URL slug; foreign-workspace views belong elsewhere). If the
-      // view isn't project-scope compatible — e.g. a legacy project+activity view,
-      // a multi-project view, or a different-workspace view reached via a bookmarked
-      // /projects/<slug>?loadView= URL — redirect to its own faithful surface via
-      // inferLandingRoute (correct prefix from the VIEW's workspace) instead of
-      // silently dropping filters here.
-      if (!scopeMatches(pendingView, { kind: 'project', slug: slug ?? '', workspace: workspace ?? null })) {
-        navigate(inferLandingRoute(pendingView), { replace: true });
-        return;
-      }
-      applyViewToState(pendingView);
-      setSearchParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.delete('loadView');
-          return next;
-        },
-        { replace: true },
-      );
-      return;
-    }
-    lastAppliedLoadViewRef.current = loadViewParam;
-    showToast('Saved view no longer exists', 'error');
-    setSearchParams(
-      (prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete('loadView');
-        return next;
-      },
-      { replace: true },
-    );
-  }, [
-    loadViewParam,
-    pendingView,
-    pendingViewLoading,
-    pendingViewError,
-    loadedViewId,
-    applyViewToState,
-    setSearchParams,
-    showToast,
-    navigate,
-    slug,
-    workspace,
-  ]);
 
   function handleSort(field: SortField) {
     if (sortField === field) {
@@ -807,43 +564,6 @@ export function ProjectDetail() {
                               { value: 'table', label: 'Table' },
                             ]}
                           />
-                          <SavedViewPicker
-                            scope={viewScope}
-                            loadedViewId={loadedViewId}
-                            onApply={handleApplyView}
-                            onOpenSaveDialog={() => {
-                              setSaveAsNewMode(false);
-                              setSaveDialogOpen(true);
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (loadedView) {
-                                void handleUpdateView();
-                              } else {
-                                setSaveAsNewMode(false);
-                                setSaveDialogOpen(true);
-                              }
-                            }}
-                            className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
-                            title={loadedView ? `Update ${loadedView.name}` : 'Save current view'}
-                          >
-                            {loadedView ? `Update '${loadedView.name}'` : 'Save view'}
-                          </button>
-                          {loadedView ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSaveAsNewMode(true);
-                                setSaveDialogOpen(true);
-                              }}
-                              className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/60 px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-background"
-                              title="Save as new view"
-                            >
-                              Save as new…
-                            </button>
-                          ) : null}
                         </div>
                       }
                     >
@@ -902,7 +622,7 @@ export function ProjectDetail() {
                           // `title` is non-hideable (TableColumnPicker NON_HIDEABLE). Force-show it
                           // defensively so a persisted view with `hidden: ['title']` doesn't trap
                           // the user — the picker can't restore it.
-                          const showCol = (id: import('@shared/saved-views-schema').TableColumnId) => id === 'title' || !hiddenCols.has(id);
+                          const showCol = (id: TableColumnId) => id === 'title' || !hiddenCols.has(id);
                           return (
                         <div className="overflow-x-auto">
                           <div className="mb-3 flex items-center justify-end">
@@ -1068,16 +788,6 @@ export function ProjectDetail() {
 
       <Toaster toast={toast} onDismiss={dismissToast} />
 
-      <SaveViewDialog
-        open={saveDialogOpen}
-        onOpenChange={(open) => {
-          setSaveDialogOpen(open);
-          if (!open) setSaveAsNewMode(false);
-        }}
-        initialName={saveAsNewMode && loadedView ? `${loadedView.name} (copy)` : ''}
-        title={saveAsNewMode ? 'Save as new view' : 'Save view'}
-        onSubmit={handleSave}
-      />
     </div>
   );
 }

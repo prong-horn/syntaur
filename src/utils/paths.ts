@@ -35,7 +35,3 @@ export function workflowsDir(): string {
 export function viewPrefsFile(): string {
   return resolve(syntaurRoot(), 'view-prefs.json');
 }
-
-export function savedViewsFile(): string {
-  return resolve(syntaurRoot(), 'saved-views.json');
-}

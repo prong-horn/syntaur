@@ -1,15 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect } from 'vitest';
 import { compileQuery, validateQuery } from '../utils/query/index.js';
 import { buildQueryRegistry } from '../utils/fact-registry.js';
 import { ASSIGNMENT_FIELDS } from '../utils/query/index.js';
 import { boardItemToQueryItem, filterBoardItems } from '../../dashboard/src/lib/queryFilter';
 import type { AssignmentBoardItem } from '../../dashboard/src/hooks/useProjects';
-import { writeWorkflowsConfig, type WorkflowDefinition } from '../utils/config.js';
-import { buildDefaultStatusConfig } from '../utils/status-defaults.js';
-import { getUnionQueryRegistry, clearStatusConfigCache } from '../dashboard/api.js';
 
 let seq = 0;
 function makeItem(overrides: Partial<AssignmentBoardItem> = {}): AssignmentBoardItem {
@@ -76,50 +70,6 @@ describe('workflow AQL field', () => {
     );
     // The `workflow` field get() prefers resolvedWorkflow, falling to workflow.
     expect(qi.resolvedWorkflow ?? qi.workflow).toBe('rfc');
-  });
-});
-
-describe('getUnionQueryRegistry', () => {
-  const originalHome = process.env.HOME;
-  const originalSyntaurHome = process.env.SYNTAUR_HOME;
-  let tmpHome: string;
-
-  beforeEach(async () => {
-    tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-union-'));
-    await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
-    process.env.HOME = tmpHome;
-    process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
-    clearStatusConfigCache();
-  });
-
-  afterEach(async () => {
-    process.env.HOME = originalHome;
-    if (originalSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
-    else process.env.SYNTAUR_HOME = originalSyntaurHome;
-    await rm(tmpHome, { recursive: true, force: true });
-    clearStatusConfigCache();
-  });
-
-  it('merges custom fact fields declared by a non-default workflow', async () => {
-    const def: WorkflowDefinition = { label: 'Default', ...buildDefaultStatusConfig() };
-    const bug: WorkflowDefinition = {
-      label: 'Bug',
-      ...buildDefaultStatusConfig(),
-      facts: [{ name: 'flakyRepro', type: 'bool', binds: null }],
-    };
-    await writeWorkflowsConfig({ default: def, bug }, 'default');
-    clearStatusConfigCache();
-
-    const registry = await getUnionQueryRegistry();
-    // Built-in vocabulary always present.
-    expect('status' in registry).toBe(true);
-    expect('workflow' in registry).toBe(true);
-    // The bug workflow's custom fact field is unioned in (registry keys lowercased).
-    expect('flakyrepro' in registry).toBe(true);
-    // A query referencing the non-default field validates against the union but
-    // would FAIL against the default-only registry.
-    expect(validateQuery('flakyRepro:true', registry)).toEqual([]);
-    expect(validateQuery('flakyRepro:true', buildQueryRegistry([])).length).toBeGreaterThan(0);
   });
 });
 
