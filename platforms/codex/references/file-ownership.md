@@ -15,7 +15,7 @@ You may only write to files inside your assigned assignment folder:
 | File | Purpose |
 |------|---------|
 | `assignment.md` | Assignment record and source of truth for state |
-| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) — each linked from a todo in `assignment.md` |
+| `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). Prior plan files are kept on disk as immutable history. |
 | `progress.md` | Append-only timestamped progress log (newest first). Replaces the old `## Progress` body section. |
 | `scratchpad.md` | Working notes |
 | `handoff.md` | Append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`) |

@@ -46,9 +46,9 @@ export function slugifyHeading(text: string): string {
  * resolve against. Excluded kinds, and why a hash there would dangle:
  *   - `comments` / `progress` — render structured components (CommentsThread /
  *     progress `<li>` rows), NOT markdown headings.
- *   - `assignment` — the `summary` pane transforms `## Acceptance Criteria` /
- *     `## Todos` into `SectionCard`s WITHOUT ids (AssignmentDetail.tsx), so its
- *     headings never become element ids.
+ *   - `assignment` — the `summary` pane transforms `## Acceptance Criteria` into
+ *     `SectionCard`s WITHOUT ids (AssignmentDetail.tsx), so its headings never
+ *     become element ids.
  * These all get the `?tab=` pane WITHOUT a hash.
  */
 const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([

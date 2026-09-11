@@ -39,12 +39,20 @@ export function validateCategories(cats: string[]): BackupCategory[] {
   return valid;
 }
 
+const RETIRED_BACKUP_CATEGORIES = new Set(['todos']);
+
 export function parseCategoriesStrict(cats: string[]): BackupCategory[] {
   const unknown: string[] = [];
   const valid: BackupCategory[] = [];
+  let retiredTodosWarned = false;
   for (const cat of cats) {
     if ((VALID_CATEGORIES as readonly string[]).includes(cat)) {
       valid.push(cat as BackupCategory);
+    } else if (RETIRED_BACKUP_CATEGORIES.has(cat)) {
+      if (!retiredTodosWarned) {
+        console.warn('Warning: backup category "todos" is retired and will be ignored');
+        retiredTodosWarned = true;
+      }
     } else {
       unknown.push(cat);
     }

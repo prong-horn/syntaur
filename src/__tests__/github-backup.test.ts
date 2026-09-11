@@ -336,6 +336,20 @@ describe('parseCategoriesStrict', () => {
     expect(parseCategoriesStrict(['projects', 'servers'])).toEqual(['projects', 'servers']);
   });
 
+  it('drops retired todos with a warning and keeps other categories', () => {
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (msg: string) => warnings.push(msg);
+    try {
+      expect(
+        parseCategoriesStrict(['projects', 'todos', 'playbooks', 'servers', 'workflows', 'config']),
+      ).toEqual(['projects', 'playbooks', 'servers', 'workflows', 'config']);
+      expect(warnings).toEqual(['Warning: backup category "todos" is retired and will be ignored']);
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it('throws even if some entries are valid', () => {
     expect(() => parseCategoriesStrict(['projects', 'unknown1', 'unknown2'])).toThrow(
       /unknown1.*unknown2/,

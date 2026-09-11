@@ -70,10 +70,6 @@ function planLabel(version: number): string {
   return version === 1 ? 'plan' : `plan v${version}`;
 }
 
-function planLinkText(version: number): string {
-  return version === 1 ? 'plan' : `plan v${version}`;
-}
-
 function planFileName(version: number): string {
   return version === 1 ? 'plan.md' : `plan-v${version}.md`;
 }
