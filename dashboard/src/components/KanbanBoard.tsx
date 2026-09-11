@@ -64,8 +64,7 @@ interface KanbanBoardProps<T> {
    */
   onHideColumn?: (columnId: string) => void;
   /**
-   * Optional. Reduces column min-width and card padding for embedding inside a 5-slot
-   * dashboard widget. Default false.
+   * Optional. Reduces column min-width and card padding for dense layouts. Default false.
    */
   compact?: boolean;
   /**
