@@ -169,7 +169,7 @@ const WORKFLOW: HelpChecklistItem[] = [
   },
   {
     title: 'Create a project',
-    detail: 'Use a project for a higher-level objective. Projects group assignments, shared resources, and memories.',
+    detail: 'Use a project for a higher-level objective. Projects group related assignments.',
     command: CLI_COMMANDS[2],
     href: '/create/project',
   },
@@ -264,22 +264,12 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Project',
         description:
-          'A project is the higher-level objective. It owns assignments, shared resources, and project memories.',
+          'A project is the higher-level objective. It owns assignments and project-level configuration.',
       },
       {
         term: 'Assignment',
         description:
           'An assignment is a concrete unit of execution. Assignment frontmatter is the source of truth for status, priority, assignee, and dependencies.',
-      },
-      {
-        term: 'Resource',
-        description:
-          'A project-level shared reference file that provides source material or constraints for the work.',
-      },
-      {
-        term: 'Memory',
-        description:
-          'A project-level learning or pattern captured during execution so future assignments can reuse it.',
       },
       {
         term: 'Manifest',
@@ -384,7 +374,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Project page',
-        description: 'The project workspace shows health stats, assignment list, dependency graph, shared resources, and memories.',
+        description: 'The project workspace shows health stats, assignment list, and dependency graph.',
         href: '/projects',
       },
       {

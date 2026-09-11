@@ -1,9 +1,8 @@
 /**
  * Token-usage tracking database module.
  *
- * Shares `~/.syntaur/syntaur.db` with `session-db.ts` and
- * `proof-db.ts`. Each module owns its own schema-version row in the shared
- * `meta` table; init order is irrelevant.
+ * Shares `~/.syntaur/syntaur.db` with `session-db.ts`. Each module owns its own
+ * schema-version row in the shared `meta` table; init order is irrelevant.
  *
  * v1 design (see decision-record.md Decisions 3 + 4):
  *   - `usage_events` PK is (session_id, model). UPSERT semantics — re-running

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Dev TUI: pick a syntaur worktree to link globally, or exit test mode.
+// Dev helper: pick a syntaur worktree to link globally, or exit test mode.
 // Standalone script (no build step) so it works regardless of which syntaur
 // version is currently linked.
 
@@ -7,11 +7,12 @@ import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readlinkSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { createElement as h, useState } from 'react';
-import { Box, Text, render, useApp, useInput } from 'ink';
+import { select, Separator } from '@inquirer/prompts';
 
 const HOME = homedir();
-function tilde(p) { return p.startsWith(HOME) ? '~' + p.slice(HOME.length) : p; }
+function tilde(p) {
+  return p.startsWith(HOME) ? '~' + p.slice(HOME.length) : p;
+}
 
 const REPO_ROOT = resolve(new URL('..', import.meta.url).pathname);
 
@@ -93,102 +94,68 @@ function exitTestMode({ restore }) {
   }
 }
 
-function Menu({ items, linked, onChoose }) {
-  const { exit } = useApp();
-  const [index, setIndex] = useState(0);
+function formatWorktreeLabel(w, maxBranch, isCurrent) {
+  const branch = (w.branch ?? '(detached)').padEnd(maxBranch + 2);
+  const current = isCurrent ? '  ← current' : '';
+  return `${branch}${w.head ?? ''}${current}`;
+}
 
-  const selectable = (i) => items[i] && items[i].kind !== 'divider';
-  const nextSelectable = (start, dir) => {
-    let i = start + dir;
-    while (i >= 0 && i < items.length && !selectable(i)) i += dir;
-    return selectable(i) ? i : start;
-  };
+function printHelp() {
+  console.log(`syntaur try — link a local worktree globally for testing
 
-  useInput((input, key) => {
-    if (key.upArrow || input === 'k') setIndex((i) => nextSelectable(i, -1));
-    else if (key.downArrow || input === 'j') setIndex((i) => nextSelectable(i, 1));
-    else if (key.return) {
-      if (selectable(index)) {
-        onChoose(items[index]);
-        exit();
-      }
-    } else if (input === 'q' || key.escape) {
-      onChoose(null);
-      exit();
-    }
-  });
+Usage:
+  node scripts/try.mjs
+  npm run try
+
+Interactive menu:
+  • Pick a git worktree to npm link and start the dashboard
+  • Restore published syntaur (unlink + npm install -g syntaur@latest)
+  • Unlink only (no global syntaur after)
+  • Cancel`);
+}
+
+async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printHelp();
+    return;
+  }
+
+  const worktrees = listWorktrees();
+  const linked = currentlyLinkedPath();
 
   const header = linked.path
     ? `syntaur → ${tilde(linked.path)}${linked.isLink ? ' (linked)' : ' (installed)'}`
     : 'syntaur → (none installed globally)';
 
-  const maxBranch = Math.max(
-    ...items.filter((i) => i.kind === 'link').map((i) => (i.branch ?? '').length),
-    4,
-  );
+  console.log('\nsyntaur try');
+  console.log(header);
 
-  const renderRow = (item, i) => {
-    const selected = i === index;
-    const cursor = selected ? '›' : ' ';
-    const color = selected ? 'cyan' : undefined;
+  const maxBranch = Math.max(...worktrees.map((w) => (w.branch ?? '').length), 4);
 
-    if (item.kind === 'link') {
-      return h(Box, { key: i },
-        h(Text, { color }, `${cursor} `),
-        h(Box, { width: maxBranch + 2 },
-          h(Text, { color, bold: selected }, item.branch ?? '(detached)'),
-        ),
-        h(Text, { dimColor: true }, item.head ?? ''),
-        item.isCurrent
-          ? h(Text, { color: 'green' }, '  ← current')
-          : null,
-      );
-    }
-    if (item.kind === 'divider') {
-      return h(Box, { key: i, marginTop: 1, marginBottom: 0 },
-        h(Text, { dimColor: true }, '─── exit test mode ───'),
-      );
-    }
-    return h(Box, { key: i },
-      h(Text, { color }, `${cursor} ${item.label}`),
-    );
-  };
-
-  return h(Box, { flexDirection: 'column', paddingX: 1, paddingY: 1 },
-    h(Text, { bold: true }, 'syntaur try'),
-    h(Box, { marginBottom: 1 }, h(Text, { dimColor: true }, header)),
-    ...items.map(renderRow),
-    h(Box, { marginTop: 1 },
-      h(Text, { dimColor: true }, '↑/↓ select · enter confirm · q quit'),
-    ),
-  );
-}
-
-async function main() {
-  const worktrees = listWorktrees();
-  const linked = currentlyLinkedPath();
-
-  const items = [
+  const choices = [
     ...worktrees.map((w) => ({
-      kind: 'link',
-      path: w.path,
-      branch: w.branch,
-      head: w.head,
-      isCurrent: linked.path === w.path,
+      name: formatWorktreeLabel(w, maxBranch, linked.path === w.path),
+      value: { kind: 'link', path: w.path },
     })),
-    { kind: 'divider' },
-    { kind: 'exit-restore', label: 'Restore published syntaur' },
-    { kind: 'exit', label: 'Unlink only (no global syntaur after)' },
-    { kind: 'quit', label: 'Cancel' },
+    new Separator('─── exit test mode ───'),
+    { name: 'Restore published syntaur', value: { kind: 'exit-restore' } },
+    { name: 'Unlink only (no global syntaur after)', value: { kind: 'exit' } },
+    { name: 'Cancel', value: { kind: 'quit' } },
   ];
 
-  let chosen = null;
-  const { waitUntilExit } = render(h(Menu, {
-    items,
-    linked,
-    onChoose: (item) => { chosen = item; },
-  }));
-  await waitUntilExit();
+  let chosen;
+  try {
+    chosen = await select({
+      message: 'Select worktree or action',
+      choices,
+    });
+  } catch (err) {
+    if (err?.name === 'ExitPromptError') {
+      console.log('\nno changes');
+      return;
+    }
+    throw err;
+  }
 
   if (!chosen || chosen.kind === 'quit') {
     console.log('\nno changes');

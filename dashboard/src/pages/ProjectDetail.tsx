@@ -39,7 +39,7 @@ import { captureCurrentView, applyConfig, inferLandingRoute, mergeUpdatedConfig,
 import { scopeMatches, type SavedView, type ViewScope } from '@shared/saved-views-schema';
 import { useToast, Toaster } from '../components/Toast';
 
-const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies', 'knowledge']);
+const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies']);
 const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
 
 export function ProjectDetail() {

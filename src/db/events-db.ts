@@ -71,9 +71,9 @@ export interface ListEventsFilters {
 
 /**
  * Initialize the events database. Shares the same `~/.syntaur/syntaur.db`
- * file as `session-db.ts` / `proof-db.ts` but owns its own
+ * file as `session-db.ts` but owns its own
  * `events_schema_version` meta row so they can coexist. Mirrors the singleton
- * + WAL + exclusive-migration pattern from `src/db/proof-db.ts`.
+ * + WAL + exclusive-migration pattern from `src/dashboard/session-db.ts`.
  */
 export function initEventsDb(dbPath?: string): Database.Database {
   if (db) return db;
