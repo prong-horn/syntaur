@@ -173,7 +173,6 @@ export function checkRuleA(file: string, source: string, rel: string): Violation
 const RULE_B_ALLOWLIST: Record<string, string> = {
   'src/utils/paths.ts': 'resolver',
   'src/utils/session-id.ts': 'Claude sessions home',
-  'src/schedules/launchd.ts': 'LaunchAgents plist',
   'src/targets/registry.ts': 'agent install targets',
   'src/utils/install.ts': 'agent install paths',
   'src/utils/install-skills.ts': 'skill install paths',

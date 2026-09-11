@@ -20,7 +20,6 @@ import { EditAssignmentScratchpad } from './pages/EditAssignmentScratchpad';
 import { AppendAssignmentHandoff } from './pages/AppendAssignmentHandoff';
 import { AppendAssignmentDecisionRecord } from './pages/AppendAssignmentDecisionRecord';
 import { ServersPage } from './pages/ServersPage';
-import { SchedulesPage } from './pages/SchedulesPage';
 import { AgentsPage } from './pages/AgentsPage';
 import { AgentEditorPage } from './pages/AgentEditorPage';
 import { UsagePage } from './pages/UsagePage';
@@ -63,7 +62,6 @@ export function App() {
             <Route path="/assignments/:id/handoff/edit" element={<AppendAssignmentHandoff />} />
             <Route path="/assignments/:id/decision-record/edit" element={<AppendAssignmentDecisionRecord />} />
             <Route path="/servers" element={<ServersPage />} />
-            <Route path="/schedules" element={<SchedulesPage />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/new" element={<AgentEditorPage />} />
             <Route path="/agents/:id/edit" element={<AgentEditorPage />} />

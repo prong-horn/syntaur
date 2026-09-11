@@ -72,9 +72,6 @@ import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createWorkspaceVisibilityConfigRouter } from './api-workspace-visibility-config.js';
 import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
-import { createSchedulesRouter } from './api-schedules.js';
-import { runTick } from '../schedules/tick.js';
-import { inProcessDispatcher } from '../schedules/dispatch.js';
 import { createUsageRouter } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
@@ -735,16 +732,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker: chatBroker }));
   app.use('/api', createChatAgentsRouter({ broker: chatBroker }));
 
-  // --- Schedules API ---
-  // Mounted after the broker: a schedule fires by posting into an assignment's
-  // chat (Decision 3), so `kill` needs the in-process dispatcher to withdraw a
-  // queued message or cancel a running turn.
-  const chatDispatcher = inProcessDispatcher({
-    broker: chatBroker,
-    resolveAssignment: (id) => resolveAssignmentById(projectsDir, assignmentsDir, id),
-  });
-  app.use('/api/schedules', createSchedulesRouter(broadcast, { chat: chatDispatcher }));
-
   // --- Agent Sessions API ---
   app.use(
     '/api/agent-sessions',
@@ -900,29 +887,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
       };
 
-      // Singleflight the watcher-triggered accelerator tick: only one fire-due
-      // tick runs at a time, and a burst of file changes mid-flight coalesces
-      // into exactly ONE rerun — so a flurry of assignment writes can't spawn
-      // overlapping full scans / concurrent launches from the dashboard process.
-      let accelTickRunning = false;
-      let accelTickQueued = false;
-      const nudgeScheduler = (): void => {
-        if (accelTickRunning) {
-          accelTickQueued = true;
-          return;
-        }
-        accelTickRunning = true;
-        void runTick({ reap: false, chatBroker })
-          .catch(() => {})
-          .finally(() => {
-            accelTickRunning = false;
-            if (accelTickQueued) {
-              accelTickQueued = false;
-              nudgeScheduler();
-            }
-          });
-      };
-
       watcherHandle = createWatcher({
         projectsDir,
         assignmentsDir,
@@ -934,12 +898,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
         onMessage: broadcast,
         onAssignmentChanged: (projectSlug, assignmentSlug) => {
           void recomputeOne(projectSlug, assignmentSlug);
-          // Accelerator (Task 14): an assignment status change may make a
-          // state-triggered schedule due. Nudge the scheduler (the tick stays
-          // the SOLE authority and re-reads persisted state; the watcher never
-          // evaluates triggers itself and is never the source of truth). The
-          // launchd tick is the floor, so failures here are swallowed.
-          nudgeScheduler();
         },
         onConfigChanged: () => {
           clearStatusConfigCache();

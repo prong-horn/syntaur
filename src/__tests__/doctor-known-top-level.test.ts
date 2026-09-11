@@ -8,7 +8,6 @@ const REPO_ROOT = resolve(import.meta.dirname, '../..');
 const CRITERION_NAMES = [
   'assignments',
   'agents',
-  'schedules',
   'workflows',
   'targets',
   'saved-views.json',

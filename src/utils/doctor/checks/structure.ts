@@ -13,8 +13,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'dashboard-port', // server.ts
   'derive-migrated', // recompute.ts
   'inbox-snoozes.json', // snooze.ts
-  'install-launch-agent.lock', // launchd.ts
-  'logs', // launchd.ts
   'npx-handler-nudge', // install-detection.ts
   'npx-install.json', // npx-prompt.ts
   'playbooks', // paths.ts
@@ -24,7 +22,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'recording.pid', // recording.ts
   'runtime', // session-id.ts
   'saved-views.json', // paths.ts
-  'schedules', // schedules/store.ts
   'servers', // paths.ts
   'stages-migrated', // stages-marker.ts
   'statusline.backup.json', // install-statusline.ts

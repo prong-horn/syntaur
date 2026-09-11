@@ -18,7 +18,6 @@ const SIDEBAR_SECTIONS = [
   '/archive',
   '/assignments',
   '/servers',
-  '/schedules',
   '/agents',
   '/usage',
   '/agent-sessions',
@@ -71,10 +70,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/servers')) {
     return '/servers';
-  }
-
-  if (normalized.startsWith('/schedules')) {
-    return '/schedules';
   }
 
   if (normalized.startsWith('/agents')) {
@@ -195,9 +190,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'servers') {
     title = 'Servers';
     breadcrumbs.push({ label: 'Servers', path: `${workspacePrefix}/servers` });
-  } else if (parts[0] === 'schedules') {
-    title = 'Schedules';
-    breadcrumbs.push({ label: 'Schedules', path: `${workspacePrefix}/schedules` });
   } else if (parts[0] === 'agents') {
     breadcrumbs.push({ label: 'Agents', path: `${workspacePrefix}/agents` });
     title = 'Agents';

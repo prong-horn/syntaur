@@ -54,7 +54,6 @@ import { doctorCommand } from './commands/doctor.js';
 import { commentCommand } from './commands/comment.js';
 import { captureCommand } from './commands/capture.js';
 import { proofCommand } from './commands/proof.js';
-import { scheduleCommand } from './commands/schedule.js';
 import { usageCommand } from './commands/usage.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
@@ -815,7 +814,6 @@ program.addCommand(statusCommand);
 program.addCommand(workflowCommand);
 program.addCommand(workspaceCommand);
 program.addCommand(progressCommand);
-program.addCommand(scheduleCommand);
 program.addCommand(usageCommand);
 
 program.addHelpText(
