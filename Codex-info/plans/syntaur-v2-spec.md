@@ -78,7 +78,9 @@ The noun is **ticket** in user-facing text, file names (`ticket.md`), and databa
   inbox-snoozes.json        # CLI on snooze API/verb
 ```
 
-Gone in v2 (see §11): `workspaces.json`, standalone `assignments/<uuid>/`, `todos/`, `servers/`, `targets/`, `workflows/`, `saved-views.json`, `view-prefs.json`, memories, resources, backup subsystem.
+Gone in v2 (see §11): `workspaces.json`, standalone `assignments/<uuid>/`, `todos/`, `servers/`, `targets/`, `workflows/`, `saved-views.json`, memories, resources, backup subsystem.
+
+**Kept:** `view-prefs.json` — keyed by project only; workspace keys are dropped (`delete-views-and-workspaces`).
 
 `SYNTAUR_HOME` overrides `~/.syntaur` per `src/utils/paths.ts:11`.
 
@@ -222,7 +224,7 @@ Chat behaviour is unchanged from `docs/assignment-chat.md` (How a turn works `:1
 | `done` | Successfully completed | `done` | older than N days (board filter) |
 | `dropped` | Abandoned or failed | `drop` | older than N days (board filter) |
 
-Templates declare an **ordered subset** of these ids and may relabel display names. Templates must never invent stage ids. `template check` rejects unknown ids.
+Templates declare an **ordered subset** of the active stage ids (`backlog` through `done`) and may relabel display names. `dropped` is never listed in a manifest's `stages[]`; it is implicit for every template, and `drop` works from any active stage. Templates must never invent stage ids. `template check` rejects unknown ids and rejects `dropped` in `stages[]` (rule 16).
 
 **`ready` rule.** `ready` is valid only when the template declares a `plan` role. `approve` moves `planning → ready`. Templates without a plan role use `backlog → in_progress` (no `planning`/`ready` stages).
 
@@ -244,6 +246,7 @@ A flagged ticket keeps its stage and shows a badge on the board and in `show`. `
 - **Resolution:** CLI/API accept id alone; folder match by id prefix.
 - **Standalone tickets:** three v1 standalone assignments move into project `scratch` (prefix `SCR`), created lazily by `syntaur new` with no project and by `migrate v2`.
 - **Database key:** every operational table references tickets by `id` string only (§6.3). UUID frontmatter ids are replaced during migration.
+- **Timestamps and paths:** unchanged from `docs/protocol/spec.md` §8.
 
 *Left to ticket ticket-rename-and-ids: migration maps, dry-run transcript, snooze key rewrite.*
 
@@ -253,10 +256,10 @@ A flagged ticket keeps its stage and shows a badge on the board and in `show`. `
 
 | Aspect | Rule |
 |---|---|
-| Kernel behaviour | Approval gate: stores `plan.file`, `plan.approvedDigest`, `plan.approvedAt`, `plan.approvedBy` on `approve`; `plan version` clears approval and moves to `planning` |
+| Kernel behaviour | Approval gate: stores `plan.file`, `plan.approvedDigest`, `plan.approvedAt`, `plan.approvedBy` on `approve`; `plan version` creates `plan-v<N>.md`, sets `plan.file`, clears approval — moves to `planning` when the template declares a `planning` stage, otherwise a file action with no stage move |
 | Constraints | At most one file per template |
 | Verbs | `plan create`, `plan version`, `approve` |
-| Without plan role | `approve` refuses; `ready` stage invalid; `plan-approved` gate unavailable |
+| Without plan role | `plan`, `approve`, and `plan version` refuse; `ready` stage invalid; `plan-approved` gate unavailable |
 | Gates reading it | `plan-exists`, `plan-approved` |
 
 ### 4.2 Role: log
@@ -266,7 +269,7 @@ A flagged ticket keeps its stage and shows a badge on the board and in `show`. `
 | Kernel behaviour | Append-only via `syntaur log`; typed entries; timeline; last-handoff lookup; review verdicts |
 | Constraints | At most one file per template; `writer` must be `cli` |
 | Verbs | `log` |
-| Without log role | `syntaur log` appends a chat note; `handoff-logged` and `review-clean` gates unavailable |
+| Without log role | `syntaur log` appends a chat note, creating `chat/` if it does not exist yet (`chat/` is kernel; every ticket may have one); `handoff-logged` and `review-clean` gates unavailable |
 | Gates reading it | `handoff-logged`, `review-clean`; Needs me tier 2 (open `question`) |
 
 **Log file frontmatter:** `purpose` only (copied from manifest `description`).
@@ -280,6 +283,9 @@ A flagged ticket keeps its stage and shows a badge on the board and in `show`. `
 ```
 
 - **Types (exactly seven):** `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review`
+
+This type list supersedes the shorter one in the `log-role-and-journal` ticket's criteria; that ticket is planned from this spec.
+
 - **author:** agent id from `~/.syntaur/agents/` or `human`
 - **Optional key lines** (directly under heading):
   - `verdict: approve|changes · open: high=<n> medium=<n>` — required on `review`
@@ -321,7 +327,7 @@ verdict: approve · open: high=0 medium=0
 Implementation matches plan. All acceptance criteria verified in tests.
 ```
 
-**handoff rule:** `handoff-logged` passes when a `handoff` entry exists with timestamp later than the ticket's last entry into `in_progress` or last `reopen`, whichever is later. A ticket with neither event (e.g. migrated legacy) passes on any `handoff` entry.
+**handoff rule:** `handoff-logged` passes when a `handoff` entry exists with timestamp later than the ticket's last entry into the `in_progress` stage or last `reopen`, whichever is later. A ticket with neither event (e.g. migrated legacy) passes on any `handoff` entry.
 
 ### 4.3 Role: notes
 
@@ -353,18 +359,22 @@ A new role is added to the kernel only when the tool would behave differently fo
 
 ```
 ~/.syntaur/templates/<id>/
-  manifest.yaml       # required
+  template.md         # required; §5.2 schema in YAML frontmatter; optional markdown body (human notes, tool ignores)
   ticket.md           # optional skeleton
   <file templates>    # optional scaffolds for declared files
 ```
 
-- **init / upgrade:** copies built-ins; `upgrade` refreshes shipped files without overwriting `builtin:`-stamped edits (see validation rule 12).
+The `template.md` shape matches `agents/*.md`, `playbooks/*.md`, and `config.md`: YAML frontmatter plus an optional markdown body the tool ignores.
+
+- **init / upgrade:** copies built-ins; `upgrade` refreshes shipped files without overwriting `builtin:`-stamped edits (see validation rule 13).
 - **Custom template:** copy a built-in directory and edit.
 - **Commands:** `template list|new|check|reset`, `retemplate <id>` (adds missing files, never deletes; logs `retemplated` event).
 
 *Left to ticket templates: full CLI and validation implementation.*
 
 ### 5.2 Manifest schema
+
+All fields below live in the YAML frontmatter of `template.md`.
 
 | Field | Type | Required | Default | Meaning |
 |---|---|---|---|---|
@@ -388,7 +398,7 @@ A new role is added to the kernel only when the tool would behave differently fo
 | `files[].description` | string | yes | — | Agent purpose; copied to `purpose:` in scaffold |
 | `files[].entryTypes` | string[] | no | all seven | Subset for log role |
 | `gates` | object | yes | `{}` | Map verb → list of gate ids |
-| `playbooks` | string[] | no | `[]` | Playbook slugs (reference; content in stage instructions) |
+| `playbooks` | string[] | no | `[]` | Playbook slugs; documentary only (content lives in `stages[].instructions`) |
 | `workspace` | enum | no | `optional` | `required`, `optional`, or `none` |
 | `defaultPriority` | enum | no | `medium` | Default on `syntaur new` |
 
@@ -409,8 +419,9 @@ A new role is added to the kernel only when the tool would behave differently fo
 13. `builtin` manifests: `template check --builtins` reports drift; `template reset <id>` restores.
 14. `createOn` values are `ticket-creation`, a declared stage id, or `never`.
 15. Kernel paths (`ticket.md`, `chat/`) do not appear in `files[]`.
+16. `dropped` does not appear in `stages[]`.
 
-*Left to ticket templates: `template check` implements rules 1–15.*
+*Left to ticket templates: `template check` implements rules 1–16.*
 
 ### 5.4 Built-in manifests
 
@@ -424,12 +435,12 @@ description: Full development cycle with plan approval, workspace, implementatio
 whenToUse: Default for feature work, refactors, and multi-step implementation with plan and review gates.
 workspace: required
 defaultPriority: medium
-playbooks:
+playbooks:                   # documentary; absorbed into stage instructions below
+  - create-and-plan-assignment
+  - plan-versioning
   - read-before-plan
   - workspace-before-code
   - keep-records-updated
-  - commit-discipline
-  - test-before-done
 stages:
   - id: backlog
     label: Backlog
@@ -440,7 +451,6 @@ stages:
       Read all project context before planning: project.md, ticket.md, upstream tickets' decision logs, and dependencies.
       Write plan.md with objective, tasks, and verify steps. Iterate until review-ready.
       Do not skip context files you think you already know.
-    agent: cursor
   - id: ready
     label: Ready
     instructions: |
@@ -595,15 +605,10 @@ stages:
     instructions: Migrated ready_to_implement.
   - id: in_progress
     instructions: Implementation per approved plan.
-    agent: cursor
   - id: review
     instructions: Review when applicable.
-    reviewer: pi
-    auto: false
   - id: done
     instructions: Completed.
-  - id: dropped
-    instructions: Failed or archived-non-terminal.
 files:
   - path: progress.md
     role: log
@@ -630,7 +635,7 @@ files:
     createOn: ticket-creation
     description: v1 handoff; historical read-only after migration.
   - path: comments.md
-    writer: cli
+    writer: human
     createOn: ticket-creation
     description: v1 comments; historical read-only after migration.
 gates:
@@ -650,7 +655,7 @@ gates:
 | Action | Behaviour |
 |---|---|
 | Copy | `template new <id> --from <builtin>` copies directory |
-| Edit | Human edits `manifest.yaml` and skeletons |
+| Edit | Human edits `template.md` and skeletons |
 | check | `template check <id>` runs §5.3 rules |
 | reset | `template reset <id>` restores built-in from `builtin:` stamp |
 | retemplate | On ticket: add missing files from current manifest; log `retemplated`; never delete files |
@@ -665,7 +670,7 @@ gates:
 
 `Cannot <verb> <ID>: ticket is in <stage>, <verb> applies from <previous>.`
 
-When the target stage is absent: `start`, `review`, `done` fail with `template <id> has no <stage> stage`. `plan` and `approve` still perform file actions without moving when `planning`/`ready` are absent; `approve` implies `plan-exists`.
+When the target stage is absent: `start`, `review`, `done` fail with `template <id> has no <stage> stage`. On a template without `planning`/`ready`, `plan` and `approve` apply from any active stage (file actions only, no stage move); `approve` implies `plan-exists`.
 
 **`--force`:** skips gates; recorded on `moved` event as `forced: true`.
 
@@ -678,8 +683,8 @@ When the target stage is absent: `start`, `review`, `done` fail with `template <
 | `deps-done` | `depends_on` + ticket statuses | Every depended ticket is `done` | Wait for dependencies |
 | `workspace-set` | `workspace` frontmatter | All four workspace fields non-empty when template `workspace: required` | Set workspace in ticket.md |
 | `criteria-checked` | Acceptance Criteria checkboxes | Every box checked | Tick acceptance criteria |
-| `handoff-logged` | log role | `handoff` entry after last `in_progress` entry or `reopen` (or any handoff if neither) | syntaur log -t handoff |
-| `review-clean` | log role | Latest `review` after last `review` entry or `reopen` is `approve` with `high=0` | Log approving review |
+| `handoff-logged` | log role | `handoff` entry later than the last entry into the `in_progress` stage or the last `reopen`, whichever is later (or any `handoff` if neither) | syntaur log -t handoff |
+| `review-clean` | log role | Latest `review` entry (by timestamp) is later than the last entry into the `review` stage or the last `reopen`, whichever is later, and is `approve` with `high=0` | Log approving review |
 | `deliverable-present` | deliverable role | File non-empty beyond scaffold | Write deliverable |
 
 **Error shape:** `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exit 1).
@@ -689,7 +694,7 @@ When the target stage is absent: `start`, `review`, `done` fail with `template <
 | Verb | From (by template) | To | Gates (built-in) | Side effects | Event |
 |---|---|---|---|---|---|
 | `plan` | stage before `planning`, or any active if no planning | `planning` | — | create/scaffold plan file | `moved` |
-| `approve` | stage before `ready`, or file-only | `ready` | feature/legacy: `plan-exists` | set `plan.approved*` | `plan-approved`, `moved` |
+| `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | feature/legacy: `plan-exists` (implies `plan-exists`) | set `plan.approved*` | `plan-approved`, `moved` if stage moves |
 | `start` | stage before `in_progress` | `in_progress` | feature: `plan-approved`, `deps-done`, `workspace-set`; bug: `deps-done`, `workspace-set`; legacy: `deps-done` | dispatch if `auto` | `moved`, `dispatched` |
 | `review` | stage before `review` | `review` | — | dispatch reviewer if configured | `moved`, `dispatched` |
 | `done` | stage before `done` | `done` | per template `gates.done` | — | `moved` |
@@ -700,7 +705,7 @@ When the target stage is absent: `start`, `review`, `done` fail with `template <
 | `park` | any | — (flag) | reason required | `parked: reason` | `flagged` |
 | `unpark` | any | — | — | `parked: null` | `unflagged` |
 
-`plan version`: creates `plan-v<N>.md`, sets `plan.file`, clears approval, moves to `planning`, logs `plan-versioned`.
+`plan version`: creates `plan-v<N>.md`, sets `plan.file`, clears approval, logs `plan-versioned`; moves to `planning` when the template declares a `planning` stage, otherwise a file action with no stage move.
 
 `syntaur new`: writes first stage of template subset; allocates id.
 
@@ -743,13 +748,13 @@ Any participant may be addressed at any stage from chat. Gates check artifacts, 
 | `events.assignment_id` | ticket `id` |
 | `engagement.assignment_id` | ticket `id` |
 | `chat_sessions.assignment_id` | ticket `id` |
-| `chat_sessions.session_key` | `<ticket-uuid>:<harness>` → uuid prefix re-keyed to ticket id where applicable |
-| `chat_items.session_key` | re-keyed with session |
+| `chat_sessions.session_key` | `<ID>~<harness>` (no colon) |
+| `chat_items.session_key` | follows `chat_sessions.session_key` |
 | `chat_items.assignment_id` | ticket `id` |
 | `usage_events.ticket_id` | replaces `assignment_slug`; empty string for project-level rows (~79% today) |
 | `usage_daily.ticket_id` | replaces `assignment_slug`; empty for unattributed (~48% today) |
 
-Dropped columns: `assignment_slug` on events, engagement, chat_sessions. `project_slug` is retained on usage tables for rollups.
+**Dropped columns:** `project_slug` on `events`; `project_slug` and `assignment_slug` on `engagement` and `chat_sessions`. `project_slug` is retained only on `usage_events` and `usage_daily`.
 
 `artifacts` table is removed before migration (`delete-ops-subsystems` precedes `ticket-rename-and-ids`).
 
@@ -768,12 +773,12 @@ Migrator prints UUID→id and `(project_slug, assignment_slug)`→id maps in dry
 | `new` | Requires project (except lazy `scratch`) | templates |
 | `show` | Render ticket summary | templates |
 | `ls` | List tickets | ticket-rename-and-ids |
-| `worktree (create/remove/gc)` | Git worktrees | skills-and-install |
-| `session (register/touch/resume)` | Session tracking | skills-and-install |
-| `inbox` | Needs me queue | dashboard-six-pages |
-| `usage` | Cost rollup | dashboard-six-pages |
+| `worktree (create/remove/gc)` | Git worktrees | ticket-rename-and-ids |
+| `session (register/touch/resume)` | Session tracking | ticket-rename-and-ids |
+| `inbox` | Needs me queue | ticket-rename-and-ids |
+| `usage` | Cost rollup | ticket-rename-and-ids |
 | `search` | Id-based search | ticket-rename-and-ids |
-| `history` | Event timeline from DB | derived-state-to-db |
+| `history` | `history <id>` prints the git log of the ticket folder (the home is a git repository from `init`); `history <id> --events` prints the events-table rows for the ticket | derived-state-to-db |
 | `dashboard` | Start SPA | dashboard-six-pages |
 | `doctor` | Hygiene checks | test-root-hygiene, ticket-rename-and-ids |
 | `plan (create/version)` | Plan file lifecycle | lifecycle-verbs |
@@ -791,6 +796,16 @@ Agent definitions and playbooks: dashboard Library only (no CLI). Removed: six `
 
 ### 7.1 Text grammar
 
+**File states** (rendered in the Files block):
+
+| Role | State values |
+|---|---|
+| kernel `ticket.md` | `editable` |
+| `plan` | `missing`, `unapproved`, `approved`, `stale` (`stale` = edited after approval; digest differs) |
+| `log` | `<n> entries · last <type> <age>` |
+| `deliverable` | `empty`, `present` |
+| `notes`, plain | `editable` |
+
 ```
 <ID> · <title> · <template> · <status>[ · blocked: <reason>][ · parked: <reason>]
 Objective: <first paragraph>
@@ -804,6 +819,9 @@ Files:
     <objective one-liner>
   <path>  <role|plain> · <state>
     <description>
+Handoff: <first line of the latest handoff entry>  — or — Handoff: none
+Log: last <n> entries
+  <tail lines>
 Stage: <id>. <instructions>
 Next: <hint>
 Commands: syntaur log <ID> -t <type> "..."; syntaur block <ID> "<reason>"; ask via question log or @mention in chat
@@ -811,7 +829,9 @@ Commands: syntaur log <ID> -t <type> "..."; syntaur block <ID> "<reason>"; ask v
 
 **Next line:** first unmet gate of the next verb in stage order, or the verb name when all gates pass.
 
-**`--json`:** `{ ticket, workspace, depends[], links[], files[], stage, next, commands[] }` with the same content.
+**`show --log [-t <type>]`:** prints log entries only (no header).
+
+**`--json`:** `{ ticket, workspace, depends[], links[], files[], handoff, log[], stage, next, commands[] }` with the same content.
 
 ### 7.2 Worked example: SYN-142 (feature, in_progress)
 
@@ -826,9 +846,14 @@ Files:
     Age filter and snooze for Needs me queue
   plan.md  plan · approved
     Implementation plan with tasks and verify steps; requires human approval before start.
-  journal.md  log · active
+  journal.md  log · 8 entries · last progress 2h
     Append-only log for progress, decisions, handoffs, questions, answers, and reviews.
-Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages.
+Handoff: none
+Log: last 3 entries
+  ## 2026-09-10T22:40:00Z · progress · cursor — Implemented max-age filter in computeInbox
+  ## 2026-09-10T20:05:00Z · decision · human — Default window is 14 days
+  ## 2026-09-10T12:15:00Z · progress · cursor — Started implementation
+Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.
 Next: syntaur review SYN-142
 Commands: syntaur log SYN-142 -t progress "..."; syntaur block SYN-142 "reason"; ask via question log or @mention in chat
 ```
@@ -844,6 +869,8 @@ Depends: none
 Files:
   ticket.md  kernel · editable
     README install update
+Handoff: none
+Log: last 0 entries
 Stage: backlog. Do the work described in the objective, then syntaur done.
 Next: syntaur done SCR-7
 Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via question log or @mention in chat
@@ -852,7 +879,7 @@ Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via
 ### 7.4 Broker and dashboard use
 
 - **Broker:** standing context = full `show` text; set once per adapter session; refresh on stage change (`src/chat/broker.ts:19-20`).
-- **Dashboard:** ticket header consumes `--json` fields.
+- **Dashboard:** ticket header consumes `show --json` fields for ticket summary, files, stage, and Next; cost and session count come from the usage and engagement APIs, not from `show --json`.
 
 *Left to ticket templates: show renderer and JSON emitter.*
 
@@ -865,7 +892,7 @@ Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via
 | 0 | Unsettled permission/ask cards | Chat-sourced; unchanged |
 | 1 | Chat replies owed | Chat-sourced; unchanged |
 | 2 | Open `question` log entries | No `answer` names the question |
-| 3 | Unapproved plan-role file | Any ticket not `done`/`dropped` with plan file present and digest mismatch |
+| 3 | Unapproved plan-role file | Plan-role file present and `plan.approvedDigest` unset or not equal to the current file digest, on any ticket not `done` or `dropped` |
 | 4 | `status: review` | Review queue |
 
 Settled cards leave the queue. Snooze and window behaviour unchanged. Row keys: `<ID>` (ticket-level), `<ID>~<compact-ts>` (log rows, e.g. `SYN-142~20260911T052000Z`), or chat item id — **no colons**.
@@ -893,7 +920,7 @@ Install path: `npx skills add` only (`skills-and-install`). ACP chat participant
 
 ### 9.2 Hooks
 
-Kept: SessionStart register, session touch. Dropped: PreCompact, ExitPlanMode prompt hooks, unwired `enforce-boundaries.sh` (`platforms/claude-code/hooks/hooks.json`).
+Kept: SessionStart register, session touch. Dropped: SessionEnd (`session-cleanup.sh`, the recompute trigger), PreCompact, ExitPlanMode prompt hooks, unwired `enforce-boundaries.sh` (`platforms/claude-code/hooks/hooks.json`).
 
 UserPromptSubmit may inject stage instructions reference; playbooks become stage instructions in manifests (`playbooks-into-stages`).
 
@@ -929,7 +956,14 @@ project <slug>: prefix <PFX>, <n> tickets
 ...
 UUID → id map (lines)
 (project_slug, assignment_slug) → id map (lines)
-re-keyed: events <n>, engagement <n>, chat_sessions <n>, chat_items <n>, usage_events <n>, usage_daily <n>
+re-keyed events.assignment_id: <n>  (project_slug dropped)
+re-keyed engagement.assignment_id: <n>  (project_slug, assignment_slug dropped)
+re-keyed chat_sessions.assignment_id: <n>  (project_slug, assignment_slug dropped)
+re-keyed chat_sessions.session_key: <n>
+re-keyed chat_items.session_key: <n>
+re-keyed chat_items.assignment_id: <n>
+re-keyed usage_events.ticket_id: <n>  (assignment_slug dropped; project_slug kept)
+re-keyed usage_daily.ticket_id: <n>  (assignment_slug dropped; project_slug kept)
 dropped fields: <count>
 totals: <projects> projects, <tickets> tickets
 ```
@@ -950,7 +984,7 @@ Counts in the audit (324 assignments, etc.) drift daily; verification compares t
 
 | Subsystem | Approx LOC | Evidence | Owning ticket |
 |---|---|---|---|
-| Workflow, status, facts, derive ladder, stage engine, editor, 5 migrations | 6,300 + 7,300 + 1,700 | 1 workflow, 0 custom facts, triple-logged transitions | delete-ops-subsystems |
+| Workflow, status, facts, derive ladder, stage engine, editor, 5 migrations | 6,300 + 7,300 + 1,700 | 1 workflow, 0 custom facts, triple-logged transitions | lifecycle-verbs |
 | Todos (three implementations), bundles, linked todos | 3,400 + 3,700 | 12 items, dead since June | delete-todos-and-bundles |
 | Saved views, query language, overview widgets | 240 + 5,900 | 3 default views | delete-views-and-workspaces |
 | Leases and inventories | 1,100 + 300 | 0 rows | delete-ops-subsystems |
@@ -963,7 +997,7 @@ Counts in the audit (324 assignments, etc.) drift daily; verification compares t
 | Platform adapters, three install paths, `targets/` | 3,900 | one user, one install path | skills-and-install |
 | Workspaces, `/w/` routes | 500 + 700 | one workspace | delete-views-and-workspaces |
 | Backup subsystem | 400 | never configured | delete-ops-subsystems |
-| Derived indexes, `_status.md`, `resources/_index.md`, `memories/_index.md` | per file-formats §10-16 | replaced by DB | derived-state-to-db |
+| Derived indexes, `_status.md`, `resources/_index.md`, `memories/_index.md` | per `docs/protocol/file-formats.md` §10–12 and §14–16 | replaced by DB | derived-state-to-db |
 | Scratchpad, comments, decision-record, handoff as separate files (v1) | folded | see journal role | log-role-and-journal |
 
 ### 11.2 Keep list
