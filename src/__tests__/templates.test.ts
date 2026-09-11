@@ -10,8 +10,6 @@ import {
   renderDecisionRecord,
   renderIndexAssignments,
   renderStatus,
-  renderResourcesIndex,
-  renderMemoriesIndex,
 } from '../templates/index.js';
 
 const TIMESTAMP = '2026-03-18T14:30:00Z';
@@ -31,8 +29,6 @@ describe('renderManifest', () => {
     expect(out).toContain('(./_index-plans.md)');
     expect(out).toContain('(./_index-decisions.md)');
     expect(out).toContain('(./_status.md)');
-    expect(out).toContain('(./resources/_index.md)');
-    expect(out).toContain('(./memories/_index.md)');
     expect(out).toContain('(./project.md)');
     expect(out).not.toContain('(./agent.md)');
     expect(out).not.toContain('(./claude.md)');
@@ -376,31 +372,5 @@ describe('renderStatus', () => {
     const out = renderStatus({ slug: 'test-slug', title: 'My Title', timestamp: TIMESTAMP });
     expect(out).toContain('# Project Status: My Title');
     expect(out).not.toContain('# Project Status: test-slug');
-  });
-});
-
-describe('renderResourcesIndex', () => {
-  it('has correct structure', () => {
-    const out = renderResourcesIndex({
-      slug: 'test',
-      title: 'Test',
-      timestamp: TIMESTAMP,
-    });
-    expect(out).toContain('project: test');
-    expect(out).toContain('total: 0');
-    expect(out).toContain('# Resources');
-  });
-});
-
-describe('renderMemoriesIndex', () => {
-  it('has correct structure', () => {
-    const out = renderMemoriesIndex({
-      slug: 'test',
-      title: 'Test',
-      timestamp: TIMESTAMP,
-    });
-    expect(out).toContain('project: test');
-    expect(out).toContain('total: 0');
-    expect(out).toContain('# Memories');
   });
 });

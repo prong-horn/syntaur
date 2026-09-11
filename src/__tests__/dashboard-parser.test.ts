@@ -9,8 +9,6 @@ import {
   parseScratchpad,
   parseHandoff,
   parseDecisionRecord,
-  parseResource,
-  parseMemory,
   extractMermaidGraph,
 } from '../dashboard/parser.js';
 
@@ -454,115 +452,6 @@ Details.`;
     expect(d.assignment).toBe('design-auth-schema');
     expect(d.decisionCount).toBe(1);
     expect(d.body).toContain('Decision 1');
-  });
-});
-
-describe('parseResource', () => {
-  const RESOURCE_MD = `---
-type: resource
-name: Auth Requirements
-source: human
-category: documentation
-sourceUrl: null
-sourceAssignment: null
-relatedAssignments:
-  - design-auth-schema
-  - implement-jwt-middleware
-created: "2026-03-15T09:00:00Z"
-updated: "2026-03-15T09:00:00Z"
----
-
-# Auth Requirements
-
-Content.`;
-
-  it('parses resource with related assignments', () => {
-    const r = parseResource(RESOURCE_MD);
-    expect(r.name).toBe('Auth Requirements');
-    expect(r.source).toBe('human');
-    expect(r.category).toBe('documentation');
-    expect(r.relatedAssignments).toEqual(['design-auth-schema', 'implement-jwt-middleware']);
-  });
-});
-
-describe('parseMemory', () => {
-  const MEMORY_MD = `---
-type: memory
-name: PostgreSQL Connection Pooling
-source: claude-2
-sourceAssignment: design-auth-schema
-relatedAssignments:
-  - design-auth-schema
-  - implement-jwt-middleware
-scope: project
-created: "2026-03-17T09:00:00Z"
-updated: "2026-03-17T09:00:00Z"
-tags:
-  - postgresql
-  - performance
----
-
-# PostgreSQL Connection Pooling
-
-Content.`;
-
-  it('parses memory with all fields', () => {
-    const m = parseMemory(MEMORY_MD);
-    expect(m.name).toBe('PostgreSQL Connection Pooling');
-    expect(m.source).toBe('claude-2');
-    expect(m.scope).toBe('project');
-    expect(m.sourceAssignment).toBe('design-auth-schema');
-    expect(m.relatedAssignments).toEqual(['design-auth-schema', 'implement-jwt-middleware']);
-  });
-});
-
-describe('renderMemoryStub / renderResourceStub round-trip', () => {
-  it('renderMemoryStub round-trips through parseMemory', async () => {
-    const { renderMemoryStub } = await import('../templates/index-stubs.js');
-    const stub = renderMemoryStub({
-      slug: 'test-slug',
-      name: 'Test Memory',
-      projectSlug: 'sample-project',
-      timestamp: '2026-05-08T13:00:00Z',
-    });
-    const m = parseMemory(stub);
-    expect(m.name).toBe('Test Memory');
-    expect(m.source).toBe('claude');
-    expect(m.scope).toBe('project');
-    expect(m.sourceAssignment).toBeNull();
-    expect(m.relatedAssignments).toEqual([]);
-    expect(m.tags).toEqual([]);
-    expect(m.created).toBe('2026-05-08T13:00:00Z');
-    expect(m.updated).toBe('2026-05-08T13:00:00Z');
-  });
-
-  it('renderResourceStub round-trips through parseResource', async () => {
-    const { renderResourceStub } = await import('../templates/index-stubs.js');
-    const stub = renderResourceStub({
-      slug: 'test-slug',
-      name: 'Test Resource',
-      projectSlug: 'sample-project',
-      timestamp: '2026-05-08T13:00:00Z',
-    });
-    const r = parseResource(stub);
-    expect(r.name).toBe('Test Resource');
-    expect(r.source).toBe('claude');
-    expect(r.category).toBe('documentation');
-    expect(r.relatedAssignments).toEqual([]);
-    expect(r.created).toBe('2026-05-08T13:00:00Z');
-    expect(r.updated).toBe('2026-05-08T13:00:00Z');
-  });
-
-  it('renderMemoryStub round-trips a colon-bearing name', async () => {
-    const { renderMemoryStub } = await import('../templates/index-stubs.js');
-    const stub = renderMemoryStub({
-      slug: 'tricky',
-      name: 'Memory: with colon and ampersand & special',
-      projectSlug: 'sample-project',
-      timestamp: '2026-05-08T13:00:00Z',
-    });
-    const m = parseMemory(stub);
-    expect(m.name).toBe('Memory: with colon and ampersand & special');
   });
 });
 

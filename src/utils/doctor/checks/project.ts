@@ -12,8 +12,6 @@ const REQUIRED_PROJECT_FILES = [
   '_index-assignments.md',
   '_index-plans.md',
   '_index-decisions.md',
-  'resources/_index.md',
-  'memories/_index.md',
 ] as const;
 
 const KNOWN_PROJECT_TOP_LEVEL = new Set<string>([

@@ -291,6 +291,29 @@ describe('syntaur doctor', () => {
     expect(issues.length).toBe(0);
   });
 
+  it('allows existing resources/ and memories/ folders without _index.md', async () => {
+    await initBaseline();
+    const projectDir = resolve(projectsDir, 'legacy-knowledge');
+    await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
+    await mkdir(resolve(projectDir, 'resources'), { recursive: true });
+    await mkdir(resolve(projectDir, 'memories'), { recursive: true });
+    const files: Array<[string, string]> = [
+      [resolve(projectDir, 'project.md'), `# legacy\n`],
+      [resolve(projectDir, 'manifest.md'), `# manifest\n`],
+      [resolve(projectDir, '_status.md'), `# status\n`],
+      [resolve(projectDir, '_index-assignments.md'), `# index\n`],
+      [resolve(projectDir, '_index-plans.md'), `# index\n`],
+      [resolve(projectDir, '_index-decisions.md'), `# index\n`],
+    ];
+    for (const [p, c] of files) await writeFile(p, c);
+
+    const report = await runChecks();
+    expect(
+      byId(report, 'project.required-files-present').filter((c) => c.status === 'error'),
+    ).toHaveLength(0);
+    expect(byId(report, 'project.orphan-files').filter((c) => c.status === 'warn')).toHaveLength(0);
+  });
+
   it('detects a silent fallback when defaultProjectDir is relative', async () => {
     await mkdir(syntaurDir, { recursive: true });
     await writeFile(

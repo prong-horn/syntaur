@@ -20,7 +20,5 @@ generated: "${params.timestamp}"
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
 - [Status](./_status.md)
-- [Resources](./resources/_index.md)
-- [Memories](./memories/_index.md)
 `;
 }

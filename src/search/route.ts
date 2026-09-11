@@ -9,8 +9,7 @@
 import type { FileKind, SearchHit } from './types.js';
 
 /**
- * Content kind → the `AssignmentDetail` `?tab=` pane that renders it. Memory and
- * resource have no assignment pane; they route to their own pages.
+ * Content kind → the `AssignmentDetail` `?tab=` pane that renders it.
  */
 export const FILE_KIND_TO_TAB: Record<FileKind, string> = {
   assignment: 'summary',
@@ -20,9 +19,6 @@ export const FILE_KIND_TO_TAB: Record<FileKind, string> = {
   progress: 'progress',
   comments: 'comments',
   'decision-record': 'decisions',
-  // memory/resource never use a tab — routeForHit short-circuits them.
-  memory: 'summary',
-  resource: 'summary',
 };
 
 /**
@@ -60,8 +56,6 @@ const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
 
 /**
  * Build the UNPREFIXED deep-link for a hit:
- *   - memory   → `/projects/<projectSlug>/memories/<itemSlug>`
- *   - resource → `/projects/<projectSlug>/resources/<itemSlug>`
  *   - assignment-scoped kinds → `<base>?tab=<pane>` + optional `#<slug(section)>`,
  *     where base is `/assignments/<id>` (standalone) or
  *     `/projects/<projectSlug>/assignments/<assignmentSlug>` (nested).
@@ -74,17 +68,9 @@ export function routeForHit(
     | 'assignmentSlug'
     | 'assignmentId'
     | 'standalone'
-    | 'itemSlug'
     | 'section'
   >,
 ): string {
-  if (hit.fileKind === 'memory') {
-    return `/projects/${hit.projectSlug}/memories/${hit.itemSlug}`;
-  }
-  if (hit.fileKind === 'resource') {
-    return `/projects/${hit.projectSlug}/resources/${hit.itemSlug}`;
-  }
-
   const base = hit.standalone
     ? `/assignments/${hit.assignmentId}`
     : `/projects/${hit.projectSlug}/assignments/${hit.assignmentSlug}`;

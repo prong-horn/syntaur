@@ -189,7 +189,7 @@ export function ProjectList() {
               The task manager built for agents, by agents
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              A project groups assignments, resources, and memories under one objective. Markdown stays authoritative — the dashboard is just a view.
+              A project groups assignments under one objective. Markdown stays authoritative — the dashboard is just a view.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Link className="shell-action shell-action--solid" to={`${wsPrefix}/create/project`}>

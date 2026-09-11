@@ -822,60 +822,6 @@ export function parseProgress(fileContent: string): ParsedProgress {
   };
 }
 
-// --- Resource Parser ---
-
-export interface ParsedResource {
-  name: string;
-  source: string;
-  category: string;
-  relatedAssignments: string[];
-  created: string;
-  updated: string;
-  body: string;
-}
-
-export function parseResource(fileContent: string): ParsedResource {
-  const [fm, body] = extractFrontmatter(fileContent);
-  return {
-    name: getField(fm, 'name') ?? '',
-    source: getField(fm, 'source') ?? '',
-    category: getField(fm, 'category') ?? '',
-    relatedAssignments: parseListField(fm, 'relatedAssignments'),
-    created: getField(fm, 'created') ?? '',
-    updated: getField(fm, 'updated') ?? '',
-    body,
-  };
-}
-
-// --- Memory Parser ---
-
-export interface ParsedMemory {
-  name: string;
-  source: string;
-  scope: string;
-  sourceAssignment: string | null;
-  relatedAssignments: string[];
-  tags: string[];
-  created: string;
-  updated: string;
-  body: string;
-}
-
-export function parseMemory(fileContent: string): ParsedMemory {
-  const [fm, body] = extractFrontmatter(fileContent);
-  return {
-    name: getField(fm, 'name') ?? '',
-    source: getField(fm, 'source') ?? '',
-    scope: getField(fm, 'scope') ?? '',
-    sourceAssignment: getField(fm, 'sourceAssignment'),
-    relatedAssignments: parseListField(fm, 'relatedAssignments'),
-    tags: parseListField(fm, 'tags'),
-    created: getField(fm, 'created') ?? '',
-    updated: getField(fm, 'updated') ?? '',
-    body,
-  };
-}
-
 // --- Playbook Parser ---
 
 export interface ParsedPlaybook {

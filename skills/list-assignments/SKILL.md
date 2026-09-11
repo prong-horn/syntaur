@@ -5,8 +5,7 @@ description: >-
   project, tag, and age. Use when the user wants to "see all assignments",
   "list pending work", "show in_progress assignments", "what's open",
   "find assignments tagged X", or otherwise query the cross-project board
-  non-interactively. Different from the interactive `browse` TUI — emits
-  scriptable output (table or JSON).
+  non-interactively. Emits scriptable output (table or JSON).
 license: MIT
 metadata:
   author: prong-horn
@@ -22,8 +21,8 @@ tools.
 
 ## When NOT to use this skill
 
-- The user wants to interactively browse and act on assignments — use
-  `syntaur browse` (the Ink TUI) instead.
+- The user wants to interactively browse and act on assignments — use the
+  dashboard instead.
 - The user wants details for a single assignment they already know — open
   its `assignment.md` directly.
 - The user wants project-level rollups (totals, blocked counts) — that's the

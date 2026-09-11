@@ -149,7 +149,7 @@ function renderTable(hits: SearchHit[]): string {
   if (hits.length === 0) return 'No matches.';
   const rows: string[][] = hits.map((hit) => [
     hit.projectSlug ?? '(standalone)',
-    hit.assignmentSlug ?? hit.itemSlug ?? '—',
+    hit.assignmentSlug ?? '—',
     sourceLabel(hit),
     highlight(hit.snippet, hit.matches).replace(/\s*\n\s*/g, ' ').trim(),
   ]);
@@ -172,7 +172,7 @@ function renderTable(hits: SearchHit[]): string {
 
 export const searchCommand = new Command('search')
   .description(
-    'Full-text search across all Syntaur markdown content (assignments, plans, progress, comments, handoffs, decision records, scratchpads, project memories + resources).',
+    'Full-text search across all Syntaur markdown content (assignments, plans, progress, comments, handoffs, decision records, and scratchpads).',
   )
   .argument('<query>', 'Search query')
   .option('--project <slug>', 'Restrict to one project')

@@ -22,7 +22,7 @@ beforeEach(async () => {
   await mkdir(projectsDir, { recursive: true });
   await mkdir(assignmentsDir, { recursive: true });
 
-  // ── project "alpha" with workspace, one nested assignment, one memory ─────
+  // ── project "alpha" with workspace, one nested assignment ─────
   const alpha = join(projectsDir, 'alpha');
   await write(
     join(alpha, 'project.md'),
@@ -46,14 +46,6 @@ beforeEach(async () => {
     join(aDir, 'comments.md'),
     `---\nassignment: asg-001\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
   );
-  await write(
-    join(alpha, 'memories', 'shell-config.md'),
-    `---\nname: Shell config\nscope: project\n---\n# Shell config\n\nAlways use zsh banana profile.\n`,
-  );
-  await write(
-    join(alpha, 'memories', '_index.md'),
-    `---\n---\n# index (should be skipped)\n`,
-  );
 
   // ── standalone assignment ─────────────────────────────────────────────────
   const sDir = join(assignmentsDir, 'uuid-standalone');
@@ -69,8 +61,7 @@ beforeEach(async () => {
     `---\nid: asg-arch\nslug: old-task\ntitle: Old Task\ntype: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
   );
 
-  // ── archived PROJECT "zeta" — its (non-archived) assignment + memory/resource
-  //    must ALL be excluded by default, and carry archived:true when included.
+  // ── archived PROJECT "zeta" — its assignment must be excluded by default.
   const zeta = join(projectsDir, 'zeta');
   await write(
     join(zeta, 'project.md'),
@@ -81,14 +72,6 @@ beforeEach(async () => {
     join(zDir, 'assignment.md'),
     `---\nid: asg-zeta\nslug: zeta-task\ntitle: Zeta Task\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
   );
-  await write(
-    join(zeta, 'memories', 'zeta-note.md'),
-    `---\nname: Zeta note\nscope: project\n---\n# Zeta note\n\nA papaya memory.\n`,
-  );
-  await write(
-    join(zeta, 'resources', 'zeta-link.md'),
-    `---\nname: Zeta link\n---\n# Zeta link\n\nA papaya resource.\n`,
-  );
 });
 
 afterEach(async () => {
@@ -96,20 +79,16 @@ afterEach(async () => {
 });
 
 function find(docs: SearchDoc[], fileKind: string, slug: string | null): SearchDoc | undefined {
-  return docs.find((d) => d.fileKind === fileKind && (slug === null || d.assignmentSlug === slug || d.itemSlug === slug));
+  return docs.find((d) => d.fileKind === fileKind && (slug === null || d.assignmentSlug === slug));
 }
 
 describe('buildIndex', () => {
-  it('emits a doc per file kind across assignments, sidecars, memories', async () => {
+  it('emits a doc per file kind across assignments and sidecars', async () => {
     const docs = await buildIndex({ projectsDir, assignmentsDir });
     const kinds = docs.map((d) => d.fileKind).sort();
     expect(kinds).toContain('assignment');
     expect(kinds).toContain('plan');
     expect(kinds).toContain('comments');
-    expect(kinds).toContain('memory');
-    // assignment.md present for nested + standalone (archived excluded by default).
-    // Note: assignmentSlug is the folder name (the walker's slug), so the
-    // standalone folder "uuid-standalone" is the slug, not the frontmatter "oneoff".
     const assignmentDocs = docs.filter((d) => d.fileKind === 'assignment');
     expect(assignmentDocs.map((d) => d.assignmentSlug).sort()).toEqual([
       'build-widget',
@@ -134,26 +113,20 @@ describe('buildIndex', () => {
     expect(withArchived.some((d) => d.assignmentSlug === 'old-task')).toBe(true);
   });
 
-  it('excludes an archived project’s assignments + memories + resources by default', async () => {
+  it('excludes an archived project’s assignments by default', async () => {
     const docs = await buildIndex({ projectsDir, assignmentsDir });
-    // None of zeta's content leaks in.
     expect(docs.some((d) => d.projectSlug === 'zeta')).toBe(false);
     expect(docs.some((d) => d.assignmentSlug === 'zeta-task')).toBe(false);
-    expect(docs.some((d) => d.itemSlug === 'zeta-note')).toBe(false);
-    expect(docs.some((d) => d.itemSlug === 'zeta-link')).toBe(false);
   });
 
   it('includes an archived project’s content (archived:true stamped) when includeArchived', async () => {
     const docs = await buildIndex({ projectsDir, assignmentsDir, includeArchived: true });
     const zetaDocs = docs.filter((d) => d.projectSlug === 'zeta');
     expect(zetaDocs.length).toBeGreaterThan(0);
-    // Every zeta doc (assignment, sidecars, memory, resource) is flagged archived.
     for (const d of zetaDocs) {
       expect(d.archived).toBe(true);
     }
     expect(zetaDocs.some((d) => d.fileKind === 'assignment')).toBe(true);
-    expect(zetaDocs.some((d) => d.fileKind === 'memory')).toBe(true);
-    expect(zetaDocs.some((d) => d.fileKind === 'resource')).toBe(true);
   });
 
   it('stamps the project workspace on every project-owned doc', async () => {
@@ -163,7 +136,6 @@ describe('buildIndex', () => {
     for (const d of alphaDocs) {
       expect(d.projectWorkspace).toBe('alpha-ws');
     }
-    // standalone has no project workspace
     const standalone = find(docs, 'assignment', 'uuid-standalone');
     expect(standalone?.projectWorkspace).toBeNull();
     expect(standalone?.standalone).toBe(true);
@@ -178,18 +150,6 @@ describe('buildIndex', () => {
     expect(comments?.type).toBe('feature');
     expect(comments?.status).toBe('in_progress');
     expect(comments?.standalone).toBe(false);
-  });
-
-  it('sets projectSlug + itemSlug on a memory doc with assignment fields null', async () => {
-    const docs = await buildIndex({ projectsDir, assignmentsDir });
-    const memory = find(docs, 'memory', 'shell-config');
-    expect(memory).toBeDefined();
-    expect(memory?.projectSlug).toBe('alpha');
-    expect(memory?.itemSlug).toBe('shell-config');
-    expect(memory?.assignmentId).toBeNull();
-    expect(memory?.assignmentSlug).toBeNull();
-    // _index.md must be skipped
-    expect(docs.some((d) => d.itemSlug === '_index')).toBe(false);
   });
 });
 
@@ -217,7 +177,6 @@ describe('FuseProvider.query', () => {
     expect(hit.snippet).not.toContain('**');
     expect(hit.snippet).not.toContain('<mark>');
     expect(hit.matches.length).toBeGreaterThan(0);
-    // matches index into the snippet
     const m = hit.matches[0];
     expect(hit.snippet.slice(m.start, m.end).toLowerCase()).toContain('strawberry');
     expect(hit.line).toBeGreaterThanOrEqual(1);
@@ -231,7 +190,6 @@ describe('FuseProvider.query', () => {
 
   it('respects the --in filter, including the plural alias resolution upstream', async () => {
     const p = await provider();
-    // canonical kinds passed in (parseFileKinds already resolved 'plans' → 'plan')
     const onlyPlans = p.query({ query: 'approach', in: ['plan'] }, 20);
     expect(onlyPlans.length).toBeGreaterThan(0);
     expect(onlyPlans.every((h) => h.fileKind === 'plan')).toBe(true);
@@ -241,7 +199,6 @@ describe('FuseProvider.query', () => {
     const p = await provider();
     const hits = p.query({ query: 'task', project: 'alpha' }, 20);
     expect(hits.every((h) => h.projectSlug === 'alpha')).toBe(true);
-    // the standalone "kiwi task" must be filtered out
     expect(hits.some((h) => h.assignmentSlug === 'oneoff')).toBe(false);
   });
 
@@ -249,8 +206,6 @@ describe('FuseProvider.query', () => {
     const p = await provider();
     const hits = p.query({ query: 'task', type: ['chore'] }, 20);
     expect(hits.length).toBeGreaterThan(0);
-    // a type filter only matches assignment-derived docs (memory/resource have
-    // no type), and every assignment-derived hit must be of type chore.
     expect(hits.every((h) => h.assignmentId !== null)).toBe(true);
     for (const h of hits) {
       expect(['asg-standalone', 'asg-arch']).toContain(h.assignmentId);

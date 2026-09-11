@@ -2,8 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { contentHitsToEntries } from '../paletteIndex';
 import type { ContentHit } from '../../hooks/useContentSearch';
 
-// A project-nested assignment hit WITH a project workspace: this is the only
-// shape that gets the `/w/<ws>` route prefix.
 const nestedHit: ContentHit = {
   path: '/p/acme/assignments/login/comments.md',
   projectSlug: 'acme',
@@ -21,8 +19,6 @@ const nestedHit: ContentHit = {
   route: '/projects/acme/assignments/login?tab=comments#auth',
 };
 
-// A standalone assignment hit — has no workspace-prefixed route variant, so it
-// must stay UNPREFIXED even if some workspace were present.
 const standaloneHit: ContentHit = {
   path: '/assignments/uuid-9/plan.md',
   projectSlug: null,
@@ -39,26 +35,24 @@ const standaloneHit: ContentHit = {
   route: '/assignments/uuid-9?tab=plan',
 };
 
-// A project memory hit — memories have no `/w/...` route variant.
-const memoryHit: ContentHit = {
-  path: '/p/acme/memories/conventions.md',
+const nestedNoWorkspaceHit: ContentHit = {
+  path: '/p/acme/assignments/login/plan.md',
   projectSlug: 'acme',
-  projectWorkspace: 'syntaur',
-  assignmentSlug: null,
-  assignmentId: null,
+  projectWorkspace: null,
+  assignmentSlug: 'login',
+  assignmentId: 'a-1',
   standalone: false,
-  itemSlug: 'conventions',
-  fileKind: 'memory',
-  title: 'Conventions',
+  fileKind: 'plan',
+  title: 'Fix login',
   score: 0.15,
   snippet: 'always branch from main',
   matches: [{ start: 7, end: 13 }],
   line: 1,
-  route: '/projects/acme/memories/conventions',
+  route: '/projects/acme/assignments/login?tab=plan',
 };
 
 describe('contentHitsToEntries', () => {
-  const entries = contentHitsToEntries([nestedHit, standaloneHit, memoryHit]);
+  const entries = contentHitsToEntries([nestedHit, standaloneHit, nestedNoWorkspaceHit]);
 
   it('maps every hit to a content-typed entry', () => {
     expect(entries).toHaveLength(3);
@@ -77,22 +71,22 @@ describe('contentHitsToEntries', () => {
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 
-  it('leaves a memory hit UNPREFIXED (/projects/<p>/memories/..., no /w/)', () => {
+  it('leaves a nested hit without projectWorkspace UNPREFIXED', () => {
     const e = entries[2];
-    expect(e.route).toBe('/projects/acme/memories/conventions');
+    expect(e.route).toBe('/projects/acme/assignments/login?tab=plan');
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 
   it('carries the snippet + match ranges for HTML-safe <mark> rendering', () => {
     expect(entries[0].snippet).toBe(nestedHit.snippet);
     expect(entries[0].snippetMatches).toEqual(nestedHit.matches);
-    expect(entries[2].snippet).toBe(memoryHit.snippet);
-    expect(entries[2].snippetMatches).toEqual(memoryHit.matches);
+    expect(entries[2].snippet).toBe(nestedNoWorkspaceHit.snippet);
+    expect(entries[2].snippetMatches).toEqual(nestedNoWorkspaceHit.matches);
   });
 
   it('builds a "<slug> › <section ?? fileKind>" title', () => {
-    expect(entries[0].title).toBe('login › Auth'); // section present
-    expect(entries[1].title).toBe('oneoff › plan'); // no section → fileKind
-    expect(entries[2].title).toBe('conventions › memory'); // itemSlug fallback
+    expect(entries[0].title).toBe('login › Auth');
+    expect(entries[1].title).toBe('oneoff › plan');
+    expect(entries[2].title).toBe('login › plan');
   });
 });

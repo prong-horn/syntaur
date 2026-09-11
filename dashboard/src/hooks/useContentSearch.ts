@@ -22,7 +22,6 @@ export interface ContentHit {
   assignmentSlug: string | null;
   assignmentId: string | null;
   standalone: boolean;
-  itemSlug?: string;
   fileKind:
     | 'assignment'
     | 'plan'
@@ -30,9 +29,7 @@ export interface ContentHit {
     | 'comments'
     | 'handoff'
     | 'decision-record'
-    | 'scratchpad'
-    | 'memory'
-    | 'resource';
+    | 'scratchpad';
   title: string;
   score: number;
   snippet: string;

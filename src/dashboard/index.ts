@@ -5,8 +5,6 @@ export type {
   ProjectDetail,
   AssignmentDetail,
   AssignmentSummary,
-  ResourceSummary,
-  MemorySummary,
   ProgressCounts,
   NeedsAttention,
   WsMessage,

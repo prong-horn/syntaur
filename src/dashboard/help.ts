@@ -129,12 +129,7 @@ const CLI_COMMANDS: HelpCommand[] = [
       'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --assignment implement-overview',
   },
 
-  // --- Browsing & playbooks (indices 18-20) ---
-  {
-    command: 'syntaur browse',
-    description: 'Interactive TUI browser for projects and assignments.',
-    example: 'syntaur browse',
-  },
+  // --- Playbooks (indices 18-20) ---
   {
     command: 'syntaur create-playbook',
     description: 'Create a new playbook with behavioral rules for agents.',

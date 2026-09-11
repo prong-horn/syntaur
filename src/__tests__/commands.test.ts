@@ -48,27 +48,8 @@ describe('createProjectCommand', () => {
     expect(files).toContain('_index-decisions.md');
     expect(files).toContain('_status.md');
     expect(files).toContain('assignments');
-    expect(files).toContain('resources');
-    expect(files).toContain('memories');
-  });
-
-  it('creates resource and memory index stubs', async () => {
-    await createProjectCommand('Test', { dir: testDir });
-    const projectDir = resolve(testDir, 'test');
-
-    const resourceIndex = await readFile(
-      resolve(projectDir, 'resources', '_index.md'),
-      'utf-8',
-    );
-    expect(resourceIndex).toContain('project: test');
-    expect(resourceIndex).toContain('total: 0');
-
-    const memoryIndex = await readFile(
-      resolve(projectDir, 'memories', '_index.md'),
-      'utf-8',
-    );
-    expect(memoryIndex).toContain('project: test');
-    expect(memoryIndex).toContain('total: 0');
+    expect(files).not.toContain('resources');
+    expect(files).not.toContain('memories');
   });
 
   it('slug in project.md matches folder name', async () => {

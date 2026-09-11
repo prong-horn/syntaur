@@ -12,8 +12,6 @@ import {
   renderIndexPlans,
   renderIndexDecisions,
   renderStatus,
-  renderResourcesIndex,
-  renderMemoriesIndex,
 } from '../templates/index.js';
 
 export interface CreateProjectOptions {
@@ -53,8 +51,6 @@ export async function createProjectCommand(
   const id = generateId();
 
   await ensureDir(resolve(projectDir, 'assignments'));
-  await ensureDir(resolve(projectDir, 'resources'));
-  await ensureDir(resolve(projectDir, 'memories'));
 
   const files: Array<[string, string]> = [
     [
@@ -81,14 +77,6 @@ export async function createProjectCommand(
       resolve(projectDir, '_status.md'),
       renderStatus({ slug, title, timestamp }),
     ],
-    [
-      resolve(projectDir, 'resources', '_index.md'),
-      renderResourcesIndex({ slug, title, timestamp }),
-    ],
-    [
-      resolve(projectDir, 'memories', '_index.md'),
-      renderMemoriesIndex({ slug, title, timestamp }),
-    ],
   ];
 
   for (const [filePath, content] of files) {
@@ -104,8 +92,6 @@ export async function createProjectCommand(
   console.log(`    _index-plans.md`);
   console.log(`    _index-decisions.md`);
   console.log(`    _status.md`);
-  console.log(`    resources/_index.md`);
-  console.log(`    memories/_index.md`);
 
   return slug;
 }

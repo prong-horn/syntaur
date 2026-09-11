@@ -21,8 +21,6 @@ const SIDEBAR_SECTIONS = [
   '/usage',
   '/agent-sessions',
   '/playbooks',
-  '/memories',
-  '/resources',
   '/views',
   '/help',
   '/settings',
@@ -81,14 +79,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/playbooks')) {
     return '/playbooks';
-  }
-
-  if (normalized.startsWith('/memories')) {
-    return '/memories';
-  }
-
-  if (normalized.startsWith('/resources')) {
-    return '/resources';
   }
 
   if (normalized.startsWith('/views')) {
@@ -169,18 +159,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
       } else if (parts[4] === 'decision-record' && parts[5] === 'edit') {
         title = 'Append Decision';
       }
-    } else if ((parts[2] === 'memories' || parts[2] === 'resources') && parts[3]) {
-      const sectionLabel = parts[2] === 'memories' ? 'Memories' : 'Resources';
-      const sectionRoot = parts[2] === 'memories' ? '/memories' : '/resources';
-      breadcrumbs.push({ label: sectionLabel, path: sectionRoot });
-      breadcrumbs.push({
-        label: toTitleCase(parts[3]),
-        path: `${workspacePrefix}/projects/${parts[1]}/${parts[2]}/${parts[3]}`,
-      });
-      title = toTitleCase(parts[3]);
-      if (parts[4] === 'edit') {
-        title = parts[2] === 'memories' ? 'Edit Memory' : 'Edit Resource';
-      }
     }
   } else if (parts[0] === 'agents') {
     breadcrumbs.push({ label: 'Agents', path: `${workspacePrefix}/agents` });
@@ -215,18 +193,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
     } else if (parts[1]) {
       breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/playbooks/${parts[1]}` });
       title = toTitleCase(parts[1]);
-    }
-  } else if (parts[0] === 'memories') {
-    breadcrumbs.push({ label: 'Memories', path: '/memories' });
-    title = 'Memories';
-    if (parts[1] === 'new') {
-      title = 'New Memory';
-    }
-  } else if (parts[0] === 'resources') {
-    breadcrumbs.push({ label: 'Resources', path: '/resources' });
-    title = 'Resources';
-    if (parts[1] === 'new') {
-      title = 'New Resource';
     }
   } else if (parts[0] === 'views') {
     title = 'Saved Views';

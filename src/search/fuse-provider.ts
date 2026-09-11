@@ -7,8 +7,7 @@
  * themselves (CLI `**…**`, API/palette HTML-safe `<mark>`).
  *
  * `extractSnippet` and `nearestSection` are pure exported helpers so they're
- * directly unit-testable. Fuse construction follows `src/tui/hooks/useSearch.ts`
- * (now with `includeMatches`).
+ * directly unit-testable. Fuse construction uses `includeMatches`.
  */
 
 import Fuse from 'fuse.js';
@@ -69,7 +68,6 @@ export class FuseProvider implements SearchProvider {
         line,
         route: '',
       };
-      if (doc.itemSlug !== undefined) hit.itemSlug = doc.itemSlug;
       if (section !== undefined) hit.section = section;
       hit.route = routeForHit(hit);
       hits.push(hit);

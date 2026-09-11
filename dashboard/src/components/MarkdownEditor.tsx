@@ -6,11 +6,9 @@ import { deriveStatusOptions } from '../lib/statusMeta';
 import {
   normalizeEditorContent,
   parseAssignmentEditorState,
-  parseMemoryEditorState,
   parseProjectEditorState,
   parsePlanEditorState,
   parsePlaybookEditorState,
-  parseResourceEditorState,
   parseScratchpadEditorState,
 } from '../lib/documents';
 import { isValidSlug, slugify } from '../lib/slug';
@@ -62,7 +60,7 @@ export function MarkdownEditor({
   const statusLabel = hasChanges ? 'Unsaved changes' : mode === 'create' ? 'Draft' : 'Saved';
   // Body-only document types: hide the Raw Markdown toggle so users can't accidentally edit
   // frontmatter. (Server enforces body-only on save regardless, so this is UX clarity.)
-  const allowRawMode = documentType !== 'memory' && documentType !== 'resource';
+  const allowRawMode = true;
 
   // Keep a ref of the latest editor state so the window keydown listener can be
   // bound once yet always act on current values (avoids a stale closure that
@@ -474,32 +472,6 @@ function StructuredEditor({
     );
   }
 
-  if (documentType === 'memory' || documentType === 'resource') {
-    const state =
-      documentType === 'memory'
-        ? parseMemoryEditorState(content)
-        : parseResourceEditorState(content);
-    const bodyLabel = documentType === 'memory' ? 'Memory body' : 'Resource body';
-    return (
-      <div className="space-y-3">
-        <Field label={bodyLabel}>
-          <textarea
-            value={state.body}
-            onChange={(event) =>
-              onChange(normalizeEditorContent(documentType, content, { body: event.target.value }))
-            }
-            className="editor-textarea"
-            spellCheck={false}
-          />
-        </Field>
-        <p className="text-xs text-muted-foreground/80">
-          Frontmatter (name, scope/category, source, related assignments, tags) is preserved
-          server-side on save.
-        </p>
-      </div>
-    );
-  }
-
   // playbook
   const state = parsePlaybookEditorState(content);
   return (
@@ -628,10 +600,6 @@ function getBodyContent(
       return parseScratchpadEditorState(content).body;
     case 'playbook':
       return parsePlaybookEditorState(content).body;
-    case 'memory':
-      return parseMemoryEditorState(content).body;
-    case 'resource':
-      return parseResourceEditorState(content).body;
   }
 }
 
@@ -672,9 +640,5 @@ function getValidationErrors(
         state.slug.trim() && !isValidSlug(state.slug) ? 'Playbook slug must be lowercase letters, numbers, and hyphens only.' : null,
       ].filter((value): value is string => Boolean(value));
     }
-    case 'memory':
-    case 'resource':
-      // Body-only edit; frontmatter is enforced server-side. No client validation needed.
-      return [];
   }
 }

@@ -5,7 +5,6 @@ import { routeForHit, slugifyHeading, FILE_KIND_TO_TAB } from '../search/route.j
 describe('parseFileKinds', () => {
   it('resolves singular + plural/common forms to canonical FileKind', () => {
     expect(parseFileKinds('comments,plans')).toEqual(['comments', 'plan']);
-    expect(parseFileKinds('memory, resources')).toEqual(['memory', 'resource']);
     expect(parseFileKinds('decisions')).toEqual(['decision-record']);
     expect(parseFileKinds('decision-record')).toEqual(['decision-record']);
   });
@@ -138,15 +137,6 @@ describe('routeForHit', () => {
       }),
     );
     expect(route).toBe('/assignments/uuid-123?tab=plan');
-  });
-
-  it('routes memory + resource to their own pages (no tab)', () => {
-    expect(
-      routeForHit(hit({ fileKind: 'memory', projectSlug: 'proj', itemSlug: 'shell-config' })),
-    ).toBe('/projects/proj/memories/shell-config');
-    expect(
-      routeForHit(hit({ fileKind: 'resource', projectSlug: 'proj', itemSlug: 'dashboard-link' })),
-    ).toBe('/projects/proj/resources/dashboard-link');
   });
 
   it('maps each FileKind to an existing AssignmentDetail tab', () => {

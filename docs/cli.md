@@ -391,13 +391,6 @@ running in the assignment's worktree. See
 [assignment-chat.md](./assignment-chat.md).
 
 ```
-syntaur browse
-```
-
-`browse` is a read-only TUI over projects and assignments — Enter expands a
-project. It no longer launches anything.
-
-```
 syntaur open <assignment>
 ```
 

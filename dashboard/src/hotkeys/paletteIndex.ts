@@ -50,8 +50,6 @@ export const STATIC_PAGES = [
   { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
   { id: 'page-agent-sessions', title: 'Agent Sessions', basePath: '/agent-sessions', keywords: ['sessions', 'runs', 'claude', 'codex'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
-  { id: 'page-memories',    title: 'Memories',    basePath: '/memories',    keywords: ['knowledge', 'learnings'] },
-  { id: 'page-resources',   title: 'Resources',   basePath: '/resources',   keywords: ['knowledge', 'reference'] },
   { id: 'page-workflow',    title: 'Workflow',    basePath: '/workflow',    keywords: ['statuses', 'transitions', 'derive', 'facts'] },
   { id: 'page-settings',    title: 'Settings',    basePath: '/settings',    keywords: [] },
   { id: 'page-help',        title: 'Help',        basePath: '/help',        keywords: ['shortcuts'] },
@@ -167,16 +165,13 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
  * project-nested *assignment-pane* hits get prefixed: those are the only routes
  * with a workspace-prefixed variant in App.tsx
  * (`/w/:workspace/projects/:slug/assignments/:aslug`). Standalone
- * (`/assignments/:id`) and memory/resource (`/projects/:slug/memories|resources/:slug`)
- * routes have NO `/w/...` variant, so prefixing them would 404 — they stay
- * unprefixed. Mirrors the per-entity prefixing at `paletteIndex.ts:106,129`.
+ * (`/assignments/:id`) routes have NO `/w/...` variant, so prefixing them would
+ * 404 — they stay unprefixed. Mirrors the per-entity prefixing at `paletteIndex.ts:106,129`.
  */
 function wsPrefixForHit(hit: ContentHit): string {
   const eligible =
     !hit.standalone &&
-    Boolean(hit.projectWorkspace) &&
-    hit.fileKind !== 'memory' &&
-    hit.fileKind !== 'resource';
+    Boolean(hit.projectWorkspace);
   return eligible ? `/w/${hit.projectWorkspace}` : '';
 }
 
@@ -193,7 +188,7 @@ export function contentHitsToEntries(hits: ContentHit[]): PaletteEntry[] {
     type: 'content' as const,
     // Path is unique per file; idx disambiguates multiple hits in one file.
     id: `content-${hit.path}-${idx}`,
-    title: `${hit.assignmentSlug ?? hit.itemSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
+    title: `${hit.assignmentSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
     subtitle: hit.projectSlug ?? (hit.standalone ? 'standalone' : undefined),
     route: `${wsPrefixForHit(hit)}${hit.route}`,
     project: hit.projectSlug,

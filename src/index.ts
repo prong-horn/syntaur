@@ -42,7 +42,6 @@ import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
-import { browseCommand } from './commands/browse.js';
 import { createPlaybookCommand } from './commands/create-playbook.js';
 import { listPlaybooksCommand } from './commands/list-playbooks.js';
 import { enablePlaybookCommand } from './commands/enable-playbook.js';
@@ -56,8 +55,6 @@ import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
 import { worktreeCommand } from './commands/worktree.js';
 import { openCommand } from './commands/open.js';
-import { resourceCommand } from './commands/resource.js';
-import { memoryCommand } from './commands/memory.js';
 import { lsCommand } from './commands/ls.js';
 import { searchCommand } from './commands/search.js';
 import { timelineCommand } from './commands/timeline.js';
@@ -694,15 +691,6 @@ program
   );
 
 program
-  .command('browse')
-  .description('Interactive TUI browser for projects and assignments')
-  .action(
-    runCommand(async (options) => {
-      await browseCommand(options);
-    }),
-  );
-
-program
   .command('create-playbook')
   .description('Create a new playbook')
   .argument('<name>', 'Playbook name')
@@ -768,8 +756,6 @@ program.addCommand(planCommand);
 program.addCommand(sessionCommand);
 program.addCommand(worktreeCommand);
 program.addCommand(openCommand);
-program.addCommand(resourceCommand);
-program.addCommand(memoryCommand);
 program.addCommand(lsCommand);
 program.addCommand(searchCommand);
 program.addCommand(timelineCommand);
@@ -788,7 +774,6 @@ Common workflow:
   $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
   $ syntaur create-project "My App"                Start a new project
   $ syntaur create-assignment --project my-app "Add login"   Add a task to a project
-  $ syntaur browse                                 Interactive TUI: browse projects & assignments
   $ syntaur dashboard                              Open the local web dashboard
   $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes
 

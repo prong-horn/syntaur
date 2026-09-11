@@ -28,14 +28,6 @@ import { PlaybooksPage } from './pages/PlaybooksPage';
 import { PlaybookDetail } from './pages/PlaybookDetail';
 import { CreatePlaybook } from './pages/CreatePlaybook';
 import { EditPlaybook } from './pages/EditPlaybook';
-import { MemoriesPage } from './pages/MemoriesPage';
-import { MemoryDetail } from './pages/MemoryDetail';
-import { CreateMemory } from './pages/CreateMemory';
-import { EditMemory } from './pages/EditMemory';
-import { ResourcesPage } from './pages/ResourcesPage';
-import { ResourceDetail } from './pages/ResourceDetail';
-import { CreateResource } from './pages/CreateResource';
-import { EditResource } from './pages/EditResource';
 import { SettingsPage } from './pages/SettingsPage';
 import { WorkflowPage } from './pages/WorkflowPage';
 import { SavedViewsPage } from './pages/SavedViewsPage';
@@ -70,14 +62,6 @@ export function App() {
             <Route path="/playbooks/create" element={<CreatePlaybook />} />
             <Route path="/playbooks/:slug" element={<PlaybookDetail />} />
             <Route path="/playbooks/:slug/edit" element={<EditPlaybook />} />
-            <Route path="/memories" element={<MemoriesPage />} />
-            <Route path="/memories/new" element={<CreateMemory />} />
-            <Route path="/projects/:slug/memories/:itemSlug" element={<MemoryDetail />} />
-            <Route path="/projects/:slug/memories/:itemSlug/edit" element={<EditMemory />} />
-            <Route path="/resources" element={<ResourcesPage />} />
-            <Route path="/resources/new" element={<CreateResource />} />
-            <Route path="/projects/:slug/resources/:itemSlug" element={<ResourceDetail />} />
-            <Route path="/projects/:slug/resources/:itemSlug/edit" element={<EditResource />} />
             <Route path="/views" element={<SavedViewsPage />} />
             <Route path="/views/:id" element={<SavedViewPage />} />
             <Route path="/help" element={<HelpPage />} />

@@ -20,9 +20,7 @@ export type FileKind =
   | 'comments'
   | 'handoff'
   | 'decision-record'
-  | 'scratchpad'
-  | 'memory'
-  | 'resource';
+  | 'scratchpad';
 
 export const FILE_KINDS: readonly FileKind[] = [
   'assignment',
@@ -32,8 +30,6 @@ export const FILE_KINDS: readonly FileKind[] = [
   'handoff',
   'decision-record',
   'scratchpad',
-  'memory',
-  'resource',
 ];
 
 /**
@@ -48,7 +44,7 @@ export interface SearchDoc {
   /** Absolute file path on disk. */
   path: string;
   fileKind: FileKind;
-  /** Human title (assignment/project/memory/resource title), used as a Fuse key. */
+  /** Human title (assignment/project title), used as a Fuse key. */
   title: string;
   /** The markdown body to full-text search. */
   body: string;
@@ -63,17 +59,15 @@ export interface SearchDoc {
    * `/w/<ws>` route prefix the palette applies. `null` for standalone.
    */
   projectWorkspace: string | null;
-  /** Owning assignment slug; `null` for memory/resource docs. */
+  /** Owning assignment slug. */
   assignmentSlug: string | null;
-  /** Owning assignment id (uuid); `null` for memory/resource docs. */
+  /** Owning assignment id (uuid). */
   assignmentId: string | null;
   /** True when the owning assignment is standalone (no containing project). */
   standalone: boolean;
-  /** Memory/resource file slug (filename without `.md`); absent otherwise. */
-  itemSlug?: string;
-  /** Owning assignment `type` (for `--type` filtering); absent for memory/resource. */
+  /** Owning assignment `type` (for `--type` filtering). */
   type?: string;
-  /** Owning assignment `status` (for `--status` filtering); absent for memory/resource. */
+  /** Owning assignment `status` (for `--status` filtering). */
   status?: string;
   /** Archived flag (from assignment or project frontmatter). */
   archived: boolean;
@@ -97,7 +91,6 @@ export interface SearchHit {
   assignmentSlug: string | null;
   assignmentId: string | null;
   standalone: boolean;
-  itemSlug?: string;
   fileKind: FileKind;
   title: string;
   score: number;
@@ -150,10 +143,6 @@ export const FILE_KIND_ALIASES: Record<string, FileKind> = {
   'decision-records': 'decision-record',
   scratchpad: 'scratchpad',
   scratchpads: 'scratchpad',
-  memory: 'memory',
-  memories: 'memory',
-  resource: 'resource',
-  resources: 'resource',
 };
 
 /**

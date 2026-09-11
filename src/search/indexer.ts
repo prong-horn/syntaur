@@ -24,8 +24,6 @@ import {
   parseHandoff,
   parseDecisionRecord,
   parseScratchpad,
-  parseMemory,
-  parseResource,
   parseProject,
 } from '../dashboard/parser.js';
 import type { FileKind, SearchDoc } from './types.js';
@@ -153,44 +151,6 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     }
   }
 
-  // ── project memories + resources ────────────────────────────────────────
-  if (await fileExists(projectsDir)) {
-    const projects = await readdir(projectsDir, { withFileTypes: true });
-    for (const m of projects) {
-      if (!m.isDirectory()) continue;
-      if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
-      const projectIsArchived = projectArchived.get(m.name) === true;
-      if (projectIsArchived && !includeArchived) continue;
-      const projectPath = resolve(projectsDir, m.name);
-      const workspace = projectWorkspace.get(m.name) ?? null;
-
-      await indexItems(
-        docs,
-        resolve(projectPath, 'memories'),
-        'memory',
-        m.name,
-        workspace,
-        projectIsArchived,
-        (content) => {
-          const parsed = parseMemory(content);
-          return { title: parsed.name, body: parsed.body };
-        },
-      );
-      await indexItems(
-        docs,
-        resolve(projectPath, 'resources'),
-        'resource',
-        m.name,
-        workspace,
-        projectIsArchived,
-        (content) => {
-          const parsed = parseResource(content);
-          return { title: parsed.name, body: parsed.body };
-        },
-      );
-    }
-  }
-
   return docs;
 }
 
@@ -216,46 +176,6 @@ function makeAssignmentDoc(
     status: identity.status,
     archived: identity.archived,
   };
-}
-
-/** Index every `*.md` (skipping `_index.md` / dot-prefixed) in a memories/resources dir. */
-async function indexItems(
-  docs: SearchDoc[],
-  dir: string,
-  fileKind: 'memory' | 'resource',
-  projectSlug: string,
-  projectWorkspace: string | null,
-  archived: boolean,
-  extract: (content: string) => { title: string; body: string },
-): Promise<void> {
-  if (!(await fileExists(dir))) return;
-  const entries = await readdir(dir, { withFileTypes: true });
-  for (const e of entries) {
-    if (!e.isFile()) continue;
-    if (!e.name.endsWith('.md')) continue;
-    if (e.name.startsWith('.') || e.name.startsWith('_')) continue;
-    const itemSlug = e.name.slice(0, -'.md'.length);
-    const filePath = resolve(dir, e.name);
-    try {
-      const { title, body } = extract(await readFile(filePath, 'utf-8'));
-      docs.push({
-        id: filePath,
-        path: filePath,
-        fileKind,
-        title,
-        body,
-        projectSlug,
-        projectWorkspace,
-        assignmentSlug: null,
-        assignmentId: null,
-        standalone: false,
-        itemSlug,
-        archived,
-      });
-    } catch {
-      /* skip unreadable item */
-    }
-  }
 }
 
 // ── cache + invalidation seam ─────────────────────────────────────────────

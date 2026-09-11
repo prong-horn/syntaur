@@ -146,57 +146,6 @@ export interface ArchiveResponse {
   assignments: ArchivedAssignmentItem[];
 }
 
-export interface ResourceSummary {
-  name: string;
-  slug: string;
-  category: string;
-  source: string;
-  relatedAssignments: string[];
-  updated: string;
-}
-
-export interface MemorySummary {
-  name: string;
-  slug: string;
-  source: string;
-  scope: string;
-  sourceAssignment: string | null;
-  relatedAssignments: string[];
-  updated: string;
-}
-
-/** Cross-project list shape: project-scoped summary enriched with project context. */
-export interface MemorySummaryWithProject extends MemorySummary {
-  projectSlug: string;
-  projectTitle: string;
-}
-
-export interface ResourceSummaryWithProject extends ResourceSummary {
-  projectSlug: string;
-  projectTitle: string;
-}
-
-export interface MemoryDetail extends MemorySummaryWithProject {
-  body: string;
-  created: string;
-  tags: string[];
-}
-
-export interface ResourceDetail extends ResourceSummaryWithProject {
-  body: string;
-  created: string;
-}
-
-export interface MemoriesResponse {
-  generatedAt: string;
-  memories: MemorySummaryWithProject[];
-}
-
-export interface ResourcesResponse {
-  generatedAt: string;
-  resources: ResourceSummaryWithProject[];
-}
-
 export interface ProjectDetail {
   slug: string;
   title: string;
@@ -213,8 +162,6 @@ export interface ProjectDetail {
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
   assignments: AssignmentSummary[];
-  resources: ResourceSummary[];
-  memories: MemorySummary[];
   dependencyGraph: string | null;
   workspace: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
@@ -615,9 +562,7 @@ export type EditableDocumentType =
   | 'scratchpad'
   | 'handoff'
   | 'decision-record'
-  | 'playbook'
-  | 'memory'
-  | 'resource';
+  | 'playbook';
 
 export interface EditableDocumentResponse {
   documentType: EditableDocumentType;
