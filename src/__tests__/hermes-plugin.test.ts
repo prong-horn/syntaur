@@ -144,6 +144,41 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
     }
   });
 
+  it('writes tier3-violations.log under SYNTAUR_HOME when set', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'hermes-syntaur-home-'));
+    try {
+      const syntaurHome = join(tmp, 'syntaur-home');
+      mkdirSync(syntaurHome, { recursive: true });
+      const ws = join(tmp, 'ws');
+      mkdirSync(join(ws, '.syntaur'), { recursive: true });
+      writeFileSync(
+        join(ws, '.syntaur', 'context.json'),
+        JSON.stringify({ workspaceRoot: ws, sessionId: 'sid-x' }),
+      );
+
+      const parent = dirname(PLUGIN_DIR);
+      const harness = [
+        'import sys, os',
+        `sys.path.insert(0, ${JSON.stringify(parent)})`,
+        'import syntaur',
+        'syntaur._log_violation("hermetic-home-test")',
+        `log = os.path.join(os.environ["SYNTAUR_HOME"], "tier3-violations.log")`,
+        'assert os.path.isfile(log)',
+        'assert "hermetic-home-test" in open(log, encoding="utf-8").read()',
+        'print("OK")',
+      ].join('\n');
+      const r = spawnSync('python3', ['-c', harness], {
+        encoding: 'utf-8',
+        cwd: ws,
+        env: { ...process.env, SYNTAUR_HOME: syntaurHome },
+      });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout.trim()).toBe('OK');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+
   it('does NOT leak stale legacy context.json scalars when boundary resolution fails ({})', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'hermes-stale-'));
     try {

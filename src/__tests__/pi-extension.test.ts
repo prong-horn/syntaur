@@ -8,6 +8,7 @@ import activate, {
   loadContext,
   resolveBoundary,
   CORE_COMMANDS,
+  dashboardPort,
 } from '../../platforms/pi/extensions/syntaur/index';
 
 /**
@@ -94,6 +95,22 @@ describe('pi extension — extractWritePath', () => {
     expect(extractWritePath('read', { file_path: '/x' })).toBeNull();
     expect(extractWritePath('bash', { command: 'ls' })).toBeNull();
     expect(extractWritePath('edit', {})).toBeNull();
+  });
+});
+
+describe('pi extension — dashboardPort', () => {
+  it('reads dashboard-port from SYNTAUR_HOME when set', async () => {
+    const tmp = await mkdtemp(join(tmpdir(), 'pi-port-'));
+    const prior = process.env.SYNTAUR_HOME;
+    try {
+      await writeFile(join(tmp, 'dashboard-port'), '4999\n');
+      process.env.SYNTAUR_HOME = tmp;
+      expect(dashboardPort()).toBe('4999');
+    } finally {
+      if (prior === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prior;
+      await rm(tmp, { recursive: true, force: true });
+    }
   });
 });
 

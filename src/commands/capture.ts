@@ -5,7 +5,7 @@ import { resolveAssignmentTarget } from '../utils/assignment-target.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { assertMayMutate } from '../utils/session-id.js';
 import { initSessionDb } from '../dashboard/session-db.js';
-import { proofDir } from '../utils/paths.js';
+import { expandHome, proofDir } from '../utils/paths.js';
 import {
   generateArtifactId,
   extensionForKind,
@@ -279,9 +279,7 @@ export async function captureCommand(
 
   // Validate --file before copying anything.
   if (options.file) {
-    const expanded = options.file.startsWith('~/')
-      ? resolve(process.env.HOME ?? '', options.file.slice(2))
-      : resolve(options.file);
+    const expanded = expandHome(options.file);
     if (!(await fileExists(expanded))) {
       throw new Error(`--file does not exist: ${options.file}`);
     }

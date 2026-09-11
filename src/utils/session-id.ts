@@ -33,6 +33,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { syntaurRoot } from './paths.js';
 import { captureProcessStartedAt } from './process-info.js';
 import { walkClaudeProjects, walkCodexSessions } from '../usage/cwd-extractor.js';
 
@@ -252,7 +253,7 @@ export async function resolveOwnSessionId(
   // Layer 4 — ancestor-pid runtime marker.
   const home = deps.homeDir ?? homedir();
   const claudeSessionsDir = deps.claudeSessionsDir ?? join(home, '.claude', 'sessions');
-  const runtimeSessionsDir = deps.runtimeSessionsDir ?? join(home, '.syntaur', 'runtime', 'sessions');
+  const runtimeSessionsDir = deps.runtimeSessionsDir ?? join(syntaurRoot(), 'runtime', 'sessions');
   const startPid = deps.startPid ?? process.ppid;
   const fromMarker = resolveFromAncestorMarkers(
     startPid,

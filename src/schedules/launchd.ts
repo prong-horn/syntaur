@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, rmSync, realpathSync, openSync, closeSync } from 'node:fs';
 import { homedir, userInfo } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { syntaurRoot } from '../utils/paths.js';
 
 export const LAUNCH_AGENT_LABEL = 'com.syntaur.schedule.tick';
 export const SESSION_SCAN_LABEL = 'com.syntaur.session.scan';
@@ -114,8 +115,8 @@ export interface LaunchdDeps {
   acquireInstallLock?: () => () => void;
 }
 
-function defaultAcquireInstallLock(home: string): () => void {
-  const lockPath = join(home, '.syntaur', 'install-launch-agent.lock');
+function defaultAcquireInstallLock(): () => void {
+  const lockPath = join(syntaurRoot(), 'install-launch-agent.lock');
   mkdirSync(dirname(lockPath), { recursive: true });
   const fd = openSync(lockPath, 'wx'); // EEXIST if another install is in flight
   return () => {
@@ -160,8 +161,8 @@ function resolveSpec(
     nodePath: deps.nodePath ?? process.execPath,
     syntaurBin: absolutize(deps.syntaurBin ?? process.argv[1] ?? 'syntaur'),
     intervalSeconds: deps.intervalSeconds ?? config.defaultIntervalSeconds,
-    outLog: join(home, '.syntaur', 'logs', config.outLogName),
-    errLog: join(home, '.syntaur', 'logs', config.errLogName),
+    outLog: join(syntaurRoot(), 'logs', config.outLogName),
+    errLog: join(syntaurRoot(), 'logs', config.errLogName),
   };
   const plistPath = join(home, 'Library', 'LaunchAgents', `${spec.label}.plist`);
   return { spec, plistPath, home, uid };
@@ -184,9 +185,9 @@ function installAgent(config: LaunchAgentConfig, deps: LaunchdDeps): InstallResu
   const writeFile = deps.writeFile ?? ((p: string, c: string) => writeFileSync(p, c));
   const run = deps.run ?? defaultRun;
 
-  const releaseLock = (deps.acquireInstallLock ?? (() => defaultAcquireInstallLock(home)))();
+  const releaseLock = (deps.acquireInstallLock ?? defaultAcquireInstallLock)();
   try {
-    mkdirp(join(home, '.syntaur', 'logs'));
+    mkdirp(join(syntaurRoot(), 'logs'));
     mkdirp(join(home, 'Library', 'LaunchAgents'));
     writeFile(plistPath, buildPlist(spec));
 

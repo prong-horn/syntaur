@@ -1,6 +1,7 @@
 import { readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { resolve } from 'node:path';
+import { expandHome } from './paths.js';
 import { fileExists } from './fs.js';
 import { nowTimestamp } from './timestamp.js';
 
@@ -236,12 +237,7 @@ export async function migrateLegacyConfig(
     ? projectLineMatch[1].trim().replace(/^['"]|['"]$/g, '')
     : missionValue;
 
-  const expand = (p: string): string =>
-    p.startsWith('~')
-      ? resolve(process.env.HOME ?? '/', p.slice(p.startsWith('~/') ? 2 : 1))
-      : p;
-
-  let resolvedProjectsDir = projectsDirRaw ? expand(projectsDirRaw) : null;
+  let resolvedProjectsDir = projectsDirRaw ? expandHome(projectsDirRaw) : null;
 
   // --- Directory rename (only if the value still points at a /missions dir). ---
   if (resolvedProjectsDir && resolvedProjectsDir.endsWith('/missions')) {

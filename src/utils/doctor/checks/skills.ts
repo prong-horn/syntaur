@@ -8,10 +8,12 @@ import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'skills';
 
-const skillTargets: Array<{ agent: 'claude' | 'codex'; dir: string; label: string }> = [
-  { agent: 'claude', dir: resolve(homedir(), '.claude', 'skills'), label: '~/.claude/skills' },
-  { agent: 'codex', dir: resolve(homedir(), '.codex', 'skills'), label: '~/.codex/skills' },
-];
+function skillTargets(): Array<{ agent: 'claude' | 'codex'; dir: string; label: string }> {
+  return [
+    { agent: 'claude', dir: resolve(homedir(), '.claude', 'skills'), label: '~/.claude/skills' },
+    { agent: 'codex', dir: resolve(homedir(), '.codex', 'skills'), label: '~/.codex/skills' },
+  ];
+}
 
 const skillsDedupCheck: Check = {
   id: 'skills.dedup',
@@ -21,7 +23,7 @@ const skillsDedupCheck: Check = {
     const findings: string[] = [];
     const affected: string[] = [];
 
-    for (const { agent, dir, label } of skillTargets) {
+    for (const { agent, dir, label } of skillTargets()) {
       if (!(await fileExists(dir))) continue;
 
       const pluginEnabled = await isSyntaurPluginEnabledFor(agent);

@@ -14,7 +14,9 @@ interface NpxPromptState {
   lastUpgradeHintAt?: string;
 }
 
-const STATE_FILE = resolve(syntaurRoot(), 'npx-install.json');
+function stateFile(): string {
+  return resolve(syntaurRoot(), 'npx-install.json');
+}
 const META_ARGS = new Set(['-h', '--help', '-V', '--version', 'help']);
 const GLOBAL_VERSION_TIMEOUT_MS = 2000;
 
@@ -37,9 +39,9 @@ function isRunningViaNpx(scriptUrl: string): boolean {
 }
 
 async function readState(): Promise<NpxPromptState | null> {
-  if (!(await fileExists(STATE_FILE))) return null;
+  if (!(await fileExists(stateFile()))) return null;
   try {
-    const raw = await readFile(STATE_FILE, 'utf-8');
+    const raw = await readFile(stateFile(), 'utf-8');
     return JSON.parse(raw) as NpxPromptState;
   } catch {
     return null;
@@ -47,7 +49,7 @@ async function readState(): Promise<NpxPromptState | null> {
 }
 
 async function writeState(state: NpxPromptState): Promise<void> {
-  await writeFileForce(STATE_FILE, `${JSON.stringify(state, null, 2)}\n`);
+  await writeFileForce(stateFile(), `${JSON.stringify(state, null, 2)}\n`);
 }
 
 async function resolveNpmBin(): Promise<{ cmd: string; shell: boolean }> {

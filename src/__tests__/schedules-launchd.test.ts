@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildPlist,
   installLaunchAgent,
@@ -34,6 +34,18 @@ describe('buildPlist', () => {
 });
 
 describe('installLaunchAgent', () => {
+  let priorSyntaurHome: string | undefined;
+
+  beforeEach(() => {
+    priorSyntaurHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = '/home/u/.syntaur';
+  });
+
+  afterEach(() => {
+    if (priorSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = priorSyntaurHome;
+  });
+
   function recordingDeps() {
     const calls: Array<[string, string[]]> = [];
     const writes: Array<[string, string]> = [];

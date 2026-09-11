@@ -46,12 +46,16 @@ def _extract_write_path(tool_name, args):
     return None
 
 
+def _syntaur_home():
+    return os.environ.get("SYNTAUR_HOME") or os.path.join(os.path.expanduser("~"), ".syntaur")
+
+
 def _dashboard_port():
     env = os.environ.get("SYNTAUR_DASHBOARD_PORT")
     if env:
         return env
     try:
-        with open(os.path.join(os.path.expanduser("~"), ".syntaur", "dashboard-port"), "r") as fh:
+        with open(os.path.join(_syntaur_home(), "dashboard-port"), "r") as fh:
             return fh.read().strip() or "4800"
     except Exception:
         return "4800"
@@ -81,7 +85,7 @@ def _log_violation(reason):
     except Exception:
         pass
     try:
-        log = os.path.join(os.path.expanduser("~"), ".syntaur", "tier3-violations.log")
+        log = os.path.join(_syntaur_home(), "tier3-violations.log")
         os.makedirs(os.path.dirname(log), exist_ok=True)
         with open(log, "a", encoding="utf-8") as fh:
             fh.write(reason + "\n")

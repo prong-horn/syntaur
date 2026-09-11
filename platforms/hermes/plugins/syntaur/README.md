@@ -29,7 +29,8 @@ syntaur/
 
 - **Blocking is best-effort (version-dependent).** Hermes documents `pre_tool_call` primarily as a
   fire-and-forget observer; some versions allow a return value to block. This plugin returns a deny
-  signal AND logs every violation to stderr + `~/.syntaur/tier3-violations.log`, so enforcement is
+  signal AND logs every violation to stderr + `$SYNTAUR_HOME/tier3-violations.log` (default
+  `~/.syntaur/tier3-violations.log`), so enforcement is
   observable even if a given Hermes build ignores the block. Verify hard-block behavior against your
   live Hermes runtime.
 - Hooks never raise (the Hermes handler contract) — all bodies are wrapped in try/except.

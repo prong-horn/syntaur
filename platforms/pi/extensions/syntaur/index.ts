@@ -224,11 +224,15 @@ export const CORE_COMMANDS: CoreCommand[] = [
   { name: 'track-session', description: 'Register this session in the Syntaur dashboard', kind: 'guidance', skill: 'track-session' },
 ];
 
-function dashboardPort(): string {
+function syntaurHome(): string {
+  return process.env.SYNTAUR_HOME || resolve(homedir(), '.syntaur');
+}
+
+export function dashboardPort(): string {
   const env = process.env.SYNTAUR_DASHBOARD_PORT;
   if (env && env.length > 0) return env;
   try {
-    return readFileSync(resolve(homedir(), '.syntaur', 'dashboard-port'), 'utf-8').trim() || '4800';
+    return readFileSync(resolve(syntaurHome(), 'dashboard-port'), 'utf-8').trim() || '4800';
   } catch {
     return '4800';
   }
