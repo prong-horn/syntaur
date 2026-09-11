@@ -90,5 +90,6 @@
     "src/__tests__/dashboard-api-inbox.test.ts",
     "src/__tests__/inbox-snooze.test.ts",
     "src/__tests__/home-path-hygiene.test.ts",
+    "src/__tests__/doctor-known-top-level.test.ts",
   ]
 }

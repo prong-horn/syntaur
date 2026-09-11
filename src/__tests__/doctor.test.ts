@@ -125,6 +125,32 @@ describe('syntaur doctor', () => {
     expect(orphans?.detail).toContain('not-a-known-dir');
   });
 
+  it('passes known-files-recognized when every allowlisted name is present', async () => {
+    await initBaseline();
+    const { KNOWN_TOP_LEVEL } = await import('../utils/doctor/checks/structure.js');
+    for (const name of KNOWN_TOP_LEVEL) {
+      const target = resolve(syntaurDir, name);
+      if (name.endsWith('.json') || name.endsWith('.md') || name.includes('.')) {
+        await writeFile(target, '');
+      } else {
+        await mkdir(target, { recursive: true });
+      }
+    }
+    const report = await runChecks();
+    expect(byId(report, 'structure.known-files-recognized')[0]?.status).toBe('pass');
+  });
+
+  it('warns on stale backup and corrupt view-prefs files by name', async () => {
+    await initBaseline();
+    await writeFile(resolve(syntaurDir, 'syntaur.db.pre-v11.bak'), '');
+    await writeFile(resolve(syntaurDir, 'view-prefs.corrupt-1.json'), '{}');
+    const report = await runChecks();
+    const orphans = byId(report, 'structure.known-files-recognized')[0];
+    expect(orphans?.status).toBe('warn');
+    expect(orphans?.detail).toContain('syntaur.db.pre-v11.bak');
+    expect(orphans?.detail).toContain('view-prefs.corrupt-1.json');
+  });
+
   it('flags workspace-missing for in_progress assignment with null workspace', async () => {
     await initBaseline();
     const projectDir = await writeProjectScaffold('m1');

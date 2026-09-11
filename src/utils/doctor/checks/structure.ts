@@ -5,17 +5,42 @@ import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'structure';
 
-const KNOWN_TOP_LEVEL = new Set<string>([
-  'projects',
-  'playbooks',
-  'todos',
-  'servers',
-  'config.md',
-  'syntaur.db',
-  'syntaur.db-shm',
-  'syntaur.db-wal',
-  'dashboard-port',
-  'workspaces.json',
+/** Top-level names the code may write directly under the Syntaur home. */
+export const KNOWN_TOP_LEVEL = new Set<string>([
+  'agents', // agents.ts
+  'assignments', // paths.ts
+  'config.md', // config.ts
+  'dashboard-port', // server.ts
+  'derive-migrated', // recompute.ts
+  'inbox-snoozes.json', // snooze.ts
+  'install-launch-agent.lock', // launchd.ts
+  'logs', // launchd.ts
+  'npx-handler-nudge', // install-detection.ts
+  'npx-install.json', // npx-prompt.ts
+  'playbooks', // paths.ts
+  'projects', // paths.ts
+  'recording.json', // recording.ts
+  'recording.log', // recording.ts
+  'recording.pid', // recording.ts
+  'runtime', // session-id.ts
+  'saved-views.json', // paths.ts
+  'schedules', // schedules/store.ts
+  'servers', // paths.ts
+  'stages-migrated', // stages-marker.ts
+  'statusline.backup.json', // install-statusline.ts
+  'statusline.conf', // install-statusline.ts
+  'statusline.config.json', // configure-statusline.ts
+  'statusline.sh', // install-statusline.ts
+  'statusline-wrapped.sh', // install-statusline.ts
+  'syntaur.db', // events-db.ts
+  'syntaur.db-shm', // sqlite WAL
+  'syntaur.db-wal', // sqlite WAL
+  'targets', // user-descriptors.ts
+  'todos', // paths.ts
+  'view-prefs.json', // paths.ts
+  'workflows', // paths.ts
+  'worktrees', // worktree-defaults.ts
+  'workspaces.json', // init
 ]);
 
 const projectsDir: Check = {
