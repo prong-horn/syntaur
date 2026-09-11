@@ -21,6 +21,9 @@ import { join } from 'node:path';
  * that sandbox via a temp `HOME` instead must keep doing that — `SYNTAUR_HOME`
  * would override their convention; this helper is for files that don't manage
  * a root of their own.
+ *
+ * The global vitest setup already redirects `HOME`, so this helper is for files
+ * that need a Syntaur root distinct from the default one.
  */
 export function useHermeticSyntaurHome(): void {
   let prior: string | undefined;

@@ -17,6 +17,7 @@ export default defineConfig({
   },
   test: {
     include: ['src/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.ts', 'src/**/__tests__/**/*.test.tsx'],
+    setupFiles: ['./src/__tests__/setup/hermetic-home.ts'],
     environment: 'node',
     // Many tests spawn the built CLI (bin/syntaur.js) as a subprocess; some run
     // several spawns in one test. The default 5s budget overruns on slower CI
