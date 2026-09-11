@@ -89,7 +89,7 @@ export function initEventsDb(dbPath?: string): Database.Database {
   );
 
   // No migrations yet for v1, but run an exclusive transaction to set the
-  // pattern for v2+ (mirrors proof-db.ts + session-db.ts). Each future
+  // pattern for v2+ (mirrors session-db.ts). Each future
   // versioned step re-reads `events_schema_version` inside the transaction and
   // gates on the prior version, then bumps it — e.g.:
   //
