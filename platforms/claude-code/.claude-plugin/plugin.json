@@ -1,6 +1,6 @@
 {
   "name": "syntaur",
-  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, project management, session/server tracking, save-session-summary continuity, plus write boundary enforcement via hooks.",
+  "description": "Syntaur protocol adapter for Claude Code. Provides skills for grabbing, planning, and completing assignments, project management, session/server tracking, and save-session-summary continuity. Write boundaries are documentation-enforced here (the Codex plugin enforces them with a PreToolUse hook).",
   "author": {
     "name": "Brennen",
     "email": ""

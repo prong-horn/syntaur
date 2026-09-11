@@ -6,7 +6,7 @@ Syntaur plugin for Claude Code. Installed automatically during `syntaur setup`.
 
 - **Skills:** grab-assignment, plan-assignment, complete-assignment, create-project, create-assignment, syntaur-protocol, save-session-summary
 - **Agents:** syntaur-protocol (background)
-- **Hooks:** write boundary enforcement (PreToolUse), session-start, session-end, **PreCompact** (prompts the agent to `/save-session-summary` before context is compacted)
+- **Hooks:** session-start, session-end, **PreCompact** (prompts the agent to `/save-session-summary` before context is compacted). Write boundaries are documentation-enforced in Claude Code (the Codex plugin enforces them with a PreToolUse hook).
 - **Commands:** track-session, save-session-summary
 - **References:** protocol docs
 
@@ -22,7 +22,7 @@ syntaur install-plugin
 platforms/claude-code/
 ├── .claude-plugin/plugin.json   # Plugin manifest
 ├── skills/                      # Skill definitions (SKILL.md per skill)
-├── hooks/                       # PreToolUse hooks for write boundary enforcement
+├── hooks/                       # Session lifecycle hooks (no write-boundary PreToolUse hook)
 ├── commands/                    # Slash commands
 ├── agents/                      # Agent definitions
 └── references/                  # Protocol reference docs

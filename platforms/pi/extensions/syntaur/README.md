@@ -6,7 +6,7 @@ pi-coding-agent):
 
 - **Write-boundary enforcement** — a `tool_call` handler blocks edits/writes outside the active
   assignment's boundaries (assignment dir, project `resources/`+`memories/` excluding derived `_*`
-  files, and the workspace root), mirroring `platforms/claude-code/hooks/enforce-boundaries.sh`.
+  files, and the workspace root), mirroring `platforms/codex/scripts/enforce-boundaries.sh`.
 - **Session cleanup** — a `session_shutdown` handler marks the dashboard session `stopped`.
 - **Slash commands** — `doctor-syntaur` runs `syntaur doctor`; the rest (`grab-assignment`,
   `log-progress`, `complete-assignment`, `save-session-summary`, `resume-session`, `set-workspace`,

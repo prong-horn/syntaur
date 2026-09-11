@@ -5,7 +5,7 @@ the Claude Code / Codex bash hooks:
 
 - **`pre_tool_call`** — detects writes (Hermes snake_case tools: `patch`, `write_file`, `edit_file`,
   `create_file`, `apply_patch`) outside the active assignment boundary and **logs + best-effort blocks**
-  them. Boundary logic in `boundary.py` mirrors `platforms/claude-code/hooks/enforce-boundaries.sh`.
+  them. Boundary logic in `boundary.py` mirrors `platforms/codex/scripts/enforce-boundaries.sh`.
 - **`on_session_end`** — marks the Syntaur dashboard session `stopped`.
 - **Slash commands** — `doctor-syntaur` runs `syntaur doctor`; the rest point at the installed Tier-1
   skill of the same name.

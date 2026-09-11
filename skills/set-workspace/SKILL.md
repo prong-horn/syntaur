@@ -17,7 +17,7 @@ metadata:
 # Set Workspace
 
 Write the four canonical `workspace.*` fields in `assignment.md` frontmatter
-so that the PreToolUse write-boundary hook will allow implementation work.
+so that write boundaries are satisfied before implementation work (the Codex plugin enforces them with a PreToolUse hook; Claude Code and every other harness are on the honor system).
 Validates the file first via `syntaur doctor --assignment --json` and
 refuses to write on errors.
 
@@ -93,4 +93,4 @@ Summarize:
 
 - Path of the modified assignment.md (the command prints it).
 - The four field values that were written.
-- Reminder: implementation work is now unblocked by the write-boundary hook.
+- Reminder: workspace fields are set; implementation work can proceed under the protocol write boundaries (Codex enforces via PreToolUse hook; other harnesses are on the honor system).

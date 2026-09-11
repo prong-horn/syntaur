@@ -1,6 +1,6 @@
 """Pure Syntaur write-boundary logic for the Hermes plugin.
 
-Mirrors platforms/claude-code/hooks/enforce-boundaries.sh exactly. Kept dependency-free
+Mirrors platforms/codex/scripts/enforce-boundaries.sh exactly. Kept dependency-free
 (stdlib only) and side-effect-free so it can be unit-tested directly via `python3 -c`
 from Syntaur's vitest suite.
 """

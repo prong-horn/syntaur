@@ -126,7 +126,7 @@ function basename(p: string): string {
 
 /**
  * Decide whether a write to `absFilePath` is allowed under the resolved boundary.
- * Mirrors `platforms/claude-code/hooks/enforce-boundaries.sh`:
+ * Mirrors `platforms/codex/scripts/enforce-boundaries.sh`:
  *  - allow under assignmentDir (if resolved)
  *  - allow under projectDir/resources/ and projectDir/memories/ EXCEPT derived `_*` files
  *  - allow the `.syntaur/context.json` file itself (caller passes cwd-resolved path)
