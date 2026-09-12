@@ -36,10 +36,10 @@ import {
 
 const AFFECTED_SAMPLE_CAP = 50;
 
-export interface AffectedAssignmentSummary {
+export interface AffectedTicketSummary {
   display: string;
   projectSlug: string | null;
-  assignmentSlug: string;
+  ticketSlug: string;
   status: string;
 }
 
@@ -47,14 +47,14 @@ export interface AffectedResponse {
   id: string;
   count: number;
   truncated: boolean;
-  assignments: AffectedAssignmentSummary[];
+  assignments: AffectedTicketSummary[];
 }
 
-function toSummary(a: AffectedAssignment): AffectedAssignmentSummary {
+function toSummary(a: AffectedAssignment): AffectedTicketSummary {
   return {
     display: a.display,
     projectSlug: a.projectSlug,
-    assignmentSlug: a.assignmentSlug ?? a.ticketSlug ?? '',
+    ticketSlug: a.ticketSlug ?? a.ticketSlug ?? '',
     status: a.status,
   };
 }
@@ -204,7 +204,7 @@ function requestWorkflowId(req: Request): string {
 
 export function createStatusConfigRouter(
   projectsDir: string,
-  assignmentsDir: string | null,
+  ticketsDir: string | null,
 ): Router {
   // mergeParams so a parent mount at `/api/config/workflows/:workflowId` exposes
   // `req.params.workflowId` in these handlers; the legacy `/api/config/statuses`
@@ -236,7 +236,7 @@ export function createStatusConfigRouter(
       // Scope to tickets resolving to THIS workflow so a status shared with
       // another workflow doesn't over-report.
       const resolver = makeWorkflowContextResolver(await readConfig());
-      const affected = await scanAssignmentsByStatus(projectsDir, assignmentsDir, [id], {
+      const affected = await scanAssignmentsByStatus(projectsDir, ticketsDir, [id], {
         resolver,
         workflowId: requestWorkflowId(req),
       });
@@ -511,7 +511,7 @@ export function createStatusConfigRouter(
       const scanScope = { resolver: makeWorkflowContextResolver(await readConfig()), workflowId };
       let affectedMap: Awaited<ReturnType<typeof scanAssignmentsByStatus>>;
       try {
-        affectedMap = await scanAssignmentsByStatus(projectsDir, assignmentsDir, droppedIds, scanScope);
+        affectedMap = await scanAssignmentsByStatus(projectsDir, ticketsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, null);
@@ -554,7 +554,7 @@ export function createStatusConfigRouter(
       // references a dropped id, abort before config write so the user can
       // retry cleanly.
       try {
-        await verifyNoDriftedOrphans(projectsDir, assignmentsDir, droppedIds, scanScope);
+        await verifyNoDriftedOrphans(projectsDir, ticketsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, {
@@ -635,7 +635,7 @@ export function createStatusConfigRouter(
         resolver: makeWorkflowContextResolver(config),
         isGlobalDefault: config.defaultWorkflow === workflowId,
         projectsDir,
-        standaloneDir: assignmentsDir,
+        standaloneDir: ticketsDir,
       });
       if (!usage.deletable) {
         res.status(409).json({
@@ -734,7 +734,7 @@ function isValidWorkflowId(id: string): boolean {
  */
 export function createWorkflowConfigRouter(
   projectsDir: string,
-  assignmentsDir: string | null,
+  ticketsDir: string | null,
 ): Router {
   const router = Router();
   installRecordsInvalidation(router);
@@ -817,7 +817,7 @@ export function createWorkflowConfigRouter(
     }
   });
 
-  router.use('/:workflowId', createStatusConfigRouter(projectsDir, assignmentsDir));
+  router.use('/:workflowId', createStatusConfigRouter(projectsDir, ticketsDir));
 
   return router;
 }

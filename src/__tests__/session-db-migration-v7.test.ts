@@ -102,11 +102,11 @@ describe('v6 → v7 migration (adds hosted_by)', () => {
     // `'acp'` is the only backend left (phase 4): the chat's own sessions.
     await appendSession('', {
       sessionId: 'sd-1', agent: 'codex', started: '2026-07-01T10:00:00.000Z',
-      status: 'active', path: '/w/a', projectSlug: null, assignmentSlug: null, hostedBy: 'acp',
+      status: 'active', path: '/w/a', projectSlug: null, ticketSlug: null, hostedBy: 'acp',
     });
     await appendSession('', {
       sessionId: 'sd-1', agent: 'codex', started: '2026-07-01T10:00:00.000Z',
-      status: 'active', path: '/w/a', projectSlug: null, assignmentSlug: null,
+      status: 'active', path: '/w/a', projectSlug: null, ticketSlug: null,
     });
     const all = await listAllSessions('');
     expect(all.find((s) => s.sessionId === 'sd-1')?.hostedBy).toBe('acp');

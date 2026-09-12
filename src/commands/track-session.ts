@@ -129,8 +129,8 @@ export async function trackSessionCommand(
   // from these). Never sourced from the demoted context.json ticket scalar.
   await appendSession('', {
     projectSlug: options.project || null,
-    assignmentSlug: options.ticket || null,
-    assignmentId: ticketId,
+    ticketSlug: options.ticket || null,
+    ticketId: ticketId,
     agent: options.agent,
     sessionId,
     started: new Date().toISOString(),

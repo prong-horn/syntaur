@@ -37,13 +37,13 @@ export interface ProjectSummary {
 export interface EnrichedLink {
   slug: string;
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   title: string;
   status: string;
   isReverse: boolean;
 }
 
-export interface AssignmentSummary {
+export interface TicketSummary {
   id: string;
   slug: string;
   title: string;
@@ -98,7 +98,7 @@ export interface AssignmentSummary {
   facts?: Record<string, boolean | number | string[]>;
 }
 
-export interface AssignmentBoardItem extends AssignmentSummary {
+export interface TicketBoardItem extends TicketSummary {
   /** `null` for standalone assignments that live outside any project. */
   projectSlug: string | null;
   /** `null` for standalone assignments. */
@@ -158,7 +158,7 @@ export interface ProjectDetail {
   body: string;
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  assignments: AssignmentSummary[];
+  assignments: TicketSummary[];
   dependencyGraph: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
@@ -200,7 +200,7 @@ export interface EngagementInfo {
   endedAt: string | null;
 }
 
-export interface AssignmentDetail {
+export interface TicketDetail {
   id: string;
   /** `null` for standalone assignments that live outside any project. */
   projectSlug: string | null;
@@ -229,11 +229,11 @@ export interface AssignmentDetail {
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
-  /** Loader-derived (NOT stored). See {@link AssignmentSummary.completedAt}. */
+  /** Loader-derived (NOT stored). See {@link TicketSummary.completedAt}. */
   completedAt: string | null;
-  /** Loader-derived (NOT stored). See {@link AssignmentSummary.statusAge}. */
+  /** Loader-derived (NOT stored). See {@link TicketSummary.statusAge}. */
   statusAge: number | null;
-  /** Loader-derived (NOT stored). See {@link AssignmentSummary.phaseAge}. */
+  /** Loader-derived (NOT stored). See {@link TicketSummary.phaseAge}. */
   phaseAge: number | null;
   /** Cached phase dimension (null pre-migration). */
   phase: string | null;
@@ -285,7 +285,7 @@ export interface AssignmentDetail {
 
 /**
  * Reverse link: an assignment that mentions the current one in its Todos, comments,
- * progress, or handoff body. Populated by the dashboard when returning AssignmentDetail.
+ * progress, or handoff body. Populated by the dashboard when returning TicketDetail.
  */
 export interface AssignmentReference {
   /** UUID of the source assignment. */
@@ -360,7 +360,7 @@ export interface AttentionItem {
   projectSlug: string | null;
   /** `null` for standalone assignments. */
   projectTitle: string | null;
-  assignmentSlug: string;
+  ticketSlug: string;
   assignmentTitle: string;
   status: string;
   reason: string;
@@ -431,7 +431,7 @@ export interface OverviewSegments {
 
 export interface AssignmentsBoardResponse {
   generatedAt: string;
-  assignments: AssignmentBoardItem[];
+  assignments: TicketBoardItem[];
 }
 
 export interface RecentActivityItem {
@@ -444,7 +444,7 @@ export interface RecentActivityItem {
   projectSlug: string | null;
   /** `null` when the activity is for a standalone assignment. */
   projectTitle: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   summary: string;
 }
 
@@ -563,9 +563,9 @@ export interface EditableDocumentResponse {
   title: string;
   content: string;
   projectSlug: string | null;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   /** For standalone assignments, the UUID (routes use /assignments/:id/...). */
-  assignmentId?: string;
+  ticketId?: string;
   appendOnly: boolean;
 }
 
@@ -573,7 +573,7 @@ export interface EditableDocumentResponse {
 
 export type WsMessageType =
   | 'project-updated'
-  | 'assignment-updated'
+  | 'ticket-updated'
   | 'agent-sessions-updated'
   | 'playbooks-updated'
   | 'chat-item'
@@ -585,8 +585,6 @@ export type WsMessageType =
 export interface WsMessage {
   type: WsMessageType;
   projectSlug?: string | null;
-  assignmentSlug?: string;
-  /** Task 1 compat — broker broadcasts use `ticketSlug` until Task 2. */
   ticketSlug?: string;
   timestamp: string;
   /**
@@ -594,7 +592,7 @@ export interface WsMessage {
    * re-reads the affected record over REST — but the chat stream would hit REST
    * ~36 times a second on codex, so `chat-item`, `chat-session` and
    * `chat-participants` carry their payload inline (Decision 3). Consumers
-   * filter by `payload.assignmentId`.
+   * filter by `payload.ticketId`.
    */
   payload?: unknown;
 }
@@ -620,17 +618,13 @@ export type SessionHostedBy = 'acp';
 
 export interface AgentSession {
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   /**
    * The binding's resolved assignment frontmatter `id`, when the registering
    * caller resolved it from the slugs (M1). Threaded into the opened engagement's
    * `assignment_id` so a later stage assertion doesn't split the interval just to
    * repair the id. Null/absent when unresolved (slug-only binding).
    */
-  assignmentId?: string | null;
-  /** Task 1 test/core compat — mirrors `assignmentSlug`. */
-  ticketSlug?: string | null;
-  /** Task 1 test/core compat — mirrors `assignmentId`. */
   ticketId?: string | null;
   agent: string;
   sessionId: string;
@@ -675,7 +669,7 @@ export interface AgentSession {
   /**
    * When the session was archived (ISO 8601); null/absent when not archived.
    * Archived sessions are hidden from the default paged list and from the
-   * unpaged `listAllSessions` / `listProjectSessions` / `listSessionsByAssignment`.
+   * unpaged `listAllSessions` / `listProjectSessions` / `listSessionsByTicket`.
    * Never hidden from `getSessionById`, `listSessionsNeedingSummary`, or
    * liveness sweeps.
    */

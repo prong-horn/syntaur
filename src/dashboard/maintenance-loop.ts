@@ -10,7 +10,8 @@ export type SummarizeAfterScan = (opts: {
 
 export interface MaintenanceLoopOptions {
   projectsDir: string;
-  assignmentsDir: string;
+  assignmentsDir?: string;
+  ticketsDir?: string;
   intervalMs?: number;
   /** Invoked when the stale sweep changed any DB row (drives the WS broadcast). */
   onAgentSessionsChanged?: () => void;

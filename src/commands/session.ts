@@ -404,7 +404,7 @@ export async function runSessionRegister(
       // --ticket` (the grab flow); on a resume/revive `appendSession` recovers
       // the binding from the session's OWN latest engagement (reviveStopped below).
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: options.agent || 'claude',
       sessionId,
       started: deps.now?.() ?? new Date().toISOString(),

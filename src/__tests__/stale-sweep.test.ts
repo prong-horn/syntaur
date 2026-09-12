@@ -39,7 +39,7 @@ function stamp(ageMs: number): string {
 function session(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: 'claude',
     sessionId: `sess-${Math.random().toString(36).slice(2, 10)}`,
     started: '2026-09-03T06:00:00.000Z',
@@ -91,7 +91,7 @@ describe('sweepStaleSessions', () => {
 
   it('closes the swept row’s open engagement with reason `stale-sweep`', async () => {
     const stale = await seed(
-      { projectSlug: 'syntaur-meta', assignmentSlug: 'demo' },
+      { projectSlug: 'syntaur-meta', ticketSlug: 'demo' },
       7 * HOUR,
     );
     expect(getOpenEngagement(stale)).not.toBeNull();

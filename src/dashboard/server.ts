@@ -7,18 +7,18 @@ import { syntaurRoot, workflowsDir } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
-  listAssignmentsBoard,
+  listTicketsBoard,
   listArchived,
   getProjectDetail,
-  getAssignmentDetail,
-  getAssignmentDetailById,
+  getTicketDetail,
+  getTicketDetailById,
   getOverview,
   getHelp,
   invalidateRecordsCache,
   clearStatusConfigCache,
 } from './api.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { listSessionsByAssignment, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
+import { resolveTicketById } from '../utils/assignment-resolver.js';
+import { listSessionsByTicket, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';
 import {
@@ -87,7 +87,7 @@ export interface DashboardServerOptions {
    * Absolute path to the standalone assignments directory (`~/.syntaur/assignments/`).
    * Standalone assignments have `project: null` and live in folders named by UUID.
    */
-  assignmentsDir: string;
+  ticketsDir: string;
   playbooksDir: string;
   serveStaticUi: boolean;
   /** Absolute path to the built dashboard UI (dashboard/dist). Required when serveStaticUi is true. */
@@ -95,7 +95,7 @@ export interface DashboardServerOptions {
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, projectsDir, assignmentsDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, ticketsDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -136,7 +136,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     // routers invalidate synchronously — but it catches external/manual edits).
     // Internal routes already invalidated before broadcasting; re-clearing is a
     // cheap idempotent no-op.
-    if (message.type === 'project-updated' || message.type === 'assignment-updated') {
+    if (message.type === 'project-updated' || message.type === 'ticket-updated') {
       invalidateRecordsCache();
     }
     const data = JSON.stringify(message);
@@ -182,7 +182,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const staleOffsetRaw = req.query.staleOffset;
       const staleLimit = typeof staleLimitRaw === 'string' ? Number(staleLimitRaw) : undefined;
       const staleOffset = typeof staleOffsetRaw === 'string' ? Number(staleOffsetRaw) : undefined;
-      const overview = await getOverview(projectsDir, assignmentsDir, {
+      const overview = await getOverview(projectsDir, ticketsDir, {
         staleLimit,
         staleOffset,
       });
@@ -203,8 +203,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, assignmentsDir));
-  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir, assignmentsDir));
+  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, ticketsDir));
+  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir, ticketsDir));
 
   app.get('/api/config/types', async (_req, res) => {
     try {
@@ -264,7 +264,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   app.use('/api/config/search', createSearchConfigRouter());
-  app.use('/api/search', createContentSearchRouter(projectsDir, assignmentsDir));
+  app.use('/api/search', createContentSearchRouter(projectsDir, ticketsDir));
   app.get('/api/config/hotkeys', async (_req, res) => {
     try {
       const config = await readConfig();
@@ -529,9 +529,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/assignments', async (_req, res) => {
+  app.get('/api/tickets', async (_req, res) => {
     try {
-      const result = await listAssignmentsBoard(projectsDir, assignmentsDir);
+      const result = await listTicketsBoard(projectsDir, ticketsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing assignments:', error);
@@ -541,7 +541,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/archived', async (_req, res) => {
     try {
-      const result = await listArchived(projectsDir, assignmentsDir);
+      const result = await listArchived(projectsDir, ticketsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing archived content:', error);
@@ -563,9 +563,9 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/assignments/:id', async (req, res) => {
+  app.get('/api/tickets/:id', async (req, res) => {
     try {
-      const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, req.params.id);
+      const detail = await getTicketDetailById(projectsDir, ticketsDir, req.params.id);
       if (!detail) {
         res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
         return;
@@ -577,17 +577,17 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/assignments/:id/sessions', async (req, res) => {
+  app.get('/api/tickets/:id/sessions', async (req, res) => {
     try {
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, req.params.id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, req.params.id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
         return;
       }
-      await reconcileActiveSessions(projectsDir, assignmentsDir);
-      const sessions = await listSessionsByAssignment(
+      await reconcileActiveSessions(projectsDir, ticketsDir);
+      const sessions = await listSessionsByTicket(
         resolved.standalone ? null : resolved.projectSlug,
-        resolved.standalone ? resolved.id : resolved.assignmentSlug,
+        resolved.standalone ? resolved.id : resolved.ticketSlug,
       );
       res.json({
         sessions: withLiveness(sessions),
@@ -601,7 +601,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/projects/:slug/assignments/:aslug', async (req, res) => {
     try {
-      const detail = await getAssignmentDetail(
+      const detail = await getTicketDetail(
         projectsDir,
         req.params.slug,
         req.params.aslug,
@@ -620,19 +620,19 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   // --- Write API (create projects/assignments) ---
-  app.use(createWriteRouter(projectsDir, assignmentsDir));
+  app.use(createWriteRouter(projectsDir, ticketsDir));
 
   // --- Usage API (per-assignment / per-project token usage rollups) ---
-  app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
+  app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
 
   // --- Events API (per-assignment audit Activity timeline) ---
   // Best-effort read-only; routes use full `/projects/...` & `/standalone/...`
   // paths, so mount at `/api`. Returns `{ events: [] }` rather than 500ing.
-  app.use('/api', createEventsRouter(projectsDir, assignmentsDir));
+  app.use('/api', createEventsRouter(projectsDir, ticketsDir));
 
   // --- Inbox API ("Needs me" triage view) ---
   // Best-effort read-only; returns safe empty shape rather than 500ing.
-  app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
+  app.use('/api', createInboxRouter(projectsDir, ticketsDir));
 
   // --- Assignment chat API + ACP session broker ---
   // The broker is the only thing in Syntaur that owns an agent process. It is
@@ -640,16 +640,16 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // torn down FIRST in stop(), while the DBs are still open.
   const chatBroker = createChatBroker({
     projectsDir,
-    assignmentsDir,
+    ticketsDir,
     broadcast: (message) => broadcast(message as WsMessage),
   });
-  app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker: chatBroker }));
+  app.use('/api', createChatRouter(projectsDir, ticketsDir, { broker: chatBroker }));
   app.use('/api', createChatAgentsRouter({ broker: chatBroker }));
 
   // --- Agent Sessions API ---
   app.use(
     '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, broadcast, assignmentsDir),
+    createAgentSessionsRouter(projectsDir, broadcast, ticketsDir),
   );
 
   // --- Agents Config API ---
@@ -735,14 +735,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
         }
         return false;
       };
-      const recomputeOne = async (projectSlug: string | null, assignmentSlug: string): Promise<void> => {
+      const recomputeOne = async (projectSlug: string | null, ticketSlug: string): Promise<void> => {
         if (!(await migrationGate())) return;
         try {
           const { context, workflowResolver } = await resolveRecomputeContext();
           const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
           const path = projectDir
-            ? resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md')
-            : resolve(assignmentsDir, assignmentSlug, 'assignment.md');
+            ? resolve(projectDir, 'assignments', ticketSlug, 'assignment.md')
+            : resolve(ticketsDir, ticketSlug, 'assignment.md');
           if (!(await fileExists(path))) return;
           const result = await recomputeAndWrite(path, {
             cause: 'derive',
@@ -753,14 +753,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
           });
           if (result.warning) console.warn(result.warning);
         } catch (err) {
-          console.error(`derive recompute failed for ${projectSlug ?? ''}/${assignmentSlug}:`, err);
+          console.error(`derive recompute failed for ${projectSlug ?? ''}/${ticketSlug}:`, err);
         }
       };
       const sweepAll = async (cause: string): Promise<void> => {
         if (!(await migrationGate())) return;
         try {
           const { context, workflowResolver } = await resolveRecomputeContext();
-          const summary = await recomputeAll(projectsDir, assignmentsDir, {
+          const summary = await recomputeAll(projectsDir, ticketsDir, {
             cause,
             by: 'system',
             context,
@@ -777,14 +777,14 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
       watcherHandle = createWatcher({
         projectsDir,
-        assignmentsDir,
+        ticketsDir,
         playbooksDir,
         workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
         configPath: resolve(syntaurRoot(), 'config.md'),
         onMessage: broadcast,
-        onAssignmentChanged: (projectSlug, assignmentSlug) => {
-          void recomputeOne(projectSlug, assignmentSlug);
+        onAssignmentChanged: (projectSlug, ticketSlug) => {
+          void recomputeOne(projectSlug, ticketSlug);
         },
         onConfigChanged: () => {
           clearStatusConfigCache();
@@ -798,7 +798,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
       startMaintenanceLoop({
         projectsDir,
-        assignmentsDir,
+        ticketsDir,
         // Same WS frame the REST mutations emit, so the UI refreshes when the
         // stale sweep stops a row. The loop's immediate first tick covers
         // "sweep at dashboard start".
@@ -820,10 +820,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
         const watchdogTick = async (): Promise<void> => {
           if (!(await migrationGate())) return;
           try {
-            const candidates = await collectStaleCandidates(projectsDir, assignmentsDir);
+            const candidates = await collectStaleCandidates(projectsDir, ticketsDir);
             const summary = runStalenessWatchdogTick(candidates, stalenessSeen, (e) => {
               emitEvent({
-                assignmentId: e.assignmentId,
+                ticketId: e.ticketId,
                 projectSlug: e.projectSlug,
                 type: e.type,
                 actor: 'system',

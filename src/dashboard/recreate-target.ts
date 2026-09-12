@@ -1,4 +1,4 @@
-import { getAssignmentDetail, getAssignmentDetailById } from './api.js';
+import { getTicketDetail, getTicketDetailById } from './api.js';
 import { getSessionById } from './agent-sessions.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
 
@@ -10,12 +10,12 @@ import { isExistingDir } from '../utils/workspace-cwd.js';
  */
 export type RecreateTargetInput =
   | { kind: 'assignment'; id: string }
-  | { kind: 'assignment'; projectSlug: string; assignmentSlug: string }
+  | { kind: 'assignment'; projectSlug: string; ticketSlug: string }
   | { kind: 'session'; id: string };
 
 export interface RecreateTargetDeps {
   projectsDir: string;
-  assignmentsDir: string;
+  ticketsDir: string;
 }
 
 /**
@@ -27,7 +27,7 @@ export interface RecreateTarget {
   kind: 'assignment' | 'session';
   id: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   /** Exact recorded worktree path; '' when nothing is on record. */
   worktreePath: string;
   repository: string | null;
@@ -49,16 +49,16 @@ export async function resolveRecreateTarget(
   deps: RecreateTargetDeps,
   target: RecreateTargetInput,
 ): Promise<RecreateTarget | null> {
-  const { projectsDir, assignmentsDir } = deps;
+  const { projectsDir, ticketsDir } = deps;
 
   if (target.kind === 'assignment') {
     const detail =
       'id' in target
-        ? await getAssignmentDetailById(projectsDir, assignmentsDir, target.id)
-        : await getAssignmentDetail(
+        ? await getTicketDetailById(projectsDir, ticketsDir, target.id)
+        : await getTicketDetail(
             projectsDir,
             target.projectSlug,
-            target.assignmentSlug,
+            target.ticketSlug,
           );
     if (!detail) return null;
     const worktreePath = detail.workspace.worktreePath ?? '';
@@ -69,7 +69,7 @@ export async function resolveRecreateTarget(
       kind: 'assignment',
       id: detail.id,
       projectSlug: detail.projectSlug ?? null,
-      assignmentSlug: detail.slug,
+      ticketSlug: detail.slug,
       worktreePath,
       repository,
       branch,
@@ -88,24 +88,24 @@ export async function resolveRecreateTarget(
   let repository: string | null = null;
   let branch: string | null = null;
   let assignmentWorktreePath = '';
-  if (session.projectSlug && session.assignmentSlug) {
-    const detail = await getAssignmentDetail(
+  if (session.projectSlug && session.ticketSlug) {
+    const detail = await getTicketDetail(
       projectsDir,
       session.projectSlug,
-      session.assignmentSlug,
+      session.ticketSlug,
     );
     if (detail) {
       repository = detail.workspace.repository ?? null;
       branch = detail.workspace.branch ?? null;
       assignmentWorktreePath = detail.workspace.worktreePath ?? '';
     }
-  } else if (session.assignmentSlug) {
+  } else if (session.ticketSlug) {
     // Standalone session: `project_slug IS NULL` and `assignment_slug` holds the
-    // assignment UUID (see listSessionsByAssignment), so resolve it by id.
-    const detail = await getAssignmentDetailById(
+    // assignment UUID (see listSessionsByTicket), so resolve it by id.
+    const detail = await getTicketDetailById(
       projectsDir,
-      assignmentsDir,
-      session.assignmentSlug,
+      ticketsDir,
+      session.ticketSlug,
     );
     if (detail) {
       repository = detail.workspace.repository ?? null;
@@ -120,7 +120,7 @@ export async function resolveRecreateTarget(
     kind: 'session',
     id: session.sessionId,
     projectSlug: session.projectSlug ?? null,
-    assignmentSlug: session.assignmentSlug ?? null,
+    ticketSlug: session.ticketSlug ?? null,
     worktreePath,
     repository,
     branch,

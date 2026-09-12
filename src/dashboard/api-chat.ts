@@ -3,7 +3,7 @@
  *
  * Mounted at `/api` (the routes carry their own `/assignments/...` prefix, the
  * way `api-events.ts` and `api-inbox.ts` do). Every route resolves the
- * assignment through `resolveAssignmentById`, so a project-nested slug and a
+ * assignment through `resolveTicketById`, so a project-nested slug and a
  * standalone UUID work identically.
  *
  * The chat STREAM does not live here — items arrive over `/ws` as `chat-item`
@@ -14,7 +14,7 @@
  */
 
 import { Router, raw, type Request, type Response } from 'express';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/assignment-resolver.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
 import { ParticipantsError } from '../chat/participants.js';
 import {
@@ -41,7 +41,7 @@ export interface ChatRouterDeps {
 
 export function createChatRouter(
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
   deps: ChatRouterDeps,
 ): Router {
   const router = Router();
@@ -52,7 +52,7 @@ export function createChatRouter(
     // Express 5 types `params` values as `string | string[]`; these routes take
     // a single segment.
     const id = String(req.params.id);
-    const assignment = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    const assignment = await resolveTicketById(projectsDir, ticketsDir, id);
     if (!assignment) {
       res.status(404).json({ error: `No assignment with id ${JSON.stringify(id)}` });
       return null;
@@ -158,7 +158,7 @@ export function createChatRouter(
               res.status(400).json({ error: 'Empty upload body' });
               return;
             }
-            const result = await writeChatAttachment(assignment.assignmentDir, {
+            const result = await writeChatAttachment(assignment.ticketDir, {
               name: filename,
               mime,
               bytes: body,
@@ -177,7 +177,7 @@ export function createChatRouter(
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
       const attachmentId = String(req.params.attachmentId);
-      const resolved = await resolveChatAttachment(assignment.assignmentDir, attachmentId);
+      const resolved = await resolveChatAttachment(assignment.ticketDir, attachmentId);
       if (!resolved) {
         res.status(404).json({ error: `Attachment "${attachmentId}" not found` });
         return;
@@ -221,7 +221,7 @@ export function createChatRouter(
       }
       const attachments = [];
       for (const id of attachmentIds) {
-        const resolved = await resolveChatAttachment(assignment.assignmentDir, id);
+        const resolved = await resolveChatAttachment(assignment.ticketDir, id);
         if (!resolved) {
           res.status(400).json({ error: `Unknown attachment ${JSON.stringify(id)}` });
           return;

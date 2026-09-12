@@ -901,14 +901,14 @@ export async function migrateFromMarkdown(projectsDir: string): Promise<number> 
         s.status,
         sanitizeSessionPath(s.path) ?? '',
       );
-      if (res.changes > 0 && (s.projectSlug || s.assignmentSlug)) {
+      if (res.changes > 0 && (s.projectSlug || s.ticketSlug)) {
         // Terminal imports become CLOSED engagements (no leaked open interval);
         // markdown has no `ended` timestamp, so fall back to `started`.
         const terminal = s.status === 'completed' || s.status === 'stopped';
         insertEngagement.run({
           sid: s.sessionId,
           ps: s.projectSlug ?? null,
-          as: s.assignmentSlug ?? null,
+          as: s.ticketSlug ?? null,
           started: s.started,
           ended: terminal ? s.started : null,
           reason: terminal ? (s.status === 'completed' ? 'completed' : 'abandoned') : null,
@@ -961,7 +961,7 @@ async function parseMarkdownSessionsIndex(
 
       if (cells.length >= 6) {
         sessions.push({
-          assignmentSlug: cells[0],
+          ticketSlug: cells[0],
           agent: cells[1],
           sessionId: cells[2],
           started: cells[3],

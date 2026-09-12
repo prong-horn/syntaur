@@ -13,7 +13,7 @@ import {
   appendSession,
   listAllSessions,
   listAllSessionIds,
-  listSessionsByAssignment,
+  listSessionsByTicket,
   listSessionsNeedingSummary,
   getSessionById,
   setSessionPinned,
@@ -42,7 +42,7 @@ let dbPath: string;
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     projectSlug: 'test-project',
-    assignmentSlug: 'test-assignment',
+    ticketSlug: 'test-assignment',
     agent: 'claude',
     sessionId: `session-${Math.random().toString(36).slice(2, 10)}`,
     started: '2026-03-26T10:00:00Z',
@@ -74,19 +74,19 @@ describe('appendSession + listAllSessions', () => {
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe(session.sessionId);
     expect(all[0].projectSlug).toBe('test-project');
-    expect(all[0].assignmentSlug).toBe('test-assignment');
+    expect(all[0].ticketSlug).toBe('test-assignment');
     expect(all[0].agent).toBe('claude');
     expect(all[0].status).toBe('active');
   });
 
   it('inserts and retrieves a standalone session (null project/assignment)', async () => {
-    const session = makeSession({ projectSlug: null, assignmentSlug: null, description: 'standalone test' });
+    const session = makeSession({ projectSlug: null, ticketSlug: null, description: 'standalone test' });
     await appendSession('', session);
 
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
     expect(all[0].projectSlug).toBeNull();
-    expect(all[0].assignmentSlug).toBeNull();
+    expect(all[0].ticketSlug).toBeNull();
     expect(all[0].description).toBe('standalone test');
   });
 
@@ -191,7 +191,7 @@ describe('listProjectSessions', () => {
 
   it('excludes standalone sessions when filtering by project', async () => {
     await appendSession('', makeSession({ projectSlug: 'project-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: null, sessionId: 's2' }));
+    await appendSession('', makeSession({ projectSlug: null, ticketSlug: null, sessionId: 's2' }));
 
     const sessions = await listProjectSessions('', 'project-a');
     expect(sessions).toHaveLength(1);
@@ -199,8 +199,8 @@ describe('listProjectSessions', () => {
   });
 
   it('filters by project and ticket slug', async () => {
-    await appendSession('', makeSession({ assignmentSlug: 'task-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ assignmentSlug: 'task-b', sessionId: 's2' }));
+    await appendSession('', makeSession({ ticketSlug: 'task-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ ticketSlug: 'task-b', sessionId: 's2' }));
 
     const sessions = await listProjectSessions('', 'test-project', 'task-a');
     expect(sessions).toHaveLength(1);
@@ -259,7 +259,7 @@ describe('reconcileActiveSessions', () => {
 
     // One attached session (should be reconciled) and one standalone (should be skipped)
     await appendSession('', makeSession({ sessionId: 'attached-1' }));
-    await appendSession('', makeSession({ sessionId: 'standalone-1', projectSlug: null, assignmentSlug: null }));
+    await appendSession('', makeSession({ sessionId: 'standalone-1', projectSlug: null, ticketSlug: null }));
 
     const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(1);
@@ -318,7 +318,7 @@ activeSessions: 1
 
     const all = await listAllSessions('');
     expect(all).toHaveLength(2);
-    expect(all.find((s) => s.sessionId === 'sess-abc')?.assignmentSlug).toBe('task-1');
+    expect(all.find((s) => s.sessionId === 'sess-abc')?.ticketSlug).toBe('task-1');
     expect(all.find((s) => s.sessionId === 'sess-def')?.agent).toBe('codex');
 
     // The active import gets an OPEN engagement; the completed import must be
@@ -737,7 +737,7 @@ describe('appendSession upsert semantics', () => {
     const base = makeSession({
       sessionId: 'real-session-123',
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       description: null,
       transcriptPath: null,
       started: '2026-03-26T10:00:00Z',
@@ -747,7 +747,7 @@ describe('appendSession upsert semantics', () => {
     const enrich = makeSession({
       sessionId: 'real-session-123',
       projectSlug: 'p1',
-      assignmentSlug: 'a1',
+      ticketSlug: 'a1',
       description: 'attached later',
       transcriptPath: '/tmp/t.jsonl',
       started: '2099-12-31T23:59:59Z', // should be ignored by upsert
@@ -759,7 +759,7 @@ describe('appendSession upsert semantics', () => {
     const row = all[0];
     expect(row.sessionId).toBe('real-session-123');
     expect(row.projectSlug).toBe('p1');
-    expect(row.assignmentSlug).toBe('a1');
+    expect(row.ticketSlug).toBe('a1');
     expect(row.description).toBe('attached later');
     expect(row.transcriptPath).toBe('/tmp/t.jsonl');
     expect(row.started).toBe('2026-03-26T10:00:00Z'); // preserved from first insert
@@ -1022,7 +1022,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
     // revive payload carries NO binding (e.g. resume-mode launch)
     await appendSession(
       '',
-      makeSession({ sessionId: 's-rb', status: 'active', projectSlug: null, assignmentSlug: null }),
+      makeSession({ sessionId: 's-rb', status: 'active', projectSlug: null, ticketSlug: null }),
       { reviveStopped: true },
     );
     const open = getOpenEngagement('s-rb');
@@ -1116,7 +1116,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
         e2 = switchEngagement({
           sessionId: 's-race',
           projectSlug: 'test-project',
-          assignmentSlug: 'test-assignment',
+          ticketSlug: 'test-assignment',
           stage: 'review',
           startedAt: '2026-03-26T11:00:00.000Z',
         });
@@ -1176,7 +1176,7 @@ describe('H2: open-baseline token snapshot on every runtime open', () => {
     // Re-register active with NO incoming binding → recovers from latest engagement.
     await appendSession(
       '',
-      makeSession({ sessionId: 'h2-rec', projectSlug: null, assignmentSlug: null }),
+      makeSession({ sessionId: 'h2-rec', projectSlug: null, ticketSlug: null }),
       { reviveStopped: true },
     );
 
@@ -1275,8 +1275,8 @@ describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, ticket de
   });
 
   it('listProjectSessions excludes archived in BOTH branches', async () => {
-    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'keep' }));
-    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'gone' }));
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'keep' }));
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'gone' }));
     setSessionArchived('gone', true);
 
     expect((await listProjectSessions('', 'p')).map((s) => s.sessionId)).toEqual(['keep']);
@@ -1291,22 +1291,22 @@ describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, ticket de
     ).toEqual(['gone', 'keep']);
   });
 
-  it('listSessionsByAssignment excludes archived in BOTH branches', async () => {
-    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'keep' }));
-    await appendSession('', makeSession({ projectSlug: 'p', assignmentSlug: 'a', sessionId: 'gone' }));
-    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: 'solo', sessionId: 'lone-keep' }));
-    await appendSession('', makeSession({ projectSlug: null, assignmentSlug: 'solo', sessionId: 'lone-gone' }));
+  it('listSessionsByTicket excludes archived in BOTH branches', async () => {
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'keep' }));
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'gone' }));
+    await appendSession('', makeSession({ projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-keep' }));
+    await appendSession('', makeSession({ projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-gone' }));
     setSessionArchived('gone', true);
     setSessionArchived('lone-gone', true);
 
-    expect((await listSessionsByAssignment('p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
-    expect((await listSessionsByAssignment(null, 'solo')).map((s) => s.sessionId)).toEqual(['lone-keep']);
+    expect((await listSessionsByTicket('p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listSessionsByTicket(null, 'solo')).map((s) => s.sessionId)).toEqual(['lone-keep']);
     expect(
-      (await listSessionsByAssignment('p', 'a', { includeArchived: true }))
+      (await listSessionsByTicket('p', 'a', { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['gone', 'keep']);
     expect(
-      (await listSessionsByAssignment(null, 'solo', { includeArchived: true }))
+      (await listSessionsByTicket(null, 'solo', { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['lone-gone', 'lone-keep']);
   });

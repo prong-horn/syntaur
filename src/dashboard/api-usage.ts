@@ -21,13 +21,13 @@ import {
  * Endpoints — all accept `?since=YYYY-MM-DD&until=YYYY-MM-DD&tool=&groupBy=`:
  *   GET /                                            — top-level summary
  *   GET /projects/:projectSlug                       — per-assignment rollup for a project
- *   GET /projects/:projectSlug/assignments/:assignmentSlug
+ *   GET /projects/:projectSlug/assignments/:ticketSlug
  *                                                    — event detail for one project-scoped assignment
- *   GET /standalone/:assignmentId                    — UUID-keyed standalone variant
+ *   GET /standalone/:ticketId                    — UUID-keyed standalone variant
  */
 export function createUsageRouter(
   projectsDir: string,
-  assignmentsDir: string | undefined,
+  ticketsDir: string | undefined,
 ): Router {
   const router = Router();
 
@@ -78,27 +78,27 @@ export function createUsageRouter(
     }
   });
 
-  router.get('/projects/:projectSlug/assignments/:assignmentSlug', (req, res) => {
+  router.get('/projects/:projectSlug/assignments/:ticketSlug', (req, res) => {
     try {
       initUsageDb();
-      const { projectSlug, assignmentSlug } = req.params;
+      const { projectSlug, ticketSlug } = req.params;
       const common = extractCommonFilter(req.query);
       const dailyRows = listDaily({
         ...common,
         projectSlug,
-        assignmentSlug,
+        ticketSlug,
       });
       const eventRows = listEvents(
-        eventsFilterFromDaily({ ...common, projectSlug, assignmentSlug }),
+        eventsFilterFromDaily({ ...common, projectSlug, ticketSlug }),
       );
       res.json({
         projectSlug,
-        assignmentSlug,
+        ticketSlug,
         daily: dailyRows,
         events: eventRows,
-        summary: buildAssignmentSummary(dailyRows, {
+        summary: buildTicketSummary(dailyRows, {
           projectSlug,
-          assignmentSlug,
+          ticketSlug,
           since: common.since,
           until: common.until,
           model: common.model,
@@ -111,28 +111,28 @@ export function createUsageRouter(
     }
   });
 
-  router.get('/standalone/:assignmentId', (req, res) => {
+  router.get('/standalone/:ticketId', (req, res) => {
     try {
       initUsageDb();
-      const assignmentSlug = req.params.assignmentId;
+      const ticketSlug = req.params.ticketId;
       const common = extractCommonFilter(req.query);
       const dailyRows = listDaily({
         ...common,
         projectSlug: '',
-        assignmentSlug,
+        ticketSlug,
       });
       const eventRows = listEvents(
-        eventsFilterFromDaily({ ...common, projectSlug: '', assignmentSlug }),
+        eventsFilterFromDaily({ ...common, projectSlug: '', ticketSlug }),
       );
       res.json({
-        assignmentId: assignmentSlug,
+        ticketId: ticketSlug,
         daily: dailyRows,
         events: eventRows,
         // Standalone: engagement stores `project_slug IS NULL` (the reader maps
         // a null/empty projectSlug to the NULL match).
-        summary: buildAssignmentSummary(dailyRows, {
+        summary: buildTicketSummary(dailyRows, {
           projectSlug: null,
-          assignmentSlug,
+          ticketSlug,
           since: common.since,
           until: common.until,
           model: common.model,
@@ -156,7 +156,7 @@ interface CommonFilter {
   tool?: string;
   model?: string;
   projectSlug?: string;
-  assignmentSlug?: string;
+  ticketSlug?: string;
 }
 
 function extractCommonFilter(query: Record<string, unknown>): CommonFilter {
@@ -166,7 +166,7 @@ function extractCommonFilter(query: Record<string, unknown>): CommonFilter {
   if (typeof query.tool === 'string') out.tool = query.tool;
   if (typeof query.model === 'string') out.model = query.model;
   if (typeof query.project === 'string') out.projectSlug = query.project;
-  if (typeof query.assignment === 'string') out.assignmentSlug = query.assignment;
+  if (typeof query.assignment === 'string') out.ticketSlug = query.assignment;
   return out;
 }
 
@@ -183,7 +183,7 @@ function eventsFilterFromDaily(common: CommonFilter): ListEventsFilter {
   if (common.tool) out.tool = common.tool;
   if (common.model) out.model = common.model;
   if (common.projectSlug !== undefined) out.projectSlug = common.projectSlug;
-  if (common.assignmentSlug !== undefined) out.assignmentSlug = common.assignmentSlug;
+  if (common.ticketSlug !== undefined) out.ticketSlug = common.ticketSlug;
   return out;
 }
 
@@ -195,7 +195,7 @@ function groupByMode(q: unknown): GroupByMode {
 
 interface SummaryRow {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
@@ -234,9 +234,9 @@ export interface AssignmentUsageSummary {
 
 /** The (id-or-slugs) key + filters identifying one assignment's cost windows. */
 interface AssignmentCostKey {
-  assignmentId?: string | null;
+  ticketId?: string | null;
   projectSlug: string | null;
-  assignmentSlug: string;
+  ticketSlug: string;
   since?: string;
   until?: string;
   model?: string;
@@ -268,7 +268,7 @@ function byModelBreakdown(rows: ReturnType<typeof listDaily>): ModelUsage[] {
  * (M2) — so a session that worked this assignment then another on the same model
  * is not over-attributed the whole cumulative.
  */
-function buildAssignmentSummary(
+function buildTicketSummary(
   rows: ReturnType<typeof listDaily>,
   costKey: AssignmentCostKey,
 ): AssignmentUsageSummary {
@@ -312,7 +312,7 @@ function summarize(
     } else {
       map.set(key, {
         projectSlug: r.project_slug,
-        assignmentSlug: mode === 'project' ? '' : r.assignment_slug,
+        ticketSlug: mode === 'project' ? '' : r.assignment_slug,
         totalTokens: r.total_tokens,
         totalCost: r.total_cost,
         lastEventDay: r.day,
@@ -342,7 +342,7 @@ function projectAssignmentRollup(
   // not yet computable), consistent with the assignment-detail summary.
   const byAssignment = new Map<string, SummaryRow>();
   for (const row of summarize(rows, 'assignment')) {
-    byAssignment.set(row.assignmentSlug, {
+    byAssignment.set(row.ticketSlug, {
       ...row,
       totalCost: 0,
       // Counts present on EVERY per-assignment row (a daily-only assignment with
@@ -360,8 +360,8 @@ function projectAssignmentRollup(
     model: common.model,
   });
 
-  for (const [assignmentSlug, w] of windows) {
-    const existing = byAssignment.get(assignmentSlug);
+  for (const [ticketSlug, w] of windows) {
+    const existing = byAssignment.get(ticketSlug);
     if (existing) {
       existing.totalCost = w.cost;
       existing.pricedWindowCount = w.pricedWindowCount;
@@ -370,9 +370,9 @@ function projectAssignmentRollup(
     } else {
       // Present ONLY in snapshot windows (no usage_daily row) — surface it with
       // its window cost so the A-then-B case can't drop it from the rollup.
-      byAssignment.set(assignmentSlug, {
+      byAssignment.set(ticketSlug, {
         projectSlug,
-        assignmentSlug,
+        ticketSlug,
         totalTokens: 0,
         totalCost: w.cost,
         lastEventDay: '',

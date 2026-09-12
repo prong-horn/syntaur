@@ -121,7 +121,7 @@ function rowToSession(row: SessionRow): AgentSession {
   return {
     sessionId: row.session_id,
     projectSlug: row.project_slug ?? null,
-    assignmentSlug: row.assignment_slug ?? null,
+    ticketSlug: row.assignment_slug ?? null,
     agent: row.agent,
     started: row.started,
     ended: row.ended ?? null,
@@ -196,20 +196,20 @@ export async function parseSessionsIndex(
 function reopenEngagementIfMissing(
   sessionId: string,
   freshBinding: {
-    assignmentId?: string | null;
+    ticketId?: string | null;
     projectSlug: string | null;
-    assignmentSlug: string | null;
+    ticketSlug: string | null;
   } | null,
   freshStartedAt: string,
   tokensAtOpen?: TokenSnapshot | null,
 ): void {
   if (getOpenEngagement(sessionId)) return;
-  if (freshBinding && (freshBinding.projectSlug || freshBinding.assignmentSlug)) {
+  if (freshBinding && (freshBinding.projectSlug || freshBinding.ticketSlug)) {
     ensureOpenEngagement({
       sessionId,
-      assignmentId: freshBinding.assignmentId ?? null,
+      ticketId: freshBinding.ticketId ?? null,
       projectSlug: freshBinding.projectSlug,
-      assignmentSlug: freshBinding.assignmentSlug,
+      ticketSlug: freshBinding.ticketSlug,
       stage: 'implement',
       startedAt: freshStartedAt,
       tokensAtOpen: tokensAtOpen ?? null,
@@ -222,7 +222,7 @@ function reopenEngagementIfMissing(
       sessionId,
       assignmentId: latest.assignment_id,
       projectSlug: latest.project_slug,
-      assignmentSlug: latest.assignment_slug,
+      ticketSlug: latest.assignment_slug,
       stage: 'implement',
       startedAt: new Date().toISOString(),
       tokensAtOpen: tokensAtOpen ?? null,
@@ -342,9 +342,9 @@ export async function appendSession(
       .prepare('SELECT status, ended FROM sessions WHERE session_id = ?')
       .get(session.sessionId) as { status: string; ended: string | null } | undefined;
     const freshBinding = {
-      assignmentId: session.assignmentId ?? null,
+      ticketId: session.ticketId ?? null,
       projectSlug: session.projectSlug ?? null,
-      assignmentSlug: session.assignmentSlug ?? null,
+      ticketSlug: session.ticketSlug ?? null,
     };
     if (persisted?.status === 'active') {
       // Genuine stopped→active revive (NOT an already-active scanner
@@ -371,7 +371,7 @@ export async function appendSession(
       );
     } else if (
       persisted &&
-      (freshBinding.projectSlug || freshBinding.assignmentSlug) &&
+      (freshBinding.projectSlug || freshBinding.ticketSlug) &&
       !hasAnyEngagement(session.sessionId)
     ) {
       // First-seen terminal session (e.g. the scanner discovering a stale
@@ -384,9 +384,9 @@ export async function appendSession(
         // terminal state lost its standalone-assignment binding entirely. That
         // is the only link a standalone session has to a workspace, so those
         // rows could never match a named-workspace filter.
-        assignmentId: freshBinding.assignmentId,
+        ticketId: freshBinding.ticketId,
         projectSlug: freshBinding.projectSlug,
-        assignmentSlug: freshBinding.assignmentSlug,
+        ticketSlug: freshBinding.ticketSlug,
         startedAt: session.started ?? new Date().toISOString(),
         endedAt: persisted.ended ?? session.started ?? new Date().toISOString(),
         closeReason: persisted.status === 'completed' ? 'completed' : 'abandoned',
@@ -781,7 +781,7 @@ export interface SessionSortKey {
   sessionId: string;
   started: string;
   ended: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   projectSlug: string | null;
   agent: string;
   /** Non-null ⇒ pinned. The merge path must apply pinned-first itself, since
@@ -819,7 +819,7 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     sessionId: r.session_id,
     started: r.started,
     ended: r.ended ?? null,
-    assignmentSlug: r.assignment_slug ?? null,
+    ticketSlug: r.assignment_slug ?? null,
     projectSlug: r.project_slug ?? null,
     agent: r.agent,
     pinnedAt: r.pinned_at ?? null,
@@ -935,10 +935,10 @@ async function readAssignmentStatusFromPath(
 
 async function readAssignmentStatus(
   projectDir: string,
-  assignmentSlug: string,
+  ticketSlug: string,
 ): Promise<string | null> {
   return readAssignmentStatusFromPath(
-    resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md'),
+    resolve(projectDir, 'tickets', ticketSlug, 'ticket.md'),
   );
 }
 
@@ -1063,9 +1063,9 @@ export async function reconcileActiveSessions(
  * Standalone: filter by assignment_slug = id AND project_slug IS NULL.
  * Project-nested: filter by project_slug + assignment_slug.
  */
-export async function listSessionsByAssignment(
+export async function listSessionsByTicket(
   projectSlug: string | null,
-  assignmentSlug: string,
+  ticketSlug: string,
   opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
@@ -1075,14 +1075,17 @@ export async function listSessionsByAssignment(
         .prepare(
           `${SESSION_SELECT_WITH_BINDING} WHERE e.assignment_slug = ? AND e.project_slug IS NULL${archived} ${SESSION_LIST_ORDER_BY}`,
         )
-        .all(assignmentSlug) as SessionRow[])
+        .all(ticketSlug) as SessionRow[])
     : (db
         .prepare(
           `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
         )
-        .all(projectSlug, assignmentSlug) as SessionRow[]);
+        .all(projectSlug, ticketSlug) as SessionRow[]);
   return rows.map(rowToSession);
 }
+
+/** @deprecated renamed in Task 2 */
+export const listSessionsByAssignment = listSessionsByTicket;
 
 // --- Summarizer lease + finalization --------------------------------------
 

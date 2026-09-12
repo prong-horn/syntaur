@@ -3,7 +3,7 @@ import {
   boardItemToQueryItem,
   filterBoardItems,
 } from '../../dashboard/src/lib/queryFilter';
-import type { AssignmentBoardItem } from '../../dashboard/src/hooks/useProjects';
+import type { TicketBoardItem } from '../../dashboard/src/hooks/useProjects';
 import { compileQuery } from '../utils/query/index.js';
 import { buildQueryRegistry } from '../utils/fact-registry.js';
 import type { FactDeclaration } from '../utils/fact-registry.js';
@@ -28,7 +28,7 @@ function compile(query: string) {
 }
 
 let idSeq = 0;
-function makeItem(overrides: Partial<AssignmentBoardItem> = {}): AssignmentBoardItem {
+function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
   idSeq += 1;
   return {
     id: `a-${idSeq}`,
@@ -84,7 +84,7 @@ function staleReviewFacts(): Record<string, boolean | number | string[]> {
   };
 }
 
-function slugsOf(items: AssignmentBoardItem[]): string[] {
+function slugsOf(items: TicketBoardItem[]): string[] {
   return items.map((i) => i.slug).sort();
 }
 

@@ -39,7 +39,7 @@ async function writeTicket(slug: string, status: string): Promise<void> {
 async function seed(sessionId: string, slug: string, ageMs: number): Promise<void> {
   await appendSession('', {
     projectSlug: 'proj',
-    assignmentSlug: slug,
+    ticketSlug: slug,
     agent: 'claude',
     sessionId,
     started: new Date(Date.now() - ageMs).toISOString(),

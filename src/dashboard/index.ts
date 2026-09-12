@@ -3,8 +3,8 @@ export type { DashboardServerOptions } from './server.js';
 export type {
   ProjectSummary,
   ProjectDetail,
-  AssignmentDetail,
-  AssignmentSummary,
+  TicketDetail,
+  TicketSummary,
   ProgressCounts,
   NeedsAttention,
   WsMessage,

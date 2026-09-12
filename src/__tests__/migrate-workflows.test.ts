@@ -854,9 +854,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     await writeFile(wfPath, serializeWorkflowFile(workflow), 'utf-8');
     invalidateWorkflowLibraryCache();
 
-    const { getAssignmentDetail, clearStatusConfigCache } = await import('../dashboard/api.js');
+    const { getTicketDetail, clearStatusConfigCache } = await import('../dashboard/api.js');
     clearStatusConfigCache();
-    const detail = await getAssignmentDetail(join(home, 'projects'), 'proj', 'active-phase');
+    const detail = await getTicketDetail(join(home, 'projects'), 'proj', 'active-phase');
     expect(detail).not.toBeNull();
     // The four deprecated §4.5 mirrors are still in the payload…
     expect(detail!.phase).toBe('ready_to_implement');

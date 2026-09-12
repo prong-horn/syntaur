@@ -2129,8 +2129,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       {
         sessionId: session.acpSessionId,
         projectSlug: session.ticket.projectSlug,
-        assignmentSlug: session.ticket.ticketSlug,
-        assignmentId: session.ticket.id,
+        ticketSlug: session.ticket.ticketSlug,
+        ticketId: session.ticket.id,
         agent: session.harness.id,
         started: iso(),
         status: 'active',

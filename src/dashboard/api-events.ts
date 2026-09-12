@@ -29,7 +29,7 @@ import {
  */
 export function createEventsRouter(
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
 ): Router {
   const router = Router();
 
@@ -61,7 +61,7 @@ export function createEventsRouter(
   router.get('/standalone/assignments/:id/events', async (req, res) => {
     try {
       const { id: dirId } = req.params;
-      const assignmentMdPath = resolve(assignmentsDir, dirId, 'assignment.md');
+      const assignmentMdPath = resolve(ticketsDir, dirId, 'assignment.md');
       const id = (await readAssignmentId(assignmentMdPath)) ?? dirId;
       res.json({ events: loadEvents(id, req.query) });
     } catch (error) {
@@ -88,11 +88,11 @@ async function readAssignmentId(assignmentMdPath: string): Promise<string | null
  * string parsed into an object (or null when absent/invalid).
  */
 function loadEvents(
-  assignmentId: string,
+  ticketId: string,
   query: Record<string, unknown>,
 ): Array<Omit<EventRow, 'details'> & { details: unknown }> {
   initEventsDb();
-  const rows = listEventsByAssignment(assignmentId, parseFilters(query));
+  const rows = listEventsByAssignment(ticketId, parseFilters(query));
   return rows.map((row) => ({
     ...row,
     details: parseDetails(row.details),

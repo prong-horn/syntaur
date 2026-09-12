@@ -23,7 +23,7 @@ import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from 
 import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
-import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { resolveTicketById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
 import { latestPlanFile } from '../lifecycle/facts.js';
 import { invalidateIndex } from '../search/index.js';
 
@@ -45,10 +45,10 @@ import type {
   ArchiveResponse,
   ArchivedAssignmentItem,
   ArchivedProjectItem,
-  AssignmentBoardItem,
-  AssignmentDetail,
+  TicketBoardItem,
+  TicketDetail,
   AssignmentReference,
-  AssignmentSummary,
+  TicketSummary,
   AssignmentsBoardResponse,
   AssignmentTransitionAction,
   AttentionItem,
@@ -187,9 +187,9 @@ interface ProjectRecord {
   dependencyGraph: string | null;
 }
 
-/** A standalone assignment lives at `<assignmentsDir>/<uuid>/` and has no containing project. */
+/** A standalone assignment lives at `<ticketsDir>/<uuid>/` and has no containing project. */
 interface StandaloneRecord {
-  assignmentDir: string;
+  ticketDir: string;
   /** The UUID (folder name). */
   id: string;
   record: AssignmentRecord;
@@ -263,32 +263,32 @@ export function installRecordsInvalidation(router: MutatingRouter): void {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-async function listStandaloneRecords(assignmentsDir: string | undefined): Promise<StandaloneRecord[]> {
-  const key = assignmentsDir ?? '';
+async function listStandaloneRecords(ticketsDir: string | undefined): Promise<StandaloneRecord[]> {
+  const key = ticketsDir ?? '';
   const cached = standaloneRecordsCache.get(key);
   if (cached) return cached;
-  const promise = computeStandaloneRecords(assignmentsDir);
+  const promise = computeStandaloneRecords(ticketsDir);
   standaloneRecordsCache.set(key, promise);
   promise.catch(() => standaloneRecordsCache.delete(key));
   return promise;
 }
 
-async function computeStandaloneRecords(assignmentsDir: string | undefined): Promise<StandaloneRecord[]> {
-  if (!assignmentsDir) return [];
-  if (!(await fileExists(assignmentsDir))) return [];
+async function computeStandaloneRecords(ticketsDir: string | undefined): Promise<StandaloneRecord[]> {
+  if (!ticketsDir) return [];
+  if (!(await fileExists(ticketsDir))) return [];
 
-  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsDir, { withFileTypes: true });
   const records: StandaloneRecord[] = [];
 
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
-    const assignmentDir = resolve(assignmentsDir, entry.name);
-    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+    const ticketDir = resolve(ticketsDir, entry.name);
+    const assignmentMdPath = resolve(ticketDir, 'assignment.md');
     if (!(await fileExists(assignmentMdPath))) continue;
     try {
       const content = await readFile(assignmentMdPath, 'utf-8');
       const record = parseAssignmentFull(content);
-      records.push({ assignmentDir, id: entry.name, record });
+      records.push({ ticketDir, id: entry.name, record });
     } catch {
       // skip unreadable
     }
@@ -683,15 +683,15 @@ export async function listProjects(projectsDir: string): Promise<ProjectSummary[
  * (the scanner previously re-read every assignment.md on each cold scan). A
  * `null` projectSlug marks a standalone assignment. By convention a project
  * assignment's folder name equals its slug, and standalone folders are named by
- * UUID, so `assignmentSlug` matches the scanner's prior folder-name behavior.
+ * UUID, so `ticketSlug` matches the scanner's prior folder-name behavior.
  */
 export async function listWorkspaceRecords(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Promise<
   Array<{
     projectSlug: string | null;
-    assignmentSlug: string;
+    ticketSlug: string;
     assignmentTitle: string;
     worktreePath: string | null;
     branch: string | null;
@@ -699,12 +699,12 @@ export async function listWorkspaceRecords(
 > {
   const [projectRecords, standaloneRecords] = await Promise.all([
     listProjectRecords(projectsDir),
-    listStandaloneRecords(assignmentsDir),
+    listStandaloneRecords(ticketsDir),
   ]);
 
   const records: Array<{
     projectSlug: string | null;
-    assignmentSlug: string;
+    ticketSlug: string;
     assignmentTitle: string;
     worktreePath: string | null;
     branch: string | null;
@@ -714,7 +714,7 @@ export async function listWorkspaceRecords(
     for (const assignment of project.assignments) {
       records.push({
         projectSlug: project.summary.slug,
-        assignmentSlug: assignment.slug,
+        ticketSlug: assignment.slug,
         assignmentTitle: assignment.title || assignment.slug,
         worktreePath: assignment.workspace.worktreePath ?? null,
         branch: assignment.workspace.branch ?? null,
@@ -725,7 +725,7 @@ export async function listWorkspaceRecords(
   for (const standalone of standaloneRecords) {
     records.push({
       projectSlug: null,
-      assignmentSlug: standalone.id,
+      ticketSlug: standalone.id,
       assignmentTitle: standalone.record.title || standalone.id,
       worktreePath: standalone.record.workspace.worktreePath ?? null,
       branch: standalone.record.workspace.branch ?? null,
@@ -741,7 +741,7 @@ export async function listWorkspaceRecords(
  */
 export async function getOverview(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
   options: { staleLimit?: number; staleOffset?: number } = {},
 ): Promise<OverviewResponse> {
   const traceEnabled = process.env.SYNTAUR_PERF_TRACE === '1';
@@ -752,7 +752,7 @@ export async function getOverview(
     listProjectRecords(projectsDir, traces),
   );
   const standaloneRecords = await timed(traces, 'list-standalone-records', () =>
-    listStandaloneRecords(assignmentsDir),
+    listStandaloneRecords(ticketsDir),
   );
   // Archived projects + individually-archived assignments are hidden from every
   // overview aggregate (stats, recent projects, recent activity). The full record
@@ -834,9 +834,9 @@ export async function getOverview(
  * Get all assignments across all projects for the global kanban board.
  * GET /api/assignments
  */
-export async function listAssignmentsBoard(
+export async function listTicketsBoard(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
   options: { archived?: 'exclude' | 'only' } = {},
 ): Promise<AssignmentsBoardResponse> {
   const mode = options.archived ?? 'exclude';
@@ -848,21 +848,21 @@ export async function listAssignmentsBoard(
         return Promise.all(
           record.assignments
             .filter((assignment) => assignment.archived === true)
-            .map(async (assignment) => toAssignmentBoardItem(projectsDir, record, assignment)),
+            .map(async (assignment) => toTicketBoardItem(projectsDir, record, assignment)),
         );
       }
       // 'exclude': cascade-hide every child of an archived project, and drop
       // individually-archived children of non-archived projects.
-      if (isProjectArchived(record.summary)) return [] as AssignmentBoardItem[];
+      if (isProjectArchived(record.summary)) return [] as TicketBoardItem[];
       return Promise.all(
         activeAssignments(record.assignments).map(async (assignment) =>
-          toAssignmentBoardItem(projectsDir, record, assignment),
+          toTicketBoardItem(projectsDir, record, assignment),
         ),
       );
     }),
   );
 
-  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const standaloneRecords = await listStandaloneRecords(ticketsDir);
   const filteredStandalone =
     mode === 'only'
       ? standaloneRecords.filter((sr) => sr.record.archived === true)
@@ -908,10 +908,10 @@ function toArchivedAssignmentItem(
  */
 export async function listArchived(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Promise<ArchiveResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
-  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const standaloneRecords = await listStandaloneRecords(ticketsDir);
 
   const projects: ArchivedProjectItem[] = projectRecords
     .filter((record) => isProjectArchived(record.summary))
@@ -949,16 +949,16 @@ export async function listArchived(
   return { projects, assignments: individuallyArchived };
 }
 
-async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBoardItem> {
+async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<TicketBoardItem> {
   // Standalone → the ticket's own workflow (no project binding).
   const config = await statusConfigForAssignment(sr.record, null);
   const { terminalStatuses } = config;
 
-  let facts: AssignmentBoardItem['facts'];
+  let facts: TicketBoardItem['facts'];
   try {
     const { computeFacts } = await import('../lifecycle/facts.js');
     facts = await computeFacts({
-      assignmentDir: sr.assignmentDir,
+      ticketDir: sr.ticketDir,
       frontmatter: sr.record as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
       body: sr.record.body,
       projectDir: null,
@@ -966,11 +966,11 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<AssignmentBo
       declarations: config.factDeclarations,
     });
   } catch (err) {
-    console.warn(`toStandaloneBoardItem: computeFacts failed for ${sr.assignmentDir}:`, err);
+    console.warn(`toStandaloneBoardItem: computeFacts failed for ${sr.ticketDir}:`, err);
   }
 
   return {
-    ...toAssignmentSummary(sr.record, config),
+    ...toTicketSummary(sr.record, config),
     projectSlug: null,
     projectTitle: null,
     blockedReason: sr.record.blockedReason,
@@ -1027,22 +1027,22 @@ export async function getEditableDocument(
   projectsDir: string,
   documentType: EditableDocumentResponse['documentType'],
   projectSlug: string,
-  assignmentSlug?: string,
+  ticketSlug?: string,
 ): Promise<EditableDocumentResponse | null> {
-  const filePath = getDocumentPath(projectsDir, documentType, projectSlug, assignmentSlug);
+  const filePath = getDocumentPath(projectsDir, documentType, projectSlug, ticketSlug);
   if (!filePath || !(await fileExists(filePath))) {
     return null;
   }
 
   const content = await readFile(filePath, 'utf-8');
-  const title = getEditableDocumentTitle(documentType, projectSlug, assignmentSlug);
+  const title = getEditableDocumentTitle(documentType, projectSlug, ticketSlug);
 
   return {
     documentType,
     title,
     content,
     projectSlug,
-    assignmentSlug,
+    ticketSlug,
     appendOnly: documentType === 'handoff' || documentType === 'decision-record',
   };
 }
@@ -1053,11 +1053,11 @@ export async function getEditableDocument(
  */
 export async function getEditableDocumentById(
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
   documentType: EditableDocumentResponse['documentType'],
   id: string,
 ): Promise<EditableDocumentResponse | null> {
-  const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+  const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
   if (!resolved) return null;
 
   if (!resolved.standalone && resolved.projectSlug) {
@@ -1065,7 +1065,7 @@ export async function getEditableDocumentById(
       projectsDir,
       documentType,
       resolved.projectSlug,
-      resolved.assignmentSlug,
+      resolved.ticketSlug,
     );
   }
 
@@ -1082,7 +1082,7 @@ export async function getEditableDocumentById(
               ? 'decision-record.md'
               : null;
   if (!fileName) return null;
-  const filePath = resolve(resolved.assignmentDir, fileName);
+  const filePath = resolve(resolved.ticketDir, fileName);
   if (!(await fileExists(filePath))) return null;
 
   const content = await readFile(filePath, 'utf-8');
@@ -1103,8 +1103,8 @@ export async function getEditableDocumentById(
     title,
     content,
     projectSlug: null,
-    assignmentSlug: undefined,
-    assignmentId: resolved.id,
+    ticketSlug: undefined,
+    ticketId: resolved.id,
     appendOnly: documentType === 'handoff' || documentType === 'decision-record',
   };
 }
@@ -1143,7 +1143,7 @@ export async function getProjectDetail(
     await Promise.all(
       assignments.map(async (a) => {
         const config = await getStatusConfig(await resolveWorkflowIdWithBinding(a, projectBinding));
-        return toAssignmentSummary(a, config);
+        return toTicketSummary(a, config);
       }),
     )
   ).sort((left, right) => compareTimestamps(right.updated, left.updated));
@@ -1179,14 +1179,14 @@ export async function getProjectDetail(
  *
  * Reads the session DB (`getEngagementsByAssignmentId` / `getSessionById` both
  * go through `getSessionDb()`, which throws if `initSessionDb()` never ran).
- * The dashboard server initializes it; non-dashboard `getAssignmentDetail`
+ * The dashboard server initializes it; non-dashboard `getTicketDetail`
  * callers (CLI launch/open, direct tests) may not — so degrade to no
  * engagements rather than throwing. Agent is enriched once per distinct session
  * (no N+1); a missing session row yields `agent: null`.
  */
-function buildAssignmentEngagements(assignmentId: string): EngagementInfo[] {
+function buildAssignmentEngagements(ticketId: string): EngagementInfo[] {
   if (!isSessionDbInitialized()) return [];
-  const rows = getEngagementsByAssignmentId(assignmentId);
+  const rows = getEngagementsByAssignmentId(ticketId);
   const agentBySession = new Map<string, string | null>();
   for (const r of rows) {
     if (!agentBySession.has(r.session_id)) {
@@ -1203,13 +1203,13 @@ function buildAssignmentEngagements(assignmentId: string): EngagementInfo[] {
   }));
 }
 
-export async function getAssignmentDetail(
+export async function getTicketDetail(
   projectsDir: string,
   projectSlug: string,
-  assignmentSlug: string,
-): Promise<AssignmentDetail | null> {
-  const assignmentDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
-  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  ticketSlug: string,
+): Promise<TicketDetail | null> {
+  const ticketDir = resolve(projectsDir, projectSlug, 'assignments', ticketSlug);
+  const assignmentMdPath = resolve(ticketDir, 'assignment.md');
 
   if (!(await fileExists(assignmentMdPath))) {
     return null;
@@ -1218,10 +1218,10 @@ export async function getAssignmentDetail(
   const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
   const assignment = parseAssignmentFull(assignmentContent);
 
-  let plan: AssignmentDetail['plan'] = null;
-  const planFile = await latestPlanFile(assignmentDir);
+  let plan: TicketDetail['plan'] = null;
+  const planFile = await latestPlanFile(ticketDir);
   if (planFile) {
-    const planPath = resolve(assignmentDir, planFile);
+    const planPath = resolve(ticketDir, planFile);
     if (await fileExists(planPath)) {
       const planContent = await readFile(planPath, 'utf-8');
       const parsed = parsePlan(planContent);
@@ -1233,8 +1233,8 @@ export async function getAssignmentDetail(
     }
   }
 
-  let scratchpad: AssignmentDetail['scratchpad'] = null;
-  const scratchpadPath = resolve(assignmentDir, 'scratchpad.md');
+  let scratchpad: TicketDetail['scratchpad'] = null;
+  const scratchpadPath = resolve(ticketDir, 'scratchpad.md');
   if (await fileExists(scratchpadPath)) {
     const scratchpadContent = await readFile(scratchpadPath, 'utf-8');
     const parsed = parseScratchpad(scratchpadContent);
@@ -1244,8 +1244,8 @@ export async function getAssignmentDetail(
     };
   }
 
-  let handoff: AssignmentDetail['handoff'] = null;
-  const handoffPath = resolve(assignmentDir, 'handoff.md');
+  let handoff: TicketDetail['handoff'] = null;
+  const handoffPath = resolve(ticketDir, 'handoff.md');
   if (await fileExists(handoffPath)) {
     const handoffContent = await readFile(handoffPath, 'utf-8');
     const parsed = parseHandoff(handoffContent);
@@ -1256,8 +1256,8 @@ export async function getAssignmentDetail(
     };
   }
 
-  let decisionRecord: AssignmentDetail['decisionRecord'] = null;
-  const decisionRecordPath = resolve(assignmentDir, 'decision-record.md');
+  let decisionRecord: TicketDetail['decisionRecord'] = null;
+  const decisionRecordPath = resolve(ticketDir, 'decision-record.md');
   if (await fileExists(decisionRecordPath)) {
     const decisionRecordContent = await readFile(decisionRecordPath, 'utf-8');
     const parsed = parseDecisionRecord(decisionRecordContent);
@@ -1268,8 +1268,8 @@ export async function getAssignmentDetail(
     };
   }
 
-  let progress: AssignmentDetail['progress'] = null;
-  const progressPath = resolve(assignmentDir, 'progress.md');
+  let progress: TicketDetail['progress'] = null;
+  const progressPath = resolve(ticketDir, 'progress.md');
   if (await fileExists(progressPath)) {
     const progressContent = await readFile(progressPath, 'utf-8');
     const parsed = parseProgress(progressContent);
@@ -1280,8 +1280,8 @@ export async function getAssignmentDetail(
     };
   }
 
-  let comments: AssignmentDetail['comments'] = null;
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  let comments: TicketDetail['comments'] = null;
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (await fileExists(commentsPath)) {
     const commentsContent = await readFile(commentsPath, 'utf-8');
     const parsed = parseComments(commentsContent);
@@ -1293,10 +1293,10 @@ export async function getAssignmentDetail(
   }
 
   const wfConfig = await statusConfigForAssignment(assignment, resolve(projectsDir, projectSlug));
-  const detail: AssignmentDetail = {
+  const detail: TicketDetail = {
     id: assignment.id,
     projectSlug,
-    slug: assignment.slug || assignmentSlug,
+    slug: assignment.slug || ticketSlug,
     title: assignment.title,
     status: assignment.status,
     type: assignment.type,
@@ -1304,7 +1304,7 @@ export async function getAssignmentDetail(
     resolvedWorkflow: wfConfig.workflowId,
     workflowLabel: wfConfig.label,
     statusLabel: statusLabelFor(wfConfig, assignment.status),
-    priority: assignment.priority as AssignmentDetail['priority'],
+    priority: assignment.priority as TicketDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
     links: assignment.links,
@@ -1319,7 +1319,7 @@ export async function getAssignmentDetail(
     archivedReason: assignment.archivedReason,
     ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
-    derived: await buildDerivedDetail(assignment, assignmentDir, resolve(projectsDir, projectSlug)),
+    derived: await buildDerivedDetail(assignment, ticketDir, resolve(projectsDir, projectSlug)),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1334,7 +1334,7 @@ export async function getAssignmentDetail(
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectSlug,
-      assignmentSlug,
+      ticketSlug,
       assignment,
     ),
   };
@@ -1387,7 +1387,7 @@ export async function getAssignmentDetail(
     enrichedLinks.push({
       slug: linkSlug,
       projectSlug: ms,
-      assignmentSlug: as,
+      ticketSlug: as,
       title: info?.title ?? linkSlug,
       status: info?.status ?? 'pending',
       isReverse: false,
@@ -1399,7 +1399,7 @@ export async function getAssignmentDetail(
     enrichedLinks.push({
       slug: linkSlug,
       projectSlug: ms,
-      assignmentSlug: as,
+      ticketSlug: as,
       title: info?.title ?? linkSlug,
       status: info?.status ?? 'pending',
       isReverse: true,
@@ -1434,14 +1434,14 @@ interface ReferenceTarget {
 async function computeReferencedBy(
   target: ReferenceTarget,
   projectsDir: string,
-  assignmentsDir: string | undefined,
+  ticketsDir: string | undefined,
 ): Promise<AssignmentReference[]> {
   const sources: Array<{
     id: string;
     slug: string;
     title: string;
     projectSlug: string | null;
-    assignmentDir: string;
+    ticketDir: string;
   }> = [];
 
   // project-nested
@@ -1453,26 +1453,26 @@ async function computeReferencedBy(
         slug: a.slug,
         title: a.title,
         projectSlug: rec.summary.slug,
-        assignmentDir: resolve(rec.projectPath, 'assignments', a.slug),
+        ticketDir: resolve(rec.projectPath, 'assignments', a.slug),
       });
     }
   }
   // standalone
-  const standaloneRecords = await listStandaloneRecords(assignmentsDir);
+  const standaloneRecords = await listStandaloneRecords(ticketsDir);
   for (const sr of standaloneRecords) {
     sources.push({
       id: sr.id,
       slug: sr.record.slug || sr.id,
       title: sr.record.title,
       projectSlug: null,
-      assignmentDir: sr.assignmentDir,
+      ticketDir: sr.ticketDir,
     });
   }
 
   const references: AssignmentReference[] = [];
   for (const source of sources) {
     if (source.id === target.id) continue; // skip self
-    const mentions = await countMentionsInAssignment(source.assignmentDir, target);
+    const mentions = await countMentionsInAssignment(source.ticketDir, target);
     if (mentions > 0) {
       references.push({
         sourceId: source.id,
@@ -1544,95 +1544,95 @@ function escapeRegExpLocal(value: string): string {
  * Resolve an assignment by UUID (standalone or project-nested) and return its full detail payload.
  * GET /api/assignments/:id
  */
-export async function getAssignmentDetailById(
+export async function getTicketDetailById(
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
   id: string,
-): Promise<AssignmentDetail | null> {
-  const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+): Promise<TicketDetail | null> {
+  const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
   if (!resolved) return null;
 
   if (!resolved.standalone && resolved.projectSlug) {
     // Use the standard detail fetcher, then also scan standalone assignments
     // for backlinks.
-    const detail = await getAssignmentDetail(projectsDir, resolved.projectSlug, resolved.assignmentSlug);
+    const detail = await getTicketDetail(projectsDir, resolved.projectSlug, resolved.ticketSlug);
     if (!detail) return null;
     detail.referencedBy = await computeReferencedBy(
       { id: detail.id, projectSlug: detail.projectSlug, slug: detail.slug },
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
     );
     return detail;
   }
 
   // Standalone path — load companion docs directly from the resolved dir.
-  const standaloneDetail = await buildStandaloneAssignmentDetail(resolved);
+  const standaloneDetail = await buildStandaloneTicketDetail(resolved);
   if (!standaloneDetail) return null;
   standaloneDetail.referencedBy = await computeReferencedBy(
     { id: standaloneDetail.id, projectSlug: null, slug: standaloneDetail.slug },
     projectsDir,
-    assignmentsDir,
+    ticketsDir,
   );
   return standaloneDetail;
 }
 
-async function buildStandaloneAssignmentDetail(
+async function buildStandaloneTicketDetail(
   resolved: ResolvedAssignment,
-): Promise<AssignmentDetail | null> {
-  const assignmentDir = resolved.assignmentDir;
-  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+): Promise<TicketDetail | null> {
+  const ticketDir = resolved.ticketDir;
+  const assignmentMdPath = resolve(ticketDir, 'assignment.md');
   if (!(await fileExists(assignmentMdPath))) return null;
 
   const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
   const assignment = parseAssignmentFull(assignmentContent);
 
-  let plan: AssignmentDetail['plan'] = null;
-  const planFile = await latestPlanFile(assignmentDir);
+  let plan: TicketDetail['plan'] = null;
+  const planFile = await latestPlanFile(ticketDir);
   if (planFile) {
-    const planPath = resolve(assignmentDir, planFile);
+    const planPath = resolve(ticketDir, planFile);
     if (await fileExists(planPath)) {
       const parsed = parsePlan(await readFile(planPath, 'utf-8'));
       plan = { status: parsed.status, updated: parsed.updated, body: parsed.body };
     }
   }
 
-  let scratchpad: AssignmentDetail['scratchpad'] = null;
-  const scratchpadPath = resolve(assignmentDir, 'scratchpad.md');
+  let scratchpad: TicketDetail['scratchpad'] = null;
+  const scratchpadPath = resolve(ticketDir, 'scratchpad.md');
   if (await fileExists(scratchpadPath)) {
     const parsed = parseScratchpad(await readFile(scratchpadPath, 'utf-8'));
     scratchpad = { updated: parsed.updated, body: parsed.body };
   }
 
-  let handoff: AssignmentDetail['handoff'] = null;
-  const handoffPath = resolve(assignmentDir, 'handoff.md');
+  let handoff: TicketDetail['handoff'] = null;
+  const handoffPath = resolve(ticketDir, 'handoff.md');
   if (await fileExists(handoffPath)) {
     const parsed = parseHandoff(await readFile(handoffPath, 'utf-8'));
     handoff = { updated: parsed.updated, handoffCount: parsed.handoffCount, body: parsed.body };
   }
 
-  let decisionRecord: AssignmentDetail['decisionRecord'] = null;
-  const decisionRecordPath = resolve(assignmentDir, 'decision-record.md');
+  let decisionRecord: TicketDetail['decisionRecord'] = null;
+  const decisionRecordPath = resolve(ticketDir, 'decision-record.md');
   if (await fileExists(decisionRecordPath)) {
     const parsed = parseDecisionRecord(await readFile(decisionRecordPath, 'utf-8'));
     decisionRecord = { updated: parsed.updated, decisionCount: parsed.decisionCount, body: parsed.body };
   }
 
-  let progress: AssignmentDetail['progress'] = null;
-  const progressPath = resolve(assignmentDir, 'progress.md');
+  let progress: TicketDetail['progress'] = null;
+  const progressPath = resolve(ticketDir, 'progress.md');
   if (await fileExists(progressPath)) {
     const parsed = parseProgress(await readFile(progressPath, 'utf-8'));
     progress = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
-  let comments: AssignmentDetail['comments'] = null;
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  let comments: TicketDetail['comments'] = null;
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (await fileExists(commentsPath)) {
     const parsed = parseComments(await readFile(commentsPath, 'utf-8'));
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
   const wfConfig = await statusConfigForAssignment(assignment, null);
-  const detail: AssignmentDetail = {
+  const detail: TicketDetail = {
     id: assignment.id,
     projectSlug: null,
     slug: assignment.slug || resolved.id,
@@ -1643,7 +1643,7 @@ async function buildStandaloneAssignmentDetail(
     resolvedWorkflow: wfConfig.workflowId,
     workflowLabel: wfConfig.label,
     statusLabel: statusLabelFor(wfConfig, assignment.status),
-    priority: assignment.priority as AssignmentDetail['priority'],
+    priority: assignment.priority as TicketDetail['priority'],
     assignee: assignment.assignee,
     dependsOn: [], // standalone cannot declare dependencies
     links: [],
@@ -1658,7 +1658,7 @@ async function buildStandaloneAssignmentDetail(
     archivedReason: assignment.archivedReason,
     ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
     override: assignment.override,
-    derived: await buildDerivedDetail(assignment, assignmentDir, null),
+    derived: await buildDerivedDetail(assignment, ticketDir, null),
     created: assignment.created,
     updated: assignment.updated,
     body: assignment.body,
@@ -1777,17 +1777,17 @@ async function listAssignmentRecords(
   projectPath: string,
   traces?: OverviewTraces,
 ): Promise<AssignmentRecord[]> {
-  const assignmentsDir = resolve(projectPath, 'assignments');
-  if (!(await fileExists(assignmentsDir))) {
+  const ticketsDir = resolve(projectPath, 'assignments');
+  if (!(await fileExists(ticketsDir))) {
     return [];
   }
 
-  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsDir, { withFileTypes: true });
   const dirEntries = entries.filter((entry) => entry.isDirectory());
 
   const maybeRecords = await Promise.all(
     dirEntries.map(async (entry): Promise<AssignmentRecord | null> => {
-      const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+      const assignmentMd = resolve(ticketsDir, entry.name, 'assignment.md');
       if (!(await fileExists(assignmentMd))) {
         return null;
       }
@@ -1970,9 +1970,9 @@ function deriveStatusVirtuals(
  */
 async function buildDerivedDetail(
   assignment: AssignmentRecord,
-  assignmentDir: string,
+  ticketDir: string,
   projectDir: string | null,
-): Promise<AssignmentDetail['derived']> {
+): Promise<TicketDetail['derived']> {
   // Derive against the ticket's OWN workflow (its terminal set, derive rules,
   // fact registry, known statuses) so the dashboard projection agrees with the
   // CLI recompute for the same ticket.
@@ -1986,7 +1986,7 @@ async function buildDerivedDetail(
     // validity come from the same plan-file / HEAD reads. Fresh-per-request is
     // what makes binds:commit lazy convergence honest (Locked Decisions).
     const { facts, attestations } = await computeFactsDetailed({
-      assignmentDir,
+      ticketDir,
       frontmatter: {
         ...assignment,
         // AssignmentRecord ⊃ the fields computeFacts reads (incl. facts +
@@ -2062,7 +2062,7 @@ async function buildDerivedDetail(
     };
   } catch (err) {
     // Best-effort enrichment, never a 500 — but not silent (codex finding 12).
-    console.warn(`buildDerivedDetail failed for ${assignmentDir}:`, err);
+    console.warn(`buildDerivedDetail failed for ${ticketDir}:`, err);
     return null;
   }
 }
@@ -2073,10 +2073,10 @@ function statusLabelFor(config: ResolvedStatusConfig, status: string): string {
   return config.statuses.find((s) => s.id === status)?.label ?? status;
 }
 
-function toAssignmentSummary(
+function toTicketSummary(
   assignment: AssignmentRecord,
   config: ResolvedStatusConfig,
-): AssignmentSummary {
+): TicketSummary {
   return {
     id: assignment.id,
     slug: assignment.slug,
@@ -2087,7 +2087,7 @@ function toAssignmentSummary(
     resolvedWorkflow: config.workflowId,
     workflowLabel: config.label,
     statusLabel: statusLabelFor(config, assignment.status),
-    priority: assignment.priority as AssignmentSummary['priority'],
+    priority: assignment.priority as TicketSummary['priority'],
     assignee: assignment.assignee,
     dependsOn: assignment.dependsOn,
     links: assignment.links,
@@ -2102,11 +2102,11 @@ function toAssignmentSummary(
   };
 }
 
-async function toAssignmentBoardItem(
+async function toTicketBoardItem(
   projectsDir: string,
   projectRecord: ProjectRecord,
   assignment: AssignmentRecord,
-): Promise<AssignmentBoardItem> {
+): Promise<TicketBoardItem> {
   // Resolve the ticket's OWN workflow once (from the already-parsed project
   // binding — no extra read) and reuse it for terminal virtuals, fact
   // declarations, and the available-transitions table.
@@ -2117,14 +2117,14 @@ async function toAssignmentBoardItem(
   const config = await getStatusConfig(workflowId);
   const { terminalStatuses } = config;
 
-  const assignmentDir = resolve(projectRecord.projectPath, 'assignments', assignment.slug);
+  const ticketDir = resolve(projectRecord.projectPath, 'assignments', assignment.slug);
   const projectDir = projectRecord.projectPath;
 
-  let facts: AssignmentBoardItem['facts'];
+  let facts: TicketBoardItem['facts'];
   try {
     const { computeFacts } = await import('../lifecycle/facts.js');
     facts = await computeFacts({
-      assignmentDir,
+      ticketDir,
       frontmatter: assignment as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
       body: assignment.body,
       projectDir,
@@ -2132,11 +2132,11 @@ async function toAssignmentBoardItem(
       declarations: config.factDeclarations,
     });
   } catch (err) {
-    console.warn(`toAssignmentBoardItem: computeFacts failed for ${assignmentDir}:`, err);
+    console.warn(`toTicketBoardItem: computeFacts failed for ${ticketDir}:`, err);
   }
 
   return {
-    ...toAssignmentSummary(assignment, config),
+    ...toTicketSummary(assignment, config),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     blockedReason: assignment.blockedReason,
@@ -2195,7 +2195,7 @@ function findAssignmentStatus(assignments: AssignmentRecord[], slug: string): st
 async function getAvailableTransitions(
   projectsDir: string,
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   assignment: AssignmentRecord,
   options?: {
     dependencyStatusMap?: ReadonlyMap<string, string>;
@@ -2386,11 +2386,11 @@ function classifyAssignmentRecord(
  */
 export async function collectStaleCandidates(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Promise<StaleCandidate[]> {
   const [projectRecords, standaloneRecords] = await Promise.all([
     listProjectRecords(projectsDir),
-    listStandaloneRecords(assignmentsDir),
+    listStandaloneRecords(ticketsDir),
   ]);
   const thresholds = resolveStaleThresholds((await readConfig()).staleness);
   const now = Date.now();
@@ -2421,7 +2421,7 @@ export async function collectStaleCandidates(
       );
       const reasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
       if (reasons.length > 0) {
-        out.push({ assignmentId: assignment.id, projectSlug: record.summary.slug, reasons });
+        out.push({ ticketId: assignment.id, projectSlug: record.summary.slug, reasons });
       }
     }
   }
@@ -2429,9 +2429,9 @@ export async function collectStaleCandidates(
   for (const sr of standaloneRecords) {
     if (sr.record.archived === true) continue;
     const { terminalStatuses } = await statusConfigForAssignment(sr.record, null);
-    const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
+    const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
     const reasons = classifyAssignmentRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
-    if (reasons.length > 0) out.push({ assignmentId: sr.record.id, projectSlug: null, reasons });
+    if (reasons.length > 0) out.push({ ticketId: sr.record.id, projectSlug: null, reasons });
   }
 
   return out;
@@ -2532,7 +2532,7 @@ async function buildOverviewSegmentBuckets(
       const shared = {
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
-        assignmentSlug: assignment.slug,
+        ticketSlug: assignment.slug,
         assignmentTitle: assignment.title,
         status: assignment.status,
         updated: assignment.updated,
@@ -2593,7 +2593,7 @@ async function buildOverviewSegmentBuckets(
       const t0 = traces ? performance.now() : 0;
       const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
       if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
-      const lastActivityMs = await readProgressActivityMs(resolve(sr.assignmentDir, 'progress.md'), now);
+      const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
       // Standalone → the ticket's own workflow terminal set (no project binding).
       const { terminalStatuses: ticketTerminal } = await statusConfigForAssignment(sr.record, null);
       return { sr, availableTransitions, lastActivityMs, ticketTerminal };
@@ -2619,7 +2619,7 @@ async function buildOverviewSegmentBuckets(
     const shared = {
       projectSlug: null,
       projectTitle: null,
-      assignmentSlug: assignment.slug || sr.id,
+      ticketSlug: assignment.slug || sr.id,
       assignmentTitle: assignment.title,
       status: assignment.status,
       updated: assignment.updated,
@@ -2748,7 +2748,7 @@ function buildRecentActivity(
       href: `/projects/${record.summary.slug}`,
       projectSlug: record.summary.slug,
       projectTitle: record.summary.title,
-      assignmentSlug: null,
+      ticketSlug: null,
       summary: `Project status is ${record.summary.status}.`,
     });
 
@@ -2761,7 +2761,7 @@ function buildRecentActivity(
         href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
-        assignmentSlug: assignment.slug,
+        ticketSlug: assignment.slug,
         summary: `Assignment is ${assignment.status} with ${assignment.priority} priority.`,
       });
     }
@@ -2777,7 +2777,7 @@ function buildRecentActivity(
       href: `/assignments/${sr.id}`,
       projectSlug: null,
       projectTitle: null,
-      assignmentSlug: assignment.slug || sr.id,
+      ticketSlug: assignment.slug || sr.id,
       summary: `Standalone assignment is ${assignment.status} with ${assignment.priority} priority.`,
     });
   }
@@ -2802,12 +2802,12 @@ function countPendingAnswers(body: string): number {
 
 async function countOpenQuestions(
   projectPath: string,
-  assignmentSlug: string,
+  ticketSlug: string,
 ): Promise<number> {
   const commentsPath = resolve(
     projectPath,
     'assignments',
-    assignmentSlug,
+    ticketSlug,
     'comments.md',
   );
   if (!(await fileExists(commentsPath))) {
@@ -2838,30 +2838,30 @@ function getDocumentPath(
   projectsDir: string,
   documentType: EditableDocumentResponse['documentType'],
   projectSlug: string,
-  assignmentSlug?: string,
+  ticketSlug?: string,
 ): string | null {
   switch (documentType) {
     case 'project':
       return resolve(projectsDir, projectSlug, 'project.md');
     case 'assignment':
-      return assignmentSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md')
+      return ticketSlug
+        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'assignment.md')
         : null;
     case 'plan':
-      return assignmentSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'plan.md')
+      return ticketSlug
+        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'plan.md')
         : null;
     case 'scratchpad':
-      return assignmentSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'scratchpad.md')
+      return ticketSlug
+        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'scratchpad.md')
         : null;
     case 'handoff':
-      return assignmentSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'handoff.md')
+      return ticketSlug
+        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'handoff.md')
         : null;
     case 'decision-record':
-      return assignmentSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'decision-record.md')
+      return ticketSlug
+        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'decision-record.md')
         : null;
     default:
       return null;
@@ -2871,21 +2871,21 @@ function getDocumentPath(
 function getEditableDocumentTitle(
   documentType: EditableDocumentResponse['documentType'],
   projectSlug: string,
-  assignmentSlug?: string,
+  ticketSlug?: string,
 ): string {
   switch (documentType) {
     case 'project':
       return `Edit Project: ${projectSlug}`;
     case 'assignment':
-      return `Edit Assignment: ${assignmentSlug || 'assignment'}`;
+      return `Edit Assignment: ${ticketSlug || 'assignment'}`;
     case 'plan':
-      return `Edit Plan: ${assignmentSlug || 'assignment'}`;
+      return `Edit Plan: ${ticketSlug || 'assignment'}`;
     case 'scratchpad':
-      return `Edit Scratchpad: ${assignmentSlug || 'assignment'}`;
+      return `Edit Scratchpad: ${ticketSlug || 'assignment'}`;
     case 'handoff':
-      return `Append Handoff: ${assignmentSlug || 'assignment'}`;
+      return `Append Handoff: ${ticketSlug || 'assignment'}`;
     case 'decision-record':
-      return `Append Decision: ${assignmentSlug || 'assignment'}`;
+      return `Append Decision: ${ticketSlug || 'assignment'}`;
     case 'playbook':
       return `Edit Playbook: ${projectSlug}`;
     default:

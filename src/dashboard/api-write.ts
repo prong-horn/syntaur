@@ -34,8 +34,8 @@ import {
 } from './parser.js';
 import { toggleAcceptanceCriterion } from './acceptance-criteria.js';
 import {
-  getAssignmentDetail,
-  getAssignmentDetailById,
+  getTicketDetail,
+  getTicketDetailById,
   getEditableDocument,
   getEditableDocumentById,
   getProjectDetail,
@@ -43,7 +43,7 @@ import {
   installRecordsInvalidation,
   resolveProjectPath,
 } from './api.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/assignment-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { executeTransitionByDir } from '../lifecycle/index.js';
 import { runEngineTransition, runEngineOverride } from '../lifecycle/engine-transition.js';
@@ -75,13 +75,13 @@ export { setTopLevelField } from '../lifecycle/log-append.js';
  * never 500s the route.
  */
 function emitDashboardEvent(
-  assignmentId: string,
+  ticketId: string,
   projectSlug: string | null,
   type: string,
   details: Record<string, unknown>,
 ): void {
-  if (!assignmentId) return; // can't attribute without an id — skip silently
-  recordEvent({ assignmentId, projectSlug, type, actor: 'human', details });
+  if (!ticketId) return; // can't attribute without an id — skip silently
+  recordEvent({ ticketId, projectSlug, type, actor: 'human', details });
 }
 
 /**
@@ -244,9 +244,9 @@ async function readCurrentDocument(filePath: string): Promise<string | null> {
 }
 
 interface WorktreeCreateContext {
-  assignmentPath: string;
+  ticketPath: string;
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   reload: () => Promise<unknown>;
 }
 
@@ -322,22 +322,22 @@ async function handleWorktreeCreate(
   res: Response,
   ctx: WorktreeCreateContext,
 ): Promise<void> {
-  if (!(await fileExists(ctx.assignmentPath))) {
+  if (!(await fileExists(ctx.ticketPath))) {
     res.status(404).json({ error: 'Assignment not found' });
     return;
   }
 
   // Double-submit guard: reject a second concurrent create for this assignment.
-  if (worktreeInFlight.has(ctx.assignmentPath)) {
+  if (worktreeInFlight.has(ctx.ticketPath)) {
     res
       .status(409)
       .json({ error: 'A worktree is already being created for this assignment.' });
     return;
   }
-  worktreeInFlight.add(ctx.assignmentPath);
+  worktreeInFlight.add(ctx.ticketPath);
 
   try {
-    const parsed = parseAssignmentFull(await readFile(ctx.assignmentPath, 'utf-8'));
+    const parsed = parseAssignmentFull(await readFile(ctx.ticketPath, 'utf-8'));
     if (parsed.workspace.worktreePath) {
       res
         .status(409)
@@ -370,7 +370,7 @@ async function handleWorktreeCreate(
 
     const defaults = computeWorktreeDefaults({
       projectSlug: ctx.projectSlug,
-      assignmentSlug: ctx.assignmentSlug,
+      ticketSlug: ctx.ticketSlug,
       existing: parsed.workspace,
       cwd: repo,
     });
@@ -431,7 +431,7 @@ async function handleWorktreeCreate(
 
     try {
       await createWorktreeAndRecord({
-        assignmentPath: ctx.assignmentPath,
+        ticketPath: ctx.ticketPath,
         repository: repo,
         branch,
         worktreePath,
@@ -449,14 +449,14 @@ async function handleWorktreeCreate(
     const assignment = await ctx.reload();
     res.json({ assignment });
   } finally {
-    worktreeInFlight.delete(ctx.assignmentPath);
+    worktreeInFlight.delete(ctx.ticketPath);
   }
 }
 
 
 export function createWriteRouter(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Router {
   const router = Router();
   // Every mutation here writes a record file; clear the shared records cache
@@ -473,7 +473,7 @@ export function createWriteRouter(
     res.json({ content });
   });
 
-  router.get('/api/templates/assignment', (req: Request, res: Response) => {
+  router.get('/api/templates/ticket', (req: Request, res: Response) => {
     const standalone = req.query.standalone === '1';
     const content = renderAssignment({
       id: generateId(),
@@ -498,85 +498,10 @@ export function createWriteRouter(
     res.json(document);
   });
 
-  router.get('/api/projects/:slug/assignments/:aslug/edit', async (req: Request, res: Response) => {
-    const slug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const document = await getEditableDocument(
-      projectsDir,
-      'assignment',
-      slug,
-      assignmentSlug,
-    );
-    if (!document) {
-      res.status(404).json({ error: 'Assignment not found' });
-      return;
-    }
-    res.json(document);
-  });
 
-  router.get('/api/projects/:slug/assignments/:aslug/plan/edit', async (req: Request, res: Response) => {
-    const slug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const document = await getEditableDocument(
-      projectsDir,
-      'plan',
-      slug,
-      assignmentSlug,
-    );
-    if (!document) {
-      res.status(404).json({ error: 'Plan not found' });
-      return;
-    }
-    res.json(document);
-  });
 
-  router.get('/api/projects/:slug/assignments/:aslug/scratchpad/edit', async (req: Request, res: Response) => {
-    const slug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const document = await getEditableDocument(
-      projectsDir,
-      'scratchpad',
-      slug,
-      assignmentSlug,
-    );
-    if (!document) {
-      res.status(404).json({ error: 'Scratchpad not found' });
-      return;
-    }
-    res.json(document);
-  });
 
-  router.get('/api/projects/:slug/assignments/:aslug/handoff/edit', async (req: Request, res: Response) => {
-    const slug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const document = await getEditableDocument(
-      projectsDir,
-      'handoff',
-      slug,
-      assignmentSlug,
-    );
-    if (!document) {
-      res.status(404).json({ error: 'Handoff log not found' });
-      return;
-    }
-    res.json(document);
-  });
 
-  router.get('/api/projects/:slug/assignments/:aslug/decision-record/edit', async (req: Request, res: Response) => {
-    const slug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const document = await getEditableDocument(
-      projectsDir,
-      'decision-record',
-      slug,
-      assignmentSlug,
-    );
-    if (!document) {
-      res.status(404).json({ error: 'Decision record not found' });
-      return;
-    }
-    res.json(document);
-  });
 
   router.post('/api/projects', async (req: Request, res: Response) => {
     try {
@@ -644,7 +569,7 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/projects/:slug/assignments', async (req: Request, res: Response) => {
+  router.post('/api/projects/:slug/tickets', async (req: Request, res: Response) => {
     try {
       const projectSlug = getParam(req.params.slug);
       const projectDir = resolve(projectsDir, projectSlug);
@@ -672,9 +597,9 @@ export function createWriteRouter(
         return;
       }
 
-      const assignmentSlug = fields.slug;
-      if (!isValidSlug(assignmentSlug)) {
-        res.status(400).json({ error: `Invalid slug "${assignmentSlug}". Must be lowercase and hyphen-separated.` });
+      const ticketSlug = fields.slug;
+      if (!isValidSlug(ticketSlug)) {
+        res.status(400).json({ error: `Invalid slug "${ticketSlug}". Must be lowercase and hyphen-separated.` });
         return;
       }
 
@@ -685,17 +610,17 @@ export function createWriteRouter(
         return;
       }
 
-      const assignmentDir = resolve(projectDir, 'assignments', assignmentSlug);
-      if (await fileExists(assignmentDir)) {
+      const ticketDir = resolve(projectDir, 'assignments', ticketSlug);
+      if (await fileExists(ticketDir)) {
         res.status(409).json({
-          error: `Assignment "${assignmentSlug}" already exists in project "${projectSlug}"`,
+          error: `Assignment "${ticketSlug}" already exists in project "${projectSlug}"`,
         });
         return;
       }
 
       const timestamp = fields.created || nowTimestamp();
 
-      await ensureDir(assignmentDir);
+      await ensureDir(ticketDir);
       // Raw create bypasses renderAssignment, so seed the statusHistory here
       // (only when the body didn't already supply one — never double-seed).
       const parsedCreate = parseAssignmentFull(content);
@@ -709,13 +634,13 @@ export function createWriteRouter(
             by: null,
           })
         : content;
-      await writeFileForce(resolve(assignmentDir, 'assignment.md'), seededContent);
+      await writeFileForce(resolve(ticketDir, 'assignment.md'), seededContent);
 
       try {
         const companions: Array<[string, string]> = [
-          [resolve(assignmentDir, 'scratchpad.md'), renderScratchpad({ assignmentSlug, timestamp })],
-          [resolve(assignmentDir, 'handoff.md'), renderHandoff({ assignmentSlug, timestamp })],
-          [resolve(assignmentDir, 'decision-record.md'), renderDecisionRecord({ assignmentSlug, timestamp })],
+          [resolve(ticketDir, 'scratchpad.md'), renderScratchpad({ ticketSlug, timestamp })],
+          [resolve(ticketDir, 'handoff.md'), renderHandoff({ ticketSlug, timestamp })],
+          [resolve(ticketDir, 'decision-record.md'), renderDecisionRecord({ ticketSlug, timestamp })],
         ];
 
         for (const [filePath, fileContent] of companions) {
@@ -723,7 +648,7 @@ export function createWriteRouter(
         }
       } catch (companionError) {
         try {
-          await rm(assignmentDir, { recursive: true, force: true });
+          await rm(ticketDir, { recursive: true, force: true });
         } catch {
           // Best effort cleanup only.
         }
@@ -741,7 +666,7 @@ export function createWriteRouter(
         });
       }
 
-      res.status(201).json({ slug: assignmentSlug, projectSlug });
+      res.status(201).json({ slug: ticketSlug, projectSlug });
     } catch (error) {
       console.error('Error creating assignment:', error);
       res.status(500).json({ error: `Failed to create assignment: ${(error as Error).message}` });
@@ -787,103 +712,6 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/projects/:slug/assignments/:aslug', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      const currentContent = await readCurrentDocument(assignmentPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-
-      const nextContentRaw = requireContent(req, res);
-      if (!nextContentRaw) {
-        return;
-      }
-
-      const current = parseAssignmentFull(currentContent);
-      const next = parseAssignmentFull(nextContentRaw);
-
-      if (!next.slug || !next.title) {
-        res.status(400).json({ error: 'Assignment content must include slug and title.' });
-        return;
-      }
-
-      if (next.slug !== current.slug) {
-        res.status(400).json({ error: 'Assignment slug cannot be changed once created.' });
-        return;
-      }
-
-      // WS-2: on an ENGINE-ACTIVE assignment (marker set AND a per-file workflow
-      // resolves — NOT the marker alone, codex review blocker 4), reject a raw
-      // edit that would move the ticket or change derived/gate/pause state — the
-      // engine is the one mover. A marker-set ladder assignment (no per-file
-      // workflow) is unaffected.
-      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForAssignment(assignmentPath, resolve(projectsDir, projectSlug))) {
-        const violation = rawPatchMoverViolation(current, next);
-        if (violation) {
-          res.status(400).json({
-            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed assignment — use a move/transition.`,
-          });
-          return;
-        }
-      }
-
-      let nextContent = nextContentRaw;
-      const now = nowTimestamp();
-
-      // Clear blockedReason when status moves away from blocked
-      if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
-        nextContent = setTopLevelField(nextContent, 'blockedReason', null);
-      }
-
-      nextContent = setTopLevelField(nextContent, 'updated', now);
-
-      // Record a transition when a raw edit changes the status (conditional — no
-      // entry on an unchanged status).
-      if (next.status !== current.status) {
-        nextContent = appendStatusHistoryEntry(nextContent, {
-          at: now,
-          from: current.status,
-          to: next.status,
-          command: 'edit',
-          by: null,
-        });
-      }
-
-      await writeFileForce(assignmentPath, nextContent);
-
-      // Audit events (best-effort): status-change inline + tracked-field diffs.
-      const assignmentId = current.id || next.id;
-      if (next.status !== current.status) {
-        emitDashboardEvent(assignmentId, projectSlug, 'status-change', {
-          from: current.status,
-          to: next.status,
-          command: 'edit',
-        });
-      }
-      emitTrackedFieldDiffs(
-        { id: current.id, project: current.project, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
-        { id: next.id, project: next.project, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
-        projectSlug,
-      );
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error updating assignment:', error);
-      res.status(500).json({ error: `Failed to update assignment: ${(error as Error).message}` });
-    }
-  });
 
   // Replace a project's workflow binding (defaultWorkflow scalar + workflowByType
   // map). Both are validated against the workflow library; an empty/omitted
@@ -932,393 +760,18 @@ export function createWriteRouter(
   });
 
   // Set (or clear) a single assignment's `workflow:` override, then re-derive
-  // against the newly-resolved workflow. Used by the AssignmentDetail workflow
+  // against the newly-resolved workflow. Used by the TicketDetail workflow
   // dropdown (Task 13). The field is written BEFORE recompute so the derive runs
   // against the NEW workflow (recompute resolves the binding from disk).
-  router.put('/api/projects/:slug/assignments/:aslug/workflow', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-      const workflow = (req.body ?? {}).workflow;
-      const clearing = workflow === null || workflow === undefined || workflow === '';
-      if (!clearing) {
-        if (typeof workflow !== 'string') {
-          res.status(400).json({ error: 'workflow must be a string or null' });
-          return;
-        }
-        const { readConfig } = await import('../utils/config.js');
-        const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
-        const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
-        if (!known.has(workflow)) {
-          res.status(400).json({ error: `Unknown workflow "${workflow}"` });
-          return;
-        }
-      }
 
-      let content = await readFile(assignmentPath, 'utf-8');
-      if (clearing) {
-        // Remove the `workflow:` line entirely (scoped to frontmatter) rather
-        // than leaving a `workflow: null` — matches the template's emit-when-set.
-        const closingIdx = content.indexOf('\n---', 4);
-        if (closingIdx !== -1) {
-          const fm = content.slice(0, closingIdx).replace(/^workflow:.*\n?/m, '');
-          content = fm + content.slice(closingIdx);
-        }
-      } else {
-        content = setTopLevelField(content, 'workflow', workflow as string);
-      }
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, content);
 
-      // Re-derive against the now-resolved workflow (reads the fresh file).
-      const { recomputeAssignmentDir } = await import('../lifecycle/recompute.js');
-      await recomputeAssignmentDir(resolve(assignmentPath, '..'), 'workflow-change', 'human');
 
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
-    } catch (error) {
-      console.error('Error setting assignment workflow:', error);
-      res.status(500).json({ error: `Failed to set workflow: ${(error as Error).message}` });
-    }
-  });
 
-  router.patch('/api/projects/:slug/assignments/:aslug/acceptance-criteria/:index', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      const currentContent = await readCurrentDocument(assignmentPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
 
-      const { checked } = req.body || {};
-      if (typeof checked !== 'boolean') {
-        res.status(400).json({ error: 'checked must be a boolean' });
-        return;
-      }
-
-      const index = Number.parseInt(getParam(req.params.index), 10);
-      const result = toggleAcceptanceCriterion(currentContent, index, checked);
-      if ('error' in result) {
-        res.status(400).json({ error: result.error });
-        return;
-      }
-
-      const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, nextContent);
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error toggling acceptance criterion:', error);
-      res.status(500).json({ error: `Failed to toggle acceptance criterion: ${(error as Error).message}` });
-    }
-  });
-
-  router.patch('/api/projects/:slug/assignments/:aslug/plan', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const planPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'plan.md',
-      );
-      const currentContent = await readCurrentDocument(planPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Plan not found' });
-        return;
-      }
-
-      const nextContentRaw = requireContent(req, res);
-      if (!nextContentRaw) {
-        return;
-      }
-
-      const next = parsePlan(nextContentRaw);
-      if (!next.assignment) {
-        res.status(400).json({ error: 'Plan content must include the assignment field.' });
-        return;
-      }
-
-      if (next.assignment !== assignmentSlug) {
-        res.status(400).json({ error: 'Plan assignment field must match the route assignment slug.' });
-        return;
-      }
-
-      const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
-      await writeFileForce(planPath, nextContent);
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error updating plan:', error);
-      res.status(500).json({ error: `Failed to update plan: ${(error as Error).message}` });
-    }
-  });
-
-  router.patch('/api/projects/:slug/assignments/:aslug/scratchpad', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const scratchpadPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'scratchpad.md',
-      );
-      const currentContent = await readCurrentDocument(scratchpadPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Scratchpad not found' });
-        return;
-      }
-
-      const nextContentRaw = requireContent(req, res);
-      if (!nextContentRaw) {
-        return;
-      }
-
-      const next = parseScratchpad(nextContentRaw);
-      if (!next.assignment) {
-        res.status(400).json({ error: 'Scratchpad content must include the assignment field.' });
-        return;
-      }
-
-      if (next.assignment !== assignmentSlug) {
-        res.status(400).json({ error: 'Scratchpad assignment field must match the route assignment slug.' });
-        return;
-      }
-
-      const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
-      await writeFileForce(scratchpadPath, nextContent);
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error updating scratchpad:', error);
-      res.status(500).json({ error: `Failed to update scratchpad: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/projects/:slug/assignments/:aslug/handoff/entries', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const handoffPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'handoff.md',
-      );
-      const currentContent = await readCurrentDocument(handoffPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Handoff log not found' });
-        return;
-      }
-
-      const { title, body } = req.body || {};
-      if (!body || typeof body !== 'string' || !body.trim()) {
-        res.status(400).json({ error: 'body is required' });
-        return;
-      }
-
-      const parsed = parseHandoff(currentContent);
-      const nextContent = appendLogEntry(
-        currentContent,
-        'handoffCount',
-        parsed.handoffCount + 1,
-        title && typeof title === 'string' && title.trim() ? title.trim() : `Handoff ${parsed.handoffCount + 1}`,
-        body,
-        'No handoffs recorded yet.',
-      );
-
-      await writeFileForce(handoffPath, nextContent);
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.status(201).json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error appending handoff entry:', error);
-      res.status(500).json({ error: `Failed to append handoff entry: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/projects/:slug/assignments/:aslug/decision-record/entries', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const decisionPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'decision-record.md',
-      );
-      const currentContent = await readCurrentDocument(decisionPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Decision record not found' });
-        return;
-      }
-
-      const { title, body } = req.body || {};
-      if (!body || typeof body !== 'string' || !body.trim()) {
-        res.status(400).json({ error: 'body is required' });
-        return;
-      }
-
-      const parsed = parseDecisionRecord(currentContent);
-      const nextContent = appendLogEntry(
-        currentContent,
-        'decisionCount',
-        parsed.decisionCount + 1,
-        title && typeof title === 'string' && title.trim() ? title.trim() : `Decision ${parsed.decisionCount + 1}`,
-        body,
-        'No decisions recorded yet.',
-      );
-
-      await writeFileForce(decisionPath, nextContent);
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.status(201).json({ assignment, content: nextContent });
-    } catch (error) {
-      console.error('Error appending decision entry:', error);
-      res.status(500).json({ error: `Failed to append decision entry: ${(error as Error).message}` });
-    }
-  });
 
   // --- Comments Endpoints ---
 
-  router.post('/api/projects/:slug/assignments/:aslug/comments', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const commentsPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'comments.md',
-      );
 
-      const { body, author, type, replyTo } = req.body || {};
-      if (!body || typeof body !== 'string' || !body.trim()) {
-        res.status(400).json({ error: 'body is required' });
-        return;
-      }
-      // author/replyTo are single-line metadata. A newline breaks parseComments'
-      // single-line header regex and makes the whole comment unreadable.
-      if (typeof author === 'string' && /[\r\n]/.test(author)) {
-        res.status(400).json({ error: 'author must not contain newlines' });
-        return;
-      }
-      if (typeof replyTo === 'string' && /[\r\n]/.test(replyTo)) {
-        res.status(400).json({ error: 'replyTo must not contain newlines' });
-        return;
-      }
-      const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type)
-        ? type
-        : 'note';
-      const timestamp = nowTimestamp();
-      const entryAuthor = (typeof author === 'string' && author.trim()) ? author.trim() : 'human';
-
-      let currentContent: string;
-      let currentCount = 0;
-      if (await fileExists(commentsPath)) {
-        currentContent = await readFile(commentsPath, 'utf-8');
-        const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
-        if (countMatch) currentCount = parseInt(countMatch[1], 10);
-      } else {
-        currentContent = renderComments({
-          assignment: assignmentSlug,
-          timestamp,
-        });
-      }
-
-      const comment: Comment = {
-        id: generateId().split('-')[0],
-        timestamp,
-        author: entryAuthor,
-        type: commentType,
-        body,
-        replyTo: typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined,
-        resolved: commentType === 'question' ? false : undefined,
-      };
-      const entry = formatCommentEntry(comment);
-      let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
-      next = setTopLevelField(next, 'updated', timestamp);
-      if (next.includes('No comments yet.')) {
-        next = next.replace('No comments yet.', entry.trimEnd());
-      } else {
-        next = `${next.trimEnd()}\n\n${entry}`;
-      }
-
-      await writeFileForce(commentsPath, next);
-
-      // Audit event (best-effort): comment-added. Details = author + excerpt
-      // ONLY (no full body). Resolve the assignment id from assignment.md.
-      try {
-        const assignmentMdPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
-        if (await fileExists(assignmentMdPath)) {
-          const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
-          emitDashboardEvent(fm.id, projectSlug, 'comment-added', {
-            commentId: comment.id,
-            author: entryAuthor,
-            commentType,
-            length: body.length,
-            excerpt: body.slice(0, 80),
-          });
-        }
-      } catch {
-        /* best-effort */
-      }
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.status(201).json({ assignment, comment: { id: comment.id } });
-    } catch (error) {
-      console.error('Error appending comment:', error);
-      res.status(500).json({ error: `Failed to append comment: ${(error as Error).message}` });
-    }
-  });
-
-  router.patch('/api/projects/:slug/assignments/:aslug/comments/:commentId/resolved', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const commentId = getParam(req.params.commentId);
-      const assignmentDir = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-      );
-      await toggleCommentResolvedAt(assignmentDir, commentId, req, res, async () => {
-        return getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      });
-    } catch (error) {
-      console.error('Error toggling comment resolved flag:', error);
-      res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
-    }
-  });
 
   // --- Worktree creation + candidate discovery ---
   // Mirrors the existing CLI flow (`syntaur worktree create`) and the
@@ -1347,23 +800,23 @@ export function createWriteRouter(
   );
 
   router.get(
-    '/api/assignments/:id/repository-candidates',
+    '/api/tickets/:id/repository-candidates',
     async (req: Request, res: Response) => {
       try {
-        if (!assignmentsDir) {
+        if (!ticketsDir) {
           res
             .status(501)
             .json({ error: 'Standalone assignments not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
-        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Assignment "${id}" not found` });
           return;
         }
         const candidates = resolved.standalone
-          ? await getStandaloneRepositoryCandidates(assignmentsDir, id)
+          ? await getStandaloneRepositoryCandidates(ticketsDir, id)
           : await getProjectRepositoryCandidates(projectsDir, resolved.projectSlug!);
         res.json({ candidates });
       } catch (error) {
@@ -1393,19 +846,19 @@ export function createWriteRouter(
   }
 
   router.get(
-    '/api/projects/:slug/assignments/:aslug/repository-branches',
+    '/api/projects/:slug/tickets/:aslug/repository-branches',
     async (req: Request, res: Response) => {
       try {
         const projectSlug = getParam(req.params.slug);
-        const assignmentSlug = getParam(req.params.aslug);
-        const assignmentPath = resolve(
+        const ticketSlug = getParam(req.params.aslug);
+        const ticketPath = resolve(
           projectsDir,
           projectSlug,
           'assignments',
-          assignmentSlug,
+          ticketSlug,
           'assignment.md',
         );
-        if (!(await fileExists(assignmentPath))) {
+        if (!(await fileExists(ticketPath))) {
           res.status(404).json({ error: 'Assignment not found' });
           return;
         }
@@ -1420,17 +873,17 @@ export function createWriteRouter(
   );
 
   router.get(
-    '/api/assignments/:id/repository-branches',
+    '/api/tickets/:id/repository-branches',
     async (req: Request, res: Response) => {
       try {
-        if (!assignmentsDir) {
+        if (!ticketsDir) {
           res
             .status(501)
             .json({ error: 'Standalone assignments not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
-        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Assignment "${id}" not found` });
           return;
@@ -1446,28 +899,28 @@ export function createWriteRouter(
   );
 
   router.get(
-    '/api/projects/:slug/assignments/:aslug/source-assignments',
+    '/api/projects/:slug/tickets/:aslug/source-tickets',
     async (req: Request, res: Response) => {
       try {
         const projectSlug = getParam(req.params.slug);
-        const assignmentSlug = getParam(req.params.aslug);
-        const assignmentPath = resolve(
+        const ticketSlug = getParam(req.params.aslug);
+        const ticketPath = resolve(
           projectsDir,
           projectSlug,
           'assignments',
-          assignmentSlug,
+          ticketSlug,
           'assignment.md',
         );
-        if (!(await fileExists(assignmentPath))) {
+        if (!(await fileExists(ticketPath))) {
           res.status(404).json({ error: 'Assignment not found' });
           return;
         }
-        const sourceAssignments = await getProjectSourceAssignments(
+        const sourceTickets = await getProjectSourceAssignments(
           projectsDir,
           projectSlug,
-          assignmentSlug,
+          ticketSlug,
         );
-        res.json({ sourceAssignments });
+        res.json({ sourceTickets });
       } catch (error) {
         console.error('Error listing source assignments:', error);
         res.status(500).json({
@@ -1478,29 +931,29 @@ export function createWriteRouter(
   );
 
   router.get(
-    '/api/assignments/:id/source-assignments',
+    '/api/tickets/:id/source-tickets',
     async (req: Request, res: Response) => {
       try {
-        if (!assignmentsDir) {
+        if (!ticketsDir) {
           res
             .status(501)
             .json({ error: 'Standalone assignments not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
-        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Assignment "${id}" not found` });
           return;
         }
-        const sourceAssignments = resolved.standalone
-          ? await getStandaloneSourceAssignments(assignmentsDir, id)
+        const sourceTickets = resolved.standalone
+          ? await getStandaloneSourceAssignments(ticketsDir, id)
           : await getProjectSourceAssignments(
               projectsDir,
               resolved.projectSlug!,
-              resolved.assignmentSlug,
+              resolved.ticketSlug,
             );
-        res.json({ sourceAssignments });
+        res.json({ sourceTickets });
       } catch (error) {
         console.error('Error listing source assignments:', error);
         res.status(500).json({
@@ -1511,23 +964,23 @@ export function createWriteRouter(
   );
 
   router.post(
-    '/api/projects/:slug/assignments/:aslug/worktree',
+    '/api/projects/:slug/tickets/:aslug/worktree',
     async (req: Request, res: Response) => {
       try {
         const projectSlug = getParam(req.params.slug);
-        const assignmentSlug = getParam(req.params.aslug);
-        const assignmentPath = resolve(
+        const ticketSlug = getParam(req.params.aslug);
+        const ticketPath = resolve(
           projectsDir,
           projectSlug,
           'assignments',
-          assignmentSlug,
+          ticketSlug,
           'assignment.md',
         );
         await handleWorktreeCreate(req, res, {
-          assignmentPath,
+          ticketPath,
           projectSlug,
-          assignmentSlug,
-          reload: () => getAssignmentDetail(projectsDir, projectSlug, assignmentSlug),
+          ticketSlug,
+          reload: () => getTicketDetail(projectsDir, projectSlug, ticketSlug),
         });
       } catch (error) {
         console.error('Error creating worktree:', error);
@@ -1539,33 +992,33 @@ export function createWriteRouter(
   );
 
   router.post(
-    '/api/assignments/:id/worktree',
+    '/api/tickets/:id/worktree',
     async (req: Request, res: Response) => {
       try {
-        if (!assignmentsDir) {
+        if (!ticketsDir) {
           res
             .status(501)
             .json({ error: 'Standalone assignments not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
-        const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Assignment "${id}" not found` });
           return;
         }
-        const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-        // Standalone: resolveAssignmentById returns the UUID as `assignmentSlug`.
+        const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+        // Standalone: resolveTicketById returns the UUID as `ticketSlug`.
         // For branch naming we need the user-visible slug from frontmatter, so
         // parse it here and pass that down. parseAssignmentFull falls back to
         // empty string, hence the `|| resolved.id` belt-and-suspenders.
-        const parsedForSlug = parseAssignmentFull(await readFile(assignmentPath, 'utf-8'));
+        const parsedForSlug = parseAssignmentFull(await readFile(ticketPath, 'utf-8'));
         const assignmentSlugForBranch = parsedForSlug.slug || resolved.id;
         await handleWorktreeCreate(req, res, {
-          assignmentPath,
+          ticketPath,
           projectSlug: resolved.projectSlug ?? '',
-          assignmentSlug: assignmentSlugForBranch,
-          reload: () => getAssignmentDetailById(projectsDir, assignmentsDir!, id),
+          ticketSlug: assignmentSlugForBranch,
+          reload: () => getTicketDetailById(projectsDir, ticketsDir!, id),
         });
       } catch (error) {
         console.error('Error creating worktree:', error);
@@ -1582,14 +1035,14 @@ export function createWriteRouter(
   // exists" 409 guards since recreate intentionally rebuilds an existing record.
 
   router.post(
-    '/api/projects/:slug/assignments/:aslug/worktree/recreate',
+    '/api/projects/:slug/tickets/:aslug/worktree/recreate',
     async (req: Request, res: Response) => {
       try {
         const projectSlug = getParam(req.params.slug);
-        const assignmentSlug = getParam(req.params.aslug);
+        const ticketSlug = getParam(req.params.aslug);
         const outcome = await recreateForTarget(
-          { projectsDir, assignmentsDir: assignmentsDir ?? '' },
-          { kind: 'assignment', projectSlug, assignmentSlug },
+          { projectsDir, ticketsDir: ticketsDir ?? '' },
+          { kind: 'assignment', projectSlug, ticketSlug },
         );
         const { httpStatus, body } = recreateOutcomeToHttp(outcome);
         res.status(httpStatus).json(body);
@@ -1603,10 +1056,10 @@ export function createWriteRouter(
   );
 
   router.post(
-    '/api/assignments/:id/worktree/recreate',
+    '/api/tickets/:id/worktree/recreate',
     async (req: Request, res: Response) => {
       try {
-        if (!assignmentsDir) {
+        if (!ticketsDir) {
           res
             .status(501)
             .json({ error: 'Standalone assignments not configured on this server' });
@@ -1614,7 +1067,7 @@ export function createWriteRouter(
         }
         const id = getParam(req.params.id);
         const outcome = await recreateForTarget(
-          { projectsDir, assignmentsDir },
+          { projectsDir, ticketsDir },
           { kind: 'assignment', id },
         );
         const { httpStatus, body } = recreateOutcomeToHttp(outcome);
@@ -1661,102 +1114,6 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/projects/:slug/assignments/:aslug/status-override', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-
-      const { status } = req.body || {};
-      const clearing = status === null;
-
-      // WS-2 (Decision 1): on an engine-active assignment a drag is a
-      // `manual-override` engine move (target = the dropped stage), stamping
-      // crossed failing gates. Try it FIRST — a valid STAGE id need not be a
-      // legacy status id, so it must not be pre-validated against the legacy
-      // status list (codex review major 5). `null` ⇒ not engine-active → the
-      // legacy pin path below.
-      if (clearing || typeof status === 'string') {
-        const engineOverride = await runEngineOverride({
-          assignmentPath,
-          projectDir: resolve(projectsDir, projectSlug),
-          status: clearing ? null : status,
-          by: 'human',
-        });
-        if (engineOverride) {
-          if (!engineOverride.ok) {
-            res.status(engineOverride.code).json({ error: engineOverride.message });
-            return;
-          }
-          const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-          res.json({ assignment });
-          return;
-        }
-      }
-
-      const config = await getStatusConfig();
-      const validStatuses = config.statuses.map((s) => s.id);
-      if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
-        res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
-        return;
-      }
-
-      // Derived-status v3: free-form "set status to X" is retired. This
-      // endpoint now applies PIN semantics — the sanctioned override — so the
-      // UI affordance survives but cannot silently drift status from facts.
-      // `status: null` clears the pin (re-derive). Terminal targets are
-      // refused (terminal only via complete/fail). Re-pinning the same status
-      // is idempotent.
-      if (!clearing && config.terminalStatuses.has(status)) {
-        res.status(400).json({
-          error: `"${status}" is terminal — use the complete/fail transition (gated), not an override.`,
-        });
-        return;
-      }
-      // Legacy pin path (unmigrated / no per-file workflow — the engine attempt
-      // above already returned for engine-active assignments).
-      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
-      const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const { context, workflowResolver } = await resolveRecomputeContext();
-      const result = await recomputeAndWrite(assignmentPath, {
-        cause: clearing ? 'unpin' : 'pin',
-        by: 'human',
-        projectDir: resolve(projectsDir, projectSlug),
-        context,
-        workflowResolver,
-        mutate: (content) => {
-          if (clearing) return updateOverride(content, null);
-          const current = parseAssignmentFull(content);
-          if (current.override?.status === status) return content; // idempotent
-          return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
-        },
-      });
-      if (result.deferredTerminal) {
-        res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
-        return;
-      }
-      if (result.warning) {
-        res.status(503).json({ error: result.warning });
-        return;
-      }
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
-    } catch (error) {
-      console.error('Error overriding assignment status:', error);
-      res.status(500).json({ error: `Failed to override status: ${(error as Error).message}` });
-    }
-  });
 
   // --- Archive / Restore Endpoints (orthogonal `archived` flag) ---
   // Archiving never touches `status`; restore preserves the prior status. Project
@@ -1809,71 +1166,55 @@ export function createWriteRouter(
     archived: boolean,
   ): Promise<void> {
     const projectSlug = getParam(req.params.slug);
-    const assignmentSlug = getParam(req.params.aslug);
-    const assignmentPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
-    if (!(await fileExists(assignmentPath))) {
+    const ticketSlug = getParam(req.params.aslug);
+    const ticketPath = resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'assignment.md');
+    if (!(await fileExists(ticketPath))) {
       res.status(404).json({ error: 'Assignment not found' });
       return;
     }
-    const content = await readFile(assignmentPath, 'utf-8');
+    const content = await readFile(ticketPath, 'utf-8');
     const reason = archived ? archiveReason(req.body) : null;
-    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, reason));
+    await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
 
     // Audit event (best-effort).
     const parsed = parseAssignmentFull(content);
     emitDashboardEvent(parsed.id, projectSlug, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
-    const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
+    const assignment = await getTicketDetail(projectsDir, projectSlug, ticketSlug);
     res.json({ assignment });
   }
 
-  router.post('/api/projects/:slug/assignments/:aslug/archive', async (req: Request, res: Response) => {
-    try {
-      await handleAssignmentArchive(req, res, true);
-    } catch (error) {
-      console.error('Error archiving assignment:', error);
-      res.status(500).json({ error: `Failed to archive assignment: ${(error as Error).message}` });
-    }
-  });
 
-  router.post('/api/projects/:slug/assignments/:aslug/unarchive', async (req: Request, res: Response) => {
-    try {
-      await handleAssignmentArchive(req, res, false);
-    } catch (error) {
-      console.error('Error restoring assignment:', error);
-      res.status(500).json({ error: `Failed to restore assignment: ${(error as Error).message}` });
-    }
-  });
 
   async function handleStandaloneArchive(
     req: Request,
     res: Response,
     archived: boolean,
   ): Promise<void> {
-    if (!assignmentsDir) {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
     if (!resolved) {
       res.status(404).json({ error: `Assignment "${id}" not found` });
       return;
     }
-    const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-    const content = await readFile(assignmentPath, 'utf-8');
+    const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+    const content = await readFile(ticketPath, 'utf-8');
     const reason = archived ? archiveReason(req.body) : null;
-    await writeFileForce(assignmentPath, applyArchiveFields(content, archived, reason));
+    await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
 
     // Audit event (best-effort): standalone → projectSlug null.
     const parsed = parseAssignmentFull(content);
     emitDashboardEvent(parsed.id || resolved.id, null, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
-    const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+    const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
     res.json({ assignment });
   }
 
-  router.post('/api/assignments/:id/archive', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/archive', async (req: Request, res: Response) => {
     try {
       await handleStandaloneArchive(req, res, true);
     } catch (error) {
@@ -1882,7 +1223,7 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/unarchive', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/unarchive', async (req: Request, res: Response) => {
     try {
       await handleStandaloneArchive(req, res, false);
     } catch (error) {
@@ -1891,286 +1232,21 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/projects/:slug/assignments/:aslug/assignee', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-      const validation = validateAssigneeBody(req.body);
-      if (!validation.ok) {
-        res.status(400).json({ error: validation.error });
-        return;
-      }
-      let content = await readFile(assignmentPath, 'utf-8');
-      const prior = parseAssignmentFull(content);
-      content = setTopLevelField(content, 'assignee', validation.value);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, content);
 
-      // Audit event (best-effort): assignee changed.
-      if (prior.assignee !== validation.value) {
-        emitDashboardEvent(prior.id, projectSlug, 'assignee-change', {
-          from: prior.assignee,
-          to: validation.value,
-        });
-      }
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
-    } catch (error) {
-      console.error('Error updating assignee:', error);
-      res.status(500).json({ error: `Failed to update assignee: ${(error as Error).message}` });
-    }
-  });
-
-  router.patch('/api/projects/:slug/assignments/:aslug/title', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(
-        projectsDir,
-        projectSlug,
-        'assignments',
-        assignmentSlug,
-        'assignment.md',
-      );
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-      const validation = validateTitleBody(req.body);
-      if (!validation.ok) {
-        res.status(400).json({ error: validation.error });
-        return;
-      }
-      let content = await readFile(assignmentPath, 'utf-8');
-      content = setTopLevelField(content, 'title', validation.value);
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, content);
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
-    } catch (error) {
-      console.error('Error updating title:', error);
-      res.status(500).json({ error: `Failed to update title: ${(error as Error).message}` });
-    }
-  });
 
   // --- Lifecycle Transitions ---
 
-  router.post('/api/projects/:slug/assignments/:aslug/transitions/:command', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const command = req.params.command as Parameters<typeof executeTransition>[2];
-      const config = await getStatusConfig();
-      const validCommands = [...new Set(config.transitions.map((t) => t.command))];
-      if (!validCommands.includes(command)) {
-        res.status(400).json({ error: `Unsupported transition command "${req.params.command}"` });
-        return;
-      }
 
-      const projectDir = resolve(projectsDir, projectSlug);
-      const assignmentPath = resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
 
-      const { reason } = req.body || {};
-      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
-        '../lifecycle/recompute.js'
-      );
-      const { context, workflowResolver } = await resolveRecomputeContext();
-
-      // Derived-status v3 command routing:
-      //  - block/unblock are PURE FACT mutations — they run inside the
-      //    recompute lock (terminal recheck included), never an imperative
-      //    status write (codex r2 finding 3).
-      //  - complete/fail/reopen stay on the gated transition, guard-free but
-      //    with the CUSTOM command target honored (codex r2 finding 1 — a
-      //    custom `complete -> done` must not fall back to built-in
-      //    `completed`), then settle + reverse-dependency recompute.
-      //  - everything else keeps the legacy from:command guard, then settles.
-      if (command === 'block' || command === 'unblock') {
-        const { updateAssignmentFile } = await import('../lifecycle/frontmatter.js');
-        const result = await recomputeAndWrite(assignmentPath, {
-          cause: command,
-          by: 'human',
-          projectDir,
-          context,
-          workflowResolver,
-          reason: typeof reason === 'string' ? reason : undefined,
-          mutate: (content) =>
-            updateAssignmentFile(content, {
-              blockedReason:
-                command === 'block' ? (typeof reason === 'string' && reason ? reason : '(unspecified)') : null,
-            }),
-        });
-        if (result.deferredTerminal) {
-          res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
-          return;
-        }
-        if (result.warning) {
-          res.status(503).json({ error: result.warning });
-          return;
-        }
-        const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-        res.json({ assignment, transition: { success: true, message: command, fromStatus: '', toStatus: result.status } });
-        return;
-      }
-
-      // WS-2 (Decision 1): on the MIGRATED path, complete/fail/reopen are ENGINE
-      // moves through the locked recompute (parity with the CLI). `null` ⇒ not
-      // migrated / no per-file workflow → fall through to the ladder below. The
-      const engineResult = await runEngineTransition({
-        assignmentPath,
-        projectDir,
-        command,
-        by: 'human',
-        reason: typeof reason === 'string' ? reason : undefined,
-      });
-      if (engineResult) {
-        if (!engineResult.success) {
-          res.status(400).json({ error: engineResult.message });
-          return;
-        }
-        // A terminal arrival/reopen flips dependents' depsSatisfied fact.
-        await recomputeDependents(projectDir, assignmentSlug, {
-          cause: 'dep-terminal',
-          by: 'system',
-          context,
-          workflowResolver,
-        });
-        const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-        res.json({ assignment, transition: engineResult });
-        return;
-      }
-
-      // WS-2 (codex review blocker 2): on an ENGINE-ACTIVE assignment, any
-      // command the engine didn't handle above (not block/unblock, not
-      // complete/fail/reopen) must NOT fall through to the lockless
-      // `executeTransition` — that would be a mover surviving the marker flip.
-      // Reject it; the migrated board drives such moves through the move API.
-      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForAssignment(assignmentPath, projectDir)) {
-        res.status(400).json({
-          error: `"${command}" is not available on a stage-managed assignment — use complete/fail/reopen, block/unblock, or a board move.`,
-        });
-        return;
-      }
-
-      const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
-      const gatedFallback = GATED_TERMINAL.has(command)
-        ? unambiguousCommandTarget(config.transitions, command)
-        : undefined;
-      const result = await executeTransition(projectDir, assignmentSlug, command, {
-        reason: typeof reason === 'string' ? reason : undefined,
-        // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
-        auditActor: 'human',
-        // Gated terminal commands: the from-specific custom mapping wins
-        // (passed via the table), with the unambiguous command target as the
-        // guard-free fallback for legacy/undefined statuses (codex r3
-        // finding 1 — ambiguous configs must not pick an arbitrary target).
-        transitionTable: config.custom ? config.transitionTable : undefined,
-        commandTargets:
-          config.custom && gatedFallback ? new Map([[command, gatedFallback]]) : undefined,
-        terminalStatuses: config.custom ? config.terminalStatuses : undefined,
-      });
-
-      if (!result.success) {
-        res.status(400).json({ error: result.message });
-        return;
-      }
-
-      // Settle BEFORE responding — the client never sees pre-derivation state.
-      const settled = await recomputeAndWrite(assignmentPath, {
-        cause: command,
-        by: 'human',
-        projectDir,
-        context,
-        workflowResolver,
-      });
-      if (settled.warning) {
-        res.status(503).json({ error: settled.warning });
-        return;
-      }
-      // Terminal-membership changes flip dependents' depsSatisfied fact.
-      const wasTerminal = config.terminalStatuses.has(result.fromStatus);
-      const isTerminal = result.toStatus ? config.terminalStatuses.has(result.toStatus) : false;
-      if (wasTerminal !== isTerminal) {
-        await recomputeDependents(projectDir, assignmentSlug, {
-          cause: 'dep-terminal',
-          by: 'system',
-          context,
-          workflowResolver,
-        });
-      }
-
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment, transition: result });
-    } catch (error) {
-      console.error('Error running assignment transition:', error);
-      res.status(500).json({ error: `Failed to transition assignment: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/projects/:slug/assignments/:aslug/plan/approve', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentPath = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
-        return;
-      }
-      const { planApproveCommand } = await import('../commands/derive-verbs.js');
-      await planApproveCommand(assignmentSlug, { project: projectSlug, dir: projectsDir });
-      const assignment = await getAssignmentDetail(projectsDir, projectSlug, assignmentSlug);
-      res.json({ assignment });
-    } catch (error) {
-      const message = (error as Error).message;
-      res.status(409).json({ error: message });
-    }
-  });
-
-  router.delete('/api/projects/:slug/assignments/:aslug', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const assignmentSlug = getParam(req.params.aslug);
-      const assignmentDir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
-      const assignmentPath = resolve(assignmentDir, 'assignment.md');
-
-      if (!(await fileExists(assignmentPath))) {
-        res.status(404).json({ error: `Assignment "${assignmentSlug}" not found in project "${projectSlug}"` });
-        return;
-      }
-
-      await rm(assignmentDir, { recursive: true, force: true });
-      res.json({ deleted: assignmentSlug, projectSlug });
-    } catch (error) {
-      console.error('Error deleting assignment:', error);
-      res.status(500).json({ error: `Failed to delete assignment: ${(error as Error).message}` });
-    }
-  });
 
   // =========================================================================
   // Standalone (by-id) routes — `~/.syntaur/assignments/<uuid>/`
-  // Active only when the write router was constructed with an assignmentsDir.
+  // Active only when the write router was constructed with an ticketsDir.
   // =========================================================================
 
-  router.post('/api/assignments', async (req: Request, res: Response) => {
+  router.post('/api/tickets', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
@@ -2211,14 +1287,14 @@ export function createWriteRouter(
         }
 
         const id = generateId();
-        const assignmentDir = resolve(assignmentsDir, id);
-        if (await fileExists(assignmentDir)) {
+        const ticketDir = resolve(ticketsDir, id);
+        if (await fileExists(ticketDir)) {
           res.status(500).json({ error: 'UUID collision — try again' });
           return;
         }
 
         const timestamp = fields.created || nowTimestamp();
-        await ensureDir(assignmentDir);
+        await ensureDir(ticketDir);
         // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
         let normalizedContent = setTopLevelField(rawContent, 'id', id);
         // Raw create bypasses renderAssignment, so seed statusHistory here (only
@@ -2234,26 +1310,26 @@ export function createWriteRouter(
             by: null,
           });
         }
-        await writeFileForce(resolve(assignmentDir, 'assignment.md'), normalizedContent);
+        await writeFileForce(resolve(ticketDir, 'assignment.md'), normalizedContent);
 
         await writeFileForce(
-          resolve(assignmentDir, 'scratchpad.md'),
-          renderScratchpad({ assignmentSlug: id, timestamp }),
+          resolve(ticketDir, 'scratchpad.md'),
+          renderScratchpad({ ticketSlug: id, timestamp }),
         );
         await writeFileForce(
-          resolve(assignmentDir, 'handoff.md'),
-          renderHandoff({ assignmentSlug: id, timestamp }),
+          resolve(ticketDir, 'handoff.md'),
+          renderHandoff({ ticketSlug: id, timestamp }),
         );
         await writeFileForce(
-          resolve(assignmentDir, 'decision-record.md'),
-          renderDecisionRecord({ assignmentSlug: id, timestamp }),
+          resolve(ticketDir, 'decision-record.md'),
+          renderDecisionRecord({ ticketSlug: id, timestamp }),
         );
         await writeFileForce(
-          resolve(assignmentDir, 'progress.md'),
+          resolve(ticketDir, 'progress.md'),
           renderProgress({ assignment: id, timestamp }),
         );
         await writeFileForce(
-          resolve(assignmentDir, 'comments.md'),
+          resolve(ticketDir, 'comments.md'),
           renderComments({ assignment: id, timestamp }),
         );
 
@@ -2267,7 +1343,7 @@ export function createWriteRouter(
           });
         }
 
-        const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
         res.status(201).json({ assignment: detail });
         return;
       }
@@ -2285,8 +1361,8 @@ export function createWriteRouter(
       }
 
       const id = generateId();
-      const assignmentDir = resolve(assignmentsDir, id);
-      if (await fileExists(assignmentDir)) {
+      const ticketDir = resolve(ticketsDir, id);
+      if (await fileExists(ticketDir)) {
         res.status(500).json({ error: 'UUID collision — try again' });
         return;
       }
@@ -2297,7 +1373,7 @@ export function createWriteRouter(
         ? (priority as 'low' | 'medium' | 'high' | 'critical')
         : 'medium';
 
-      await ensureDir(assignmentDir);
+      await ensureDir(ticketDir);
       const assignmentContent = renderAssignment({
         id,
         slug: resolvedSlug,
@@ -2309,25 +1385,25 @@ export function createWriteRouter(
         project: null,
         type: typeof type === 'string' ? type : undefined,
       });
-      await writeFileForce(resolve(assignmentDir, 'assignment.md'), assignmentContent);
+      await writeFileForce(resolve(ticketDir, 'assignment.md'), assignmentContent);
       await writeFileForce(
-        resolve(assignmentDir, 'scratchpad.md'),
-        renderScratchpad({ assignmentSlug: id, timestamp }),
+        resolve(ticketDir, 'scratchpad.md'),
+        renderScratchpad({ ticketSlug: id, timestamp }),
       );
       await writeFileForce(
-        resolve(assignmentDir, 'handoff.md'),
-        renderHandoff({ assignmentSlug: id, timestamp }),
+        resolve(ticketDir, 'handoff.md'),
+        renderHandoff({ ticketSlug: id, timestamp }),
       );
       await writeFileForce(
-        resolve(assignmentDir, 'decision-record.md'),
-        renderDecisionRecord({ assignmentSlug: id, timestamp }),
+        resolve(ticketDir, 'decision-record.md'),
+        renderDecisionRecord({ ticketSlug: id, timestamp }),
       );
       await writeFileForce(
-        resolve(assignmentDir, 'progress.md'),
+        resolve(ticketDir, 'progress.md'),
         renderProgress({ assignment: id, timestamp }),
       );
       await writeFileForce(
-        resolve(assignmentDir, 'comments.md'),
+        resolve(ticketDir, 'comments.md'),
         renderComments({ assignment: id, timestamp }),
       );
 
@@ -2341,7 +1417,7 @@ export function createWriteRouter(
         command: 'create',
       });
 
-      const detail = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.status(201).json({ assignment: detail });
     } catch (error) {
       console.error('Error creating standalone assignment:', error);
@@ -2349,22 +1425,22 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/comments', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/comments', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      await appendCommentTo(resolved.assignmentDir, resolved.standalone ? resolved.id : resolved.assignmentSlug, req, res, async () => {
+      await appendCommentTo(resolved.ticketDir, resolved.standalone ? resolved.id : resolved.ticketSlug, req, res, async () => {
         return resolved.standalone
-          ? getAssignmentDetailById(projectsDir, assignmentsDir, id)
-          : getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+          ? getTicketDetailById(projectsDir, ticketsDir, id)
+          : getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
       });
     } catch (error) {
       console.error('Error appending comment (by id):', error);
@@ -2372,23 +1448,23 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const commentId = getParam(req.params.commentId);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      await toggleCommentResolvedAt(resolved.assignmentDir, commentId, req, res, async () => {
+      await toggleCommentResolvedAt(resolved.ticketDir, commentId, req, res, async () => {
         return resolved.standalone
-          ? getAssignmentDetailById(projectsDir, assignmentsDir, id)
-          : getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+          ? getTicketDetailById(projectsDir, ticketsDir, id)
+          : getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
       });
     } catch (error) {
       console.error('Error toggling comment resolved (by id):', error);
@@ -2396,13 +1472,13 @@ export function createWriteRouter(
     }
   });
 
-  router.get('/api/assignments/:id/edit', async (req: Request, res: Response) => {
-    if (!assignmentsDir) {
+  router.get('/api/tickets/:id/edit', async (req: Request, res: Response) => {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'assignment', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'assignment', id);
     if (!doc) {
       res.status(404).json({ error: 'Assignment not found' });
       return;
@@ -2410,13 +1486,13 @@ export function createWriteRouter(
     res.json(doc);
   });
 
-  router.get('/api/assignments/:id/plan/edit', async (req: Request, res: Response) => {
-    if (!assignmentsDir) {
+  router.get('/api/tickets/:id/plan/edit', async (req: Request, res: Response) => {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'plan', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'plan', id);
     if (!doc) {
       res.status(404).json({ error: 'Plan not found' });
       return;
@@ -2424,13 +1500,13 @@ export function createWriteRouter(
     res.json(doc);
   });
 
-  router.get('/api/assignments/:id/scratchpad/edit', async (req: Request, res: Response) => {
-    if (!assignmentsDir) {
+  router.get('/api/tickets/:id/scratchpad/edit', async (req: Request, res: Response) => {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'scratchpad', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'scratchpad', id);
     if (!doc) {
       res.status(404).json({ error: 'Scratchpad not found' });
       return;
@@ -2438,13 +1514,13 @@ export function createWriteRouter(
     res.json(doc);
   });
 
-  router.get('/api/assignments/:id/handoff/edit', async (req: Request, res: Response) => {
-    if (!assignmentsDir) {
+  router.get('/api/tickets/:id/handoff/edit', async (req: Request, res: Response) => {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'handoff', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'handoff', id);
     if (!doc) {
       res.status(404).json({ error: 'Handoff log not found' });
       return;
@@ -2452,13 +1528,13 @@ export function createWriteRouter(
     res.json(doc);
   });
 
-  router.get('/api/assignments/:id/decision-record/edit', async (req: Request, res: Response) => {
-    if (!assignmentsDir) {
+  router.get('/api/tickets/:id/decision-record/edit', async (req: Request, res: Response) => {
+    if (!ticketsDir) {
       res.status(501).json({ error: 'Standalone assignments not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, assignmentsDir, 'decision-record', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'decision-record', id);
     if (!doc) {
       res.status(404).json({ error: 'Decision record not found' });
       return;
@@ -2466,21 +1542,21 @@ export function createWriteRouter(
     res.json(doc);
   });
 
-  router.patch('/api/assignments/:id', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
 
-      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-      const currentContent = await readCurrentDocument(assignmentPath);
+      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
@@ -2500,9 +1576,9 @@ export function createWriteRouter(
       // WS-2: same engine-active-mover guard as the project raw PATCH (both
       // routes; codex review blocker 4 — gate on a resolved workflow, not the
       // marker alone).
-      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
       const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForAssignment(assignmentPath, byIdProjectDir)) {
+      if (await isEngineActiveForAssignment(ticketPath, byIdProjectDir)) {
         const violation = rawPatchMoverViolation(current, next);
         if (violation) {
           res.status(400).json({
@@ -2537,12 +1613,12 @@ export function createWriteRouter(
         });
       }
 
-      await writeFileForce(assignmentPath, nextContent);
+      await writeFileForce(ticketPath, nextContent);
 
       // Audit events (best-effort): standalone → projectSlug null.
-      const assignmentId = current.id || next.id;
+      const ticketId = current.id || next.id;
       if (next.status !== current.status) {
-        emitDashboardEvent(assignmentId, null, 'status-change', {
+        emitDashboardEvent(ticketId, null, 'status-change', {
           from: current.status,
           to: next.status,
           command: 'edit',
@@ -2554,7 +1630,7 @@ export function createWriteRouter(
         null,
       );
 
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone assignment:', error);
@@ -2562,20 +1638,20 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/plan', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/plan', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
 
-      const planPath = resolve(resolved.assignmentDir, 'plan.md');
+      const planPath = resolve(resolved.ticketDir, 'plan.md');
       const currentContent = await readCurrentDocument(planPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Plan not found' });
@@ -2593,7 +1669,7 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(planPath, nextContent);
 
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone plan:', error);
@@ -2601,20 +1677,20 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/scratchpad', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/scratchpad', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
 
-      const scratchpadPath = resolve(resolved.assignmentDir, 'scratchpad.md');
+      const scratchpadPath = resolve(resolved.ticketDir, 'scratchpad.md');
       const currentContent = await readCurrentDocument(scratchpadPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Scratchpad not found' });
@@ -2632,7 +1708,7 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(scratchpadPath, nextContent);
 
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone scratchpad:', error);
@@ -2640,19 +1716,19 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/handoff/entries', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/handoff/entries', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const handoffPath = resolve(resolved.assignmentDir, 'handoff.md');
+      const handoffPath = resolve(resolved.ticketDir, 'handoff.md');
       const currentContent = await readCurrentDocument(handoffPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Handoff log not found' });
@@ -2673,7 +1749,7 @@ export function createWriteRouter(
         'No handoffs recorded yet.',
       );
       await writeFileForce(handoffPath, nextContent);
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.status(201).json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone handoff entry:', error);
@@ -2681,19 +1757,19 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/decision-record/entries', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/decision-record/entries', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const decisionPath = resolve(resolved.assignmentDir, 'decision-record.md');
+      const decisionPath = resolve(resolved.ticketDir, 'decision-record.md');
       const currentContent = await readCurrentDocument(decisionPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Decision record not found' });
@@ -2714,7 +1790,7 @@ export function createWriteRouter(
         'No decisions recorded yet.',
       );
       await writeFileForce(decisionPath, nextContent);
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.status(201).json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone decision entry:', error);
@@ -2722,26 +1798,26 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/status-override', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/status-override', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
+      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
       }
       const { status } = req.body || {};
       const clearing = status === null;
-      const projectDirForId = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+      const projectDirForId = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
 
       // WS-2 (Decision 1): engine-active → `manual-override` engine move (parity
       // with the project route). Try it BEFORE the legacy status-id validation —
@@ -2749,7 +1825,7 @@ export function createWriteRouter(
       // `null` ⇒ not engine-active → the legacy pin path below.
       if (clearing || typeof status === 'string') {
         const engineOverride = await runEngineOverride({
-          assignmentPath,
+          ticketPath,
           projectDir: projectDirForId,
           status: clearing ? null : status,
           by: 'human',
@@ -2759,7 +1835,7 @@ export function createWriteRouter(
             res.status(engineOverride.code).json({ error: engineOverride.message });
             return;
           }
-          const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+          const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
           res.json({ assignment });
           return;
         }
@@ -2782,7 +1858,7 @@ export function createWriteRouter(
       const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
       const { updateOverride } = await import('../lifecycle/frontmatter.js');
       const { context, workflowResolver } = await resolveRecomputeContext();
-      const result = await recomputeAndWrite(assignmentPath, {
+      const result = await recomputeAndWrite(ticketPath, {
         cause: clearing ? 'unpin' : 'pin',
         by: 'human',
         projectDir: projectDirForId,
@@ -2803,7 +1879,7 @@ export function createWriteRouter(
         res.status(503).json({ error: result.warning });
         return;
       }
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment });
     } catch (error) {
       console.error('Error overriding standalone status:', error);
@@ -2811,20 +1887,20 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/assignee', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/assignee', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
+      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
       }
@@ -2833,11 +1909,11 @@ export function createWriteRouter(
         res.status(400).json({ error: validation.error });
         return;
       }
-      let content = await readFile(assignmentPath, 'utf-8');
+      let content = await readFile(ticketPath, 'utf-8');
       const prior = parseAssignmentFull(content);
       content = setTopLevelField(content, 'assignee', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, content);
+      await writeFileForce(ticketPath, content);
 
       // Audit event (best-effort): standalone → projectSlug null.
       if (prior.assignee !== validation.value) {
@@ -2847,7 +1923,7 @@ export function createWriteRouter(
         });
       }
 
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment });
     } catch (error) {
       console.error('Error updating standalone assignee:', error);
@@ -2855,20 +1931,20 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/title', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/title', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
+      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
       }
@@ -2877,11 +1953,11 @@ export function createWriteRouter(
         res.status(400).json({ error: validation.error });
         return;
       }
-      let content = await readFile(assignmentPath, 'utf-8');
+      let content = await readFile(ticketPath, 'utf-8');
       content = setTopLevelField(content, 'title', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, content);
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      await writeFileForce(ticketPath, content);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment });
     } catch (error) {
       console.error('Error updating standalone title:', error);
@@ -2889,20 +1965,20 @@ export function createWriteRouter(
     }
   });
 
-  router.patch('/api/assignments/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
+  router.patch('/api/tickets/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-      const currentContent = await readCurrentDocument(assignmentPath);
+      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
@@ -2919,8 +1995,8 @@ export function createWriteRouter(
         return;
       }
       const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
-      await writeFileForce(assignmentPath, nextContent);
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      await writeFileForce(ticketPath, nextContent);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment, content: nextContent });
     } catch (error) {
       console.error('Error toggling standalone acceptance criterion:', error);
@@ -2928,15 +2004,15 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/transitions/:command', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/transitions/:command', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const command = getParam(req.params.command);
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
@@ -2955,8 +2031,8 @@ export function createWriteRouter(
         '../lifecycle/recompute.js'
       );
       const { context, workflowResolver } = await resolveRecomputeContext();
-      const byIdPath = resolve(resolved.assignmentDir, 'assignment.md');
-      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
+      const byIdPath = resolve(resolved.ticketDir, 'assignment.md');
+      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
 
       // Same derived-status routing as the project route (codex r2 finding 2):
       // block/unblock = fact mutations in-lock; terminal commands honor the
@@ -2985,8 +2061,8 @@ export function createWriteRouter(
           return;
         }
         const detail = resolved.standalone
-          ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
-          : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+          ? await getTicketDetailById(projectsDir, ticketsDir, id)
+          : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
         res.json({ assignment: detail, warnings: [] });
         return;
       }
@@ -2994,7 +2070,7 @@ export function createWriteRouter(
       // WS-2 (Decision 1): migrated complete/fail/reopen → ENGINE move (parity
       // with the project route and the CLI). `null` ⇒ ladder fall-through below.
       const engineResult = await runEngineTransition({
-        assignmentPath: byIdPath,
+        ticketPath: byIdPath,
         projectDir: byIdProjectDir,
         command,
         by: 'human',
@@ -3006,7 +2082,7 @@ export function createWriteRouter(
           return;
         }
         if (byIdProjectDir) {
-          await recomputeDependents(byIdProjectDir, resolved.assignmentSlug, {
+          await recomputeDependents(byIdProjectDir, resolved.ticketSlug, {
             cause: 'dep-terminal',
             by: 'system',
             context,
@@ -3014,8 +2090,8 @@ export function createWriteRouter(
           });
         }
         const detail = resolved.standalone
-          ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
-          : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+          ? await getTicketDetailById(projectsDir, ticketsDir, id)
+          : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
         res.json({ assignment: detail, warnings: engineResult.warnings ?? [] });
         return;
       }
@@ -3035,7 +2111,7 @@ export function createWriteRouter(
         ? unambiguousCommandTarget(config.transitions, command)
         : undefined;
       const transitionResult = await executeTransitionByDir(
-        resolved.assignmentDir,
+        resolved.ticketDir,
         command as any,
         {
           standalone: resolved.standalone,
@@ -3077,7 +2153,7 @@ export function createWriteRouter(
           ? config.terminalStatuses.has(transitionResult.toStatus)
           : false;
         if (wasTerminal !== isTerminal) {
-          await recomputeDependents(byIdProjectDir, resolved.assignmentSlug, {
+          await recomputeDependents(byIdProjectDir, resolved.ticketSlug, {
             cause: 'dep-terminal',
             by: 'system',
             context,
@@ -3087,8 +2163,8 @@ export function createWriteRouter(
       }
 
       const detail = resolved.standalone
-        ? await getAssignmentDetailById(projectsDir, assignmentsDir, id)
-        : await getAssignmentDetail(projectsDir, resolved.projectSlug!, resolved.assignmentSlug);
+        ? await getTicketDetailById(projectsDir, ticketsDir, id)
+        : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
       res.json({ assignment: detail, warnings: transitionResult.warnings ?? [] });
     } catch (error) {
       console.error('Error transitioning by id:', error);
@@ -3096,21 +2172,21 @@ export function createWriteRouter(
     }
   });
 
-  router.post('/api/assignments/:id/plan/approve', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/plan/approve', async (req: Request, res: Response) => {
     try {
-      if (!assignmentsDir) {
+      if (!ticketsDir) {
         res.status(501).json({ error: 'Standalone assignments not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
-      const assignmentPath = resolve(assignmentsDir, id, 'assignment.md');
-      if (!(await fileExists(assignmentPath))) {
+      const ticketPath = resolve(ticketsDir, id, 'assignment.md');
+      if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
       }
       const { planApproveCommand } = await import('../commands/derive-verbs.js');
       await planApproveCommand(id, {});
-      const assignment = await getAssignmentDetailById(projectsDir, assignmentsDir, id);
+      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ assignment });
     } catch (error) {
       const message = (error as Error).message;
@@ -3178,13 +2254,13 @@ function validateTitleBody(body: unknown): TitleValidation {
 }
 
 async function appendCommentTo(
-  assignmentDir: string,
+  ticketDir: string,
   assignmentRef: string,
   req: Request,
   res: Response,
   reloadDetail: () => Promise<unknown>,
 ): Promise<void> {
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const commentsPath = resolve(ticketDir, 'comments.md');
   const { body, author, type, replyTo } = req.body || {};
   if (!body || typeof body !== 'string' || !body.trim()) {
     res.status(400).json({ error: 'body is required' });
@@ -3235,7 +2311,7 @@ async function appendCommentTo(
 
   // Audit event (best-effort): comment-added. Author + excerpt ONLY.
   try {
-    const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+    const assignmentMdPath = resolve(ticketDir, 'assignment.md');
     if (await fileExists(assignmentMdPath)) {
       const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
       emitDashboardEvent(fm.id, fm.project, 'comment-added', {
@@ -3255,13 +2331,13 @@ async function appendCommentTo(
 }
 
 async function toggleCommentResolvedAt(
-  assignmentDir: string,
+  ticketDir: string,
   commentId: string,
   req: Request,
   res: Response,
   reloadDetail: () => Promise<unknown>,
 ): Promise<void> {
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (!(await fileExists(commentsPath))) {
     res.status(404).json({ error: 'Comments file not found' });
     return;
@@ -3272,7 +2348,7 @@ async function toggleCommentResolvedAt(
     return;
   }
 
-  const { changed, previous } = await setCommentResolved(assignmentDir, commentId, desired);
+  const { changed, previous } = await setCommentResolved(ticketDir, commentId, desired);
   if (previous === null) {
     const content = await readFile(commentsPath, 'utf-8');
     const parsed = parseComments(content);
@@ -3293,7 +2369,7 @@ async function toggleCommentResolvedAt(
   // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
   if (changed && previous === false && desired === true) {
     try {
-      const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+      const assignmentMdPath = resolve(ticketDir, 'assignment.md');
       if (await fileExists(assignmentMdPath)) {
         const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
         emitDashboardEvent(fm.id, fm.project, 'comment-resolved', { commentId });

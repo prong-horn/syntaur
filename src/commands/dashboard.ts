@@ -109,7 +109,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
   const server = createDashboardServer({
     port,
     projectsDir,
-    assignmentsDir: getTicketsDir(),
+    ticketsDir: getTicketsDir(),
     playbooksDir: getPlaybooksDir(),
     serveStaticUi: mode === 'static',
     dashboardDistPath: dashboardDist,

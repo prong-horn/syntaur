@@ -474,7 +474,7 @@ Keep this paragraph.`, 'utf-8');
     expect(content).toMatch(/^## [a-z0-9]+\n\n[\s\S]*\*\*Resolved:\*\* true/m);
   });
 
-  it('POST /api/assignments creates a standalone ticket at <ticketsDir>/<uuid>/', async () => {
+  it('POST /api/tickets creates a standalone ticket at <ticketsDir>/<uuid>/', async () => {
     const ticketsDir = resolve(testDir, 'standalone');
     await mkdir(ticketsDir, { recursive: true });
     const router = createWriteRouter(testDir, ticketsDir);
@@ -482,7 +482,7 @@ Keep this paragraph.`, 'utf-8');
     const response = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'Standalone one-off', priority: 'high' },
     );
@@ -504,7 +504,7 @@ Keep this paragraph.`, 'utf-8');
     const response = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'nope', dependsOn: ['something'] },
     );
@@ -520,7 +520,7 @@ Keep this paragraph.`, 'utf-8');
     const create = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'Task' },
     );
@@ -552,7 +552,7 @@ Keep this paragraph.`, 'utf-8');
     const create = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'Task' },
     );
@@ -571,20 +571,20 @@ Keep this paragraph.`, 'utf-8');
     expect((start.payload as any).assignment.status).toBe('draft');
   });
 
-  it('GET /api/assignments is routable only when router constructed with ticketsDir', async () => {
-    // Without ticketsDir the POST /api/assignments route returns 501.
+  it('GET /api/tickets is routable only when router constructed with ticketsDir', async () => {
+    // Without ticketsDir the POST /api/tickets route returns 501.
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'Task' },
     );
     expect(response.statusCode).toBe(501);
   });
 
-  it('POST /api/assignments accepts {content} markdown form for standalone tickets', async () => {
+  it('POST /api/tickets accepts {content} markdown form for standalone tickets', async () => {
     const ticketsDir = resolve(testDir, 'standalone');
     await mkdir(ticketsDir, { recursive: true });
     const router = createWriteRouter(testDir, ticketsDir);
@@ -606,7 +606,7 @@ updated: "2026-04-25T12:00:00Z"
     const response = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { content },
     );
@@ -619,7 +619,7 @@ updated: "2026-04-25T12:00:00Z"
     expect(onDisk).not.toContain('id: placeholder-id');
   });
 
-  it('POST /api/assignments {content} rejects when project is set on a standalone', async () => {
+  it('POST /api/tickets {content} rejects when project is set on a standalone', async () => {
     const ticketsDir = resolve(testDir, 'standalone');
     await mkdir(ticketsDir, { recursive: true });
     const router = createWriteRouter(testDir, ticketsDir);
@@ -638,12 +638,12 @@ updated: "2026-04-25T12:00:00Z"
 # Bad
 `;
 
-    const response = await invokeRoute(router, 'post', '/api/assignments', {}, { content });
+    const response = await invokeRoute(router, 'post', '/api/tickets', {}, { content });
     expect(response.statusCode).toBe(400);
     expect((response.payload as any).error).toContain('Standalone tickets cannot have a project');
   });
 
-  it('POST /api/assignments structured form still works (back-compat)', async () => {
+  it('POST /api/tickets structured form still works (back-compat)', async () => {
     const ticketsDir = resolve(testDir, 'standalone');
     await mkdir(ticketsDir, { recursive: true });
     const router = createWriteRouter(testDir, ticketsDir);
@@ -651,7 +651,7 @@ updated: "2026-04-25T12:00:00Z"
     const response = await invokeRoute(
       router,
       'post',
-      '/api/assignments',
+      '/api/tickets',
       {},
       { title: 'Programmatic create' },
     );
@@ -661,7 +661,7 @@ updated: "2026-04-25T12:00:00Z"
 
   it('GET /api/templates/assignment?standalone=1 returns project: null', async () => {
     const router = createWriteRouter(testDir);
-    const response = await invokeRoute(router, 'get', '/api/templates/assignment', {}, undefined, {
+    const response = await invokeRoute(router, 'get', '/api/templates/ticket', {}, undefined, {
       standalone: '1',
     });
     expect(response.statusCode).toBe(200);
@@ -948,7 +948,7 @@ updated: "2026-04-25T12:00:00Z"
       const create = await invokeRoute(
         router,
         'post',
-        '/api/assignments',
+        '/api/tickets',
         {},
         { title: 'Original' },
       );
@@ -2405,7 +2405,7 @@ tags: []
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/assignments',
+      '/api/projects/:slug/tickets',
       { slug: PROJ },
       { content },
     );
@@ -2529,7 +2529,7 @@ describe('comment write-boundary newline validation (AC1)', () => {
     const ticketsDir = resolve(testDir, 'standalone');
     await mkdir(ticketsDir, { recursive: true });
     const router = createWriteRouter(testDir, ticketsDir);
-    const create = await invokeRoute(router, 'post', '/api/assignments', {}, { title: 'Task' });
+    const create = await invokeRoute(router, 'post', '/api/tickets', {}, { title: 'Task' });
     const id = (create.payload as any).assignment.id as string;
     const res = await invokeRoute(
       router,

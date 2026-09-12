@@ -101,7 +101,7 @@ function attachUsage(
     if (tracked.has(sessionId)) continue;
     orphans.push({
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: usage.tool || 'unknown',
       sessionId,
       started: usage.firstEventTs ?? '',
@@ -126,7 +126,7 @@ function attachUsage(
 function usageOnlyRow(sessionId: string, usage: SessionUsage): AgentSessionWithLiveness {
   return {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: usage.tool || 'unknown',
     sessionId,
     started: usage.firstEventTs ?? '',
@@ -253,14 +253,14 @@ function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): 
       return durationMinutes(b, now) - durationMinutes(a, now) || a.sessionId.localeCompare(b.sessionId);
     case 'assignment_asc':
       return (
-        nocase(a.assignmentSlug, b.assignmentSlug)
+        nocase(a.ticketSlug, b.ticketSlug)
         || nocase(a.projectSlug, b.projectSlug)
         || a.sessionId.localeCompare(b.sessionId)
       );
     case 'agent_asc':
       return (
         nocase(a.agent, b.agent)
-        || nocase(a.assignmentSlug, b.assignmentSlug)
+        || nocase(a.ticketSlug, b.ticketSlug)
         || a.sessionId.localeCompare(b.sessionId)
       );
     case 'spend_desc':
@@ -415,7 +415,7 @@ export function createAgentSessionsRouter(
           sessionId,
           started,
           ended: null,
-          assignmentSlug: null,
+          ticketSlug: null,
           projectSlug: null,
           agent: usage.tool || 'unknown',
           cost: usage.totalCost,
@@ -718,7 +718,7 @@ export function createAgentSessionsRouter(
         // NOT open a project-bound engagement for an arbitrary session. Binding
         // requires a validated assignment selector (existence-checked above).
         projectSlug: assignmentSlug ? projectSlug || null : null,
-        assignmentSlug: assignmentSlug || null,
+        ticketSlug: assignmentSlug || null,
         assignmentId,
         agent,
         sessionId,
@@ -746,7 +746,7 @@ export function createAgentSessionsRouter(
     try {
       const { sessionId } = req.params;
       const outcome = await recreateForTarget(
-        { projectsDir, assignmentsDir: assignmentsDir ?? '' },
+        { projectsDir, ticketsDir: assignmentsDir ?? '' },
         { kind: 'session', id: sessionId },
       );
       const { httpStatus, body } = recreateOutcomeToHttp(outcome);

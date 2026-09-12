@@ -54,12 +54,12 @@ export interface WatcherOptions {
    * `onConfigChanged` — derive rules may have changed, so the server runs a
    * recompute-all sweep (design v3, Piece 3 trigger set). */
   configPath?: string;
-  /** Debounced per-assignment hook fired alongside `assignment-updated` —
+  /** Debounced per-assignment hook fired alongside `ticket-updated` —
    * the server wires this to `recomputeAndWrite` so out-of-band edits
    * (agents/humans editing files directly) re-derive. The recompute's own
    * write fires one more event that no-ops (no change → no write), so the
    * cycle terminates. */
-  onAssignmentChanged?: (projectSlug: string | null, assignmentSlug: string) => void;
+  onAssignmentChanged?: (projectSlug: string | null, ticketSlug: string) => void;
   /** Debounced hook for config.md changes (recompute-all trigger). */
   onConfigChanged?: () => void;
   /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
@@ -72,7 +72,7 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const assignmentsDir = options.assignmentsDir ?? options.ticketsDir;
+  const ticketsDir = options.ticketsDir ?? options.ticketsDir;
   const {
     projectsDir,
     playbooksDir,
@@ -101,22 +101,22 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     if (parts.length === 0) return;
 
     const projectSlug = parts[0];
-    let assignmentSlug: string | undefined;
+    let ticketSlug: string | undefined;
 
     if (parts.length >= 3 && parts[1] === 'assignments') {
-      assignmentSlug = parts[2];
+      ticketSlug = parts[2];
     }
 
-    const debounceKey = assignmentSlug
-      ? `${projectSlug}/${assignmentSlug}`
+    const debounceKey = ticketSlug
+      ? `${projectSlug}/${ticketSlug}`
       : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
     // Session events are now emitted by the API write path, not the file watcher
-    const messageType: WsMessage['type'] = assignmentSlug
-      ? 'assignment-updated'
+    const messageType: WsMessage['type'] = ticketSlug
+      ? 'ticket-updated'
       : 'project-updated';
 
     pendingEvents.set(
@@ -126,12 +126,12 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         const message: WsMessage = {
           type: messageType,
           projectSlug,
-          assignmentSlug,
+          ticketSlug,
           timestamp: new Date().toISOString(),
         };
         onMessage(message);
-        if (assignmentSlug && onAssignmentChanged) {
-          onAssignmentChanged(projectSlug, assignmentSlug);
+        if (ticketSlug && onAssignmentChanged) {
+          onAssignmentChanged(projectSlug, ticketSlug);
         }
       }, debounceMs),
     );
@@ -144,22 +144,22 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   // --- Standalone assignments watcher ---
   let standaloneWatcher: ReturnType<typeof watch> | null = null;
 
-  if (assignmentsDir) {
-    standaloneWatcher = watch(assignmentsDir, {
+  if (ticketsDir) {
+    standaloneWatcher = watch(ticketsDir, {
       ignoreInitial: true,
       persistent: true,
       depth: 5,
-      ignored: ignoreDotSegmentsBelow(assignmentsDir),
+      ignored: ignoreDotSegmentsBelow(ticketsDir),
     });
 
     function handleStandaloneChange(filePath: string): void {
-      const rel = relative(assignmentsDir!, filePath);
+      const rel = relative(ticketsDir!, filePath);
       const parts = rel.split(sep);
       if (parts.length === 0) return;
-      const assignmentId = parts[0];
-      if (!assignmentId) return;
+      const ticketId = parts[0];
+      if (!ticketId) return;
 
-      const debounceKey = `__standalone__/${assignmentId}`;
+      const debounceKey = `__standalone__/${ticketId}`;
       const existing = pendingEvents.get(debounceKey);
       if (existing) clearTimeout(existing);
 
@@ -168,13 +168,13 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         setTimeout(() => {
           pendingEvents.delete(debounceKey);
           const message: WsMessage = {
-            type: 'assignment-updated',
+            type: 'ticket-updated',
             projectSlug: null,
-            assignmentSlug: assignmentId,
+            ticketSlug: ticketId,
             timestamp: new Date().toISOString(),
           };
           onMessage(message);
-          if (onAssignmentChanged) onAssignmentChanged(null, assignmentId);
+          if (onAssignmentChanged) onAssignmentChanged(null, ticketId);
         }, debounceMs),
       );
     }

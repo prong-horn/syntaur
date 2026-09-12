@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import { listAssignmentsBoard } from '../dashboard/api.js';
+import { listTicketsBoard } from '../dashboard/api.js';
 import { defaultProjectDir, ticketsDir as standaloneTicketsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
@@ -11,7 +11,7 @@ import { resolveDeriveContext } from '../lifecycle/recompute.js';
 import { isStagesMigrated } from '../utils/stages-marker.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
 import type { FactDeclaration } from '../utils/config.js';
-import type { AssignmentBoardItem } from '../dashboard/types.js';
+import type { TicketBoardItem } from '../dashboard/types.js';
 
 interface LsOptions {
   status?: string;
@@ -45,7 +45,7 @@ function parseAgeToCutoff(age: string): Date {
   return new Date(Date.now() - ms);
 }
 
-function ticketMdPath(item: AssignmentBoardItem): string {
+function ticketMdPath(item: TicketBoardItem): string {
   if (item.projectSlug) {
     return resolve(
       defaultProjectDir(),
@@ -58,7 +58,7 @@ function ticketMdPath(item: AssignmentBoardItem): string {
   return resolve(standaloneTicketsDir(), item.id, 'ticket.md');
 }
 
-async function loadTags(item: AssignmentBoardItem): Promise<string[]> {
+async function loadTags(item: TicketBoardItem): Promise<string[]> {
   const path = ticketMdPath(item);
   if (!(await fileExists(path))) return [];
   try {
@@ -71,8 +71,8 @@ async function loadTags(item: AssignmentBoardItem): Promise<string[]> {
 
 export async function runLs(
   options: LsOptions,
-): Promise<{ items: AssignmentBoardItem[] }> {
-  const board = await listAssignmentsBoard(
+): Promise<{ items: TicketBoardItem[] }> {
+  const board = await listTicketsBoard(
     defaultProjectDir(),
     standaloneTicketsDir(),
     { archived: options.archived ? 'only' : 'exclude' },
@@ -149,7 +149,7 @@ export async function runLs(
  * loads are fine; the dashboard ships the same shape in payloads instead.
  */
 async function loadQueryItem(
-  item: AssignmentBoardItem,
+  item: TicketBoardItem,
   terminalStatuses: ReadonlySet<string>,
   now: number,
   declarations: FactDeclaration[],
@@ -212,7 +212,7 @@ function pad(value: string, width: number): string {
   return value + ' '.repeat(width - value.length);
 }
 
-function renderTable(items: AssignmentBoardItem[]): string {
+function renderTable(items: TicketBoardItem[]): string {
   if (items.length === 0) return 'No tickets matched.';
   const rows: string[][] = items.map((a) => [
     a.projectSlug ?? '(standalone)',

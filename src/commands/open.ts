@@ -68,7 +68,7 @@ export async function runOpen(
     const outcome = await recreateForTarget(
       {
         projectsDir: config.defaultProjectDir || defaultProjectDir(),
-        assignmentsDir: ticketsDir(),
+        ticketsDir: ticketsDir(),
       },
       { kind: 'assignment', id: resolved.id },
     );
