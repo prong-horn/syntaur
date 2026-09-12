@@ -50,11 +50,11 @@ import { runEngineTransition, runEngineOverride } from '../lifecycle/engine-tran
 import {
   renderProject,
   renderManifest,
-  renderIndexAssignments,
+  renderIndexTickets,
   renderIndexPlans,
   renderIndexDecisions,
   renderStatus,
-  renderAssignment,
+  renderTicket,
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
@@ -475,7 +475,7 @@ export function createWriteRouter(
 
   router.get('/api/templates/ticket', (req: Request, res: Response) => {
     const standalone = req.query.standalone === '1';
-    const content = renderAssignment({
+    const content = renderTicket({
       id: generateId(),
       slug: 'my-new-assignment',
       title: 'My New Assignment',
@@ -544,7 +544,7 @@ export function createWriteRouter(
       try {
         const companions: Array<[string, string]> = [
           [resolve(projectDir, 'manifest.md'), renderManifest({ slug, timestamp })],
-          [resolve(projectDir, '_index-tickets.md'), renderIndexAssignments({ slug, title, timestamp })],
+          [resolve(projectDir, '_index-tickets.md'), renderIndexTickets({ slug, title, timestamp })],
           [resolve(projectDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
           [resolve(projectDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
           [resolve(projectDir, '_status.md'), renderStatus({ slug, title, timestamp })],
@@ -621,7 +621,7 @@ export function createWriteRouter(
       const timestamp = fields.created || nowTimestamp();
 
       await ensureDir(ticketDir);
-      // Raw create bypasses renderAssignment, so seed the statusHistory here
+      // Raw create bypasses renderTicket, so seed the statusHistory here
       // (only when the body didn't already supply one — never double-seed).
       const parsedCreate = parseAssignmentFull(content);
       const seededHere = parsedCreate.statusHistory.length === 0;
@@ -1263,7 +1263,7 @@ export function createWriteRouter(
         await ensureDir(ticketDir);
         // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
         let normalizedContent = setTopLevelField(rawContent, 'id', id);
-        // Raw create bypasses renderAssignment, so seed statusHistory here (only
+        // Raw create bypasses renderTicket, so seed statusHistory here (only
         // when the body didn't already supply one — never double-seed).
         const seededHere = parseAssignmentFull(normalizedContent).statusHistory.length === 0;
         const createdStatus = parseAssignmentFull(normalizedContent).status;
@@ -1340,7 +1340,7 @@ export function createWriteRouter(
         : 'medium';
 
       await ensureDir(ticketDir);
-      const assignmentContent = renderAssignment({
+      const assignmentContent = renderTicket({
         id,
         slug: resolvedSlug,
         title: title.trim(),
@@ -1374,7 +1374,7 @@ export function createWriteRouter(
       );
 
       // Audit event (best-effort): emit AFTER all companion files are written
-      // (FIX 2 ordering). renderAssignment seeds an initial `create` statusHistory
+      // (FIX 2 ordering). renderTicket seeds an initial `create` statusHistory
       // entry (draft); the RAW create emits a matching status-change, so the
       // structured create must too (FIX 4). Standalone → null projectSlug.
       emitDashboardEvent(id, null, 'status-change', {
@@ -2004,7 +2004,7 @@ export function createWriteRouter(
       // block/unblock = fact mutations in-lock; terminal commands honor the
       // custom target and settle; everything else settles after the transition.
       if (command === 'block' || command === 'unblock') {
-        const { updateAssignmentFile } = await import('../lifecycle/frontmatter.js');
+        const { updateTicketFile } = await import('../lifecycle/frontmatter.js');
         const result = await recomputeAndWrite(byIdPath, {
           cause: command,
           by: 'human',
@@ -2013,7 +2013,7 @@ export function createWriteRouter(
           workflowResolver,
           reason: typeof reason === 'string' ? reason : undefined,
           mutate: (content) =>
-            updateAssignmentFile(content, {
+            updateTicketFile(content, {
               blockedReason:
                 command === 'block' ? (typeof reason === 'string' && reason ? reason : '(unspecified)') : null,
             }),

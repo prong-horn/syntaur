@@ -17,7 +17,7 @@ import {
   invalidateRecordsCache,
   clearStatusConfigCache,
 } from './api.js';
-import { resolveTicketById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { listSessionsByTicket, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
 import { createWatcher } from './watcher.js';
 import { fileExists } from '../utils/fs.js';

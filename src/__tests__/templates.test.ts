@@ -7,7 +7,7 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
-  renderIndexAssignments,
+  renderIndexTickets,
   renderStatus,
 } from '../templates/index.js';
 
@@ -304,9 +304,9 @@ describe('renderDecisionRecord', () => {
   });
 });
 
-describe('renderIndexAssignments', () => {
+describe('renderIndexTickets', () => {
   it('has all status counts at 0', () => {
-    const out = renderIndexAssignments({
+    const out = renderIndexTickets({
       slug: 'test',
       title: 'Test',
       timestamp: TIMESTAMP,

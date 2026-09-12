@@ -23,7 +23,7 @@ import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from 
 import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
-import { resolveTicketById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
 import { latestPlanFile } from '../lifecycle/facts.js';
 import { invalidateIndex } from '../search/index.js';
 
@@ -959,7 +959,7 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<TicketBoardI
     const { computeFacts } = await import('../lifecycle/facts.js');
     facts = await computeFacts({
       ticketDir: sr.ticketDir,
-      frontmatter: sr.record as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      frontmatter: sr.record as unknown as import('../lifecycle/types.js').TicketFrontmatter,
       body: sr.record.body,
       projectDir: null,
       terminalStatuses,
@@ -1581,7 +1581,7 @@ export async function getTicketDetailById(
 }
 
 async function buildStandaloneTicketDetail(
-  resolved: ResolvedAssignment,
+  resolved: ResolvedTicket,
 ): Promise<TicketDetail | null> {
   const ticketDir = resolved.ticketDir;
   const assignmentMdPath = resolve(ticketDir, 'ticket.md');
@@ -1995,7 +1995,7 @@ async function buildDerivedDetail(
         ...assignment,
         // AssignmentRecord ⊃ the fields computeFacts reads (incl. facts +
         // attestations from the parser); statusHistory + derived caches ride along.
-      } as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      } as unknown as import('../lifecycle/types.js').TicketFrontmatter,
       body: assignment.body,
       projectDir,
       terminalStatuses: config.terminalStatuses,
@@ -2129,7 +2129,7 @@ async function toTicketBoardItem(
     const { computeFacts } = await import('../lifecycle/facts.js');
     facts = await computeFacts({
       ticketDir,
-      frontmatter: assignment as unknown as import('../lifecycle/types.js').AssignmentFrontmatter,
+      frontmatter: assignment as unknown as import('../lifecycle/types.js').TicketFrontmatter,
       body: assignment.body,
       projectDir,
       terminalStatuses,

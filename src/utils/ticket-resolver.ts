@@ -15,23 +15,6 @@ export interface ResolvedTicket {
    * / bare-id resolution, which carries no engagement.
    */
   stage?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentDir: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId: string;
-}
-
-export function withResolvedCompat(
-  ticket: Omit<ResolvedTicket, 'assignmentDir' | 'assignmentSlug' | 'assignmentId'>,
-): ResolvedTicket {
-  return {
-    ...ticket,
-    assignmentDir: ticket.ticketDir,
-    assignmentSlug: ticket.ticketSlug,
-    assignmentId: ticket.id,
-  };
 }
 
 export async function resolveTicketById(
@@ -46,13 +29,13 @@ export async function resolveTicketById(
   const standaloneDir = resolve(ticketsDir, id);
   const standalonePath = resolve(standaloneDir, 'ticket.md');
   if (await fileExists(standalonePath)) {
-    standaloneMatch = withResolvedCompat({
+    standaloneMatch = {
       ticketDir: standaloneDir,
       projectSlug: null,
       ticketSlug: id,
       id,
       standalone: true,
-    });
+    };
   }
 
   // 2) Project-nested: scan <projectsDir>/*/tickets/*/ticket.md and match by frontmatter id
@@ -76,13 +59,13 @@ export async function resolveTicketById(
             const [fm] = extractFrontmatter(content);
             const fileId = getField(fm, 'id');
             if (fileId === id) {
-              projectMatch = withResolvedCompat({
+              projectMatch = {
                 ticketDir: resolve(assignmentsPath, a.name),
                 projectSlug: p.name,
                 ticketSlug: a.name,
                 id,
                 standalone: false,
-              });
+              };
               break;
             }
           } catch {

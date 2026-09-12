@@ -1,13 +1,11 @@
 export interface ProgressParams {
   ticket?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignment?: string;
   timestamp: string;
 }
 
 export function renderProgress(params: ProgressParams): string {
   return `---
-ticket: ${params.ticket ?? params.assignment ?? ''}
+ticket: ${params.ticket ?? ''}
 entryCount: 0
 generated: "${params.timestamp}"
 updated: "${params.timestamp}"

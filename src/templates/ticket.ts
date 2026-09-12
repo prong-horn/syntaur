@@ -16,9 +16,6 @@ export interface TicketParams {
   acceptanceCriteria?: string[];
 }
 
-/** @deprecated Use TicketParams */
-export type AssignmentParams = TicketParams;
-
 export function renderTicket(params: TicketParams): string {
   const safeTitle = escapeYamlString(params.title);
   const dependsOnYaml =

@@ -14,7 +14,7 @@ import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../
 import { participantsPath, writeParticipants } from '../chat/participants.js';
 import type { ChatItem, Harness, Participants } from '../chat/types.js';
 import type { ChatCommand } from '../chat/commands.js';
-import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import type * as acp from '@agentclientprotocol/sdk';
 
 let sandbox: string;
@@ -57,7 +57,7 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'tickets'),
+    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: () => {},
     clientFactory,
@@ -141,7 +141,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: () => {},
       clientFactory: (input) => {
@@ -241,14 +241,11 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     const assignId = 'probe-assign-1';
     const assignDir = join(sandbox, 'tickets', 'probe');
     await mkdir(assignDir, { recursive: true });
-    const resolved: ResolvedAssignment = {
+    const resolved: ResolvedTicket = {
       ticketDir: assignDir,
-      assignmentDir: assignDir,
       projectSlug: 'test',
       ticketSlug: 'probe',
-      assignmentSlug: 'probe',
       id: assignId,
-      assignmentId: assignId,
       standalone: false,
     };
     makeBroker({ availableCommands: probeCommands });
@@ -333,14 +330,11 @@ let fakes: Map<string, FakeAgent>;
 let spawnHarnesses: Harness[];
 let resolvedHarnesses: Harness[];
 
-const assignment = (): ResolvedAssignment => ({
+const assignment = (): ResolvedTicket => ({
   ticketDir: assignmentDir,
-  assignmentDir,
   projectSlug: 'syntaur-meta',
-  assignmentSlug: 'chat-demo',
   ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
-  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 
@@ -450,7 +444,7 @@ function makeAssignmentBroker(
   frames = [];
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'tickets'),
+    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     loadDefinitions: opts.loadDefinitions,
     broadcast: (message) =>

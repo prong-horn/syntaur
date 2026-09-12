@@ -31,13 +31,11 @@ import type { FileKind, SearchDoc } from './types.js';
 export interface IndexOptions {
   projectsDir: string;
   ticketsDir?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentsDir?: string;
   includeArchived?: boolean;
 }
 
 function resolveStandaloneTicketsDir(opts: IndexOptions): string {
-  return opts.ticketsDir ?? opts.assignmentsDir ?? opts.projectsDir;
+  return opts.ticketsDir ?? opts.projectsDir;
 }
 
 /** Identity carried from the owning ticket onto every sidecar doc. */

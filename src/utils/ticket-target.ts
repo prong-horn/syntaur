@@ -4,7 +4,7 @@ import { expandHome, ticketsDir as ticketsDirFn } from './paths.js';
 import { fileExists } from './fs.js';
 import { readConfig } from './config.js';
 import { isValidSlug } from './slug.js';
-import { resolveTicketById, withResolvedCompat, type ResolvedTicket } from './ticket-resolver.js';
+import { resolveTicketById, type ResolvedTicket } from './ticket-resolver.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
 import type { EngagementBinding } from './engagement-binding.js';
 
@@ -120,13 +120,13 @@ export async function resolveTicketTarget(
       );
     }
     const id = (await readTicketFrontmatterId(ticketDir)) ?? input;
-    return withResolvedCompat({
+    return {
       ticketDir,
       projectSlug: opts.project,
       ticketSlug: input,
       id,
       standalone: false,
-    });
+    };
   }
 
   // Case 2: bare UUID/id positional
@@ -183,14 +183,14 @@ export async function reconstructFromBinding(
       (await readTicketFrontmatterId(ticketDir)) ??
       binding.ticketId ??
       binding.ticketSlug;
-    return withResolvedCompat({
+    return {
       ticketDir,
       projectSlug: binding.projectSlug,
       ticketSlug: binding.ticketSlug,
       id,
       standalone: false,
       stage: binding.stage,
-    });
+    };
   }
 
   // Standalone engagement: prefer the resolved id, else the slug-as-UUID.
@@ -221,12 +221,12 @@ export async function reconstructFromBinding(
     );
   }
   const id = (await readTicketFrontmatterId(dir)) ?? standaloneId;
-  return withResolvedCompat({
+  return {
     ticketDir: dir,
     projectSlug: null,
     ticketSlug: standaloneId,
     id,
     standalone: true,
     stage: binding.stage,
-  });
+  };
 }

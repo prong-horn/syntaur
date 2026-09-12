@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.js';
+import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { parseAssignmentFull, type ParsedAssignmentFull } from '../dashboard/parser.js';

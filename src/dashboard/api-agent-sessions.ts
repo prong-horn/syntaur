@@ -22,8 +22,8 @@ import {
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
 import { isSafeSessionId } from '../utils/session-id.js';
-import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
-import { assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { resolveTicketBySlug } from '../utils/ticket-resolver.js';
+import { ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
@@ -334,7 +334,7 @@ const MAX_SESSION_NAME_LENGTH = 200;
 export function createAgentSessionsRouter(
   projectsDir: string,
   broadcast?: (msg: WsMessage) => void,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Router {
   const router = Router();
 
@@ -494,7 +494,7 @@ export function createAgentSessionsRouter(
   // full set exactly as it always has, so existing consumers are unaffected.
   router.get('/', async (req, res) => {
     try {
-      await reconcileActiveSessions(projectsDir, assignmentsDir);
+      await reconcileActiveSessions(projectsDir, ticketsDir);
       const includeUsageOnly = req.query.includeUsageOnly === '1';
 
       const pageSizeRaw = positiveIntParam(req.query.pageSize);
@@ -628,7 +628,7 @@ export function createAgentSessionsRouter(
         res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
-      await reconcileActiveSessions(projectsDir, assignmentsDir);
+      await reconcileActiveSessions(projectsDir, ticketsDir);
       const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
       res.json({
         // Usage attached, but never orphan rows: a usage-only session has no
@@ -696,17 +696,17 @@ export function createAgentSessionsRouter(
       // `assignmentSlug`) is NOT gated — it registers the bare session.
       let assignmentId: string | null = null;
       if (ticketSlug) {
-        const resolvedAssignment = await resolveAssignmentBySlug(
+        const resolvedTicket = await resolveTicketBySlug(
           projectsDir,
-          assignmentsDir ?? assignmentsDirFn(),
+          ticketsDir ?? ticketsDirFn(),
           projectSlug || null,
           ticketSlug,
         );
-        if (!resolvedAssignment.exists) {
+        if (!resolvedTicket.exists) {
           res.status(404).json({ error: `Ticket "${ticketSlug}" not found` });
           return;
         }
-        assignmentId = resolvedAssignment.id;
+        assignmentId = resolvedTicket.id;
       }
 
       // Prefer the launch cwd recorded inside the transcript over whatever
@@ -755,7 +755,7 @@ export function createAgentSessionsRouter(
     try {
       const { sessionId } = req.params;
       const outcome = await recreateForTarget(
-        { projectsDir, ticketsDir: assignmentsDir ?? '' },
+        { projectsDir, ticketsDir: ticketsDir ?? '' },
         { kind: 'session', id: sessionId },
       );
       const { httpStatus, body } = recreateOutcomeToHttp(outcome);

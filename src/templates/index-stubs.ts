@@ -27,9 +27,6 @@ by_status:
 `;
 }
 
-/** @deprecated Use renderIndexTickets */
-export const renderIndexAssignments = renderIndexTickets;
-
 export function renderIndexPlans(params: IndexStubParams): string {
   return `---
 project: ${params.slug}

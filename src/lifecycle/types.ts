@@ -281,9 +281,6 @@ export interface TicketFrontmatter {
   gateOverrides: GateOverride[];
 }
 
-/** @deprecated Dashboard compat until Task 2 */
-export type AssignmentFrontmatter = TicketFrontmatter;
-
 export interface TransitionResult {
   success: boolean;
   message: string;

@@ -41,8 +41,6 @@ export function ignoreDotSegmentsBelow(
 
 export interface WatcherOptions {
   projectsDir: string;
-  assignmentsDir?: string;
-  /** Core rename alias */
   ticketsDir?: string;
   playbooksDir?: string;
   /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
@@ -72,7 +70,7 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const ticketsDir = options.ticketsDir ?? options.ticketsDir;
+  const ticketsDir = options.ticketsDir;
   const {
     projectsDir,
     playbooksDir,

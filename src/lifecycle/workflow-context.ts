@@ -220,6 +220,3 @@ export function makeWorkflowContextResolver(config: WorkflowConfigView) {
     },
   };
 }
-
-/** @deprecated migrate-workflows compat */
-export const resolveAssignmentWorkflowId = resolveTicketWorkflowId;

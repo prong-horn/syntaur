@@ -1,14 +1,12 @@
 export interface DecisionRecordParams {
   ticketSlug?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string;
   timestamp: string;
 }
 
 export function renderDecisionRecord(
   params: DecisionRecordParams,
 ): string {
-  const slug = params.ticketSlug ?? params.assignmentSlug ?? '';
+  const slug = params.ticketSlug ?? '';
   return `---
 ticket: ${slug}
 updated: "${params.timestamp}"

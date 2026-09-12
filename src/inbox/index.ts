@@ -91,8 +91,6 @@ export interface ComputeInboxOptions {
   projectsDir: string;
   /** Standalone tickets dir; `null` to skip standalone. */
   ticketsDir?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentsDir?: string | null;
   /** Restrict to one project slug (matches `InboxItem.project`). */
   project?: string;
   /** Restrict to a subset of categories. */
@@ -475,7 +473,7 @@ export function inboxRowKey(item: InboxItem): string {
 
 /** Fingerprint for "until it changes" snoozes. */
 export function rowFingerprint(item: InboxItem): string {
-  return `${item.since}|${item.assignmentUpdated}|${item.chat?.itemId ?? item.commentId ?? ''}`;
+  return `${item.since}|${item.ticketUpdated}|${item.chat?.itemId ?? item.commentId ?? ''}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -514,7 +512,6 @@ export function chatItemPath(item: {
 
 function resolveStandaloneTicketsDir(opts: ComputeInboxOptions): string | null {
   if (opts.ticketsDir !== undefined) return opts.ticketsDir;
-  if (opts.assignmentsDir !== undefined) return opts.assignmentsDir;
   return null;
 }
 
@@ -572,7 +569,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         category: 'review',
         since,
         ageMs: computeAgeMs(since, now),
-        assignmentUpdated: parsed.updated,
+        ticketUpdated: parsed.updated,
         // Cosmetic retired-fact read (WS-3 T9): `reviewRequested` stays
         // ENGINE-FED post-marker (the bridge writes it in the work-start CAS
         // payload), so this summary pick stays coherent in both worlds;
@@ -620,7 +617,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
               category: 'question',
               since,
               ageMs: computeAgeMs(since, now),
-              assignmentUpdated: parsed.updated,
+              ticketUpdated: parsed.updated,
               summary: summarizeQuestion(c),
               body: rawQuestionText(c),
               commentId: c.id,
@@ -649,7 +646,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
           category: 'plan-approval',
           since,
           ageMs: computeAgeMs(since, now),
-          assignmentUpdated: parsed.updated,
+          ticketUpdated: parsed.updated,
           summary: 'Plan awaiting approval.',
           action: buildAction('plan-approval', baseItem, {}),
         });

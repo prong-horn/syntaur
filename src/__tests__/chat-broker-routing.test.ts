@@ -7,9 +7,9 @@ import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
 import { openChatLog, readEvents } from '../chat/store.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, toolCall, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
-import { assignmentScopeKey, createChatBroker, type ChatBroker } from '../chat/broker.js';
+import { ticketScopeKey, createChatBroker, type ChatBroker } from '../chat/broker.js';
 import type { ChatEvent, ChatItem, Participants } from '../chat/types.js';
-import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 
 /**
  * Task 3 — routing through the broker, with one scripted fake ACP agent per
@@ -29,16 +29,13 @@ let fakes: Map<string, FakeAgent>;
 let clientsByAgent: Map<string, AcpClient>;
 
 const ASSIGNMENT_ID = 'c0ffee00-0000-4000-8000-00000000cafe';
-const SCOPE_KEY = assignmentScopeKey(ASSIGNMENT_ID);
+const SCOPE_KEY = ticketScopeKey(ASSIGNMENT_ID);
 
-const assignment = (): ResolvedAssignment => ({
+const assignment = (): ResolvedTicket => ({
   ticketDir: assignmentDir,
-  assignmentDir,
   projectSlug: 'syntaur-meta',
-  assignmentSlug: 'chat-demo',
   ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
-  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 
@@ -121,7 +118,7 @@ function makeBroker(
   clientsByAgent = new Map();
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'tickets'),
+    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     // Cloned: the broker broadcasts the live item object, which the normalizer
     // keeps mutating. In the server the WS layer serialises it immediately.

@@ -21,9 +21,9 @@ import {
   toTitleCase,
   writeStatusConfig,
 } from '../utils/config.js';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter, updateTicketFile } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
 import { deriveDimensions } from '../lifecycle/derive.js';
 import {
@@ -99,7 +99,7 @@ async function listTargets(projectsDir: string, standaloneDir: string): Promise<
 
 function seedFacts(content: string, status: string, blockedReason: string | null): string {
   let next = content;
-  const updates: Parameters<typeof updateAssignmentFile>[1] = {};
+  const updates: Parameters<typeof updateTicketFile>[1] = {};
   if (status === 'blocked' && blockedReason === null) {
     updates.blockedReason = '(unknown)';
   }
@@ -113,7 +113,7 @@ function seedFacts(content: string, status: string, blockedReason: string | null
   // the scalar explicitly as false (stage-fact-status-bridge).
   updates.reworkRequested = false;
   if (Object.keys(updates).length > 0) {
-    next = updateAssignmentFile(next, updates);
+    next = updateTicketFile(next, updates);
   }
   return next;
 }
@@ -121,7 +121,7 @@ function seedFacts(content: string, status: string, blockedReason: string | null
 export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promise<void> {
   const config = await readConfig();
   const projectsDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const standaloneDir = assignmentsDirFn();
+  const standaloneDir = ticketsDirFn();
   const context: DeriveContext = await resolveDeriveContext();
 
   // Materialize the parked headline status (codex finding: without a defined
@@ -161,7 +161,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
     } catch {
       continue;
     }
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
 
     if (context.terminalStatuses.has(fm.status)) {
       terminal++; // terminal assignments are untouched — derivation defers
@@ -173,7 +173,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
 
     if (options.dryRun) {
       // Read-only preview: compute what WOULD be derived post-seed.
-      const seededFm = parseAssignmentFrontmatter(seededContent);
+      const seededFm = parseTicketFrontmatter(seededContent);
       const body = seededContent.replace(/^---\n[\s\S]*?\n---/, '');
       const facts = await computeFacts({
         assignmentDir: resolve(target.path, '..'),
@@ -208,7 +208,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
       projectDir: target.projectDir,
       context,
       mutate: (current) => {
-        const currentFm = parseAssignmentFrontmatter(current);
+        const currentFm = parseTicketFrontmatter(current);
         return seedFacts(current, currentFm.status, currentFm.blockedReason);
       },
     });

@@ -80,6 +80,3 @@ export async function listTicketsByProject(
 
   return result;
 }
-
-/** @deprecated Task 1 compat shim */
-export const walkTickets = listTicketsByProject;

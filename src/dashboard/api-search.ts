@@ -40,7 +40,7 @@ function isTruthy(value: unknown): boolean {
 /**
  * `/api/search` — full-text content search over the indexed markdown bodies.
  *
- * Takes the SAME configured `projectsDir`/`assignmentsDir` the server holds so
+ * Takes the SAME configured `projectsDir`/`ticketsDir` the server holds so
  * the index matches exactly what the dashboard displays. Returns NEUTRAL hits
  * (snippet text + `matches` ranges + precomputed `route` + identity fields) —
  * the server emits NO HTML; the client escapes the snippet and wraps the ranges
@@ -48,7 +48,7 @@ function isTruthy(value: unknown): boolean {
  *
  * Mirrors `createSearchConfigRouter` (Router() factory + try/catch + 500 JSON).
  */
-export function createContentSearchRouter(projectsDir: string, assignmentsDir: string): Router {
+export function createContentSearchRouter(projectsDir: string, ticketsDir: string): Router {
   const router = Router();
 
   router.get('/', async (req, res) => {
@@ -84,7 +84,7 @@ export function createContentSearchRouter(projectsDir: string, assignmentsDir: s
       }
       if (limit > MAX_LIMIT) limit = MAX_LIMIT;
 
-      const docs = await getIndex({ projectsDir, assignmentsDir, includeArchived });
+      const docs = await getIndex({ projectsDir, ticketsDir, includeArchived });
       const provider = resolveProvider();
       await provider.index(docs);
 

@@ -1,12 +1,12 @@
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.js';
+import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig, type SyntaurConfig } from '../utils/config.js';
-import { appendStatusHistoryEntry, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { appendStatusHistoryEntry, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { withSuppressedEvents } from '../lifecycle/event-emit.js';
 import { TERMINAL_STATUSES } from '../lifecycle/types.js';
-import type { AssignmentFrontmatter } from '../lifecycle/types.js';
+import type { TicketFrontmatter } from '../lifecycle/types.js';
 
 export interface MigrateStatusHistoryOptions {
   dir?: string;
@@ -20,9 +20,9 @@ interface SeedTarget {
   seedAt: string;
 }
 
-async function parseSafe(path: string): Promise<AssignmentFrontmatter | null> {
+async function parseSafe(path: string): Promise<TicketFrontmatter | null> {
   try {
-    return parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    return parseTicketFrontmatter(await readFile(path, 'utf-8'));
   } catch {
     return null;
   }
@@ -49,7 +49,7 @@ function resolveTerminalSet(config: SyntaurConfig): ReadonlySet<string> {
  * (an approximation of completion time, making the derived `completedAt`
  * roughly correct); for everything else use `created` (the creation anchor).
  */
-function seedAtFor(fm: AssignmentFrontmatter, terminalStatuses: ReadonlySet<string>): string {
+function seedAtFor(fm: TicketFrontmatter, terminalStatuses: ReadonlySet<string>): string {
   const anchor = terminalStatuses.has(fm.status) ? fm.updated : fm.created;
   return anchor || fm.created || fm.updated || '';
 }
@@ -184,7 +184,7 @@ export async function migrateStatusHistoryCommand(
       try {
         const content = await readFile(t.assignmentMd, 'utf-8');
         // Re-check idempotency in case the file changed since the scan.
-        if (parseAssignmentFrontmatter(content).statusHistory.length > 0) continue;
+        if (parseTicketFrontmatter(content).statusHistory.length > 0) continue;
         const seededContent = appendStatusHistoryEntry(content, {
           at: t.seedAt,
           from: null,

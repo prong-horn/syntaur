@@ -14,7 +14,7 @@
  */
 
 import { Router, raw, type Request, type Response } from 'express';
-import { resolveTicketById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { ChatSendError, type ChatBroker } from '../chat/broker.js';
 import { ParticipantsError } from '../chat/participants.js';
 import {
@@ -239,7 +239,7 @@ export function createChatRouter(
         });
       }
       const { messageId } = await broker.send({
-        assignment,
+        ticket: assignment,
         agentId: body.agentId ?? null,
         text,
         ...(attachments.length ? { attachments } : {}),

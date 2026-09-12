@@ -105,7 +105,7 @@ export interface InboxItem {
   /** Permission/ask chat rows: card options from the chat index (API-enriched). */
   card?: InboxCard | null;
   /** Frontmatter `updated` (may be `''` when absent). Used for snooze fingerprints. */
-  assignmentUpdated: string;
+  ticketUpdated: string;
   /** Present when `includeSnoozed` is set and the row is snoozed. */
   snoozed?: { until: string | null };
 }

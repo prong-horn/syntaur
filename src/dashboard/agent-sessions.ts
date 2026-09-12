@@ -948,7 +948,7 @@ async function readAssignmentStatus(
  * Reconcile active sessions against assignment statuses.
  * Sessions whose assignments have moved to completed/failed/review are
  * marked as completed (or stopped for failed assignments).
- * Standalone sessions (project_slug NULL) are resolved via assignmentsDir.
+ * Standalone sessions (project_slug NULL) are resolved via ticketsDir.
  * Returns the number of sessions that were updated.
  */
 /**
@@ -964,18 +964,18 @@ async function readAssignmentStatus(
  * wrong fact about the work.
  *
  * `reconcileActiveSessions` reads assignment.md files, so it is given the same
- * `projectsDir` / `assignmentsDir` the watcher already carries.
+ * `projectsDir` / `ticketsDir` the watcher already carries.
  */
 export interface SessionMaintenanceDeps {
   /** Override the reconcile pass (tests inject a failing one). */
-  reconcile?: (projectsDir: string, assignmentsDir?: string) => Promise<number>;
+  reconcile?: (projectsDir: string, ticketsDir?: string) => Promise<number>;
   /** Where a reconcile failure is reported. Defaults to `console.error`. */
   log?: (message: string, err: unknown) => void;
 }
 
 export async function runSessionMaintenance(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
   sweepOptions: StaleSweepOptions = {},
   deps: SessionMaintenanceDeps = {},
 ): Promise<{ reconciled: number; swept: string[]; engagementsClosed: number }> {
@@ -988,7 +988,7 @@ export async function runSessionMaintenance(
   // must not quietly take that away (review round 2, finding 2).
   let reconciled = 0;
   try {
-    reconciled = await reconcile(projectsDir, assignmentsDir);
+    reconciled = await reconcile(projectsDir, ticketsDir);
   } catch (err) {
     log('[sessions] reconcileActiveSessions failed; sweeping anyway:', err);
   }
@@ -999,7 +999,7 @@ export async function runSessionMaintenance(
 
 export async function reconcileActiveSessions(
   projectsDir: string,
-  assignmentsDir?: string,
+  ticketsDir?: string,
 ): Promise<number> {
   const db = getSessionDb();
 
@@ -1035,9 +1035,9 @@ export async function reconcileActiveSessions(
         aslug,
       );
       if (status) assignmentStatuses.set(key, status);
-    } else if (assignmentsDir) {
+    } else if (ticketsDir) {
       const status = await readAssignmentStatusFromPath(
-        resolve(assignmentsDir, aslug, 'ticket.md'),
+        resolve(ticketsDir, aslug, 'ticket.md'),
       );
       if (status) assignmentStatuses.set(key, status);
     }

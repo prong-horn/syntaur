@@ -1090,8 +1090,3 @@ export function writeFrozenChecks(fileContent: string, checks: FrozenCheck[] | n
   if (checks.length === 0) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: []');
   return replaceListBlock(fileContent, 'frozenChecks', checks.map(renderFrozenCheckItem));
 }
-
-/** @deprecated migrate-* commands and dashboard compat until Task 2 */
-export const parseAssignmentFrontmatter = parseTicketFrontmatter;
-/** @deprecated migrate-* commands and dashboard compat until Task 2 */
-export const updateAssignmentFile = updateTicketFile;

@@ -1,16 +1,16 @@
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as getStandaloneDir } from '../utils/paths.js';
+import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
   appendStatusHistoryEntry,
-  parseAssignmentFrontmatter,
-  updateAssignmentFile,
+  parseTicketFrontmatter,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { withSuppressedEvents } from '../lifecycle/event-emit.js';
-import type { AssignmentFrontmatter } from '../lifecycle/types.js';
+import type { TicketFrontmatter } from '../lifecycle/types.js';
 
 export interface MigrateStatusesOptions {
   dir?: string;
@@ -101,10 +101,10 @@ async function collectCandidates(baseDirs: string[]): Promise<Candidate[]> {
   return candidates;
 }
 
-async function parseSafe(path: string): Promise<AssignmentFrontmatter | null> {
+async function parseSafe(path: string): Promise<TicketFrontmatter | null> {
   try {
     const content = await readFile(path, 'utf-8');
-    return parseAssignmentFrontmatter(content);
+    return parseTicketFrontmatter(content);
   } catch {
     return null;
   }
@@ -146,7 +146,7 @@ export async function migrateStatusesCommand(
     for (const c of candidates) {
       const content = await readFile(c.assignmentMd, 'utf-8');
       const updated = appendStatusHistoryEntry(
-        updateAssignmentFile(content, {
+        updateTicketFile(content, {
           status: c.toStatus,
           updated: now,
         }),

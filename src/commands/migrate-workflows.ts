@@ -51,13 +51,13 @@ import {
   type LadderCompileReport,
 } from '../lifecycle/ladder-compile.js';
 import { buildDeriveContext, type DeriveContext } from '../lifecycle/derive-context.js';
-import { resolveAssignmentWorkflowId } from '../lifecycle/workflow-context.js';
+import { resolveTicketWorkflowId } from '../lifecycle/workflow-context.js';
 import { computeFacts } from '../lifecycle/facts.js';
 import { placeTicket, type EngineInput } from '../lifecycle/stage-engine.js';
 import {
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   renameStatusInHistory,
-  updateAssignmentFile,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import { acquireLock, contentHash, markStagesMigrated } from '../lifecycle/recompute.js';
 
@@ -359,7 +359,7 @@ export async function computeSeedDecision(
   workflow: StageWorkflow,
   ctx: DeriveContext,
 ): Promise<SeedDecision | { error: string }> {
-  const fm = parseAssignmentFrontmatter(content);
+  const fm = parseTicketFrontmatter(content);
 
   // Terminal preservation (round-1 blocker 2): `status` verbatim, NEVER
   // reseeded from `phase` (89 live completed tickets carry `phase: review`).
@@ -541,9 +541,9 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
     } catch {
       continue;
     }
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     const binding = await bindingFor(target.projectDir);
-    const workflowId = resolveAssignmentWorkflowId(config, binding, fm, availableIds);
+    const workflowId = resolveTicketWorkflowId(config, binding, fm, availableIds);
     const workflow = workflowById.get(workflowId);
     if (!workflow) {
       errors.push(`${target.ref}: resolves to workflow "${workflowId}" which has no relocated file`);
@@ -609,11 +609,11 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
     const stage = d.stage;
     const remapFrom = d.remapFrom;
     await migrationWrite(d.target.path, (fresh) => {
-      const freshFm = parseAssignmentFrontmatter(fresh);
+      const freshFm = parseTicketFrontmatter(fresh);
       if (isAnyTerminal(freshFm.status)) return fresh; // raced to terminal — preserve
       let next = fresh;
       if (freshFm.status !== stage || freshFm.phase !== stage) {
-        next = updateAssignmentFile(next, { status: stage, phase: stage });
+        next = updateTicketFile(next, { status: stage, phase: stage });
       }
       // Pause-state remap: relabel history (`blocked`/`parked` cease to be
       // status ids); `blockedReason`/`parked` are NOT touched — the flag

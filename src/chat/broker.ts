@@ -218,8 +218,6 @@ export interface BrokerBroadcast {
 
 export interface CreateChatBrokerOptions {
   projectsDir: string;
-  assignmentsDir?: string;
-  /** Core rename alias — `assignmentsDir` kept for dashboard compat until Task 2. */
   ticketsDir?: string;
   broadcast: BrokerBroadcast;
   /** Injected by tests to wire an in-process fake agent instead of a subprocess. */
@@ -250,9 +248,7 @@ export class ChatSendError extends Error {
 
 export interface ChatBroker {
   send(input: {
-    ticket?: ResolvedTicket;
-    /** @deprecated Dashboard compat until Task 2 */
-    assignment?: ResolvedTicket;
+    ticket: ResolvedTicket;
     agentId?: string | null;
     text: string;
     attachments?: ChatAttachment[];
@@ -445,9 +441,6 @@ const EMPTY_TOKENS: ModelTokens = {
 export function ticketScopeKey(ticketId: string): string {
   return `${ticketId}:@assignment`;
 }
-
-/** @deprecated test compat — renamed to `ticketScopeKey` in Task 1 */
-export const assignmentScopeKey = ticketScopeKey;
 
 /** The assignment scope's live normalizer, plus what the broker reads back. */
 interface TicketScope {
@@ -3565,8 +3558,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   return {
-    async send({ ticket: ticketArg, assignment, agentId, text, attachments }) {
-      const ticket = ticketArg ?? assignment;
+    async send({ ticket, agentId, text, attachments }) {
       if (!ticket) throw new ChatSendError('No ticket target', 400);
       if (!text.trim() && !attachments?.length) throw new ChatSendError('Message is empty', 400);
       const { definitions, participants } = await routingContext(ticket);

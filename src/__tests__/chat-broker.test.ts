@@ -31,7 +31,7 @@ import {
 import { agentsDir } from '../chat/agents.js';
 import { readEvents } from '../chat/store.js';
 import type { ChatEvent, ChatItem } from '../chat/types.js';
-import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { parseProgress } from '../dashboard/parser.js';
 import { parseComments } from '../dashboard/parser.js';
@@ -53,14 +53,11 @@ let frames: Array<{ type: string; payload: unknown }>;
 
 const ASSIGNMENT_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
 
-const assignment = (): ResolvedAssignment => ({
+const assignment = (): ResolvedTicket => ({
   ticketDir: assignmentDir,
-  assignmentDir,
   projectSlug: 'syntaur-meta',
-  assignmentSlug: 'chat-demo',
   ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
-  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 
@@ -130,7 +127,7 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'tickets'),
+    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
     clientFactory,
@@ -890,7 +887,7 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     const failing = createFakeAgent({ resumeError: 'session not found', sessionIds: ['acp-session-2'] });
     const secondBroker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -1490,7 +1487,7 @@ describe('one event log per assignment (finding 4)', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2291,7 +2288,7 @@ describe('turn progress entries', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2486,7 +2483,7 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2521,7 +2518,7 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'tickets'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {

@@ -1206,6 +1206,6 @@ describe('inboxRowKey and rowFingerprint', () => {
     await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });
     const review = (await run()).items.find((i) => i.ticketSlug === 'rev-slug')!;
     expect(inboxRowKey(review)).toBe('review:rev-id');
-    expect(rowFingerprint(review)).toBe(`${review.since}|${review.assignmentUpdated}|`);
+    expect(rowFingerprint(review)).toBe(`${review.since}|${review.ticketUpdated}|`);
   });
 });

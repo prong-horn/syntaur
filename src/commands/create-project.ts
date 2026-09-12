@@ -8,7 +8,7 @@ import { readConfig } from '../utils/config.js';
 import {
   renderManifest,
   renderProject,
-  renderIndexAssignments,
+  renderIndexTickets,
   renderIndexPlans,
   renderIndexDecisions,
   renderStatus,
@@ -62,7 +62,7 @@ export async function createProjectCommand(
     ],
     [
       resolve(projectDir, '_index-tickets.md'),
-      renderIndexAssignments({ slug, title, timestamp }),
+      renderIndexTickets({ slug, title, timestamp }),
     ],
     [
       resolve(projectDir, '_index-plans.md'),
