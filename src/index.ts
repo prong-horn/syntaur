@@ -17,6 +17,7 @@ import { migrateStatusHistoryCommand } from './commands/migrate-status-history.j
 import { migrateEventsCommand } from './commands/migrate-events.js';
 import { migrateDeriveCommand } from './commands/migrate-derive.js';
 import { migrateWorkflowsCommand } from './commands/migrate-workflows.js';
+import { v2MigrateCommand } from './commands/migrate-v2.js';
 import {
   planApproveCommand,
   planUnapproveCommand,
@@ -74,14 +75,20 @@ import { runCommand } from './errors.js';
 // command does its own install-kind detection and must stay read-only for
 // --check/--dry-run (a startup prompt could install before it even runs).
 // Also skip for `setup --dry-run`, which must write nothing at all, and for
-// `migrate-workflows`, whose `--root <copy>` isolation is only set inside the
-// action — these hooks resolve (and could write) the REAL ~/.syntaur before
-// SYNTAUR_HOME is pointed at the copy (codex plan-review round-3 major).
+// `migrate-workflows` / `migrate`, whose `--root <copy>` isolation is only set
+// inside the action — these hooks resolve (and could write) the REAL ~/.syntaur
+// before SYNTAUR_HOME is pointed at the copy (codex plan-review round-3 major).
 {
   const sub = process.argv[2];
   const isDryRunSetup =
     sub === 'setup' && process.argv.slice(3).includes('--dry-run');
-  if (sub !== 'update' && sub !== 'upgrade' && sub !== 'migrate-workflows' && !isDryRunSetup) {
+  if (
+    sub !== 'update' &&
+    sub !== 'upgrade' &&
+    sub !== 'migrate-workflows' &&
+    sub !== 'migrate' &&
+    !isDryRunSetup
+  ) {
     await maybePromptInstall(import.meta.url);
     await maybeNudgeForNpxInstall(import.meta.url);
   }
@@ -747,6 +754,10 @@ program
       await regenPlaybookManifestCommand();
     }),
   );
+
+const migrateCommand = new Command('migrate').description('One-time data migrations');
+migrateCommand.addCommand(v2MigrateCommand);
+program.addCommand(migrateCommand);
 
 program.addCommand(doctorCommand);
 program.addCommand(projectCommand);

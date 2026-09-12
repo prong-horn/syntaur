@@ -19,6 +19,7 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'projects', // paths.ts
   'runtime', // session-id.ts
   'stages-migrated', // stages-marker.ts
+  'v2-migrated', // migrate-v2.ts
   'statusline.backup.json', // install-statusline.ts
   'statusline.conf', // install-statusline.ts
   'statusline.config.json', // configure-statusline.ts

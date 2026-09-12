@@ -1,0 +1,478 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import Database from 'better-sqlite3';
+import {
+  migrateV2Command,
+  V2_MIGRATED_MARKER,
+  migrateSessionKey,
+  migrateItemId,
+  migrateSnoozeKey,
+} from '../commands/migrate-v2.js';
+import {
+  closeSessionDb,
+  initSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { closeEventsDb, initEventsDb, resetEventsDb } from '../db/events-db.js';
+import { closeUsageDb, initUsageDb, resetUsageDb } from '../db/usage-db.js';
+import { renderProject } from '../templates/project.js';
+import { renderTicket } from '../templates/ticket.js';
+import { renderConfig } from '../templates/config.js';
+import { parseTicketFolderName } from '../utils/ticket-folder.js';
+
+const UUID_P1A = '11111111-1111-4111-8111-111111111111';
+const UUID_P1B = '22222222-2222-4222-8222-222222222222';
+const UUID_P2A = '33333333-3333-4333-8333-333333333333';
+const UUID_STANDALONE = '44444444-4444-4444-8444-444444444444';
+
+const TS_P1A = '2026-01-01T00:00:00.000Z';
+const TS_P1B = '2026-01-02T00:00:00.000Z';
+const TS_P2A = '2026-01-03T00:00:00.000Z';
+const TS_STANDALONE = '2026-01-04T00:00:00.000Z';
+
+let home: string;
+let priorHome: string | undefined;
+let fixtureHash: string;
+
+function ticketWithMeta(
+  id: string,
+  slug: string,
+  project: string | null,
+  created: string,
+): string {
+  const base = renderTicket({
+    id,
+    slug,
+    title: slug,
+    timestamp: created,
+    priority: 'medium',
+    dependsOn: [],
+    links: [],
+    project,
+    status: 'draft',
+  });
+  return base.replace(/^created:.*$/m, `created: "${created}"`);
+}
+
+async function hashTree(dir: string): Promise<string> {
+  const h = createHash('sha256');
+  async function walk(p: string): Promise<void> {
+    const entries = await readdir(p, { withFileTypes: true });
+    for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (e.name.startsWith('.')) continue;
+      const full = join(p, e.name);
+      h.update(full.slice(dir.length));
+      if (e.isDirectory()) await walk(full);
+      else h.update(await readFile(full));
+    }
+  }
+  await walk(dir);
+  return h.digest('hex');
+}
+
+async function buildFixture(root: string): Promise<void> {
+  const projectsDir = resolve(root, 'projects');
+  await mkdir(projectsDir, { recursive: true });
+
+  const ts = '2026-06-01T00:00:00.000Z';
+  for (const [slug, title] of [['p1', 'Project One'], ['p2', 'Project Two']] as const) {
+    const projectDir = resolve(projectsDir, slug);
+    await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      renderProject({
+        id: `${slug}-project-id`,
+        slug,
+        title,
+        timestamp: ts,
+        prefix: 'XX',
+        nextTicket: 99,
+      }),
+    );
+  }
+
+  await mkdir(resolve(projectsDir, 'p1', 'assignments', 'alpha-ticket'), { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'p1', 'assignments', 'alpha-ticket', 'assignment.md'),
+    ticketWithMeta(UUID_P1A, 'alpha-ticket', 'p1', TS_P1A),
+  );
+  await mkdir(resolve(projectsDir, 'p1', 'assignments', 'beta-ticket'), { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'p1', 'assignments', 'beta-ticket', 'assignment.md'),
+    ticketWithMeta(UUID_P1B, 'beta-ticket', 'p1', TS_P1B),
+  );
+  await mkdir(resolve(projectsDir, 'p2', 'assignments', 'gamma-ticket'), { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'p2', 'assignments', 'gamma-ticket', 'assignment.md'),
+    ticketWithMeta(UUID_P2A, 'gamma-ticket', 'p2', TS_P2A),
+  );
+
+  const standaloneDir = resolve(root, 'tickets', UUID_STANDALONE);
+  await mkdir(standaloneDir, { recursive: true });
+  await writeFile(
+    resolve(standaloneDir, 'assignment.md'),
+    ticketWithMeta(UUID_STANDALONE, 'orphan', null, TS_STANDALONE),
+  );
+
+  const chatDir = resolve(projectsDir, 'p1', 'assignments', 'alpha-ticket', 'chat');
+  await mkdir(chatDir, { recursive: true });
+  await writeFile(
+    resolve(chatDir, 'events.jsonl'),
+    `${JSON.stringify({
+      seq: 0,
+      ts: TS_P1A,
+      ticketId: UUID_P1A,
+      assignmentId: UUID_P1A,
+      agentId: 'claude',
+      sessionKey: `${UUID_P1A}:claude`,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'hello' },
+    })}\n`,
+  );
+
+  await writeFile(
+    resolve(root, 'inbox-snoozes.json'),
+    JSON.stringify(
+      {
+        [`${UUID_P1A}:review`]: {
+          until: '2099-01-01T00:00:00.000Z',
+          fingerprint: 'fp',
+          createdAt: TS_P1A,
+        },
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+
+  await writeFile(
+    resolve(root, 'config.md'),
+    renderConfig({ defaultProjectDir: '/old/elsewhere/projects' }),
+  );
+
+  const dbPath = resolve(root, 'syntaur.db');
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    INSERT INTO meta (key, value) VALUES ('schema_version', '12');
+    INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '1');
+    INSERT INTO meta (key, value) VALUES ('chat_schema_version', '4');
+    INSERT INTO meta (key, value) VALUES ('events_schema_version', '1');
+    INSERT INTO meta (key, value) VALUES ('usage_schema_version', '1');
+
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY,
+      agent TEXT NOT NULL,
+      started TEXT NOT NULL,
+      ended TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      path TEXT,
+      description TEXT,
+      transcript_path TEXT,
+      original_head_sha TEXT,
+      hosted_by TEXT,
+      summary TEXT,
+      summarized_at TEXT,
+      description_source TEXT,
+      pinned_at TEXT,
+      archived_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE engagement (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      assignment_id TEXT,
+      project_slug TEXT,
+      assignment_slug TEXT,
+      stage TEXT NOT NULL DEFAULT 'implement',
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      tokens_at_open TEXT,
+      tokens_at_close TEXT,
+      close_reason TEXT
+    );
+
+    CREATE TABLE events (
+      event_id TEXT PRIMARY KEY,
+      assignment_id TEXT NOT NULL,
+      project_slug TEXT,
+      at TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      type TEXT NOT NULL,
+      details TEXT,
+      source_key TEXT UNIQUE
+    );
+
+    CREATE TABLE chat_sessions (
+      session_key TEXT PRIMARY KEY,
+      assignment_id TEXT NOT NULL,
+      project_slug TEXT,
+      assignment_slug TEXT,
+      agent_id TEXT NOT NULL,
+      harness TEXT NOT NULL,
+      acp_session_id TEXT,
+      adapter_version TEXT,
+      cwd TEXT,
+      pid INTEGER,
+      profile_json TEXT,
+      usage_snapshot_json TEXT,
+      state TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL,
+      last_turn_at TEXT,
+      last_delivered_seq INTEGER NOT NULL DEFAULT 0,
+      commands_json TEXT,
+      standing_fingerprint TEXT
+    );
+
+    CREATE TABLE chat_items (
+      item_id TEXT PRIMARY KEY,
+      assignment_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      turn_id TEXT,
+      agent_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      ts TEXT NOT NULL,
+      seq_first INTEGER NOT NULL,
+      seq_last INTEGER NOT NULL,
+      sealed INTEGER NOT NULL DEFAULT 0,
+      json TEXT NOT NULL
+    );
+
+    CREATE TABLE usage_events (
+      session_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      event_ts TEXT NOT NULL,
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      total_cost REAL NOT NULL DEFAULT 0,
+      cwd TEXT,
+      project_slug TEXT NOT NULL DEFAULT '',
+      assignment_slug TEXT NOT NULL DEFAULT '',
+      raw_json TEXT,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, model)
+    );
+
+    CREATE TABLE usage_daily (
+      day TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      model TEXT NOT NULL,
+      project_slug TEXT NOT NULL DEFAULT '',
+      assignment_slug TEXT NOT NULL DEFAULT '',
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      total_tokens INTEGER NOT NULL DEFAULT 0,
+      total_cost REAL NOT NULL DEFAULT 0,
+      frozen INTEGER NOT NULL DEFAULT 0,
+      computed_at TEXT NOT NULL,
+      PRIMARY KEY (day, tool, model, project_slug, assignment_slug)
+    );
+  `);
+
+  db.prepare(
+    `INSERT INTO engagement
+       (session_id, assignment_id, project_slug, assignment_slug, stage, started_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('sess-1', UUID_P1A, 'p1', 'alpha-ticket', 'implement', TS_P1A);
+
+  db.prepare(
+    `INSERT INTO engagement
+       (session_id, assignment_id, project_slug, assignment_slug, stage, started_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('sess-empty', '', 'p1', 'beta-ticket', 'implement', TS_P1B);
+
+  db.prepare(
+    `INSERT INTO events (event_id, assignment_id, project_slug, at, actor, type)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('evt-1', UUID_P1A, 'p1', TS_P1A, 'human', 'logged');
+
+  db.prepare(
+    `INSERT INTO chat_sessions (session_key, assignment_id, project_slug, assignment_slug, agent_id, harness, state, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(`${UUID_P1A}:claude`, UUID_P1A, 'p1', 'alpha-ticket', 'claude', 'claude', 'idle', TS_P1A);
+
+  db.prepare(
+    `INSERT INTO chat_items (item_id, assignment_id, session_key, agent_id, type, ts, seq_first, seq_last, sealed, json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `session:${UUID_P1A}:claude:0`,
+    UUID_P1A,
+    `${UUID_P1A}:claude`,
+    'claude',
+    'user.message',
+    TS_P1A,
+    1,
+    1,
+    0,
+    '{}',
+  );
+
+  db.prepare(
+    `INSERT INTO usage_events (session_id, model, tool, event_ts, project_slug, assignment_slug, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('sess-1', 'claude-opus', 'claude', TS_P1A, 'p1', 'alpha-ticket', TS_P1A);
+
+  db.prepare(
+    `INSERT INTO usage_daily (day, tool, model, project_slug, assignment_slug, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+  ).run('2026-01-01', 'claude', 'claude-opus', 'p1', 'alpha-ticket', TS_P1A);
+
+  db.close();
+}
+
+beforeEach(async () => {
+  priorHome = process.env.SYNTAUR_HOME;
+  home = await mkdtemp(join(tmpdir(), 'syntaur-migrate-v2-'));
+  process.env.SYNTAUR_HOME = home;
+  resetSessionDb();
+  resetEventsDb();
+  resetUsageDb();
+  await buildFixture(home);
+  fixtureHash = await hashTree(home);
+});
+
+afterEach(async () => {
+  closeSessionDb();
+  closeEventsDb();
+  closeUsageDb();
+  resetSessionDb();
+  resetEventsDb();
+  resetUsageDb();
+  if (priorHome === undefined) delete process.env.SYNTAUR_HOME;
+  else process.env.SYNTAUR_HOME = priorHome;
+  await rm(home, { recursive: true, force: true });
+});
+
+describe('migrate v2 key helpers', () => {
+  it('detects id-prefixed folder names for half-applied guard', () => {
+    expect(parseTicketFolderName('SYN-1-half-applied')).toEqual({
+      id: 'SYN-1',
+      slug: 'half-applied',
+    });
+  });
+  it('migrates session keys and item ids', () => {
+    const uuidToId = new Map([[UUID_P1A, 'P1-1']]);
+    const itemMap = new Map<string, string>();
+    expect(migrateSessionKey(`${UUID_P1A}:claude`, uuidToId)).toBe('P1-1~claude');
+    expect(migrateSessionKey(`${UUID_P1A}:@assignment`, uuidToId)).toBe('P1-1~@ticket');
+    expect(migrateItemId(`session:${UUID_P1A}:claude:0`, uuidToId, itemMap)).toBe(
+      'session~P1-1~claude~0',
+    );
+    expect(migrateItemId('replay:1:2', uuidToId, itemMap)).toBe('replay~1~2');
+    expect(migrateSnoozeKey(`${UUID_P1A}:review`, uuidToId, itemMap)).toBe('P1-1~review');
+  });
+});
+
+describe('migrateV2Command', () => {
+  it('dry-run leaves the fixture byte-identical and prints [dry-run] transcript', async () => {
+    const { lines } = await migrateV2Command({ root: home, apply: false });
+    expect(await hashTree(home)).toBe(fixtureHash);
+    expect(lines.some((l) => l.startsWith('[dry-run] project p1: prefix P1,'))).toBe(true);
+    expect(lines.some((l) => l.includes('alpha-ticket → P1-1-alpha-ticket'))).toBe(true);
+    expect(lines.some((l) => l === `[dry-run] UUID ${UUID_P1A} → P1-1`)).toBe(true);
+    expect(lines.some((l) => l.includes('standalone: 1 tickets → scratch'))).toBe(true);
+    expect(lines.every((l) => l.startsWith('[dry-run]'))).toBe(true);
+  });
+
+  it('apply renames folders, assigns ids, re-keys db, and writes marker', async () => {
+    await migrateV2Command({ root: home, apply: true });
+
+    expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(true);
+    expect(await fileExists(resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'ticket.md'))).toBe(
+      true,
+    );
+    expect(
+      await fileExists(resolve(home, 'projects', 'p1', 'assignments')),
+    ).toBe(false);
+    expect(
+      await fileExists(resolve(home, 'projects', 'scratch', 'tickets', 'SCR-1-orphan', 'ticket.md')),
+    ).toBe(true);
+
+    const ticketMd = await readFile(
+      resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'ticket.md'),
+      'utf-8',
+    );
+    expect(ticketMd).toContain('id: P1-1');
+
+    const eventsLine = await readFile(
+      resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'chat', 'events.jsonl'),
+      'utf-8',
+    );
+    expect(eventsLine).toContain('"sessionKey":"P1-1~claude"');
+    expect(eventsLine).toContain('"ticketId":"P1-1"');
+    expect(eventsLine).not.toContain(`${UUID_P1A}:claude`);
+
+    const snoozes = JSON.parse(await readFile(resolve(home, 'inbox-snoozes.json'), 'utf-8'));
+    expect(Object.keys(snoozes)[0]).toBe('P1-1~review');
+
+    const dbPath = resolve(home, 'syntaur.db');
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
+    const sessionDb = initSessionDb(dbPath);
+    const eventsDb = initEventsDb(dbPath);
+    const usageDb = initUsageDb(dbPath);
+
+    const engagement = sessionDb
+      .prepare('SELECT ticket_id FROM engagement WHERE session_id = ?')
+      .get('sess-1') as { ticket_id: string };
+    expect(engagement.ticket_id).toBe('P1-1');
+
+    const engagementSlug = sessionDb
+      .prepare('SELECT ticket_id FROM engagement WHERE session_id = ?')
+      .get('sess-empty') as { ticket_id: string };
+    expect(engagementSlug.ticket_id).toBe('P1-2');
+
+    const event = eventsDb
+      .prepare('SELECT ticket_id FROM events WHERE event_id = ?')
+      .get('evt-1') as { ticket_id: string };
+    expect(event.ticket_id).toBe('P1-1');
+
+    const chatSession = sessionDb
+      .prepare('SELECT ticket_id, session_key FROM chat_sessions WHERE session_key = ?')
+      .get('P1-1~claude') as { ticket_id: string; session_key: string };
+    expect(chatSession.ticket_id).toBe('P1-1');
+    expect(chatSession.session_key).toBe('P1-1~claude');
+
+    const usage = usageDb
+      .prepare('SELECT ticket_id FROM usage_events WHERE session_id = ?')
+      .get('sess-1') as { ticket_id: string };
+    expect(usage.ticket_id).toBe('P1-1');
+
+    closeSessionDb();
+    closeEventsDb();
+    closeUsageDb();
+  });
+
+  it('refuses second apply when marker exists', async () => {
+    await migrateV2Command({ root: home, apply: true });
+    await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(/already completed/);
+  });
+
+  it('refuses apply when id-prefixed folders exist without marker', async () => {
+    const halfDir = resolve(home, 'projects', 'p1', 'assignments', 'SYN-1-half-applied');
+    await mkdir(halfDir, { recursive: true });
+    await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(/half-applied/);
+  });
+});
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
