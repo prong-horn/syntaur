@@ -5,16 +5,9 @@ import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { generateId } from '../utils/uuid.js';
 import { expandHome } from '../utils/paths.js';
-import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
+import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
-import {
-  renderManifest,
-  renderProject,
-  renderIndexTickets,
-  renderIndexPlans,
-  renderIndexDecisions,
-  renderStatus,
-} from '../templates/index.js';
+import { writeProjectScaffold } from '../utils/project-scaffold.js';
 import {
   collectExistingPrefixes,
   derivePrefix,
@@ -73,46 +66,14 @@ export async function projectNewCommand(
   const timestamp = nowTimestamp();
   const id = generateId();
 
-  await ensureDir(resolve(projectDir, 'tickets'));
-
-  const files: Array<[string, string]> = [
-    [
-      resolve(projectDir, 'manifest.md'),
-      renderManifest({ slug, timestamp }),
-    ],
-    [
-      resolve(projectDir, 'project.md'),
-      renderProject({
-        id,
-        slug,
-        title,
-        timestamp,
-        prefix,
-        nextTicket: 1,
-        defaultTemplate: 'feature',
-      }),
-    ],
-    [
-      resolve(projectDir, '_index-tickets.md'),
-      renderIndexTickets({ slug, title, timestamp }),
-    ],
-    [
-      resolve(projectDir, '_index-plans.md'),
-      renderIndexPlans({ slug, title, timestamp }),
-    ],
-    [
-      resolve(projectDir, '_index-decisions.md'),
-      renderIndexDecisions({ slug, title, timestamp }),
-    ],
-    [
-      resolve(projectDir, '_status.md'),
-      renderStatus({ slug, title, timestamp }),
-    ],
-  ];
-
-  for (const [filePath, content] of files) {
-    await writeFileForce(filePath, content);
-  }
+  await writeProjectScaffold(projectDir, {
+    slug,
+    title,
+    prefix,
+    nextTicket: 1,
+    id,
+    timestamp,
+  });
 
   if (!options.silent) {
     console.log(`Created project "${title}" at ${projectDir}/`);

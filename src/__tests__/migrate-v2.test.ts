@@ -23,6 +23,9 @@ import { renderProject } from '../templates/project.js';
 import { renderTicket } from '../templates/ticket.js';
 import { renderConfig } from '../templates/config.js';
 import { parseTicketFolderName } from '../utils/ticket-folder.js';
+import { REQUIRED_PROJECT_SCAFFOLD_FILES } from '../utils/project-scaffold.js';
+import { buildCheckContext, closeCheckContext } from '../utils/doctor/context.js';
+import { projectChecks } from '../utils/doctor/checks/project.js';
 
 const UUID_P1A = '11111111-1111-4111-8111-111111111111';
 const UUID_P1B = '22222222-2222-4222-8222-222222222222';
@@ -527,6 +530,24 @@ describe('migrateV2Command', () => {
     expect(scratchProject).toContain('prefix: SCR');
     expect(scratchProject).toContain('nextTicket:');
     expect(scratchProject).toContain('defaultTemplate: feature');
+    const scratchDir = resolve(home, 'projects', 'scratch');
+    for (const file of REQUIRED_PROJECT_SCAFFOLD_FILES) {
+      expect(await fileExists(resolve(scratchDir, file))).toBe(true);
+    }
+    const scratchIndex = await readFile(resolve(scratchDir, '_index-tickets.md'), 'utf-8');
+    expect(scratchIndex).toContain('SCR-1-orphan');
+    expect(scratchIndex).toContain('total: 1');
+    const scratchManifest = await readFile(resolve(scratchDir, 'manifest.md'), 'utf-8');
+    expect(scratchManifest).toContain('_index-tickets.md');
+    const doctorCtx = await buildCheckContext();
+    const requiredCheck = projectChecks.find((c) => c.id === 'project.required-files-present')!;
+    const requiredResult = await requiredCheck.run(doctorCtx);
+    closeCheckContext(doctorCtx);
+    const requiredIssues = Array.isArray(requiredResult) ? requiredResult : [requiredResult];
+    const scratchErrors = requiredIssues.filter(
+      (r) => r.status === 'error' && r.detail?.includes(`${scratchDir}`),
+    );
+    expect(scratchErrors).toHaveLength(0);
     expect(await fileExists(resolve(home, 'assignments'))).toBe(false);
     expect(await fileExists(resolve(home, 'tickets'))).toBe(false);
 

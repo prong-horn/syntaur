@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { newCommand } from '../commands/new.js';
 import { renameCommand } from '../commands/rename.js';
 import { projectNewCommand } from '../commands/project.js';
+import { REQUIRED_PROJECT_SCAFFOLD_FILES } from '../utils/project-scaffold.js';
+import { buildCheckContext, closeCheckContext } from '../utils/doctor/context.js';
+import { projectChecks } from '../utils/doctor/checks/project.js';
 
 let testDir: string;
 let origHome: string | undefined;
@@ -30,9 +33,21 @@ describe('scratch project', () => {
     const second = await newCommand('Two', { dir: resolve(testDir, 'projects'), silent: true });
     expect(first.id).toBe('SCR-1');
     expect(second.id).toBe('SCR-2');
-    const scratchTickets = resolve(testDir, 'projects', 'scratch', 'tickets');
+    const scratchDir = resolve(testDir, 'projects', 'scratch');
+    const scratchTickets = resolve(scratchDir, 'tickets');
     const folders = await readdir(scratchTickets);
     expect(folders.sort()).toEqual(['SCR-1-one', 'SCR-2-two']);
+
+    for (const file of REQUIRED_PROJECT_SCAFFOLD_FILES) {
+      await expect(stat(resolve(scratchDir, file))).resolves.toBeDefined();
+    }
+
+    const ctx = await buildCheckContext();
+    const check = projectChecks.find((c) => c.id === 'project.required-files-present')!;
+    const result = await check.run(ctx);
+    closeCheckContext(ctx);
+    const issues = Array.isArray(result) ? result : [result];
+    expect(issues.every((r) => r.status !== 'error')).toBe(true);
   });
 });
 

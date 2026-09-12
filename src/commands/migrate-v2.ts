@@ -16,7 +16,10 @@ import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { derivePrefix } from '../utils/ticket-ids.js';
 import { formatTicketFolderName, parseTicketFolderName } from '../utils/ticket-folder.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
-import { renderProject } from '../templates/project.js';
+import {
+  rebuildProjectTicketIndex,
+  writeProjectScaffold,
+} from '../utils/project-scaffold.js';
 import { rebuildChatIndex } from '../chat/store.js';
 import {
   closeSessionDb,
@@ -1118,21 +1121,26 @@ async function ensureScratchProject(
 ): Promise<void> {
   const scratchDir = resolve(projectsDir, 'scratch');
   const projectMd = resolve(scratchDir, 'project.md');
-  if (await fileExists(projectMd)) return;
-  await ensureDir(scratchDir);
-  const ts = new Date().toISOString();
-  await writeFileForce(
-    projectMd,
-    renderProject({
-      id: randomUUID(),
-      slug: 'scratch',
-      title: 'Scratch',
-      timestamp: ts,
-      prefix,
-      nextTicket,
-      defaultTemplate: 'feature',
-    }),
-  );
+  if (await fileExists(projectMd)) {
+    await writeProjectScaffold(
+      scratchDir,
+      {
+        slug: 'scratch',
+        title: 'Scratch',
+        prefix,
+        nextTicket,
+      },
+      { onlyMissing: true },
+    );
+    return;
+  }
+  await writeProjectScaffold(scratchDir, {
+    slug: 'scratch',
+    title: 'Scratch',
+    prefix,
+    nextTicket,
+    id: randomUUID(),
+  });
 }
 
 function retargetTicketDir(ticket: DiscoveredTicket, fromSub: string, toSub: string): void {
@@ -1242,6 +1250,8 @@ async function applyFilesystemMigration(
         await rm(base, { recursive: true, force: true });
       }
     }
+
+    await rebuildProjectTicketIndex(resolve(projectsDir, 'scratch'));
   }
 }
 
