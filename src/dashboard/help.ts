@@ -19,9 +19,9 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur init',
   },
   {
-    command: 'syntaur create-project',
+    command: 'syntaur project new',
     description: 'Create a new project folder with the required source and derived files.',
-    example: 'syntaur create-project "Ship dashboard overhaul"',
+    example: 'syntaur project new "Ship dashboard overhaul"',
   },
   {
     command: 'syntaur new',

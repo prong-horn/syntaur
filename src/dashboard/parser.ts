@@ -147,6 +147,9 @@ export interface ParsedProject {
   id: string;
   slug: string;
   title: string;
+  prefix: string | null;
+  nextTicket: number | null;
+  defaultTemplate: string | null;
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
@@ -175,10 +178,19 @@ export function parseProject(fileContent: string): ParsedProject {
   // fs-migration helper renames the file but doesn't rewrite user-owned
   // frontmatter. Accept either key.
   const slug = getField(fm, 'slug') ?? getField(fm, 'mission') ?? '';
+  const nextTicketRaw = getField(fm, 'nextTicket');
+  const nextTicketParsed =
+    nextTicketRaw === null ? null : Number.parseInt(nextTicketRaw, 10);
   return {
     id: getField(fm, 'id') ?? '',
     slug,
     title: getField(fm, 'title') ?? '',
+    prefix: getField(fm, 'prefix'),
+    nextTicket:
+      nextTicketParsed === null || Number.isNaN(nextTicketParsed)
+        ? null
+        : nextTicketParsed,
+    defaultTemplate: getField(fm, 'defaultTemplate'),
     archived: getField(fm, 'archived') === 'true',
     archivedAt: getField(fm, 'archivedAt'),
     archivedReason: getField(fm, 'archivedReason'),

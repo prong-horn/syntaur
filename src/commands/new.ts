@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { generateId } from '../utils/uuid.js';
+import { allocateTicketId } from '../utils/ticket-ids.js';
 import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
@@ -105,15 +105,17 @@ export async function newCommand(
 
   const config = await readConfig();
   const timestamp = nowTimestamp();
-  const id = generateId();
 
   let ticketDir: string;
   let projectSlug: string | null;
   let folderName: string;
+  let id: string;
 
   if (options.oneOff) {
-    // Standalone: folder name = UUID, project: null
+    // Standalone: folder name = UUID, project: null (removed in Task 6)
     const standaloneRoot = ticketsDirFn();
+    const { generateId } = await import('../utils/uuid.js');
+    id = generateId();
     folderName = id;
     ticketDir = resolve(standaloneRoot, folderName);
     projectSlug = null;
@@ -128,9 +130,11 @@ export async function newCommand(
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(
-        `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur create-project' first or use --one-off.`,
+        `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur project new' first or use --one-off.`,
       );
     }
+
+    id = await allocateTicketId(projectDir);
 
     if (dependsOn.length > 0) {
       const depDirBase = resolve(projectDir, 'tickets');
@@ -228,6 +232,7 @@ export async function newCommand(
       console.log(
         `Created ticket "${title}" in project "${projectSlug}" at ${ticketDir}/`,
       );
+      console.log(`  Id: ${id}`);
       console.log(`  Slug: ${ticketSlug}`);
     }
     console.log(`  Priority: ${priority}`);

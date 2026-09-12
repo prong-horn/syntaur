@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createProjectCommand } from '../commands/create-project.js';
 import { newCommand } from '../commands/new.js';
+import { isTicketId } from '../utils/ticket-ids.js';
 import { trackSessionCommand } from '../commands/track-session.js';
 import {
   closeSessionDb,
@@ -59,6 +60,14 @@ describe('createProjectCommand', () => {
       'utf-8',
     );
     expect(content).toContain('slug: my-great-project');
+  });
+
+  it('writes prefix, nextTicket, and defaultTemplate in project.md', async () => {
+    await createProjectCommand('Fitsync', { slug: 'fitsync', dir: testDir });
+    const content = await readFile(resolve(testDir, 'fitsync', 'project.md'), 'utf-8');
+    expect(content).toContain('prefix: FIT');
+    expect(content).toContain('nextTicket: 1');
+    expect(content).toContain('defaultTemplate: feature');
   });
 
   it('uses custom slug when provided', async () => {

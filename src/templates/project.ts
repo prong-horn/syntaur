@@ -5,6 +5,12 @@ export interface ProjectParams {
   slug: string;
   title: string;
   timestamp: string;
+  /** Short per-project ticket id prefix (e.g. FIT, SCR). */
+  prefix: string;
+  /** Next ticket counter value; ids are never reused. */
+  nextTicket?: number;
+  /** Default ticket template for `syntaur new` in this project. */
+  defaultTemplate?: string;
   /**
    * Repository paths the project spans. Each entry is YAML-escaped on
    * render so paths with spaces / colons / quotes don't corrupt the
@@ -51,10 +57,15 @@ export function renderProject(params: ProjectParams): string {
     params.defaultWorkflow,
     params.workflowByType,
   );
+  const nextTicket = params.nextTicket ?? 1;
+  const defaultTemplate = params.defaultTemplate ?? 'feature';
   return `---
 id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
+prefix: ${params.prefix}
+nextTicket: ${nextTicket}
+defaultTemplate: ${defaultTemplate}
 archived: false
 archivedAt: null
 archivedReason: null

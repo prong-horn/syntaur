@@ -7,6 +7,7 @@ import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
 import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
+import { allocateTicketId, derivePrefix } from '../utils/ticket-ids.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import {
@@ -469,6 +470,9 @@ export function createWriteRouter(
       slug: 'my-new-project',
       title: 'My New Project',
       timestamp: nowTimestamp(),
+      prefix: derivePrefix('my-new-project'),
+      nextTicket: 1,
+      defaultTemplate: 'feature',
     });
     res.json({ content });
   });
@@ -619,21 +623,25 @@ export function createWriteRouter(
       }
 
       const timestamp = fields.created || nowTimestamp();
+      const ticketId = await allocateTicketId(projectDir);
+      const contentWithId = /^id:\s/m.test(content)
+        ? content.replace(/^id:\s*.*$/m, `id: ${ticketId}`)
+        : content.replace(/^(---\n)/, `---\nid: ${ticketId}\n`);
 
       await ensureDir(ticketDir);
       // Raw create bypasses renderTicket, so seed the statusHistory here
       // (only when the body didn't already supply one — never double-seed).
-      const parsedCreate = parseTicketFull(content);
+      const parsedCreate = parseTicketFull(contentWithId);
       const seededHere = parsedCreate.statusHistory.length === 0;
       const seededContent = seededHere
-        ? appendStatusHistoryEntry(content, {
+        ? appendStatusHistoryEntry(contentWithId, {
             at: timestamp,
             from: null,
             to: parsedCreate.status,
             command: 'create',
             by: null,
           })
-        : content;
+        : contentWithId;
       await writeFileForce(resolve(ticketDir, 'ticket.md'), seededContent);
 
       try {

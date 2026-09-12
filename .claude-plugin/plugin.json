@@ -13,7 +13,7 @@
     "./skills/plan-ticket",
     "./skills/complete-ticket",
     "./skills/create-ticket",
-    "./skills/create-project",
+    "./skills/project-new",
     "./skills/manage-statuses",
     "./skills/clear-ticket",
     "./skills/track-session",

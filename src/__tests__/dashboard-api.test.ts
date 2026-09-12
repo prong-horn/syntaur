@@ -963,7 +963,7 @@ describe('help and editable documents', () => {
     const commandNames = help.commands.map((command) => command.command);
 
     expect(commandNames).toContain('syntaur dashboard');
-    expect(commandNames).toContain('syntaur create-project');
+    expect(commandNames).toContain('syntaur project new');
     expect(commandNames).not.toContain('syntaur rebuild');
     expect(help.coreConcepts.some((concept) => concept.term === 'Project')).toBe(true);
   });

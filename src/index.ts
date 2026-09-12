@@ -1,6 +1,6 @@
 import { Command, InvalidArgumentError } from 'commander';
 import { initCommand } from './commands/init.js';
-import { createProjectCommand } from './commands/create-project.js';
+import { projectCommand } from './commands/project.js';
 import { newCommand } from './commands/new.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
@@ -101,18 +101,6 @@ program
   .action(
     runCommand(async (options) => {
       await initCommand(options);
-    }),
-  );
-
-program
-  .command('create-project')
-  .description('Create a new project with all required files')
-  .argument('<title>', 'Project title')
-  .option('--slug <slug>', 'Override auto-generated slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (title, options) => {
-      await createProjectCommand(title, options);
     }),
   );
 
@@ -749,6 +737,7 @@ program
   );
 
 program.addCommand(doctorCommand);
+program.addCommand(projectCommand);
 program.addCommand(planCommand);
 program.addCommand(sessionCommand);
 program.addCommand(worktreeCommand);
@@ -768,7 +757,7 @@ program.addHelpText(
   `
 Common workflow:
   $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
-  $ syntaur create-project "My App"                Start a new project
+  $ syntaur project new "My App"                   Start a new project
   $ syntaur new --project my-app "Add login"   Add a ticket to a project
   $ syntaur dashboard                              Open the local web dashboard
   $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes

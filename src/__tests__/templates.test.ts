@@ -41,9 +41,15 @@ describe('renderProject', () => {
       slug: 'test-project',
       title: 'Test Project',
       timestamp: TIMESTAMP,
+      prefix: 'TES',
+      nextTicket: 1,
+      defaultTemplate: 'feature',
     });
     expect(out).toContain('id: test-uuid');
     expect(out).toContain('slug: test-project');
+    expect(out).toContain('prefix: TES');
+    expect(out).toContain('nextTicket: 1');
+    expect(out).toContain('defaultTemplate: feature');
     expect(out).toContain('title: "Test Project"');
     expect(out).toContain('archived: false');
     expect(out).toContain('archivedAt: null');
@@ -60,6 +66,7 @@ describe('renderProject', () => {
       slug: 's',
       title: 'T',
       timestamp: TIMESTAMP,
+      prefix: 'S',
     });
     expect(out).toContain('# T');
     expect(out).toContain('## Overview');
