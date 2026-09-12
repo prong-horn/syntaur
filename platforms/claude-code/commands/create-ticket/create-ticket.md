@@ -1,15 +1,15 @@
 ---
 name: create-ticket
-description: Create a new Syntaur ticket (project-nested or standalone one-off)
+description: Create a new Syntaur ticket (project-nested or scratch default)
 arguments:
   - name: args
-    description: "Title and flags. See the create-ticket skill for supported forms (e.g. --project <slug>, --one-off, --type <type>)."
+    description: "Title and flags. See the create-ticket skill for supported forms (e.g. --project <slug>, --type <type>)."
     required: false
 ---
 
 # /create-ticket
 
-Thin wrapper that invokes the `create-ticket` skill. The skill lives in `~/.claude/skills/create-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking project-nested or standalone, validating the type, scaffolding ticket.md / progress.md / comments.md.
+Thin wrapper that invokes the `create-ticket` skill. The skill lives in `~/.claude/skills/create-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking a project or scratch default, validating the type, scaffolding ticket.md / progress.md / comments.md.
 
 ## Instructions
 

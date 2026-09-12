@@ -46,7 +46,7 @@ describe('commentCommand', () => {
     expect(before).toContain('entryCount: 0');
     expect(before).toContain('No comments yet.');
 
-    await commentCommand('a', 'Why this design?', {
+    await commentCommand('CMT-1', 'Why this design?', {
       project: 'p',
       type: 'question',
       author: 'claude-1',
@@ -64,13 +64,13 @@ describe('commentCommand', () => {
 
   it('rejects empty text', async () => {
     await expect(
-      commentCommand('a', '   ', { project: 'p', dir: testDir }),
+      commentCommand('CMT-1', '   ', { project: 'p', dir: testDir }),
     ).rejects.toThrow('empty');
   });
 
   it('rejects an invalid type', async () => {
     await expect(
-      commentCommand('a', 'body', {
+      commentCommand('CMT-1', 'body', {
         project: 'p',
         // @ts-expect-error — intentionally invalid
         type: 'bogus',
@@ -80,8 +80,8 @@ describe('commentCommand', () => {
   });
 
   it('records the reply-to pointer when set', async () => {
-    await commentCommand('a', 'parent', { project: 'p', type: 'question', author: 'a', dir: testDir });
-    await commentCommand('a', 'child', { project: 'p', type: 'note', replyTo: 'abc12345', author: 'b', dir: testDir });
+    await commentCommand('CMT-1', 'parent', { project: 'p', type: 'question', author: 'a', dir: testDir });
+    await commentCommand('CMT-1', 'child', { project: 'p', type: 'note', replyTo: 'abc12345', author: 'b', dir: testDir });
 
     const content = await readFile(resolve(ticketDir, 'comments.md'), 'utf-8');
     expect(content).toContain('**Reply to:** abc12345');

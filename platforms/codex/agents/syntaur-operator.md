@@ -9,7 +9,7 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 
 ## Primary Responsibilities
 
-- Create projects and tickets (project-nested or standalone) with the `syntaur` CLI
+- Create projects and tickets (project-nested or scratch default) with the `syntaur` CLI
 - Claim tickets and establish local ticket context
 - Keep `ticket.md`, active plan files (`plan.md`, `plan-v2.md`, ...), `progress.md`, `handoff.md` (cross-ticket outbound), and any active `sessions/<sid>/summary.md` (mid-ticket continuity) accurate during execution
 - Record questions/notes/feedback via `syntaur comment`
@@ -21,7 +21,7 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 
 When a task involves Syntaur:
 
-1. Determine whether the user needs project creation, ticket creation (project-nested or `--one-off` standalone), ticket execution, completion/handoff, or session tracking.
+1. Determine whether the user needs project creation, ticket creation (project-nested or scratch default), ticket execution, completion/handoff, or session tracking.
 2. If `.syntaur/context.json` exists in the current working directory, read it first.
 3. If working on a specific ticket, read these in order:
    - `<projectDir>/manifest.md` (project-nested tickets only)
@@ -34,7 +34,7 @@ When a task involves Syntaur:
    - the latest `<ticketDir>/sessions/<sid>/summary.md` (selected by file mtime) if present — mid-ticket continuity from a prior session
 4. Resolve the workspace boundary from `.syntaur/context.json` or `ticket.md` frontmatter before editing code.
 
-Project-nested tickets live at `~/.syntaur/projects/<slug>/tickets/<aslug>/`. Standalone tickets live at `~/.syntaur/tickets/<uuid>/` — folder named by UUID, `project: null`, `slug` display-only.
+Tickets live at `~/.syntaur/projects/<slug>/tickets/<ID>-<slug>/` where `<ID>` is `<PREFIX>-<n>`. `syntaur new` without `--project` uses the `scratch` project (`SCR-<n>`).
 
 ## File Ownership
 
@@ -61,14 +61,14 @@ Project-nested tickets live at `~/.syntaur/projects/<slug>/tickets/<aslug>/`. St
 
 ### Write only via CLI (never edit directly)
 
-- `comments.md` (any ticket) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly. Questions carry a `resolved` flag toggled in the dashboard.
+- `comments.md` (any ticket) — use `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly. Questions carry a `resolved` flag toggled in the dashboard.
 
 ## Protocol Rules
 
-- Ticket frontmatter is the single source of truth for ticket state. `project` is the containing project slug (`null` for standalone); `type` is a classification validated against `config.md` `types.definitions` when present.
-- Slugs are lowercase and hyphen-separated. Standalone ticket folders are named by UUID; `slug` is display-only in that case.
+- Ticket frontmatter is the single source of truth for ticket state. `id` is `<PREFIX>-<n>`; `project` is the containing project slug; `type` is a classification validated against `config.md` `types.definitions` when present.
+- Folders are `<ID>-<slug>` under `projects/<project>/tickets/`.
 - `pending` with unmet `dependsOn` means structural waiting. `blocked` means a real runtime obstacle and requires a `blockedReason`.
-- `dependsOn` is only valid between tickets within the same project — standalone tickets cannot declare dependencies.
+- `dependsOn` and `links` hold ticket ids (`<PREFIX>-<n>`).
 - Update acceptance criteria checkboxes as work lands.
 - Append timestamped entries to `progress.md` (not to `ticket.md`) after meaningful milestones.
 - When requirements shift, write a new versioned plan file instead of rewriting the old one.
@@ -81,7 +81,7 @@ Use these commands directly when needed:
 
 - `syntaur create-project "<title>" [--slug <slug>] [--dir <path>]`
 - `syntaur new "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
-- `syntaur new "<title>" --one-off [--slug <slug>] [--priority <level>] [--type <type>] [--dir <path>]` — creates standalone at `~/.syntaur/tickets/<uuid>/`
+- `syntaur new "<title>" [--project <slug>] [--slug <slug>] ...` — omit `--project` to create in `scratch` (`SCR-<n>`)
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <ticket-slug> --agent codex --project <project-slug>`
 - `syntaur start <ticket-slug> --project <project-slug>`

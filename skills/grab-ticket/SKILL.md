@@ -1,8 +1,7 @@
 ---
 name: grab-ticket
 description: >-
-  Discover and claim a pending Syntaur ticket from a project (or a
-  standalone one-off). Use when the user wants to start working on a Syntaur
+  Discover and claim a pending Syntaur ticket by id. Use when the user wants to start working on a Syntaur
   ticket, claim a task, or set up their working context.
 license: MIT
 metadata:

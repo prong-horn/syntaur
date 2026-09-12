@@ -19,7 +19,7 @@
  *     fact actually changes; semantic-diff (never writes a no-change value, so a
  *     monotonic re-assert or a same-stage repeat is a true no-op).
  *   - Failures propagate (Decision 8); the only no-op is an unattributed
- *     engagement (assignment_id that doesn't resolve to a file).
+ *     engagement (ticket_id that doesn't resolve to a file).
  */
 
 import { readFile } from 'node:fs/promises';

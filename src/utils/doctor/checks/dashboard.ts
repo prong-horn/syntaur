@@ -63,15 +63,13 @@ const ghostSessions: Check = {
     if (!ctx.db) {
       return skipped(this, 'skipped: db not reachable');
     }
-    let rows: Array<{ session_id: string; project_slug: string | null; assignment_slug: string | null }>;
+    let rows: Array<{ session_id: string; ticket_id: string | null }>;
     try {
-      // v6: the scalar binding lives on the engagement edge. One row per
-      // (session, project) binding; DISTINCT dedups multiple engagements.
       rows = ctx.db
         .prepare(
-          `SELECT DISTINCT session_id, project_slug, assignment_slug
+          `SELECT DISTINCT session_id, ticket_id
              FROM engagement
-            WHERE project_slug IS NOT NULL`,
+            WHERE ticket_id IS NOT NULL AND ticket_id != ''`,
         )
         .all() as typeof rows;
     } catch {
@@ -79,51 +77,26 @@ const ghostSessions: Check = {
     }
 
     const projectsDir = ctx.config.defaultProjectDir;
+    const { resolveTicketById } = await import('../../ticket-resolver.js');
     const results: CheckResult[] = [];
     for (const row of rows) {
-      if (!row.project_slug) continue;
-      const projectPath = resolve(projectsDir, row.project_slug, 'project.md');
-      if (!(await fileExists(projectPath))) {
+      if (!row.ticket_id) continue;
+      const resolved = await resolveTicketById(projectsDir, row.ticket_id);
+      if (!resolved) {
         results.push({
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'warn',
-          detail: `session ${row.session_id} references missing project "${row.project_slug}"`,
-          affected: [projectPath],
+          detail: `session ${row.session_id} references missing ticket "${row.ticket_id}"`,
+          affected: [],
           remediation: {
             kind: 'manual',
-            suggestion: 'Remove the session row or restore the project',
+            suggestion: 'Remove the session row or restore the ticket folder',
             command: null,
           },
           autoFixable: false,
         });
-        continue;
-      }
-      if (row.assignment_slug) {
-        const ticketPath = resolve(
-          projectsDir,
-          row.project_slug,
-          'tickets',
-          row.assignment_slug,
-          'ticket.md',
-        );
-        if (!(await fileExists(ticketPath))) {
-          results.push({
-            id: this.id,
-            category: this.category,
-            title: this.title,
-            status: 'warn',
-            detail: `session ${row.session_id} references missing ticket "${row.project_slug}/${row.assignment_slug}"`,
-            affected: [ticketPath],
-            remediation: {
-              kind: 'manual',
-              suggestion: 'Remove the session row or restore the ticket folder',
-              command: null,
-            },
-            autoFixable: false,
-          });
-        }
       }
     }
     if (results.length === 0) return pass(this);

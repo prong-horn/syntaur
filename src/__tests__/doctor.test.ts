@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import Database from 'better-sqlite3';
 import { runChecks } from '../utils/doctor/index.js';
 import { renderJson } from '../utils/doctor/output-json.js';
 import { renderHuman } from '../utils/doctor/output-human.js';
@@ -388,5 +389,64 @@ describe('syntaur doctor', () => {
     await initBaseline();
     const report = await runChecks({ only: 'env.config-valid' });
     expect(report.checks.every((c) => c.id === 'env.config-valid')).toBe(true);
+  });
+
+  it('warns when engagement ticket_id references a missing ticket folder', async () => {
+    await initBaseline();
+    const dbPath = resolve(syntaurDir, 'syntaur.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+      CREATE TABLE engagement (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        ticket_id TEXT,
+        stage TEXT NOT NULL DEFAULT 'implement',
+        started_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `INSERT INTO engagement (session_id, ticket_id, stage, started_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run('sess-ghost', 'TP-99', 'implement', '2026-01-01T00:00:00Z');
+    db.close();
+
+    const report = await runChecks({ only: 'dashboard.ghost-sessions' });
+    const issues = byId(report, 'dashboard.ghost-sessions').filter((c) => c.status === 'warn');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]?.detail).toContain('sess-ghost');
+    expect(issues[0]?.detail).toContain('TP-99');
+  });
+
+  it('passes ghost-sessions when engagement ticket_id resolves on disk', async () => {
+    await initBaseline();
+    const projectDir = await writeProjectScaffold('p1');
+    const ticketDir = resolve(projectDir, 'tickets', 'TP-1-existing');
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      `---\nid: TP-1\nslug: existing\ntitle: Existing\nstatus: pending\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n\n# Existing\n`,
+    );
+
+    const dbPath = resolve(syntaurDir, 'syntaur.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE sessions (session_id TEXT PRIMARY KEY);
+      CREATE TABLE engagement (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        ticket_id TEXT,
+        stage TEXT NOT NULL DEFAULT 'implement',
+        started_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `INSERT INTO engagement (session_id, ticket_id, stage, started_at)
+       VALUES (?, ?, ?, ?)`,
+    ).run('sess-ok', 'TP-1', 'implement', '2026-01-01T00:00:00Z');
+    db.close();
+
+    const report = await runChecks({ only: 'dashboard.ghost-sessions' });
+    expect(byId(report, 'dashboard.ghost-sessions')[0]?.status).toBe('pass');
   });
 });

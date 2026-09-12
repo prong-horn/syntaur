@@ -83,8 +83,8 @@ When starting work on an existing ticket, read these in order:
 - `syntaur block <slug> --project <project> --reason <text>` — block
 - `syntaur unblock <slug> --project <project>` — unblock
 - `syntaur fail <slug> --project <project>` — mark as failed
-- `syntaur new "<title>" [--type <type>] [--project <slug> | --one-off]` — create project-nested or standalone
-- `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]` — append to `comments.md`
+- `syntaur new "<title>" [--type <type>] [--project <slug>]` — create in a project (defaults to `scratch` / `SCR-<n>` when `--project` is omitted)
+- `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]` — append to `comments.md`
 - `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--ticket <a>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
 
 ## Agent Sessions

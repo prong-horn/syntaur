@@ -69,7 +69,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
     );
 
     await trackSessionCommand(
-      { agent: 'claude', sessionId: 'track-id-1', path: testDir, dir: projectsDir, project: 'proj', ticket: 'asgn' },
+      { agent: 'claude', sessionId: 'track-id-1', path: testDir, dir: projectsDir, project: 'proj', ticket: 'ASGN-1' },
       { fallbackPid: () => null },
     );
 
@@ -88,8 +88,19 @@ describe('trackSessionCommand session-id self-resolution', () => {
   });
 
   it('accepts a WEAK session id when --ticket is provided', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    const asgnDir = resolve(projectsDir, 'proj', 'tickets', 'ASGN-1-asgn');
+    await mkdir(asgnDir, { recursive: true });
+    await writeFile(
+      resolve(projectsDir, 'proj', 'project.md'),
+      `---\nslug: proj\ntitle: proj\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# proj\n`,
+    );
+    await writeFile(
+      resolve(asgnDir, 'ticket.md'),
+      `---\nid: ASGN-1\nslug: asgn\ntitle: asgn\nstatus: in_progress\n---\n# asgn\n`,
+    );
     await trackSessionCommand(
-      { agent: 'claude', path: testDir, ticket: 'my-ticket' },
+      { agent: 'claude', path: testDir, ticket: 'ASGN-1', dir: projectsDir, project: 'proj' },
       { resolveSessionId: async () => ({ id: 'weak-id-2', provenance: 'WEAK' as const }), fallbackPid: () => null },
     );
     expect(getSessionById('weak-id-2')).not.toBeNull();

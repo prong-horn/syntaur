@@ -6,7 +6,6 @@ import { KNOWN_TOP_LEVEL } from '../utils/doctor/checks/structure.js';
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 
 const CRITERION_NAMES = [
-  'tickets',
   'agents',
   'workflows',
   'targets',
@@ -113,6 +112,10 @@ describe('doctor KNOWN_TOP_LEVEL', () => {
     for (const name of CRITERION_NAMES) {
       expect(KNOWN_TOP_LEVEL.has(name)).toBe(true);
     }
+  });
+
+  it('includes the v2 migration marker', () => {
+    expect(KNOWN_TOP_LEVEL.has('v2-migrated')).toBe(true);
   });
 
   it('matches every root-level literal written via syntaurRoot bindings', () => {

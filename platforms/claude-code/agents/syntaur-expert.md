@@ -168,8 +168,7 @@ Only the assigned agent may write to its own ticket folder.
 | Command | Description |
 |---------|-------------|
 | `syntaur create-project <title> [--slug S] [--dir D]` | Create new project with full scaffolding |
-| `syntaur new <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create ticket in a project |
-| `syntaur new <title> --one-off [--type T]` | Create standalone ticket at `~/.syntaur/tickets/<uuid>/` (project: null, slug display-only) |
+| `syntaur new <title> [--project M] [--priority P] [--depends-on <ids>] [--slug S] [--type T]` | Create ticket in a project (defaults to `scratch` / `SCR-<n>`) |
 
 ### Coordination (CLI-mediated writes)
 | Command | Description |

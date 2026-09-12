@@ -9,16 +9,13 @@
 
 import { readFile } from 'node:fs/promises';
 import { resolve, basename } from 'node:path';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import {
-  resolveTicketById,
-  resolveTicketSlugInProject,
-  type ResolvedTicket,
-} from '../utils/ticket-resolver.js';
+import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
+import { isTicketId } from '../utils/ticket-ids.js';
 import {
   parseTicketFrontmatter,
   updateTicketFile,
@@ -79,27 +76,29 @@ async function resolveTarget(ticket: string, options: DeriveVerbOptions): Promis
 
   if (options.project) {
     if (!isValidSlug(options.project)) throw new Error(`Invalid project slug "${options.project}".`);
-    if (!isValidSlug(ticket)) throw new Error(`Invalid ticket slug "${ticket}".`);
-    const projectDir = resolve(baseDir, options.project);
-    const resolved = await resolveTicketSlugInProject(baseDir, options.project, ticket);
-    const ticketDir = resolved
-      ? resolved.ticketDir
-      : resolve(projectDir, 'tickets', ticket);
-    const ticketPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(ticketPath))) {
-      throw new Error(`Ticket "${ticket}" not found at ${ticketPath}.`);
+    if (!isTicketId(ticket)) {
+      throw new Error(`Ticket "${ticket}" is not a valid ticket id. Use <PREFIX>-<n>.`);
     }
-    return { ticketDir, ticketPath, projectDir };
+    const projectDir = resolve(baseDir, options.project);
+    const resolved = await resolveTicketById(baseDir, ticket);
+    if (!resolved || resolved.projectSlug !== options.project) {
+      throw new Error(`Ticket "${ticket}" not found in project "${options.project}".`);
+    }
+    const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
+    return { ticketDir: resolved.ticketDir, ticketPath, projectDir };
   }
 
-  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
+  if (!isTicketId(ticket)) {
+    throw new Error(`Ticket "${ticket}" is not a valid ticket id. Use <PREFIX>-<n>.`);
+  }
+  const resolved = await resolveTicketById(baseDir, ticket);
   if (!resolved) {
-    throw new Error(`Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`);
+    throw new Error(`Ticket "${ticket}" not found.`);
   }
   return {
     ticketDir: resolved.ticketDir,
     ticketPath: resolve(resolved.ticketDir, 'ticket.md'),
-    projectDir: resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..'),
+    projectDir: resolve(resolved.ticketDir, '..', '..'),
   };
 }
 
@@ -707,7 +706,6 @@ export async function recomputeCommand(
     const config = await readConfig();
     const summary = await recomputeAll(
       options.dir ? expandHome(options.dir) : config.defaultProjectDir,
-      ticketsDirFn(),
       { cause: 'recompute', by: await inferActor(options), context, workflowResolver },
     );
     console.log(

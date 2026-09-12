@@ -9,8 +9,7 @@ import { useWebSocket, type WsMessage } from './useWebSocket';
  */
 export interface ActivityEvent {
   event_id: string;
-  assignment_id: string;
-  project_slug: string | null;
+  ticket_id: string;
   /** UTC ISO 8601, newest-first. */
   at: string;
   actor: string;

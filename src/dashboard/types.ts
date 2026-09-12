@@ -627,7 +627,7 @@ export interface AgentSession {
   /**
    * The binding's resolved ticket frontmatter `id`, when the registering
    * caller resolved it from the slugs (M1). Threaded into the opened engagement's
-   * `assignment_id` so a later stage assertion doesn't split the interval just to
+   * `ticket_id` so a later stage assertion doesn't split the interval just to
    * repair the id. Null/absent when unresolved (slug-only binding).
    */
   ticketId?: string | null;

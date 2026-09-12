@@ -218,7 +218,6 @@ export interface BrokerBroadcast {
 
 export interface CreateChatBrokerOptions {
   projectsDir: string;
-  ticketsDir?: string;
   broadcast: BrokerBroadcast;
   /** Injected by tests to wire an in-process fake agent instead of a subprocess. */
   clientFactory?: ClientFactory;
@@ -856,7 +855,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   ): Promise<void> {
     await Promise.allSettled(
       [...constructing.entries()]
-        .filter(([key]) => key.endsWith(`:${id}`))
+        .filter(([key]) => key.endsWith(`~${id}`))
         .map(([, promise]) => promise),
     );
 

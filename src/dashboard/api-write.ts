@@ -454,10 +454,7 @@ async function handleWorktreeCreate(
 }
 
 
-export function createWriteRouter(
-  projectsDir: string,
-  ticketsDir?: string,
-): Router {
+export function createWriteRouter(projectsDir: string): Router {
   const router = Router();
   // Every mutation here writes a record file; clear the shared records cache
   // once each handler resolves so the next read reflects the change.
@@ -773,12 +770,8 @@ export function createWriteRouter(
   // against the NEW workflow (recompute resolves the binding from disk).
   router.put('/api/tickets/:id/workflow', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -820,7 +813,7 @@ export function createWriteRouter(
       const { recomputeTicketDir } = await import('../lifecycle/recompute.js');
       await recomputeTicketDir(resolve(ticketPath, '..'), 'workflow-change', 'human');
 
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket });
     } catch (error) {
       console.error('Error setting ticket workflow:', error);
@@ -865,14 +858,8 @@ export function createWriteRouter(
     '/api/tickets/:id/repository-candidates',
     async (req: Request, res: Response) => {
       try {
-        if (!ticketsDir) {
-          res
-            .status(501)
-            .json({ error: 'Standalone tickets not configured on this server' });
-          return;
-        }
-        const id = getParam(req.params.id);
-        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+        const resolved = await resolveTicketById(projectsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
@@ -912,14 +899,8 @@ export function createWriteRouter(
     '/api/tickets/:id/repository-branches',
     async (req: Request, res: Response) => {
       try {
-        if (!ticketsDir) {
-          res
-            .status(501)
-            .json({ error: 'Standalone tickets not configured on this server' });
-          return;
-        }
-        const id = getParam(req.params.id);
-        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+        const resolved = await resolveTicketById(projectsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
@@ -938,14 +919,8 @@ export function createWriteRouter(
     '/api/tickets/:id/source-tickets',
     async (req: Request, res: Response) => {
       try {
-        if (!ticketsDir) {
-          res
-            .status(501)
-            .json({ error: 'Standalone tickets not configured on this server' });
-          return;
-        }
-        const id = getParam(req.params.id);
-        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+        const resolved = await resolveTicketById(projectsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
@@ -969,14 +944,8 @@ export function createWriteRouter(
     '/api/tickets/:id/worktree',
     async (req: Request, res: Response) => {
       try {
-        if (!ticketsDir) {
-          res
-            .status(501)
-            .json({ error: 'Standalone tickets not configured on this server' });
-          return;
-        }
-        const id = getParam(req.params.id);
-        const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+        const resolved = await resolveTicketById(projectsDir, id);
         if (!resolved) {
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
@@ -992,7 +961,7 @@ export function createWriteRouter(
           ticketPath,
           projectSlug: resolved.projectSlug ?? '',
           ticketSlug: ticketSlugForBranch,
-          reload: () => getTicketDetailById(projectsDir, ticketsDir!, id),
+          reload: () => getTicketDetailById(projectsDir!, id),
         });
       } catch (error) {
         console.error('Error creating worktree:', error);
@@ -1012,15 +981,9 @@ export function createWriteRouter(
     '/api/tickets/:id/worktree/recreate',
     async (req: Request, res: Response) => {
       try {
-        if (!ticketsDir) {
-          res
-            .status(501)
-            .json({ error: 'Standalone tickets not configured on this server' });
-          return;
-        }
-        const id = getParam(req.params.id);
+const id = getParam(req.params.id);
         const outcome = await recreateForTarget(
-          { projectsDir, ticketsDir },
+          { projectsDir },
           { kind: 'ticket', id },
         );
         const { httpStatus, body } = recreateOutcomeToHttp(outcome);
@@ -1144,12 +1107,8 @@ export function createWriteRouter(
     res: Response,
     archived: boolean,
   ): Promise<void> {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+    const resolved = await resolveTicketById(projectsDir, id);
     if (!resolved) {
       res.status(404).json({ error: `Ticket "${id}" not found` });
       return;
@@ -1167,18 +1126,14 @@ export function createWriteRouter(
       reason ? { reason } : {},
     );
 
-    const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+    const ticket = await getTicketDetailById(projectsDir, id);
     res.json({ ticket });
   }
 
   router.delete('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1218,18 +1173,14 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/comments', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       await appendCommentTo(resolved.ticketDir, resolved.ticketSlug, req, res, async () => {
-        return getTicketDetailById(projectsDir, ticketsDir, id);
+        return getTicketDetailById(projectsDir, id);
       });
     } catch (error) {
       console.error('Error appending comment (by id):', error);
@@ -1239,19 +1190,15 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
+const id = getParam(req.params.id);
       const commentId = getParam(req.params.commentId);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       await toggleCommentResolvedAt(resolved.ticketDir, commentId, req, res, async () => {
-        return getTicketDetailById(projectsDir, ticketsDir, id);
+        return getTicketDetailById(projectsDir, id);
       });
     } catch (error) {
       console.error('Error toggling comment resolved (by id):', error);
@@ -1260,12 +1207,8 @@ export function createWriteRouter(
   });
 
   router.get('/api/tickets/:id/edit', async (req: Request, res: Response) => {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'ticket', id);
+const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, 'ticket', id);
     if (!doc) {
       res.status(404).json({ error: 'Ticket not found' });
       return;
@@ -1274,12 +1217,8 @@ export function createWriteRouter(
   });
 
   router.get('/api/tickets/:id/plan/edit', async (req: Request, res: Response) => {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'plan', id);
+const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, 'plan', id);
     if (!doc) {
       res.status(404).json({ error: 'Plan not found' });
       return;
@@ -1288,12 +1227,8 @@ export function createWriteRouter(
   });
 
   router.get('/api/tickets/:id/scratchpad/edit', async (req: Request, res: Response) => {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'scratchpad', id);
+const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, 'scratchpad', id);
     if (!doc) {
       res.status(404).json({ error: 'Scratchpad not found' });
       return;
@@ -1302,12 +1237,8 @@ export function createWriteRouter(
   });
 
   router.get('/api/tickets/:id/handoff/edit', async (req: Request, res: Response) => {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'handoff', id);
+const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, 'handoff', id);
     if (!doc) {
       res.status(404).json({ error: 'Handoff log not found' });
       return;
@@ -1316,12 +1247,8 @@ export function createWriteRouter(
   });
 
   router.get('/api/tickets/:id/decision-record/edit', async (req: Request, res: Response) => {
-    if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-      return;
-    }
-    const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'decision-record', id);
+const id = getParam(req.params.id);
+    const doc = await getEditableDocumentById(projectsDir, 'decision-record', id);
     if (!doc) {
       res.status(404).json({ error: 'Decision record not found' });
       return;
@@ -1331,12 +1258,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1416,7 +1339,7 @@ export function createWriteRouter(
         resolved.projectSlug,
       );
 
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating ticket:', error);
@@ -1426,12 +1349,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/plan', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1455,7 +1374,7 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(planPath, nextContent);
 
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone plan:', error);
@@ -1465,12 +1384,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/scratchpad', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1494,7 +1409,7 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(scratchpadPath, nextContent);
 
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone scratchpad:', error);
@@ -1504,12 +1419,8 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/handoff/entries', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1535,7 +1446,7 @@ export function createWriteRouter(
         'No handoffs recorded yet.',
       );
       await writeFileForce(handoffPath, nextContent);
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.status(201).json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone handoff entry:', error);
@@ -1545,12 +1456,8 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/decision-record/entries', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1576,7 +1483,7 @@ export function createWriteRouter(
         'No decisions recorded yet.',
       );
       await writeFileForce(decisionPath, nextContent);
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.status(201).json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone decision entry:', error);
@@ -1586,12 +1493,8 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/status-override', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1621,7 +1524,7 @@ export function createWriteRouter(
             res.status(engineOverride.code).json({ error: engineOverride.message });
             return;
           }
-          const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+          const ticket = await getTicketDetailById(projectsDir, id);
           res.json({ ticket });
           return;
         }
@@ -1665,7 +1568,7 @@ export function createWriteRouter(
         res.status(503).json({ error: result.warning });
         return;
       }
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket });
     } catch (error) {
       console.error('Error overriding standalone status:', error);
@@ -1675,12 +1578,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/assignee', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1708,7 +1607,7 @@ export function createWriteRouter(
         });
       }
 
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket });
     } catch (error) {
       console.error('Error updating standalone assignee:', error);
@@ -1718,12 +1617,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/title', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1742,7 +1637,7 @@ export function createWriteRouter(
       content = setTopLevelField(content, 'title', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, content);
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket });
     } catch (error) {
       console.error('Error updating standalone title:', error);
@@ -1752,12 +1647,8 @@ export function createWriteRouter(
 
   router.patch('/api/tickets/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1781,7 +1672,7 @@ export function createWriteRouter(
       }
       const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, nextContent);
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error toggling standalone acceptance criterion:', error);
@@ -1791,13 +1682,9 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/transitions/:command', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
+const id = getParam(req.params.id);
       const command = getParam(req.params.command);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
@@ -1845,7 +1732,7 @@ export function createWriteRouter(
           res.status(503).json({ error: result.warning });
           return;
         }
-        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
+        const detail = await getTicketDetailById(projectsDir, id);
         res.json({ ticket: detail, warnings: [] });
         return;
       }
@@ -1872,7 +1759,7 @@ export function createWriteRouter(
             workflowResolver,
           });
         }
-        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
+        const detail = await getTicketDetailById(projectsDir, id);
         res.json({ ticket: detail, warnings: engineResult.warnings ?? [] });
         return;
       }
@@ -1942,7 +1829,7 @@ export function createWriteRouter(
         }
       }
 
-      const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const detail = await getTicketDetailById(projectsDir, id);
       res.json({ ticket: detail, warnings: transitionResult.warnings ?? [] });
     } catch (error) {
       console.error('Error transitioning by id:', error);
@@ -1952,21 +1839,17 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/plan/approve', async (req: Request, res: Response) => {
     try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-      const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const { planApproveCommand } = await import('../commands/derive-verbs.js');
-      await planApproveCommand(resolved.ticketSlug, {
+      await planApproveCommand(resolved.id, {
         project: resolved.projectSlug ?? undefined,
       });
-      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      const ticket = await getTicketDetailById(projectsDir, id);
       res.json({ ticket });
     } catch (error) {
       const message = (error as Error).message;

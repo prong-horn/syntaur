@@ -18,7 +18,6 @@ const originalSyntaurHome = process.env.SYNTAUR_HOME;
 
 let tmpHome: string;
 let projectsDir: string;
-let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 
@@ -49,16 +48,14 @@ beforeEach(async () => {
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
   projectsDir = resolve(tmpHome, 'projects');
-  ticketsDir = resolve(tmpHome, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
 
   resetSessionDb();
   initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
 
   const app = express();
   app.use(express.json());
-  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, ticketsDir));
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined));
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());
   });
@@ -88,7 +85,7 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
       agent: 'claude',
       sessionId: 'sess-ghost',
       projectSlug: 'proj',
-      ticketSlug: 'ghost', // does not exist
+      ticketId: 'GHOST-1', // does not exist
     });
     expect(res.status).toBe(404);
     expect(hasAnyEngagement('sess-ghost')).toBe(false);
@@ -100,7 +97,7 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
       agent: 'claude',
       sessionId: 'sess-ok',
       projectSlug: 'proj',
-      ticketSlug: 'real',
+      ticketId: 'REAL-1',
     });
     expect(res.status).toBe(201);
     const open = getOpenEngagement('sess-ok');
@@ -130,7 +127,7 @@ describe('GET /by-id/:sessionId', () => {
   beforeEach(async () => {
     const app = express();
     app.use(express.json());
-    app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, ticketsDir));
+    app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined));
     await new Promise<void>((ready) => {
       dServer = app.listen(0, () => ready());
     });

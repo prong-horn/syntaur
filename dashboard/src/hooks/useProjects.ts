@@ -766,7 +766,7 @@ export interface UsageDailyRow {
   tool: string;
   model: string;
   project_slug: string;
-  assignment_slug: string;
+  ticket_id: string;
   total_tokens: number;
   total_cost: number;
 }

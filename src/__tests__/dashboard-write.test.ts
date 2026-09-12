@@ -18,12 +18,9 @@ import { useHermeticSyntaurHome } from './hermetic-root.js';
 useHermeticSyntaurHome();
 
 let testDir: string;
-let ticketsDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-write-test-'));
-  ticketsDir = resolve(testDir, 'tickets');
-  await mkdir(ticketsDir, { recursive: true });
   if (process.env.SYNTAUR_HOME) {
     await writeFile(
       joinPath(process.env.SYNTAUR_HOME, 'config.md'),
@@ -191,7 +188,7 @@ Keep the current layout`, 'utf-8');
 describe('dashboard write router', () => {
   it('rejects project slug changes', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
@@ -223,7 +220,7 @@ tags: []
 
   it('allows direct ticket status edits via PATCH', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
@@ -300,7 +297,7 @@ tags: []
 
 Keep this paragraph.`, 'utf-8');
 
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'patch',
@@ -321,7 +318,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('appends handoff entries without rewriting prior history', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
@@ -351,7 +348,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('appends decision-record entries with heading, Recorded timestamp and bumped count', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
@@ -382,7 +379,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('allows blocking without a reason and uses lifecycle transitions for status changes', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     // Block without reason succeeds (from pending, which allows block)
     const blockedWithoutReason = await invokeRoute(
@@ -427,7 +424,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('POST /api/tickets/:id/comments appends a comment', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
@@ -455,7 +452,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('PATCH comments/:commentId/resolved toggles the resolved flag on a question', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const add = await invokeRoute(
       router,
@@ -488,13 +485,13 @@ Keep this paragraph.`, 'utf-8');
   });
 
   it('does not register POST /api/tickets standalone create', () => {
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     expect(() => getRouteHandler(router, 'post', '/api/tickets')).toThrow(/Route not found/);
   });
 
   it('rejects resolve toggle for a non-question comment', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const add = await invokeRoute(
       router,
@@ -519,7 +516,7 @@ Keep this paragraph.`, 'utf-8');
   describe('PATCH /api/tickets/:id/assignee', () => {
     it('updates assignee frontmatter without rewriting body', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const ticketPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
       const bodyBefore = (await readFile(ticketPath, 'utf-8')).split(/^---$/m)[2];
 
@@ -540,7 +537,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('accepts null to clear the assignee', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -558,7 +555,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects non-string non-null assignee', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -571,7 +568,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects assignee longer than 120 chars', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -584,7 +581,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('returns 404 for missing ticket', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -602,7 +599,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('updates title frontmatter without rewriting body', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const bodyBefore = (await readFile(ticketPath(), 'utf-8')).split(/^---$/m)[2];
 
       const res = await invokeRoute(
@@ -621,7 +618,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('quotes titles containing YAML metacharacters (colon) so they round-trip', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
 
       const res = await invokeRoute(
         router,
@@ -639,7 +636,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('bumps updated when the title changes', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const before = await readFile(ticketPath(), 'utf-8');
 
       const res = await invokeRoute(
@@ -661,7 +658,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects empty title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -674,7 +671,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects whitespace-only title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -687,7 +684,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects title longer than 200 chars', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -700,7 +697,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects non-string title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -713,7 +710,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects title containing a double quote', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -726,7 +723,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects title containing a newline', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -739,7 +736,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('rejects title containing a carriage return', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -752,7 +749,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('returns 404 for missing ticket', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(
         router,
         'patch',
@@ -765,7 +762,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('PATCH /api/tickets/:id/title returns 404 for missing id', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
 
       const res = await invokeRoute(
         router,
@@ -781,7 +778,7 @@ Keep this paragraph.`, 'utf-8');
   describe('archive / restore endpoints', () => {
     it('archives + restores a project-scoped ticket, preserving status', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const ticketPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
 
       const archived = await invokeRoute(
@@ -818,7 +815,7 @@ Keep this paragraph.`, 'utf-8');
 
     it('archives + restores a project via the real flag (not statusOverride)', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const projectPath = resolve(testDir, 'test-project', 'project.md');
 
       const archived = await invokeRoute(
@@ -846,7 +843,7 @@ Keep this paragraph.`, 'utf-8');
     });
 
     it('returns 404 archiving a missing project', async () => {
-      const router = createWriteRouter(testDir, ticketsDir);
+      const router = createWriteRouter(testDir);
       const res = await invokeRoute(router, 'post', '/api/projects/:slug/archive', { slug: 'ghost' }, {});
       expect(res.statusCode).toBe(404);
     });
@@ -854,7 +851,7 @@ Keep this paragraph.`, 'utf-8');
 
   it('DELETE /api/tickets/:id removes a project-nested ticket directory', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const ticketDir = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket');
 
     const res = await invokeRoute(
@@ -970,7 +967,7 @@ tags: []
           'utf-8',
         );
 
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -989,7 +986,7 @@ tags: []
 
       it('returns [] for an empty project (no repositories, no siblings)', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1002,7 +999,7 @@ tags: []
       });
 
       it('returns 404 for an unknown project', async () => {
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1012,21 +1009,6 @@ tags: []
         );
         expect(res.statusCode).toBe(404);
       });
-    });
-
-    describe('GET /api/tickets/:id/repository-candidates (standalone)', () => {
-      it('returns 501 when standalone tickets are not configured', async () => {
-        const router = createWriteRouter(testDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/repository-candidates',
-          { id: 'anything' },
-          undefined,
-        );
-        expect(res.statusCode).toBe(501);
-      });
-
     });
 
     // --- Redesign: branch listing, source tickets, validation, lock ---
@@ -1071,7 +1053,7 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         spawnSync('git', ['-C', repo, 'branch', 'develop'], { encoding: 'utf-8' });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1090,7 +1072,7 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         await mkdir(resolve(repo, 'sub'), { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1105,7 +1087,7 @@ tags: []
 
       it('project: 400 when repo query is missing', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1120,7 +1102,7 @@ tags: []
       it('project: 404 when the ticket does not exist', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1132,18 +1114,6 @@ tags: []
         expect(res.statusCode).toBe(404);
       });
 
-      it('standalone: 501 when standalone not configured', async () => {
-        const router = createWriteRouter(testDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/repository-branches',
-          { id: 'x' },
-          undefined,
-          { repo: '/whatever' },
-        );
-        expect(res.statusCode).toBe(501);
-      });
 
     });
 
@@ -1166,7 +1136,7 @@ tags: []
           id: 'TP-3',
           slug: 'sibling-bare',
         });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1186,7 +1156,7 @@ tags: []
 
       it('project: 404 when the target ticket does not exist', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1203,7 +1173,7 @@ tags: []
       it('400 on invalid branch name, leaving no partial state', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1227,7 +1197,7 @@ tags: []
         spawnSync('git', ['-C', repo, 'branch', 'syntaur/test-project/test-ticket'], {
           encoding: 'utf-8',
         });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1242,7 +1212,7 @@ tags: []
       it('trims whitespace around the repository path', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1260,7 +1230,7 @@ tags: []
       it('in-flight lock: 409 while a create is in progress, then succeeds (different branch)', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const ticketPath = resolve(
           testDir,
           'test-project',
@@ -1305,7 +1275,7 @@ tags: []
           repository: repo,
           branch: 'feature/src',
         });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         // 1. The UI lists source tickets.
         const list = await invokeRoute(
           router,
@@ -1355,7 +1325,7 @@ tags: []
       it('rebuilds at the exact recorded path, bypassing the configured + branch-exists 409 guards', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const wtPath = await createWorktreeThenPath(router, repo);
 
         const fs = await import('node:fs/promises');
@@ -1382,7 +1352,7 @@ tags: []
       it('ignores a client-supplied path and rebuilds the persisted one (server-authoritative)', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const wtPath = await createWorktreeThenPath(router, repo);
         const fs = await import('node:fs/promises');
         await fs.rm(wtPath, { recursive: true, force: true });
@@ -1403,7 +1373,7 @@ tags: []
 
       it('returns 422 when there is no recorded worktree path to recreate', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1417,7 +1387,7 @@ tags: []
       it('is idempotent (200, alreadyExisted) when the worktree directory still exists', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         await createWorktreeThenPath(router, repo);
         // Do NOT delete — recreate should no-op since the dir is present.
         const res = await invokeRoute(
@@ -1436,7 +1406,7 @@ tags: []
       it('happy path: creates worktree + updates frontmatter', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1468,7 +1438,7 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         await mkdir(resolve(repo, 'sub'), { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1484,7 +1454,7 @@ tags: []
       it('returns 409 when workspace.worktreePath is already set', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         // First create.
         await invokeRoute(
           router,
@@ -1506,7 +1476,7 @@ tags: []
 
       it('returns 400 when repository is missing', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1519,7 +1489,7 @@ tags: []
 
       it('returns 400 when repository is relative', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1532,7 +1502,7 @@ tags: []
 
       it('returns 400 when repository does not exist on disk', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1547,7 +1517,7 @@ tags: []
         await createTicketFixture();
         const notGit = resolve(testDir, 'not-git');
         await mkdir(notGit, { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1565,7 +1535,7 @@ tags: []
         spawnSync('git', ['-C', repo, 'branch', 'syntaur/test-project/test-ticket'], {
           encoding: 'utf-8',
         });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1589,7 +1559,7 @@ tags: []
       it('accepts custom branch override', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1608,7 +1578,7 @@ tags: []
         const repo = await setupRepo();
         // Pre-create the target directory (no git involvement).
         await mkdir(resolve(repo, '.worktrees', 'syntaur/test-project/test-ticket'), { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1627,7 +1597,7 @@ tags: []
       it('returns 400 when parentBranch does not exist in the repo', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1646,21 +1616,10 @@ tags: []
     });
 
     describe('POST /api/tickets/:id/worktree (id route)', () => {
-      it('returns 501 when standalone tickets are not configured', async () => {
-        const router = createWriteRouter(testDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'anything' },
-          { repository: '/tmp' },
-        );
-        expect(res.statusCode).toBe(501);
-      });
 
       it('returns 404 when id does not resolve', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1674,7 +1633,7 @@ tags: []
       it('project-nested via id-route uses project slug prefix', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
+        const router = createWriteRouter(testDir);
         const res = await invokeRoute(
           router,
           'post',
@@ -1717,7 +1676,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('project status-override applies PIN semantics (derived-status v3)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
@@ -1761,7 +1720,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     // Move to in_progress (a real change → 1 entry).
     await invokeRoute(
       router,
@@ -1787,7 +1746,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     const base = await readFile(ticketPath(), 'utf-8');
     const changed = base.replace('status: pending', 'status: review');
@@ -1822,7 +1781,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('raw create seeds a command:create entry', async () => {
     await createTicketFixture(); // creates the project
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const content = `---
 id: placeholder
 slug: fresh-one
@@ -1861,7 +1820,7 @@ tags: []
 
   it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     // Terminal is reached only via the gated transition (v3) — the override
     // endpoint refuses terminal targets.
@@ -1928,7 +1887,7 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
 describe('comment write-boundary newline validation (AC1)', () => {
   it('rejects a project comment whose author contains a newline (400, nothing written)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
@@ -1945,7 +1904,7 @@ describe('comment write-boundary newline validation (AC1)', () => {
 
   it('rejects a project comment whose replyTo contains a newline (400)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
@@ -1958,7 +1917,7 @@ describe('comment write-boundary newline validation (AC1)', () => {
 
   it('still accepts a normal project comment (positive control)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
@@ -2075,7 +2034,7 @@ project: plan-project
 
   it('POST /api/tickets/:id/plan/approve writes planApproval', async () => {
     await seedProjectPlanTicket();
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
@@ -2098,7 +2057,7 @@ project: plan-project
 
   it('POST /api/tickets/:id/plan/approve returns 409 without a plan file', async () => {
     await seedProjectPlanTicket({ withPlan: false });
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
@@ -2111,7 +2070,7 @@ project: plan-project
   });
 
   it('POST /api/tickets/:id/plan/approve returns 404 for unknown ticket', async () => {
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',

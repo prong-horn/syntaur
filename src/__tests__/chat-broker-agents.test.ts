@@ -57,7 +57,6 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: () => {},
     clientFactory,
@@ -141,7 +140,6 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: () => {},
       clientFactory: (input) => {
@@ -444,7 +442,6 @@ function makeTicketBroker(
   frames = [];
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     loadDefinitions: opts.loadDefinitions,
     broadcast: (message) =>
@@ -720,6 +717,67 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     const second = await broker.getParticipants(ticket());
     expect(second.participants.agents).toEqual(['planner']);
     expect(systemTexts().filter((t) => t.includes('@ghost is no longer in this chat'))).toHaveLength(1);
+  });
+
+  it('construction race: saveAgent awaits pending construction keyed with tilde session key (TP-1~codex)', async () => {
+    ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'TP-1-chat-demo');
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(
+      join(ticketDir, 'ticket.md'),
+      [
+        '---',
+        'id: TP-1',
+        'slug: chat-demo',
+        'title: "Chat demo"',
+        'status: ready_to_implement',
+        'project: syntaur-meta',
+        'workspace:',
+        `  repository: ${worktree}`,
+        `  worktreePath: ${worktree}`,
+        '  branch: feat/chat-demo',
+        '---',
+        '',
+        '# Chat demo',
+      ].join('\n'),
+      'utf-8',
+    );
+    await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
+    await writeAgentDefinition(sandbox, plannerInput({ description: 'Before roster' }));
+
+    const tp1Ticket = (): ResolvedTicket => ({
+      ticketDir,
+      projectSlug: 'syntaur-meta',
+      ticketSlug: 'chat-demo',
+      id: 'TP-1',
+      standalone: false,
+    });
+
+    const standingGate = gateDefinitionsLoad(2);
+    makeTicketBroker(
+      {
+        planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
+        codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
+      },
+      { loadDefinitions: standingGate.loadDefinitions },
+    );
+
+    const sessionP = broker.getSession(tp1Ticket(), 'codex');
+    await standingGate.waitEntered();
+    const saveP = broker.saveAgent(plannerInput({ description: 'After roster' }));
+    await saveP;
+    standingGate.release();
+    expect(await sessionP).not.toBeNull();
+
+    await broker.send({ ticket: tp1Ticket(), text: '@codex roster check' });
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    expect(getChatSessionByKey('TP-1~codex')?.session_key).toBe('TP-1~codex');
+
+    const promptText = fakes
+      .get('codex')!
+      .prompts[0]!.prompt.map((b) => (b as { text?: string }).text ?? '')
+      .join('\n');
+    expect(promptText).toContain('After roster');
+    expect(promptText).not.toContain('Before roster');
   });
 
   it('construction race: saveAgent updates the session definition before publish', async () => {

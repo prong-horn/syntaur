@@ -4,10 +4,7 @@ import { fileExists, writeFileReport } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { isTicketId } from '../utils/ticket-ids.js';
-import {
-  resolveTicketById,
-  resolveTicketSlugInProject,
-} from '../utils/ticket-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { resolveAgentTargets } from '../targets/registry.js';
 import { RENDERERS } from '../targets/renderers.js';
 import type { ProtocolContext } from '../targets/types.js';
@@ -46,16 +43,16 @@ export async function setupAdapterCommand(
     throw new Error('--project <slug> is required.');
   }
   if (!options.ticket) {
-    throw new Error('--ticket <slug-or-id> is required.');
+    throw new Error('--ticket <id> is required.');
   }
   if (!isValidSlug(options.project)) {
     throw new Error(
       `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
-  if (!isTicketId(options.ticket) && !isValidSlug(options.ticket)) {
+  if (!isTicketId(options.ticket)) {
     throw new Error(
-      `Invalid ticket "${options.ticket}". Must be a ticket id (e.g. SCR-1) or a lowercase hyphenated slug.`,
+      `Invalid ticket "${options.ticket}". Must be a ticket id (e.g. SCR-1).`,
     );
   }
 
@@ -72,9 +69,7 @@ export async function setupAdapterCommand(
     throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
   }
 
-  const resolved = isTicketId(options.ticket)
-    ? await resolveTicketById(baseDir, undefined, options.ticket)
-    : await resolveTicketSlugInProject(baseDir, options.project, options.ticket);
+  const resolved = await resolveTicketById(baseDir, options.ticket);
 
   if (!resolved) {
     throw new Error(

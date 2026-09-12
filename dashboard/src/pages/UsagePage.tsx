@@ -19,7 +19,7 @@ interface UsageDailyRow {
   tool: string;
   model: string;
   project_slug: string;
-  assignment_slug: string;
+  ticket_id: string;
   total_tokens: number;
   total_cost: number;
 }
@@ -292,7 +292,7 @@ export function UsagePage() {
                       <td className="px-3 py-2 text-muted-foreground">{r.tool}</td>
                       <td className="px-3 py-2 text-muted-foreground">{r.model}</td>
                       <td className="px-3 py-2">{r.project_slug || '–'}</td>
-                      <td className="px-3 py-2">{r.assignment_slug || '–'}</td>
+                      <td className="px-3 py-2">{r.ticket_id || '–'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.total_tokens)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatCost(r.total_cost)}</td>
                     </tr>

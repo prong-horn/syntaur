@@ -86,7 +86,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 
 - **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
 - **All tickets live under a project.** Ticket folders are at `projects/<project-slug>/tickets/<ID>-<slug>/`, where `ID` is `<PREFIX>-<n>` (e.g. `FIT-3-implement-jwt-middleware`). The `prefix` and `nextTicket` counter live in `project.md`; ids are allocated by `syntaur new` and never reused. The `slug` is the human-readable suffix and may be renamed with `syntaur rename`.
-- **Scratch project** (`projects/scratch/`, prefix `SCR`) holds one-off tickets. `syntaur new` defaults here when `--project` is omitted. There is no standalone `~/.syntaur/tickets/` tree.
+- **Scratch project** (`projects/scratch/`, prefix `SCR`) holds tickets created without `--project`. `syntaur new` defaults here when `--project` is omitted. There is no standalone `~/.syntaur/tickets/` tree.
 - **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
 - **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files.
 - **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project.

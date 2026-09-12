@@ -24,10 +24,8 @@ import { fileExists } from '../utils/fs.js';
 import { isSafeSessionId } from '../utils/session-id.js';
 import {
   resolveTicketById,
-  resolveTicketSlugInProject,
 } from '../utils/ticket-resolver.js';
 import { isTicketId } from '../utils/ticket-ids.js';
-import { ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { isExistingDir } from '../utils/workspace-cwd.js';
@@ -338,7 +336,6 @@ const MAX_SESSION_NAME_LENGTH = 200;
 export function createAgentSessionsRouter(
   projectsDir: string,
   broadcast?: (msg: WsMessage) => void,
-  ticketsDir?: string,
 ): Router {
   const router = Router();
 
@@ -498,7 +495,7 @@ export function createAgentSessionsRouter(
   // full set exactly as it always has, so existing consumers are unaffected.
   router.get('/', async (req, res) => {
     try {
-      await reconcileActiveSessions(projectsDir, ticketsDir);
+      await reconcileActiveSessions(projectsDir);
       const includeUsageOnly = req.query.includeUsageOnly === '1';
 
       const pageSizeRaw = positiveIntParam(req.query.pageSize);
@@ -632,7 +629,7 @@ export function createAgentSessionsRouter(
         res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
-      await reconcileActiveSessions(projectsDir, ticketsDir);
+      await reconcileActiveSessions(projectsDir);
       const sessions = await listProjectSessions(projectsDir, projectSlug, ticket);
       res.json({
         // Usage attached, but never orphan rows: a usage-only session has no
@@ -694,24 +691,28 @@ export function createAgentSessionsRouter(
       // L gate (2) + M1: when the POST BINDS to a ticket, the ticket
       // must exist (else this opens/mis-attributes a window for a phantom
       // ticket). Resolve once: `.exists` gates the bind, `.id` is stored as
-      // the engagement's `assignment_id` so a later stage assertion won't split
+      // the engagement's `ticket_id` so a later stage assertion won't split
       // the interval to repair the id. A registration-only POST (no
       // `ticketSlug`) is NOT gated — it registers the bare session.
       let ticketId: string | null = null;
       let resolvedTicket: Awaited<ReturnType<typeof resolveTicketById>> | null = null;
       const ticketRef = bodyTicketId ?? bodyTicketSlug;
       if (ticketRef) {
-        resolvedTicket = isTicketId(ticketRef)
-          ? await resolveTicketById(
-              projectsDir,
-              ticketsDir ?? ticketsDirFn(),
-              ticketRef,
-            )
-          : projectSlug
-            ? await resolveTicketSlugInProject(projectsDir, projectSlug, ticketRef)
-            : null;
+        if (!isTicketId(ticketRef)) {
+          res.status(400).json({
+            error: `Ticket "${ticketRef}" is not a valid ticket id. Use <PREFIX>-<n>.`,
+          });
+          return;
+        }
+        resolvedTicket = await resolveTicketById(projectsDir, ticketRef);
         if (!resolvedTicket) {
           res.status(404).json({ error: `Ticket "${ticketRef}" not found` });
+          return;
+        }
+        if (projectSlug && resolvedTicket.projectSlug !== projectSlug) {
+          res.status(404).json({
+            error: `Ticket "${ticketRef}" not found in project "${projectSlug}".`,
+          });
           return;
         }
         ticketId = resolvedTicket.id;
@@ -763,7 +764,7 @@ export function createAgentSessionsRouter(
     try {
       const { sessionId } = req.params;
       const outcome = await recreateForTarget(
-        { projectsDir, ticketsDir: ticketsDir ?? '' },
+        { projectsDir },
         { kind: 'session', id: sessionId },
       );
       const { httpStatus, body } = recreateOutcomeToHttp(outcome);

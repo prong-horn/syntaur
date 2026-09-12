@@ -49,7 +49,7 @@ describe('setup-adapter command', () => {
 
   const baseOptions = (dir: string) => ({
     project: 'test-project',
-    ticket: 'test-ticket',
+    ticket: 'TEST-1',
     dir: join(dir, 'projects'),
   });
 
@@ -169,7 +169,7 @@ describe('setup-adapter command', () => {
     await expect(
       setupAdapterCommand('codex', {
         ...baseOptions(tempDir),
-        ticket: 'nonexistent',
+        ticket: 'ZZZ-99',
       }),
     ).rejects.toThrow('not found');
   });
