@@ -81,6 +81,37 @@ interface MigrationMaps {
   slugToId: Map<string, string>;
   projectSlugToId: Map<string, Map<string, string>>;
   itemIdMap: Map<string, string>;
+  duplicateStandaloneSlugs: Set<string>;
+  refWarnings: string[];
+}
+
+function dbProjectSlugForMapKey(project: string): string {
+  return project === 'scratch' ? '' : project;
+}
+
+function slugProjectOccurrenceCount(slug: string, maps: MigrationMaps): number {
+  let count = 0;
+  for (const per of maps.projectSlugToId.values()) {
+    if (per.has(slug)) count += 1;
+  }
+  return count;
+}
+
+function resolveSlugInProject(
+  slug: string,
+  projectSlug: string | null,
+  maps: MigrationMaps,
+): string | null {
+  if (projectSlug) {
+    const per = maps.projectSlugToId.get(projectSlug);
+    if (per?.has(slug)) return per.get(slug)!;
+  }
+  if (slugProjectOccurrenceCount(slug, maps) === 1) {
+    for (const per of maps.projectSlugToId.values()) {
+      if (per.has(slug)) return per.get(slug)!;
+    }
+  }
+  return null;
 }
 
 export interface MigrateV2Transcript {
@@ -439,6 +470,15 @@ function buildMaps(plans: ProjectPlan[], standalone: DiscoveredTicket[]): Migrat
   const slugToId = new Map<string, string>();
   const projectSlugToId = new Map<string, Map<string, string>>();
   const itemIdMap = new Map<string, string>();
+  const refWarnings: string[] = [];
+
+  const standaloneSlugCounts = new Map<string, number>();
+  for (const t of standalone) {
+    standaloneSlugCounts.set(t.slug, (standaloneSlugCounts.get(t.slug) ?? 0) + 1);
+  }
+  const duplicateStandaloneSlugs = new Set(
+    [...standaloneSlugCounts.entries()].filter(([, n]) => n > 1).map(([slug]) => slug),
+  );
 
   for (const plan of plans) {
     const perProject = new Map<string, string>();
@@ -449,28 +489,45 @@ function buildMaps(plans: ProjectPlan[], standalone: DiscoveredTicket[]): Migrat
     }
     projectSlugToId.set(plan.slug, perProject);
   }
-  for (const t of standalone) {
-    uuidToId.set(t.uuid, t.newId);
-    slugToId.set(`scratch:${t.slug}`, t.newId);
+  if (standalone.length > 0) {
+    const scratchMap = new Map<string, string>();
+    for (const t of standalone) {
+      uuidToId.set(t.uuid, t.newId);
+      slugToId.set(`scratch:${t.slug}`, t.newId);
+      if (!duplicateStandaloneSlugs.has(t.slug)) {
+        scratchMap.set(t.slug, t.newId);
+      }
+    }
+    projectSlugToId.set('scratch', scratchMap);
   }
 
-  return { uuidToId, slugToId, projectSlugToId, itemIdMap };
+  return {
+    uuidToId,
+    slugToId,
+    projectSlugToId,
+    itemIdMap,
+    duplicateStandaloneSlugs,
+    refWarnings,
+  };
 }
 
-function mapTicketRef(
+export function mapTicketRef(
   ref: string,
   projectSlug: string | null,
   maps: MigrationMaps,
 ): string {
   if (maps.uuidToId.has(ref)) return maps.uuidToId.get(ref)!;
-  if (projectSlug) {
-    const per = maps.projectSlugToId.get(projectSlug);
-    if (per?.has(ref)) return per.get(ref)!;
+  if (/^[A-Z]{2,5}-\d+$/.test(ref)) return ref;
+
+  const resolved = resolveSlugInProject(ref, projectSlug, maps);
+  if (resolved) return resolved;
+
+  if (slugProjectOccurrenceCount(ref, maps) > 1) {
+    const scope = projectSlug ?? 'unknown';
+    maps.refWarnings.push(
+      `ambiguous ticket reference "${ref}" in project ${scope} — left unchanged`,
+    );
   }
-  for (const per of maps.projectSlugToId.values()) {
-    if (per.has(ref)) return per.get(ref)!;
-  }
-  if (maps.slugToId.has(`scratch:${ref}`)) return maps.slugToId.get(`scratch:${ref}`)!;
   return ref;
 }
 
@@ -559,16 +616,18 @@ function resolveUsageDailyTicketId(
   if (!ticketVal) return ticketVal;
   if (maps.uuidToId.has(ticketVal)) return maps.uuidToId.get(ticketVal)!;
   if (/^[A-Z]{2,5}-\d+$/.test(ticketVal)) return ticketVal;
-  if (projectSlug && maps.slugToId.has(`${projectSlug}:${ticketVal}`)) {
-    return maps.slugToId.get(`${projectSlug}:${ticketVal}`)!;
+
+  const projectKey = projectSlug === '' ? 'scratch' : projectSlug;
+  if (
+    projectKey === 'scratch' &&
+    maps.duplicateStandaloneSlugs.has(ticketVal) &&
+    !maps.uuidToId.has(ticketVal)
+  ) {
+    return ticketVal;
   }
-  if (maps.slugToId.has(`scratch:${ticketVal}`)) {
-    return maps.slugToId.get(`scratch:${ticketVal}`)!;
-  }
-  for (const [key, id] of maps.slugToId) {
-    if (key.split(':')[1] === ticketVal) return id;
-  }
-  return ticketVal;
+
+  const resolved = resolveSlugInProject(ticketVal, projectKey, maps);
+  return resolved ?? ticketVal;
 }
 
 function ticketRefMappable(
@@ -579,18 +638,24 @@ function ticketRefMappable(
 ): boolean {
   if (ticketVal && maps.uuidToId.has(ticketVal)) return true;
   if (ticketVal && /^[A-Z]{2,5}-\d+$/.test(ticketVal)) return true;
-  if (projectSlug && slugVal && maps.slugToId.has(`${projectSlug}:${slugVal}`)) return true;
-  if (slugVal && maps.slugToId.has(`scratch:${slugVal}`)) return true;
+
+  const dbProject = projectSlug ?? '';
+  const projectKey = dbProject === '' ? 'scratch' : dbProject;
+
   if (slugVal) {
-    for (const key of maps.slugToId.keys()) {
-      if (key.endsWith(`:${slugVal}`)) return true;
+    if (projectKey === 'scratch' && maps.duplicateStandaloneSlugs.has(slugVal)) {
+      return maps.uuidToId.has(ticketVal ?? '');
     }
+    if (resolveSlugInProject(slugVal, projectKey, maps)) return true;
   }
+
   if (ticketVal && !UUID_RE.test(ticketVal)) {
-    for (const key of maps.slugToId.keys()) {
-      if (key.split(':')[1] === ticketVal) return true;
+    if (projectKey === 'scratch' && maps.duplicateStandaloneSlugs.has(ticketVal)) {
+      return false;
     }
+    if (resolveSlugInProject(ticketVal, projectKey, maps)) return true;
   }
+
   return false;
 }
 
@@ -889,9 +954,11 @@ export function rekeyDatabase(
   usageEvents: number;
   usageDaily: number;
   usageDailyMerged: number;
+  skippedStandaloneSlugRekeys: string[];
 } {
   const database = new Database(dbPath);
   database.pragma('journal_mode = WAL');
+  const skippedStandaloneSlugRekeys: string[] = [];
   const counts = {
     events: 0,
     eventsSourceKey: 0,
@@ -904,6 +971,7 @@ export function rekeyDatabase(
     usageEvents: 0,
     usageDaily: 0,
     usageDailyMerged: 0,
+    skippedStandaloneSlugRekeys,
   };
 
   database.exec('BEGIN IMMEDIATE');
@@ -946,11 +1014,17 @@ export function rekeyDatabase(
     if (engagementCols.has('project_slug') && engagementCols.has('assignment_slug')) {
       for (const [key, id] of maps.slugToId) {
         const [project, slug] = key.split(':');
+        if (project === 'scratch' && maps.duplicateStandaloneSlugs.has(slug)) {
+          if (!skippedStandaloneSlugRekeys.includes(slug)) {
+            skippedStandaloneSlugRekeys.push(slug);
+          }
+          continue;
+        }
         const r = database
           .prepare(
             `UPDATE engagement SET ${engTicketCol} = ? WHERE (${engTicketCol} IS NULL OR ${engTicketCol} = '') AND project_slug = ? AND assignment_slug = ?`,
           )
-          .run(id, project, slug);
+          .run(id, dbProjectSlugForMapKey(project), slug);
         counts.engagementBySlug += r.changes;
       }
     }
@@ -1016,10 +1090,18 @@ export function rekeyDatabase(
         .run(id, uuid).changes;
     }
     for (const [key, id] of maps.slugToId) {
-      const [, slug] = key.split(':');
+      const [project, slug] = key.split(':');
+      if (project === 'scratch' && maps.duplicateStandaloneSlugs.has(slug)) {
+        if (!skippedStandaloneSlugRekeys.includes(slug)) {
+          skippedStandaloneSlugRekeys.push(slug);
+        }
+        continue;
+      }
       counts.usageEvents += database
-        .prepare(`UPDATE usage_events SET ${usageTicketCol} = ? WHERE ${usageTicketCol} = ?`)
-        .run(id, slug).changes;
+        .prepare(
+          `UPDATE usage_events SET ${usageTicketCol} = ? WHERE project_slug = ? AND ${usageTicketCol} = ?`,
+        )
+        .run(id, dbProjectSlugForMapKey(project), slug).changes;
     }
   }
 
@@ -1036,12 +1118,19 @@ export function rekeyDatabase(
         .run(id, uuid).changes;
     }
     for (const [key, id] of maps.slugToId) {
-      const [, slug] = key.split(':');
+      const [project, slug] = key.split(':');
+      if (project === 'scratch' && maps.duplicateStandaloneSlugs.has(slug)) {
+        if (!skippedStandaloneSlugRekeys.includes(slug)) {
+          skippedStandaloneSlugRekeys.push(slug);
+        }
+        continue;
+      }
+      const dbProject = dbProjectSlugForMapKey(project);
       const sources = database
         .prepare(
-          `SELECT day, tool, model, project_slug FROM usage_daily WHERE ${dailyTicketCol} = ?`,
+          `SELECT day, tool, model, project_slug FROM usage_daily WHERE project_slug = ? AND ${dailyTicketCol} = ?`,
         )
-        .all(slug) as Array<{
+        .all(dbProject, slug) as Array<{
         day: string;
         tool: string;
         model: string;
@@ -1420,6 +1509,13 @@ export async function migrateV2Command(
     const [project, slug] = key.split(':');
     logLine(lines, mode, `(${project}, ${slug}) → ${id}`);
   }
+  for (const slug of maps.duplicateStandaloneSlugs) {
+    logLine(
+      lines,
+      mode,
+      `skipped standalone slug re-key: ${slug} (duplicate slug among standalone tickets)`,
+    );
+  }
 
   const dbPath = resolve(home, 'syntaur.db');
   if (await fileExists(dbPath)) {
@@ -1440,6 +1536,9 @@ export async function migrateV2Command(
   const projectCount = plans.length + (standalone.length > 0 ? 1 : 0);
 
   if (!options.apply) {
+    if (options.root) {
+      logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
+    }
     logLine(
       lines,
       mode,
@@ -1497,9 +1596,20 @@ export async function migrateV2Command(
       if (counts.usageDailyMerged > 0) {
         logLine(lines, mode, `merged usage_daily rows: ${counts.usageDailyMerged}`);
       }
+      for (const slug of counts.skippedStandaloneSlugRekeys) {
+        logLine(
+          lines,
+          mode,
+          `skipped standalone slug re-key: ${slug} (duplicate slug among standalone tickets)`,
+        );
+      }
     }
 
     await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
+
+    for (const warning of maps.refWarnings) {
+      logLine(lines, mode, warning);
+    }
 
     if (options.root) {
       logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);

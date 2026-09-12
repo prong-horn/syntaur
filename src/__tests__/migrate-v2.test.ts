@@ -11,6 +11,8 @@ import {
   migrateItemId,
   migrateSnoozeKey,
   migrateBackfillSourceKey,
+  mapTicketRef,
+  rekeyDatabase,
 } from '../commands/migrate-v2.js';
 import {
   closeSessionDb,
@@ -457,6 +459,32 @@ describe('migrate v2 key helpers', () => {
       'backfill~P1-1~plan-approval',
     );
   });
+
+  it('mapTicketRef resolves within project and warns on cross-project ambiguity', () => {
+    const maps = {
+      uuidToId: new Map<string, string>(),
+      slugToId: new Map([['p1:shared', 'P1-1'], ['p2:shared', 'P2-1']]),
+      projectSlugToId: new Map([
+        ['p1', new Map([['shared', 'P1-1']])],
+        ['p2', new Map([['shared', 'P2-1']])],
+      ]),
+      itemIdMap: new Map<string, string>(),
+      duplicateStandaloneSlugs: new Set<string>(),
+      refWarnings: [] as string[],
+    };
+    expect(mapTicketRef('shared', 'p1', maps)).toBe('P1-1');
+    expect(mapTicketRef('shared', 'p2', maps)).toBe('P2-1');
+    expect(mapTicketRef('shared', 'p9', maps)).toBe('shared');
+    expect(maps.refWarnings.some((w) => w.includes('ambiguous ticket reference "shared"'))).toBe(
+      true,
+    );
+    maps.refWarnings.length = 0;
+    expect(mapTicketRef('only-here', null, {
+      ...maps,
+      slugToId: new Map([['p1:only-here', 'P1-9']]),
+      projectSlugToId: new Map([['p1', new Map([['only-here', 'P1-9']])]]),
+    })).toBe('P1-9');
+  });
 });
 
 const MIGRATION_TABLES = [
@@ -503,6 +531,9 @@ describe('migrateV2Command', () => {
     expect(lines.some((l) => l.includes('merged usage_daily rows: 1'))).toBe(true);
     expect(lines.some((l) => l.includes('unattributed usage_events rows: 1'))).toBe(true);
     expect(lines.some((l) => l.includes('totals: 3 projects, 4 tickets'))).toBe(true);
+    expect(
+      lines.some((l) => l === `[dry-run] config defaultProjectDir → ${resolve(home, 'projects')}`),
+    ).toBe(true);
     expect(lines.every((l) => l.startsWith('[dry-run]'))).toBe(true);
   });
 
@@ -710,6 +741,277 @@ describe('migrateV2Command', () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+});
+
+const UUID_DUP_SA1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001';
+const UUID_DUP_SA2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';
+const UUID_DUP_P1S = 'cccccccc-cccc-4ccc-8ccc-cccccccc0003';
+const UUID_DUP_P2S = 'dddddddd-dddd-4ddd-8ddd-dddddddd0004';
+
+async function buildDuplicateSlugFixture(root: string): Promise<void> {
+  const projectsDir = resolve(root, 'projects');
+  await mkdir(projectsDir, { recursive: true });
+  const ts = '2026-06-01T00:00:00.000Z';
+
+  for (const [slug, title, prefix] of [
+    ['p1', 'Project One', 'P1'],
+    ['p2', 'Project Two', 'P2'],
+  ] as const) {
+    const projectDir = resolve(projectsDir, slug);
+    await mkdir(resolve(projectDir, 'assignments'), { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      renderProject({
+        id: `${slug}-project-id`,
+        slug,
+        title,
+        timestamp: ts,
+        prefix,
+        nextTicket: 99,
+      }),
+    );
+  }
+
+  await mkdir(resolve(projectsDir, 'p1', 'assignments', 'shared-ticket'), { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'p1', 'assignments', 'shared-ticket', 'assignment.md'),
+    ticketWithMeta(UUID_DUP_P1S, 'shared', 'p1', '2026-01-03T00:00:00.000Z'),
+  );
+  await mkdir(resolve(projectsDir, 'p2', 'assignments', 'shared-ticket'), { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'p2', 'assignments', 'shared-ticket', 'assignment.md'),
+    ticketWithMeta(UUID_DUP_P2S, 'shared', 'p2', '2026-01-04T00:00:00.000Z'),
+  );
+
+  for (const [uuid, slug, created] of [
+    [UUID_DUP_SA1, 'test', '2026-01-01T00:00:00.000Z'],
+    [UUID_DUP_SA2, 'test', '2026-01-02T00:00:00.000Z'],
+  ] as const) {
+    const dir = resolve(root, 'assignments', uuid);
+    await mkdir(dir, { recursive: true });
+    await writeFile(resolve(dir, 'assignment.md'), ticketWithMeta(uuid, slug, null, created));
+  }
+
+  await writeFile(resolve(root, 'config.md'), renderConfig({ defaultProjectDir: '/old/projects' }));
+
+  const dbPath = resolve(root, 'syntaur.db');
+  const db = new Database(dbPath);
+  db.exec(`
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    INSERT INTO meta (key, value) VALUES ('schema_version', '12');
+    INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '1');
+
+    CREATE TABLE sessions (
+      session_id TEXT PRIMARY KEY,
+      agent TEXT NOT NULL DEFAULT 'claude',
+      started TEXT NOT NULL,
+      ended TEXT,
+      status TEXT NOT NULL DEFAULT 'active',
+      path TEXT,
+      description TEXT,
+      transcript_path TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE engagement (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      session_id TEXT NOT NULL,
+      assignment_id TEXT,
+      project_slug TEXT,
+      assignment_slug TEXT,
+      stage TEXT NOT NULL DEFAULT 'implement',
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      tokens_at_open TEXT,
+      tokens_at_close TEXT,
+      close_reason TEXT
+    );
+
+    CREATE TABLE usage_events (
+      session_id TEXT NOT NULL,
+      model TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      event_ts TEXT NOT NULL,
+      project_slug TEXT NOT NULL DEFAULT '',
+      assignment_slug TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (session_id, model)
+    );
+
+    CREATE TABLE usage_daily (
+      day TEXT NOT NULL,
+      tool TEXT NOT NULL,
+      model TEXT NOT NULL,
+      project_slug TEXT NOT NULL DEFAULT '',
+      assignment_slug TEXT NOT NULL DEFAULT '',
+      computed_at TEXT NOT NULL,
+      PRIMARY KEY (day, tool, model, project_slug, assignment_slug)
+    );
+  `);
+
+  const eng = [
+    ['sess-sa1-uuid', UUID_DUP_SA1, '', 'test'],
+    ['sess-sa2-uuid', UUID_DUP_SA2, '', 'test'],
+    ['sess-sa1-slug', '', '', 'test'],
+    ['sess-sa2-slug', '', '', 'test'],
+    ['sess-p1-shared-uuid', UUID_DUP_P1S, 'p1', 'shared'],
+    ['sess-p2-shared-uuid', UUID_DUP_P2S, 'p2', 'shared'],
+    ['sess-p1-shared-slug', '', 'p1', 'shared'],
+    ['sess-p2-shared-slug', '', 'p2', 'shared'],
+  ] as const;
+  for (const [sessionId, assignmentId, projectSlug, assignmentSlug] of eng) {
+    db.prepare(
+      `INSERT INTO engagement (session_id, assignment_id, project_slug, assignment_slug, started_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    ).run(sessionId, assignmentId, projectSlug, assignmentSlug, '2026-01-01T00:00:00.000Z');
+  }
+
+  const usageRows = [
+    ['ue-sa1-uuid', UUID_DUP_SA1, '', 'test'],
+    ['ue-sa2-uuid', UUID_DUP_SA2, '', 'test'],
+    ['ue-sa1-slug', '', '', 'test'],
+    ['ue-sa2-slug', '', '', 'test'],
+    ['ue-p1-shared-uuid', UUID_DUP_P1S, 'p1', 'shared'],
+    ['ue-p2-shared-uuid', UUID_DUP_P2S, 'p2', 'shared'],
+    ['ue-p1-shared-slug', '', 'p1', 'shared'],
+    ['ue-p2-shared-slug', '', 'p2', 'shared'],
+  ] as const;
+  for (const [sessionId, ticketRef, projectSlug, slugVal] of usageRows) {
+    db.prepare(
+      `INSERT INTO usage_events (session_id, model, tool, event_ts, project_slug, assignment_slug, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(sessionId, 'claude-opus', 'claude', '2026-01-01T00:00:00.000Z', projectSlug, ticketRef || slugVal, '2026-01-01T00:00:00.000Z');
+  }
+
+  const dailyRows = [
+    ['2026-01-01', UUID_DUP_SA1, '', 'test'],
+    ['2026-01-02', UUID_DUP_SA2, '', 'test'],
+    ['2026-01-03', '', '', 'test', 'ue-sa1-slug-daily'],
+    ['2026-01-04', '', '', 'test', 'ue-sa2-slug-daily'],
+    ['2026-01-05', UUID_DUP_P1S, 'p1', 'shared'],
+    ['2026-01-06', UUID_DUP_P2S, 'p2', 'shared'],
+    ['2026-01-07', '', 'p1', 'shared', 'ud-p1-shared-slug'],
+    ['2026-01-08', '', 'p2', 'shared', 'ud-p2-shared-slug'],
+  ] as const;
+  for (const row of dailyRows) {
+    const [day, ticketRef, projectSlug, slugVal, toolSuffix] = row;
+    db.prepare(
+      `INSERT INTO usage_daily (day, tool, model, project_slug, assignment_slug, computed_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      day,
+      `claude-${toolSuffix ?? ticketRef.slice(0, 8)}`,
+      'claude-opus',
+      projectSlug,
+      ticketRef || slugVal,
+      '2026-01-01T00:00:00.000Z',
+    );
+  }
+  db.close();
+}
+
+describe('migrateV2Command duplicate slugs', () => {
+  let dupHome: string;
+
+  beforeEach(async () => {
+    dupHome = await mkdtemp(join(tmpdir(), 'syntaur-migrate-dup-slug-'));
+    process.env.SYNTAUR_HOME = dupHome;
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
+    await buildDuplicateSlugFixture(dupHome);
+  });
+
+  afterEach(async () => {
+    closeSessionDb();
+    closeEventsDb();
+    closeUsageDb();
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
+    await rm(dupHome, { recursive: true, force: true });
+  });
+
+  it('scopes slug re-key by project and never collapses duplicate standalone slugs', async () => {
+    const maps = {
+      uuidToId: new Map([
+        [UUID_DUP_SA1, 'SCR-1'],
+        [UUID_DUP_SA2, 'SCR-2'],
+        [UUID_DUP_P1S, 'P1-1'],
+        [UUID_DUP_P2S, 'P2-1'],
+      ]),
+      slugToId: new Map([
+        ['p1:shared', 'P1-1'],
+        ['p2:shared', 'P2-1'],
+        ['scratch:test', 'SCR-2'],
+      ]),
+      projectSlugToId: new Map([
+        ['p1', new Map([['shared', 'P1-1']])],
+        ['p2', new Map([['shared', 'P2-1']])],
+        ['scratch', new Map<string, string>()],
+      ]),
+      itemIdMap: new Map<string, string>(),
+      duplicateStandaloneSlugs: new Set(['test']),
+      refWarnings: [] as string[],
+    };
+    const counts = rekeyDatabase(resolve(dupHome, 'syntaur.db'), maps);
+    expect(counts.skippedStandaloneSlugRekeys).toEqual(['test']);
+
+    const dbPath = resolve(dupHome, 'syntaur.db');
+    const sessionDb = new Database(dbPath, { readonly: true });
+    const usageDb = new Database(dbPath, { readonly: true });
+
+    const engagementExpected: Record<string, string> = {
+      'sess-sa1-uuid': 'SCR-1',
+      'sess-sa2-uuid': 'SCR-2',
+      'sess-sa1-slug': '',
+      'sess-sa2-slug': '',
+      'sess-p1-shared-uuid': 'P1-1',
+      'sess-p2-shared-uuid': 'P2-1',
+      'sess-p1-shared-slug': 'P1-1',
+      'sess-p2-shared-slug': 'P2-1',
+    };
+    for (const [sessionId, expected] of Object.entries(engagementExpected)) {
+      const row = sessionDb
+        .prepare('SELECT assignment_id FROM engagement WHERE session_id = ?')
+        .get(sessionId) as { assignment_id: string | null };
+      expect(row.assignment_id ?? '').toBe(expected);
+    }
+
+    const usageExpected: Record<string, string> = {
+      'ue-sa1-uuid': 'SCR-1',
+      'ue-sa2-uuid': 'SCR-2',
+      'ue-sa1-slug': 'test',
+      'ue-sa2-slug': 'test',
+      'ue-p1-shared-uuid': 'P1-1',
+      'ue-p2-shared-uuid': 'P2-1',
+      'ue-p1-shared-slug': 'P1-1',
+      'ue-p2-shared-slug': 'P2-1',
+    };
+    for (const [sessionId, expected] of Object.entries(usageExpected)) {
+      const row = usageDb
+        .prepare('SELECT assignment_slug FROM usage_events WHERE session_id = ?')
+        .get(sessionId) as { assignment_slug: string };
+      expect(row.assignment_slug).toBe(expected);
+    }
+
+    const dailyRows = usageDb
+      .prepare('SELECT day, tool, assignment_slug FROM usage_daily ORDER BY day')
+      .all() as Array<{ day: string; tool: string; assignment_slug: string }>;
+    const dailyByDay = new Map(dailyRows.map((r) => [r.day, r.assignment_slug]));
+    expect(dailyByDay.get('2026-01-01')).toBe('SCR-1');
+    expect(dailyByDay.get('2026-01-02')).toBe('SCR-2');
+    expect(dailyByDay.get('2026-01-03')).toBe('test');
+    expect(dailyByDay.get('2026-01-04')).toBe('test');
+    expect(dailyByDay.get('2026-01-05')).toBe('P1-1');
+    expect(dailyByDay.get('2026-01-06')).toBe('P2-1');
+    expect(dailyByDay.get('2026-01-07')).toBe('P1-1');
+    expect(dailyByDay.get('2026-01-08')).toBe('P2-1');
+
+    sessionDb.close();
+    usageDb.close();
   });
 });
 
