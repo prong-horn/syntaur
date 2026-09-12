@@ -1,4 +1,5 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import {
   initUsageDb,
   listDaily,
@@ -21,9 +22,9 @@ import {
  * Endpoints — all accept `?since=YYYY-MM-DD&until=YYYY-MM-DD&tool=&groupBy=`:
  *   GET /                                            — top-level summary
  *   GET /projects/:projectSlug                       — per-assignment rollup for a project
- *   GET /projects/:projectSlug/tickets/:ticketSlug
- *                                                    — event detail for one project-scoped assignment
- *   GET /standalone/:ticketId                    — UUID-keyed standalone variant
+ *
+ * Per-ticket detail is served at `GET /api/tickets/:id/usage` (see
+ * `getTicketUsageHandler`).
  */
 export function createUsageRouter(
   projectsDir: string,
@@ -78,10 +79,28 @@ export function createUsageRouter(
     }
   });
 
-  router.get('/projects/:projectSlug/tickets/:ticketSlug', (req, res) => {
+  return router;
+}
+
+export function getTicketUsageHandler(
+  projectsDir: string,
+  ticketsDir: string | undefined,
+): RequestHandler {
+  return async (req, res) => {
     try {
       initUsageDb();
-      const { projectSlug, ticketSlug } = req.params;
+      if (!ticketsDir) {
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
+        return;
+      }
+      const id = typeof req.params.id === 'string' ? req.params.id : req.params.id[0];
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Ticket "${id}" not found` });
+        return;
+      }
+      const projectSlug = resolved.standalone ? '' : resolved.projectSlug!;
+      const ticketSlug = resolved.standalone ? resolved.id : resolved.ticketSlug;
       const common = extractCommonFilter(req.query);
       const dailyRows = listDaily({
         ...common,
@@ -92,12 +111,13 @@ export function createUsageRouter(
         eventsFilterFromDaily({ ...common, projectSlug, ticketSlug }),
       );
       res.json({
-        projectSlug,
+        ticketId: resolved.id,
+        projectSlug: resolved.standalone ? null : resolved.projectSlug,
         ticketSlug,
         daily: dailyRows,
         events: eventRows,
         summary: buildTicketSummary(dailyRows, {
-          projectSlug,
+          projectSlug: resolved.standalone ? null : resolved.projectSlug,
           ticketSlug,
           since: common.since,
           until: common.until,
@@ -109,43 +129,7 @@ export function createUsageRouter(
         error: error instanceof Error ? error.message : 'List failed',
       });
     }
-  });
-
-  router.get('/standalone/:ticketId', (req, res) => {
-    try {
-      initUsageDb();
-      const ticketSlug = req.params.ticketId;
-      const common = extractCommonFilter(req.query);
-      const dailyRows = listDaily({
-        ...common,
-        projectSlug: '',
-        ticketSlug,
-      });
-      const eventRows = listEvents(
-        eventsFilterFromDaily({ ...common, projectSlug: '', ticketSlug }),
-      );
-      res.json({
-        ticketId: ticketSlug,
-        daily: dailyRows,
-        events: eventRows,
-        // Standalone: engagement stores `project_slug IS NULL` (the reader maps
-        // a null/empty projectSlug to the NULL match).
-        summary: buildTicketSummary(dailyRows, {
-          projectSlug: null,
-          ticketSlug,
-          since: common.since,
-          until: common.until,
-          model: common.model,
-        }),
-      });
-    } catch (error) {
-      res.status(500).json({
-        error: error instanceof Error ? error.message : 'List failed',
-      });
-    }
-  });
-
-  return router;
+  };
 }
 
 // --- internals ------------------------------------------------------------

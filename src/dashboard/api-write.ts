@@ -43,7 +43,7 @@ import {
   installRecordsInvalidation,
   resolveProjectPath,
 } from './api.js';
-import { resolveTicketById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { executeTransitionByDir } from '../lifecycle/index.js';
 import { runEngineTransition, runEngineOverride } from '../lifecycle/engine-transition.js';
@@ -446,8 +446,8 @@ async function handleWorktreeCreate(
       return;
     }
 
-    const assignment = await ctx.reload();
-    res.json({ assignment });
+    const ticket = await ctx.reload();
+    res.json({ ticket });
   } finally {
     worktreeInFlight.delete(ctx.ticketPath);
   }
@@ -900,33 +900,6 @@ export function createWriteRouter(
   }
 
   router.get(
-    '/api/projects/:slug/tickets/:aslug/repository-branches',
-    async (req: Request, res: Response) => {
-      try {
-        const projectSlug = getParam(req.params.slug);
-        const ticketSlug = getParam(req.params.aslug);
-        const ticketPath = resolve(
-          projectsDir,
-          projectSlug,
-          'tickets',
-          ticketSlug,
-          'ticket.md',
-        );
-        if (!(await fileExists(ticketPath))) {
-          res.status(404).json({ error: 'Assignment not found' });
-          return;
-        }
-        await handleRepositoryBranches(req, res);
-      } catch (error) {
-        console.error('Error listing repository branches:', error);
-        res.status(500).json({
-          error: `Failed to list repository branches: ${(error as Error).message}`,
-        });
-      }
-    },
-  );
-
-  router.get(
     '/api/tickets/:id/repository-branches',
     async (req: Request, res: Response) => {
       try {
@@ -947,38 +920,6 @@ export function createWriteRouter(
         console.error('Error listing repository branches:', error);
         res.status(500).json({
           error: `Failed to list repository branches: ${(error as Error).message}`,
-        });
-      }
-    },
-  );
-
-  router.get(
-    '/api/projects/:slug/tickets/:aslug/source-tickets',
-    async (req: Request, res: Response) => {
-      try {
-        const projectSlug = getParam(req.params.slug);
-        const ticketSlug = getParam(req.params.aslug);
-        const ticketPath = resolve(
-          projectsDir,
-          projectSlug,
-          'tickets',
-          ticketSlug,
-          'ticket.md',
-        );
-        if (!(await fileExists(ticketPath))) {
-          res.status(404).json({ error: 'Assignment not found' });
-          return;
-        }
-        const sourceTickets = await getProjectSourceAssignments(
-          projectsDir,
-          projectSlug,
-          ticketSlug,
-        );
-        res.json({ sourceTickets });
-      } catch (error) {
-        console.error('Error listing source assignments:', error);
-        res.status(500).json({
-          error: `Failed to list source assignments: ${(error as Error).message}`,
         });
       }
     },
@@ -1013,34 +954,6 @@ export function createWriteRouter(
         res.status(500).json({
           error: `Failed to list source assignments: ${(error as Error).message}`,
         });
-      }
-    },
-  );
-
-  router.post(
-    '/api/projects/:slug/tickets/:aslug/worktree',
-    async (req: Request, res: Response) => {
-      try {
-        const projectSlug = getParam(req.params.slug);
-        const ticketSlug = getParam(req.params.aslug);
-        const ticketPath = resolve(
-          projectsDir,
-          projectSlug,
-          'tickets',
-          ticketSlug,
-          'ticket.md',
-        );
-        await handleWorktreeCreate(req, res, {
-          ticketPath,
-          projectSlug,
-          ticketSlug,
-          reload: () => getTicketDetail(projectsDir, projectSlug, ticketSlug),
-        });
-      } catch (error) {
-        console.error('Error creating worktree:', error);
-        res
-          .status(500)
-          .json({ error: `Failed to create worktree: ${(error as Error).message}` });
       }
     },
   );
@@ -1087,27 +1000,6 @@ export function createWriteRouter(
   // Server-authoritative: the path/repo/branch come from persisted state, never
   // the request body. Bypasses the create-flow's "already configured" / "branch
   // exists" 409 guards since recreate intentionally rebuilds an existing record.
-
-  router.post(
-    '/api/projects/:slug/tickets/:aslug/worktree/recreate',
-    async (req: Request, res: Response) => {
-      try {
-        const projectSlug = getParam(req.params.slug);
-        const ticketSlug = getParam(req.params.aslug);
-        const outcome = await recreateForTarget(
-          { projectsDir, ticketsDir: ticketsDir ?? '' },
-          { kind: 'assignment', projectSlug, ticketSlug },
-        );
-        const { httpStatus, body } = recreateOutcomeToHttp(outcome);
-        res.status(httpStatus).json(body);
-      } catch (error) {
-        console.error('Error recreating worktree:', error);
-        res
-          .status(500)
-          .json({ error: `Failed to recreate worktree: ${(error as Error).message}` });
-      }
-    },
-  );
 
   router.post(
     '/api/tickets/:id/worktree/recreate',
@@ -1234,8 +1126,8 @@ export function createWriteRouter(
     const parsed = parseAssignmentFull(content);
     emitDashboardEvent(parsed.id, projectSlug, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
-    const assignment = await getTicketDetail(projectsDir, projectSlug, ticketSlug);
-    res.json({ assignment });
+    const ticket = await getTicketDetail(projectsDir, projectSlug, ticketSlug);
+    res.json({ ticket });
   }
 
 
@@ -1264,9 +1156,29 @@ export function createWriteRouter(
     const parsed = parseAssignmentFull(content);
     emitDashboardEvent(parsed.id || resolved.id, null, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
-    const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-    res.json({ assignment });
+    const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+    res.json({ ticket });
   }
+
+  router.delete('/api/tickets/:id', async (req: Request, res: Response) => {
+    try {
+      if (!ticketsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Ticket "${id}" not found` });
+        return;
+      }
+      await rm(resolved.ticketDir, { recursive: true, force: true });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Error deleting ticket:', error);
+      res.status(500).json({ error: `Failed to delete ticket: ${(error as Error).message}` });
+    }
+  });
 
   router.post('/api/tickets/:id/archive', async (req: Request, res: Response) => {
     try {
@@ -1380,11 +1292,11 @@ export function createWriteRouter(
         );
         await writeFileForce(
           resolve(ticketDir, 'progress.md'),
-          renderProgress({ assignment: id, timestamp }),
+          renderProgress({ ticket: id, timestamp }),
         );
         await writeFileForce(
           resolve(ticketDir, 'comments.md'),
-          renderComments({ assignment: id, timestamp }),
+          renderComments({ ticket: id, timestamp }),
         );
 
         // Audit event (best-effort): emit AFTER all companion files are written
@@ -1398,7 +1310,7 @@ export function createWriteRouter(
         }
 
         const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
-        res.status(201).json({ assignment: detail });
+        res.status(201).json({ ticket: detail });
         return;
       }
 
@@ -1454,11 +1366,11 @@ export function createWriteRouter(
       );
       await writeFileForce(
         resolve(ticketDir, 'progress.md'),
-        renderProgress({ assignment: id, timestamp }),
+        renderProgress({ ticket: id, timestamp }),
       );
       await writeFileForce(
         resolve(ticketDir, 'comments.md'),
-        renderComments({ assignment: id, timestamp }),
+        renderComments({ ticket: id, timestamp }),
       );
 
       // Audit event (best-effort): emit AFTER all companion files are written
@@ -1472,7 +1384,7 @@ export function createWriteRouter(
       });
 
       const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.status(201).json({ assignment: detail });
+      res.status(201).json({ ticket: detail });
     } catch (error) {
       console.error('Error creating standalone assignment:', error);
       res.status(500).json({ error: `Failed to create standalone assignment: ${(error as Error).message}` });
@@ -1684,8 +1596,8 @@ export function createWriteRouter(
         null,
       );
 
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone assignment:', error);
       res.status(500).json({ error: `Failed to update assignment: ${(error as Error).message}` });
@@ -1723,8 +1635,8 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(planPath, nextContent);
 
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone plan:', error);
       res.status(500).json({ error: `Failed to update plan: ${(error as Error).message}` });
@@ -1762,8 +1674,8 @@ export function createWriteRouter(
       const nextContent = setTopLevelField(nextContentRaw, 'updated', nowTimestamp());
       await writeFileForce(scratchpadPath, nextContent);
 
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error updating standalone scratchpad:', error);
       res.status(500).json({ error: `Failed to update scratchpad: ${(error as Error).message}` });
@@ -1803,8 +1715,8 @@ export function createWriteRouter(
         'No handoffs recorded yet.',
       );
       await writeFileForce(handoffPath, nextContent);
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.status(201).json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.status(201).json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone handoff entry:', error);
       res.status(500).json({ error: `Failed to append handoff entry: ${(error as Error).message}` });
@@ -1844,8 +1756,8 @@ export function createWriteRouter(
         'No decisions recorded yet.',
       );
       await writeFileForce(decisionPath, nextContent);
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.status(201).json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.status(201).json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error appending standalone decision entry:', error);
       res.status(500).json({ error: `Failed to append decision entry: ${(error as Error).message}` });
@@ -1889,8 +1801,8 @@ export function createWriteRouter(
             res.status(engineOverride.code).json({ error: engineOverride.message });
             return;
           }
-          const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-          res.json({ assignment });
+          const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+          res.json({ ticket });
           return;
         }
       }
@@ -1933,8 +1845,8 @@ export function createWriteRouter(
         res.status(503).json({ error: result.warning });
         return;
       }
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket });
     } catch (error) {
       console.error('Error overriding standalone status:', error);
       res.status(500).json({ error: `Failed to override status: ${(error as Error).message}` });
@@ -1977,8 +1889,8 @@ export function createWriteRouter(
         });
       }
 
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket });
     } catch (error) {
       console.error('Error updating standalone assignee:', error);
       res.status(500).json({ error: `Failed to update assignee: ${(error as Error).message}` });
@@ -2011,8 +1923,8 @@ export function createWriteRouter(
       content = setTopLevelField(content, 'title', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, content);
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket });
     } catch (error) {
       console.error('Error updating standalone title:', error);
       res.status(500).json({ error: `Failed to update title: ${(error as Error).message}` });
@@ -2050,8 +1962,8 @@ export function createWriteRouter(
       }
       const nextContent = setTopLevelField(result.content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, nextContent);
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment, content: nextContent });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket, content: nextContent });
     } catch (error) {
       console.error('Error toggling standalone acceptance criterion:', error);
       res.status(500).json({ error: `Failed to toggle acceptance criterion: ${(error as Error).message}` });
@@ -2117,7 +2029,7 @@ export function createWriteRouter(
         const detail = resolved.standalone
           ? await getTicketDetailById(projectsDir, ticketsDir, id)
           : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
-        res.json({ assignment: detail, warnings: [] });
+        res.json({ ticket: detail, warnings: [] });
         return;
       }
 
@@ -2146,7 +2058,7 @@ export function createWriteRouter(
         const detail = resolved.standalone
           ? await getTicketDetailById(projectsDir, ticketsDir, id)
           : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
-        res.json({ assignment: detail, warnings: engineResult.warnings ?? [] });
+        res.json({ ticket: detail, warnings: engineResult.warnings ?? [] });
         return;
       }
 
@@ -2219,7 +2131,7 @@ export function createWriteRouter(
       const detail = resolved.standalone
         ? await getTicketDetailById(projectsDir, ticketsDir, id)
         : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
-      res.json({ assignment: detail, warnings: transitionResult.warnings ?? [] });
+      res.json({ ticket: detail, warnings: transitionResult.warnings ?? [] });
     } catch (error) {
       console.error('Error transitioning by id:', error);
       res.status(500).json({ error: `Failed to transition: ${(error as Error).message}` });
@@ -2343,7 +2255,7 @@ async function appendCommentTo(
     const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
     if (countMatch) currentCount = parseInt(countMatch[1], 10);
   } else {
-    currentContent = renderComments({ assignment: assignmentRef, timestamp });
+    currentContent = renderComments({ ticket: assignmentRef, timestamp });
   }
 
   const comment: Comment = {
@@ -2382,8 +2294,8 @@ async function appendCommentTo(
     /* best-effort */
   }
 
-  const assignment = await reloadDetail();
-  res.status(201).json({ assignment, comment: { id: comment.id } });
+  const ticket = await reloadDetail();
+  res.status(201).json({ ticket, comment: { id: comment.id } });
 }
 
 async function toggleCommentResolvedAt(
@@ -2435,6 +2347,6 @@ async function toggleCommentResolvedAt(
     }
   }
 
-  const assignment = await reloadDetail();
-  res.json({ assignment });
+  const ticket = await reloadDetail();
+  res.json({ ticket });
 }

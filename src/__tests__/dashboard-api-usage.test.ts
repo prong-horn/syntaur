@@ -19,7 +19,7 @@ import { openEngagement, closeEngagementById } from '../db/engagement-db.js';
 import type { TokenSnapshot } from '../db/engagement-tokens.js';
 import { invalidateRecordsCache } from '../dashboard/api.js';
 import { runRollup } from '../usage/rollup-runner.js';
-import { createUsageRouter } from '../dashboard/api-usage.js';
+import { createUsageRouter, getTicketUsageHandler } from '../dashboard/api-usage.js';
 
 let sandbox: string;
 let projectsDir: string;
@@ -35,6 +35,22 @@ async function writeProject(slug: string): Promise<void> {
   await writeFile(
     resolve(dir, 'project.md'),
     `---\nslug: ${slug}\ntitle: ${slug}\ncreated: "2026-05-01"\nupdated: "2026-05-01"\n---\n\n# ${slug}\n`,
+    'utf-8',
+  );
+}
+
+/** Write a project-nested ticket.md with an explicit id for id-based routes. */
+async function writeProjectTicket(
+  projectSlug: string,
+  ticketSlug: string,
+  ticketId: string,
+): Promise<void> {
+  await writeProject(projectSlug);
+  const dir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    resolve(dir, 'ticket.md'),
+    `---\nid: ${ticketId}\nslug: ${ticketSlug}\ntitle: ${ticketSlug}\nstatus: pending\npriority: medium\ncreated: "2026-05-01T00:00:00Z"\nupdated: "2026-05-01T00:00:00Z"\narchived: false\ntags: []\n---\n\n# ${ticketSlug}\n`,
     'utf-8',
   );
 }
@@ -66,6 +82,7 @@ beforeEach(async () => {
 
   const app = express();
   app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
+  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir, ticketsDir));
 
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res());
@@ -228,11 +245,13 @@ describe('GET /api/usage/projects/:projectSlug', () => {
   });
 
   it('surfaces snapshot-window confidence counts on the per-assignment summary', async () => {
+    const ticketId = 'a1-usage-id';
+    await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5);
     runRollup();
     seedWindow('p1', 'a1', 0.5);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     const body = await res.json();
     expect(body.summary.pricedWindowCount).toBe(1);
     expect(body.summary.uncomputableWindowCount).toBe(0);
@@ -240,13 +259,15 @@ describe('GET /api/usage/projects/:projectSlug', () => {
   });
 });
 
-describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
+describe('GET /api/tickets/:id/usage', () => {
   it('returns daily + events for a specific assignment', async () => {
+    const ticketId = 'a1-usage-id';
+    await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectSlug).toBe('p1');
@@ -257,13 +278,15 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
   });
 
   it('includes a pre-aggregated summary for the ticket', async () => {
+    const ticketId = 'a1-usage-id';
+    await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
     // M2: per-assignment cost is the snapshot-window delta, not the cumulative row.
     seedWindow('p1', 'a1', 0.5);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.totalTokens).toBe(100);
@@ -275,6 +298,8 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
   });
 
   it('merges byModel across multiple days and models, ordered by tokens desc', async () => {
+    const ticketId = 'merge-usage-id';
+    await writeProjectTicket('p1', 'merge', ticketId);
     // One ticket, two models, spread across two days.
     seed('p1', 'merge', 100, 0.5, '2026-05-20T12:00:00.000Z', 'claude-opus-4-7');
     seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
@@ -284,7 +309,7 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
     // byModel keeps the usage_daily per-model breakdown.
     seedWindow('p1', 'merge', 0.875);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/merge`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.totalTokens).toBe(180);
@@ -298,6 +323,8 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
   });
 
   it('reconciles the header total with the by-model breakdown when there is NO engagement window', async () => {
+    const ticketId = 'nowin-usage-id';
+    await writeProjectTicket('p1', 'nowin', ticketId);
     // The photographed bug: a ticket accrues usage_daily cost (attributed by
     // slug) yet never had a registered agent session, so there are ZERO closed
     // engagement windows. The window-derived header must NOT show $0 over a
@@ -308,7 +335,7 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
     runRollup();
     // NOTE: no seedWindow() — this ticket has no engagement window at all.
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/nowin`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.pricedWindowCount).toBe(0); // confirms the no-window path
@@ -323,10 +350,12 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
   });
 
   it('returns a calm zero summary when the ticket has no usage', async () => {
+    const ticketId = 'none-usage-id';
+    await writeProjectTicket('p1', 'none', ticketId);
     seed('p1', 'a1', 100, 0.5);
     runRollup();
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/none`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.daily.length).toBe(0);
@@ -336,16 +365,15 @@ describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
     expect(body.summary.lastEventDay).toBeNull();
     expect(body.summary.byModel).toEqual([]);
   });
-});
-
-describe('GET /api/usage/standalone/:ticketId', () => {
   it('treats project_slug as empty for standalone tickets', async () => {
-    seed('', 'standalone-asgn', 500, 0.7);
+    const ticketId = 'standalone-asgn';
+    await writeStandalone(ticketId);
+    seed('', ticketId, 500, 0.7);
     runRollup();
     // Standalone window stored with project_slug NULL; reader maps ''→NULL.
-    seedWindow('', 'standalone-asgn', 0.7);
+    seedWindow('', ticketId, 0.7);
 
-    const res = await fetch(`${baseUrl}/api/usage/standalone/standalone-asgn`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.ticketId).toBe('standalone-asgn');
@@ -359,10 +387,12 @@ describe('GET /api/usage/standalone/:ticketId', () => {
   });
 
   it('returns a calm zero summary for a standalone ticket with no usage', async () => {
+    const ticketId = 'standalone-none-id';
+    await writeStandalone(ticketId);
     seed('', 'standalone-asgn', 500, 0.7);
     runRollup();
 
-    const res = await fetch(`${baseUrl}/api/usage/standalone/none`);
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.daily.length).toBe(0);

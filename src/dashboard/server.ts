@@ -62,7 +62,7 @@ import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
 import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
-import { createUsageRouter } from './api-usage.js';
+import { createUsageRouter, getTicketUsageHandler } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
 import { createChatRouter } from './api-chat.js';
@@ -599,25 +599,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/projects/:slug/tickets/:aslug', async (req, res) => {
-    try {
-      const detail = await getTicketDetail(
-        projectsDir,
-        req.params.slug,
-        req.params.aslug,
-      );
-      if (!detail) {
-        res.status(404).json({
-          error: `Assignment "${req.params.aslug}" not found in project "${req.params.slug}"`,
-        });
-        return;
-      }
-      res.json(detail);
-    } catch (error) {
-      console.error('Error getting assignment detail:', error);
-      res.status(500).json({ error: 'Failed to get assignment detail' });
-    }
-  });
+  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir, ticketsDir));
 
   // --- Write API (create projects/assignments) ---
   app.use(createWriteRouter(projectsDir, ticketsDir));
@@ -625,9 +607,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // --- Usage API (per-assignment / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
 
-  // --- Events API (per-assignment audit Activity timeline) ---
-  // Best-effort read-only; routes use full `/projects/...` & `/standalone/...`
-  // paths, so mount at `/api`. Returns `{ events: [] }` rather than 500ing.
+  // --- Events API (per-ticket audit Activity timeline) ---
+  // Best-effort read-only; mounted at `/api`. Returns `{ events: [] }` rather than 500ing.
   app.use('/api', createEventsRouter(projectsDir, ticketsDir));
 
   // --- Inbox API ("Needs me" triage view) ---

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import { extractFrontmatter, getField } from './parser.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import {
   initEventsDb,
   listEventsByAssignment,
@@ -11,21 +12,20 @@ import {
 } from '../db/events-db.js';
 
 /**
- * Read-only per-assignment events (Activity timeline) API. Localhost-only per
+ * Read-only per-ticket events (Activity timeline) API. Localhost-only per
  * the existing dashboard convention (no auth). Mirrors `api-usage.ts`'s router
  * shape.
  *
- * Endpoints:
- *   GET /api/projects/:slug/tickets/:aslug/events  — project-nested assignment
- *   GET /api/standalone/tickets/:id/events          — standalone (UUID-keyed)
+ * Endpoint:
+ *   GET /api/tickets/:id/events — project-nested or standalone (UUID-keyed)
  *
- * Both resolve the assignment's frontmatter `id` (the key the events table is
- * indexed by), `initEventsDb()`, and return `{ events }` newest-first with each
- * row's `details` JSON string parsed into an object.
+ * Resolves the ticket's frontmatter `id` (the key the events table is indexed
+ * by), `initEventsDb()`, and returns `{ events }` newest-first with each row's
+ * `details` JSON string parsed into an object.
  *
- * BEST-EFFORT: on ANY error (DB missing, assignment not found, parse failure)
- * this returns `{ events: [] }` and never 500s — a failed events fetch must not
- * break the assignment detail page (see Task F).
+ * BEST-EFFORT: on ANY error (DB missing, ticket not found, parse failure) this
+ * returns `{ events: [] }` and never 500s — a failed events fetch must not
+ * break the ticket detail page (see Task F).
  */
 export function createEventsRouter(
   projectsDir: string,
@@ -33,39 +33,19 @@ export function createEventsRouter(
 ): Router {
   const router = Router();
 
-  // Project-nested: resolve <projectsDir>/<slug>/tickets/<aslug>/assignment.md → frontmatter id.
-  router.get('/projects/:slug/tickets/:aslug/events', async (req, res) => {
+  router.get('/tickets/:id/events', async (req, res) => {
     try {
-      const { slug, aslug } = req.params;
-      const assignmentMdPath = resolve(
-        projectsDir,
-        slug,
-        'tickets',
-        aslug,
-        'ticket.md',
-      );
-      const id = await readAssignmentId(assignmentMdPath);
-      if (!id) {
+      const { id } = req.params;
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      if (!resolved) {
         res.json({ events: [] });
         return;
       }
-      res.json({ events: loadEvents(id, req.query) });
+      const ticketMdPath = resolve(resolved.ticketDir, 'ticket.md');
+      const ticketId = (await readTicketId(ticketMdPath)) ?? resolved.id;
+      res.json({ events: loadEvents(ticketId, req.query) });
     } catch (error) {
-      console.warn('[events] failed to list project-nested events:', error);
-      res.json({ events: [] });
-    }
-  });
-
-  // Standalone: the `:id` param IS the UUID directory name. Re-read the
-  // frontmatter `id` (which equals the directory) so the DB key is canonical.
-  router.get('/standalone/tickets/:id/events', async (req, res) => {
-    try {
-      const { id: dirId } = req.params;
-      const assignmentMdPath = resolve(ticketsDir, dirId, 'ticket.md');
-      const id = (await readAssignmentId(assignmentMdPath)) ?? dirId;
-      res.json({ events: loadEvents(id, req.query) });
-    } catch (error) {
-      console.warn('[events] failed to list standalone events:', error);
+      console.warn('[events] failed to list ticket events:', error);
       res.json({ events: [] });
     }
   });
@@ -73,17 +53,17 @@ export function createEventsRouter(
   return router;
 }
 
-/** Read an assignment.md's frontmatter `id`. Returns null when missing/unreadable. */
-async function readAssignmentId(assignmentMdPath: string): Promise<string | null> {
-  if (!(await fileExists(assignmentMdPath))) return null;
-  const content = await readFile(assignmentMdPath, 'utf-8');
+/** Read a ticket.md's frontmatter `id`. Returns null when missing/unreadable. */
+async function readTicketId(ticketMdPath: string): Promise<string | null> {
+  if (!(await fileExists(ticketMdPath))) return null;
+  const content = await readFile(ticketMdPath, 'utf-8');
   const [fm] = extractFrontmatter(content);
   const id = getField(fm, 'id');
   return id && id.length > 0 ? id : null;
 }
 
 /**
- * Query the events DB for an assignment id and shape the rows for the API:
+ * Query the events DB for a ticket id and shape the rows for the API:
  * newest-first (the DB query already orders `at DESC`) with each `details` JSON
  * string parsed into an object (or null when absent/invalid).
  */

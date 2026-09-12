@@ -81,7 +81,7 @@ function getRouteHandler(router: Router, method: string, path: string): RequestH
 
 async function invokeRoute(
   router: Router,
-  method: 'patch' | 'post' | 'get',
+  method: 'patch' | 'post' | 'get' | 'delete',
   path: string,
   params: Record<string, string>,
   body: unknown,
@@ -1099,6 +1099,23 @@ updated: "2026-04-25T12:00:00Z"
       const res = await invokeRoute(router, 'post', '/api/projects/:slug/archive', { slug: 'ghost' }, {});
       expect(res.statusCode).toBe(404);
     });
+  });
+
+  it('DELETE /api/tickets/:id removes a project-nested ticket directory', async () => {
+    await createTicketFixture();
+    const router = createWriteRouter(testDir, ticketsDir);
+    const ticketDir = resolve(testDir, 'test-project', 'tickets', 'test-assignment');
+
+    const res = await invokeRoute(
+      router,
+      'delete',
+      '/api/tickets/:id',
+      { id: 'assignment-1' },
+      {},
+    );
+    expect(res.statusCode).toBe(200);
+    expect((res.payload as { ok: boolean }).ok).toBe(true);
+    await expect(readFile(resolve(ticketDir, 'ticket.md'), 'utf-8')).rejects.toThrow();
   });
 
   // --- Worktree creation + candidate discovery ---

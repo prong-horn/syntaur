@@ -1487,3 +1487,69 @@ Ship it.
     expect(compiled!.predicate(q, { now: NOW })).toBe(true);
   });
 });
+
+describe('GET /api/tickets/:id/events', () => {
+  let sandbox: string;
+  let projectsDir: string;
+  let ticketsDir: string;
+  let server: Server;
+  let baseUrl: string;
+  let originalEnv: string | undefined;
+
+  beforeEach(async () => {
+    sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-events-'));
+    projectsDir = resolve(sandbox, 'projects');
+    ticketsDir = resolve(sandbox, 'tickets');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(ticketsDir, { recursive: true });
+    originalEnv = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = sandbox;
+
+    const app = express();
+    const { createEventsRouter } = await import('../dashboard/api-events.js');
+    app.use('/api', createEventsRouter(projectsDir, ticketsDir));
+
+    await new Promise<void>((res) => {
+      server = app.listen(0, '127.0.0.1', () => res());
+    });
+    const addr = server.address() as import('node:net').AddressInfo;
+    baseUrl = `http://127.0.0.1:${addr.port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise<void>((res) => server.close(() => res()));
+    const { closeEventsDb, resetEventsDb } = await import('../db/events-db.js');
+    closeEventsDb();
+    resetEventsDb();
+    if (originalEnv === undefined) delete process.env.SYNTAUR_HOME;
+    else process.env.SYNTAUR_HOME = originalEnv;
+    await rm(sandbox, { recursive: true, force: true });
+  });
+
+  it('returns recorded events for a project-nested ticket resolved by id', async () => {
+    const ticketId = 'events-ticket-id';
+    const projectDir = resolve(projectsDir, 'p1', 'tickets', 'a1');
+    await mkdir(projectDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'ticket.md'),
+      `---\nid: ${ticketId}\nslug: a1\ntitle: a1\nstatus: pending\n---\n`,
+      'utf-8',
+    );
+
+    const { initEventsDb, recordEvent } = await import('../db/events-db.js');
+    initEventsDb();
+    recordEvent({
+      ticketId,
+      type: 'status-change',
+      actor: 'human',
+      at: '2026-05-21T12:00:00.000Z',
+      details: { from: null, to: 'pending', command: 'create' },
+    });
+
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/events`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.events).toHaveLength(1);
+    expect(body.events[0].type).toBe('status-change');
+  });
+});
