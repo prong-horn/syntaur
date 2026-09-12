@@ -46,6 +46,8 @@ export interface MigrateV2Options {
   apply?: boolean;
   /** Repeated `slug=PFX` overrides from `--prefix`. */
   prefix?: string[];
+  /** @internal Set by tests to force database re-key failure. */
+  injectDbFailure?: () => void;
 }
 
 interface DiscoveredTicket {
@@ -521,10 +523,49 @@ interface UnmatchedTableReport {
   slugs: string[];
 }
 
-interface UnmatchedReport {
+export interface UnmatchedReport {
   usageEvents: UnmatchedTableReport;
   usageDaily: UnmatchedTableReport;
   engagement: UnmatchedTableReport;
+  unattributedUsageEvents: number;
+  unattributedUsageDaily: number;
+  unattributedEngagement: number;
+}
+
+const USAGE_DAILY_SUM_COLS = [
+  'input_tokens',
+  'output_tokens',
+  'cache_creation_tokens',
+  'cache_read_tokens',
+  'total_tokens',
+  'total_cost',
+] as const;
+
+function hasRowAttribution(
+  ticketVal: string | null | undefined,
+  slugVal: string | null | undefined,
+): boolean {
+  return (ticketVal ?? '').trim().length > 0 || (slugVal ?? '').trim().length > 0;
+}
+
+function resolveUsageDailyTicketId(
+  ticketVal: string,
+  projectSlug: string,
+  maps: MigrationMaps,
+): string {
+  if (!ticketVal) return ticketVal;
+  if (maps.uuidToId.has(ticketVal)) return maps.uuidToId.get(ticketVal)!;
+  if (/^[A-Z]{2,5}-\d+$/.test(ticketVal)) return ticketVal;
+  if (projectSlug && maps.slugToId.has(`${projectSlug}:${ticketVal}`)) {
+    return maps.slugToId.get(`${projectSlug}:${ticketVal}`)!;
+  }
+  if (maps.slugToId.has(`scratch:${ticketVal}`)) {
+    return maps.slugToId.get(`scratch:${ticketVal}`)!;
+  }
+  for (const [key, id] of maps.slugToId) {
+    if (key.split(':')[1] === ticketVal) return id;
+  }
+  return ticketVal;
 }
 
 function ticketRefMappable(
@@ -561,15 +602,24 @@ export function analyzeUnmatched(
     projectSlug: string | null | undefined,
     slugVal: string | null | undefined,
     report: UnmatchedTableReport,
+    unattributed: { count: number },
   ): void => {
+    if (!hasRowAttribution(ticketVal, slugVal)) {
+      unattributed.count += 1;
+      return;
+    }
     if (ticketRefMappable(ticketVal, projectSlug, slugVal, maps)) return;
     report.count += 1;
-    if (slugVal) report.slugs.push(slugVal);
+    const slugHint = (slugVal ?? '').trim() || (ticketVal ?? '').trim();
+    if (slugHint) report.slugs.push(slugHint);
   };
 
   const usageEvents = empty();
   const usageDaily = empty();
   const engagement = empty();
+  const unattributedUsageEvents = { count: 0 };
+  const unattributedUsageDaily = { count: 0 };
+  const unattributedEngagement = { count: 0 };
 
   const engagementCols = tableColumns(database, 'engagement');
   const engTicketCol = engagementCols.has('ticket_id') ? 'ticket_id' : 'assignment_id';
@@ -584,7 +634,13 @@ export function analyzeUnmatched(
       assignment_slug: string | null;
     }>;
     for (const row of rows) {
-      tally(row.ticket_val, row.project_slug, row.assignment_slug, engagement);
+      tally(
+        row.ticket_val,
+        row.project_slug,
+        row.assignment_slug,
+        engagement,
+        unattributedEngagement,
+      );
     }
   }
 
@@ -610,7 +666,13 @@ export function analyzeUnmatched(
       assignment_slug: string | null;
     }>;
     for (const row of rows) {
-      tally(row.ticket_val, row.project_slug, row.assignment_slug, usageEvents);
+      tally(
+        row.ticket_val,
+        row.project_slug,
+        row.assignment_slug,
+        usageEvents,
+        unattributedUsageEvents,
+      );
     }
   }
 
@@ -634,7 +696,13 @@ export function analyzeUnmatched(
       assignment_slug: string | null;
     }>;
     for (const row of rows) {
-      tally(row.ticket_val, row.project_slug, row.assignment_slug, usageDaily);
+      tally(
+        row.ticket_val,
+        row.project_slug,
+        row.assignment_slug,
+        usageDaily,
+        unattributedUsageDaily,
+      );
     }
   }
 
@@ -647,7 +715,48 @@ export function analyzeUnmatched(
     usageEvents: dedupeSlugs(usageEvents),
     usageDaily: dedupeSlugs(usageDaily),
     engagement: dedupeSlugs(engagement),
+    unattributedUsageEvents: unattributedUsageEvents.count,
+    unattributedUsageDaily: unattributedUsageDaily.count,
+    unattributedEngagement: unattributedEngagement.count,
   };
+}
+
+export function countUsageDailyMerges(
+  database: Database.Database,
+  maps: MigrationMaps,
+): number {
+  const usageDailyCols = tableColumns(database, 'usage_daily');
+  const ticketCol = usageDailyCols.has('ticket_id')
+    ? 'ticket_id'
+    : usageDailyCols.has('assignment_slug')
+      ? 'assignment_slug'
+      : null;
+  if (!ticketCol) return 0;
+
+  const rows = database
+    .prepare(
+      `SELECT day, tool, model, project_slug, ${ticketCol} AS ticket_val FROM usage_daily`,
+    )
+    .all() as Array<{
+    day: string;
+    tool: string;
+    model: string;
+    project_slug: string;
+    ticket_val: string;
+  }>;
+
+  const groups = new Map<string, number>();
+  for (const row of rows) {
+    const newId = resolveUsageDailyTicketId(row.ticket_val, row.project_slug, maps);
+    const key = `${row.day}\0${row.tool}\0${row.model}\0${row.project_slug}\0${newId}`;
+    groups.set(key, (groups.get(key) ?? 0) + 1);
+  }
+
+  let merges = 0;
+  for (const count of groups.values()) {
+    if (count > 1) merges += count - 1;
+  }
+  return merges;
 }
 
 function formatUnmatchedLine(
@@ -655,9 +764,11 @@ function formatUnmatchedLine(
   report: UnmatchedTableReport,
 ): string | null {
   if (report.count === 0) return null;
+  const shown = report.slugs.slice(0, 10);
+  const extra = report.slugs.length > 10 ? `, … (+${report.slugs.length - 10} more)` : '';
   const slugHint =
-    report.slugs.length > 0
-      ? ` (slugs without a ticket folder: ${report.slugs.join(', ')})`
+    shown.length > 0
+      ? ` (slugs without a ticket folder: ${shown.join(', ')}${extra})`
       : '';
   return `unmatched ${kind} rows: ${report.count}${slugHint}`;
 }
@@ -673,6 +784,15 @@ function logUnmatchedReport(
     formatUnmatchedLine('engagement', report.engagement),
   ]) {
     if (line) logLine(lines, mode, line);
+  }
+  if (report.unattributedUsageEvents > 0) {
+    logLine(lines, mode, `unattributed usage_events rows: ${report.unattributedUsageEvents}`);
+  }
+  if (report.unattributedUsageDaily > 0) {
+    logLine(lines, mode, `unattributed usage_daily rows: ${report.unattributedUsageDaily}`);
+  }
+  if (report.unattributedEngagement > 0) {
+    logLine(lines, mode, `unattributed engagement rows: ${report.unattributedEngagement}`);
   }
 }
 
@@ -693,7 +813,65 @@ function countBackfillSourceKeyRewrites(
   return count;
 }
 
-function rekeyDatabase(
+function mergeUsageDailyRows(
+  database: Database.Database,
+  cols: Set<string>,
+  ticketCol: string,
+  targetTicket: string,
+  sourceTicket: string,
+  day: string,
+  tool: string,
+  model: string,
+  projectSlug: string,
+): void {
+  const source = database
+    .prepare(
+      `SELECT * FROM usage_daily WHERE day = ? AND tool = ? AND model = ? AND project_slug = ? AND ${ticketCol} = ?`,
+    )
+    .get(day, tool, model, projectSlug, sourceTicket) as Record<string, number | string> | undefined;
+  if (!source) return;
+
+  const sumParts: string[] = [];
+  const params: Record<string, number | string> = {
+    day,
+    tool,
+    model,
+    project_slug: projectSlug,
+    target_ticket: targetTicket,
+    source_ticket: sourceTicket,
+  };
+  for (const col of USAGE_DAILY_SUM_COLS) {
+    if (!cols.has(col)) continue;
+    sumParts.push(`${col} = ${col} + @src_${col}`);
+    params[`src_${col}`] = source[col] as number;
+  }
+  if (cols.has('frozen')) {
+    sumParts.push('frozen = MAX(frozen, @src_frozen)');
+    params.src_frozen = source.frozen as number;
+  }
+  const tsCol = cols.has('computed_at') ? 'computed_at' : null;
+  if (tsCol) {
+    sumParts.push(
+      `${tsCol} = CASE WHEN ${tsCol} > @src_${tsCol} THEN ${tsCol} ELSE @src_${tsCol} END`,
+    );
+    params[`src_${tsCol}`] = source[tsCol] as string;
+  }
+
+  database
+    .prepare(
+      `UPDATE usage_daily SET ${sumParts.join(', ')}
+       WHERE day = @day AND tool = @tool AND model = @model AND project_slug = @project_slug AND ${ticketCol} = @target_ticket`,
+    )
+    .run(params);
+
+  database
+    .prepare(
+      `DELETE FROM usage_daily WHERE day = @day AND tool = @tool AND model = @model AND project_slug = @project_slug AND ${ticketCol} = @source_ticket`,
+    )
+    .run(params);
+}
+
+export function rekeyDatabase(
   dbPath: string,
   maps: MigrationMaps,
 ): {
@@ -707,6 +885,7 @@ function rekeyDatabase(
   chatItemsTicket: number;
   usageEvents: number;
   usageDaily: number;
+  usageDailyMerged: number;
 } {
   const database = new Database(dbPath);
   database.pragma('journal_mode = WAL');
@@ -721,8 +900,11 @@ function rekeyDatabase(
     chatItemsTicket: 0,
     usageEvents: 0,
     usageDaily: 0,
+    usageDailyMerged: 0,
   };
 
+  database.exec('BEGIN IMMEDIATE');
+  try {
   const eventsCols = tableColumns(database, 'events');
   const ticketCol = eventsCols.has('ticket_id') ? 'ticket_id' : 'assignment_id';
   if (eventsCols.has(ticketCol)) {
@@ -852,13 +1034,67 @@ function rekeyDatabase(
     }
     for (const [key, id] of maps.slugToId) {
       const [, slug] = key.split(':');
-      counts.usageDaily += database
-        .prepare(`UPDATE usage_daily SET ${dailyTicketCol} = ? WHERE ${dailyTicketCol} = ?`)
-        .run(id, slug).changes;
+      const sources = database
+        .prepare(
+          `SELECT day, tool, model, project_slug FROM usage_daily WHERE ${dailyTicketCol} = ?`,
+        )
+        .all(slug) as Array<{
+        day: string;
+        tool: string;
+        model: string;
+        project_slug: string;
+      }>;
+      for (const source of sources) {
+        const collision = database
+          .prepare(
+            `SELECT 1 AS ok FROM usage_daily WHERE day = ? AND tool = ? AND model = ? AND project_slug = ? AND ${dailyTicketCol} = ?`,
+          )
+          .get(source.day, source.tool, source.model, source.project_slug, id) as
+          | { ok: number }
+          | undefined;
+        if (collision) {
+          mergeUsageDailyRows(
+            database,
+            usageDailyCols,
+            dailyTicketCol,
+            id,
+            slug,
+            source.day,
+            source.tool,
+            source.model,
+            source.project_slug,
+          );
+          counts.usageDailyMerged += 1;
+          counts.usageDaily += 1;
+        } else {
+          counts.usageDaily += database
+            .prepare(
+              `UPDATE usage_daily SET ${dailyTicketCol} = ? WHERE day = ? AND tool = ? AND model = ? AND project_slug = ? AND ${dailyTicketCol} = ?`,
+            )
+            .run(
+              id,
+              source.day,
+              source.tool,
+              source.model,
+              source.project_slug,
+              slug,
+            ).changes;
+        }
+      }
     }
   }
 
-  database.close();
+    database.exec('COMMIT');
+  } catch (err) {
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      // ignore rollback failure
+    }
+    throw err;
+  } finally {
+    database.close();
+  }
   return counts;
 }
 
@@ -1184,6 +1420,10 @@ export async function migrateV2Command(
     if (backfillKeys > 0) {
       logLine(lines, mode, `re-keyed events.source_key: ${backfillKeys}`);
     }
+    const dailyMerges = countUsageDailyMerges(database, maps);
+    if (dailyMerges > 0) {
+      logLine(lines, mode, `merged usage_daily rows: ${dailyMerges}`);
+    }
     database.close();
   }
 
@@ -1207,14 +1447,8 @@ export async function migrateV2Command(
     backupPath = await createBackup(home);
     logLine(lines, mode, `backup: ${backupPath}`);
 
-    if (options.root) {
-      logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
-      await rewriteConfigDefaultProjectDir(home, home);
-    }
-
-    await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
-
     if (await fileExists(dbPath)) {
+      if (options.injectDbFailure) options.injectDbFailure();
       const counts = rekeyDatabase(dbPath, maps);
       logLine(lines, mode, `re-keyed events.ticket_id: ${counts.events}  (project_slug dropped)`);
       if (counts.eventsSourceKey > 0) {
@@ -1250,6 +1484,16 @@ export async function migrateV2Command(
         mode,
         `re-keyed usage_daily.ticket_id: ${counts.usageDaily}  (assignment_slug dropped; project_slug kept)`,
       );
+      if (counts.usageDailyMerged > 0) {
+        logLine(lines, mode, `merged usage_daily rows: ${counts.usageDailyMerged}`);
+      }
+    }
+
+    await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
+
+    if (options.root) {
+      logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
+      await rewriteConfigDefaultProjectDir(home, home);
     }
 
     await migrateChatAndRebuild(allTickets, maps);

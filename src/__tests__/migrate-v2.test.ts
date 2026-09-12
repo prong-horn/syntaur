@@ -23,7 +23,6 @@ import { renderProject } from '../templates/project.js';
 import { renderTicket } from '../templates/ticket.js';
 import { renderConfig } from '../templates/config.js';
 import { parseTicketFolderName } from '../utils/ticket-folder.js';
-import * as chatStore from '../chat/store.js';
 
 const UUID_P1A = '11111111-1111-4111-8111-111111111111';
 const UUID_P1B = '22222222-2222-4222-8222-222222222222';
@@ -385,6 +384,21 @@ async function buildFixture(root: string): Promise<void> {
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run('2026-01-01', 'claude', 'claude-opus', 'p1', 'alpha-ticket', TS_P1A);
 
+  db.prepare(
+    `INSERT INTO usage_daily (day, tool, model, project_slug, assignment_slug, input_tokens, total_tokens, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run('2026-01-04', 'claude', 'claude-opus', '', UUID_STANDALONE, 10, 10, TS_STANDALONE);
+
+  db.prepare(
+    `INSERT INTO usage_daily (day, tool, model, project_slug, assignment_slug, input_tokens, total_tokens, computed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run('2026-01-04', 'claude', 'claude-opus', '', 'orphan', 20, 20, TS_STANDALONE);
+
+  db.prepare(
+    `INSERT INTO usage_events (session_id, model, tool, event_ts, project_slug, assignment_slug, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('sess-unattributed', 'claude-opus', 'claude', TS_P1A, '', '', TS_P1A);
+
   db.close();
 }
 
@@ -483,6 +497,8 @@ describe('migrateV2Command', () => {
       ),
     ).toBe(true);
     expect(lines.some((l) => l.includes('re-keyed events.source_key: 2'))).toBe(true);
+    expect(lines.some((l) => l.includes('merged usage_daily rows: 1'))).toBe(true);
+    expect(lines.some((l) => l.includes('unattributed usage_events rows: 1'))).toBe(true);
     expect(lines.some((l) => l.includes('totals: 3 projects, 4 tickets'))).toBe(true);
     expect(lines.every((l) => l.startsWith('[dry-run]'))).toBe(true);
   });
@@ -491,7 +507,10 @@ describe('migrateV2Command', () => {
     const beforeCounts = tableRowCounts(resolve(home, 'syntaur.db'));
     await migrateV2Command({ root: home, apply: true });
     const afterCounts = tableRowCounts(resolve(home, 'syntaur.db'));
-    expect(afterCounts).toEqual(beforeCounts);
+    expect(afterCounts.usage_daily).toBe(beforeCounts.usage_daily - 1);
+    const { usage_daily: _ud, ...beforeRest } = beforeCounts;
+    const { usage_daily: _ud2, ...afterRest } = afterCounts;
+    expect(afterRest).toEqual(beforeRest);
 
     expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(true);
     expect(await fileExists(resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'ticket.md'))).toBe(
@@ -603,6 +622,20 @@ describe('migrateV2Command', () => {
       .get('sess-orphan') as { ticket_id: string };
     expect(orphanUsage.ticket_id).toBe('deleted-ticket');
 
+    const mergedDaily = usageDb
+      .prepare(
+        `SELECT ticket_id, input_tokens, total_tokens FROM usage_daily
+         WHERE day = ? AND tool = ? AND model = ? AND project_slug = ?`,
+      )
+      .get('2026-01-04', 'claude', 'claude-opus', '') as {
+      ticket_id: string;
+      input_tokens: number;
+      total_tokens: number;
+    };
+    expect(mergedDaily.ticket_id).toBe('SCR-1');
+    expect(mergedDaily.input_tokens).toBe(30);
+    expect(mergedDaily.total_tokens).toBe(30);
+
     expect(
       (sessionDb
         .prepare("SELECT count(*) AS n FROM chat_sessions WHERE session_key LIKE '%:%'")
@@ -635,16 +668,25 @@ describe('migrateV2Command', () => {
     await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(/half-applied/);
   });
 
-  it('aborts with restore message and leaves no marker on mid-apply failure', async () => {
-    const spy = vi.spyOn(chatStore, 'rebuildChatIndex').mockRejectedValueOnce(new Error('injected'));
+  it('aborts with restore message, leaves no marker, and keeps files unchanged on database failure', async () => {
+    const hashBefore = await hashTree(home);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
-      await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(
-        /Migration aborted\. Restore from backup at/,
-      );
+      await expect(
+        migrateV2Command({
+          root: home,
+          apply: true,
+          injectDbFailure: () => {
+            throw new Error('injected');
+          },
+        }),
+      ).rejects.toThrow(/Migration aborted\. Restore from backup at/);
       expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(false);
+      expect(await hashTree(home)).toBe(hashBefore);
+      expect(
+        await fileExists(resolve(home, 'projects', 'p1', 'assignments', 'alpha-ticket')),
+      ).toBe(true);
     } finally {
-      spy.mockRestore();
       logSpy.mockRestore();
     }
   });
