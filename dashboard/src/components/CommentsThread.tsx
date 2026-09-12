@@ -8,10 +8,7 @@ import type { TicketCommentEntry } from '../hooks/useProjects';
 type CommentType = 'note' | 'question' | 'feedback';
 
 interface CommentsThreadProps {
-  /** `null` for standalone tickets — uses the /api/tickets/:id/comments route. */
-  projectSlug: string | null;
-  /** Project-nested: the ticket slug. Standalone: the UUID. */
-  ticketSlug: string;
+  ticketId: string;
   entries: TicketCommentEntry[];
 }
 
@@ -37,13 +34,11 @@ function buildThread(entries: TicketCommentEntry[]): ThreadNode[] {
   return roots;
 }
 
-function buildCommentBase(projectSlug: string | null, ticketSlug: string): string {
-  return projectSlug === null
-    ? `/api/tickets/${encodeURIComponent(ticketSlug)}/comments`
-    : `/api/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}/comments`;
+function buildCommentBase(ticketId: string): string {
+  return `/api/tickets/${encodeURIComponent(ticketId)}/comments`;
 }
 
-export function CommentsThread({ projectSlug, ticketSlug, entries }: CommentsThreadProps) {
+export function CommentsThread({ ticketId, entries }: CommentsThreadProps) {
   const [localEntries, setLocalEntries] = useState<TicketCommentEntry[]>(entries);
   useEffect(() => {
     setLocalEntries(entries);
@@ -74,7 +69,7 @@ export function CommentsThread({ projectSlug, ticketSlug, entries }: CommentsThr
     setLocalEntries((prev) => [...prev, optimistic]);
 
     try {
-      const res = await fetch(buildCommentBase(projectSlug, ticketSlug), {
+      const res = await fetch(buildCommentBase(ticketId), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: newBody, type: newType }),
@@ -111,10 +106,7 @@ export function CommentsThread({ projectSlug, ticketSlug, entries }: CommentsThr
     );
 
     try {
-      const url =
-        projectSlug === null
-          ? `/api/tickets/${encodeURIComponent(ticketSlug)}/comments/${encodeURIComponent(commentId)}/resolved`
-          : `/api/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}/comments/${encodeURIComponent(commentId)}/resolved`;
+      const url = `/api/tickets/${encodeURIComponent(ticketId)}/comments/${encodeURIComponent(commentId)}/resolved`;
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

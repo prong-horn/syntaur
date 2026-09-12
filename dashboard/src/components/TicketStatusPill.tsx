@@ -6,9 +6,7 @@ import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { overrideTargetsForStatus, isTerminalStatus } from '../lib/statusMeta';
 import {
   runTicketTransition,
-  runTicketTransitionById,
   overrideTicketStatus,
-  overrideTicketStatusById,
   transitionNeedsReason,
 } from '../lib/tickets';
 import type { TicketTransitionAction, TicketDetail } from '../hooks/useProjects';
@@ -48,7 +46,7 @@ interface TicketStatusPillProps {
 export function TicketStatusPill({
   id,
   slug,
-  projectSlug,
+  projectSlug: _projectSlug,
   status,
   title,
   availableTransitions,
@@ -88,17 +86,9 @@ export function TicketStatusPill({
   // current (optimistic) status + transitions — in both modes.
   const overrideTargets = overrideTargetsForStatus(config, displayStatus, availableTransitionsState);
 
-  /**
-   * Guard the identifiers a POST needs before any mutation. Routing is by-id when
-   * `projectSlug == null` (needs `id`), else by-slug (needs `slug`).
-   */
   function ensureIdentifiers(): boolean {
-    if (projectSlug == null && !id) {
+    if (!id) {
       showToast('Cannot update status: ticket id is missing.', 'error');
-      return false;
-    }
-    if (projectSlug != null && !slug) {
-      showToast('Cannot update status: ticket slug is missing.', 'error');
       return false;
     }
     return true;
@@ -139,20 +129,12 @@ export function TicketStatusPill({
 
   function runTransition(action: TicketTransitionAction, reason?: string): Promise<boolean> {
     return runMutation(action.targetStatus, () =>
-      projectSlug == null
-        ? // by-id route — `ensureIdentifiers` guarantees `id` here.
-          runTicketTransitionById(id as string, action, reason)
-        : // by-slug route — `ensureIdentifiers` guarantees `slug` here.
-          runTicketTransition(projectSlug, slug as string, action, reason),
+      runTicketTransition(id as string, action, reason),
     );
   }
 
   function runOverride(statusId: string): Promise<boolean> {
-    return runMutation(statusId, () =>
-      projectSlug == null
-        ? overrideTicketStatusById(id as string, statusId)
-        : overrideTicketStatus(projectSlug, slug as string, statusId),
-    );
+    return runMutation(statusId, () => overrideTicketStatus(id as string, statusId));
   }
 
   function handleSelect(action: TicketTransitionAction) {

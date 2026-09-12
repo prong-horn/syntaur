@@ -82,8 +82,8 @@ function SessionRow({ session }: SessionRowProps) {
 }
 
 function sessionLink(session: AgentSession): string {
-  if (session.projectSlug && session.ticketSlug) {
-    return `/projects/${session.projectSlug}/tickets/${session.ticketSlug}`;
+  if (session.ticketId) {
+    return `/t/${session.ticketId}`;
   }
   return '/agent-sessions';
 }

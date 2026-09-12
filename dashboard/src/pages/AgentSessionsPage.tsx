@@ -699,21 +699,13 @@ function SessionRow({
         )}
       </td>
       <td className="py-2 pr-3">
-        {session.projectSlug && session.ticketSlug ? (
+        {session.ticketId ? (
           <Link
-            to={`/projects/${session.projectSlug}/tickets/${session.ticketSlug}`}
+            to={`/t/${session.ticketId}`}
             className="block truncate text-primary hover:underline"
-            title={toTitleCase(session.ticketSlug)}
+            title={session.ticketSlug ? toTitleCase(session.ticketSlug) : session.ticketId}
           >
-            {toTitleCase(session.ticketSlug)}
-          </Link>
-        ) : session.ticketSlug ? (
-          <Link
-            to={`/tickets/${session.ticketSlug}`}
-            className="block truncate font-mono text-primary hover:underline"
-            title={session.ticketSlug}
-          >
-            {session.ticketSlug}
+            {session.ticketSlug ? toTitleCase(session.ticketSlug) : session.ticketId}
           </Link>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>

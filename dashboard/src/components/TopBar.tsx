@@ -81,7 +81,7 @@ export function TopBar({
           {projectSlug ? (
             <Link
               className="shell-action"
-              to={`/projects/${projectSlug}/create/ticket`}
+              to={`/projects/${projectSlug}/new`}
               aria-label="New Ticket"
             >
               <Plus className="h-4 w-4" />

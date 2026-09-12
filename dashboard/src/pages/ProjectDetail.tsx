@@ -47,7 +47,7 @@ export function ProjectDetail() {
     keys: 'a',
     scope: 'project',
     description: 'Create ticket',
-    handler: () => navigate(`/projects/${slug}/create/ticket`),
+    handler: () => navigate(`/projects/${slug}/new`),
   });
   useHotkey({
     keys: 'e',
@@ -206,7 +206,7 @@ export function ProjectDetail() {
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
       project.tickets.flatMap((ticket) => {
-        const route = `/projects/${project.slug}/tickets/${ticket.slug}`;
+        const route = `/t/${ticket.id}`;
         return [
           [ticket.slug, route],
           [ticket.title, route],
@@ -528,7 +528,7 @@ export function ProjectDetail() {
                           title="No tickets match these filters"
                           description="Clear the current filters or create a new ticket for this project."
                           actions={
-                            <Link className="shell-action shell-action--cta" to={`/projects/${project.slug}/create/ticket`}>
+                            <Link className="shell-action shell-action--cta" to={`/projects/${project.slug}/new`}>
                               Create Ticket
                             </Link>
                           }
@@ -606,7 +606,7 @@ export function ProjectDetail() {
                                   {showCol('title') ? (
                                   <td className="py-4">
                                     <Link
-                                      to={`/projects/${project.slug}/tickets/${ticket.slug}`}
+                                      to={`/t/${ticket.id}`}
                                       className="font-semibold text-foreground hover:text-primary"
                                     >
                                       {ticket.title}
@@ -710,7 +710,7 @@ export function ProjectDetail() {
                 <SquarePen className="h-4 w-4" />
                 Edit project source
               </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/create/ticket`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/new`}>
                 <Plus className="h-4 w-4" />
                 Create ticket
               </Link>
@@ -759,7 +759,7 @@ function TicketCard({
 }) {
   return (
     <Link
-      to={`/projects/${projectSlug}/tickets/${ticket.slug}`}
+      to={`/t/${ticket.id}`}
       className="vp-card block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">

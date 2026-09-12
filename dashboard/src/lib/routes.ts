@@ -1,5 +1,22 @@
 import { toTitleCase } from './format';
 
+/** SPA path for a ticket detail page (`/t/:id`). */
+export function ticketPageHref(id: string, tab?: string): string {
+  const base = `/t/${encodeURIComponent(id)}`;
+  return tab ? `${base}?tab=${tab}` : base;
+}
+
+/** SPA path for a ticket editor or append page under `/t/:id/...`. */
+export function ticketEditHref(
+  id: string,
+  section?: 'plan' | 'scratchpad' | 'handoff' | 'decision-record',
+): string {
+  const base = `/t/${encodeURIComponent(id)}`;
+  if (!section) return `${base}/edit`;
+  if (section === 'decision-record') return `${base}/decision-record/edit`;
+  return `${base}/${section}/edit`;
+}
+
 export interface Breadcrumb {
   label: string;
   path: string;
@@ -48,10 +65,11 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
   }
 
   if (normalized.startsWith('/projects')) {
-    if (/^\/projects\/[^/]+\/tickets\//.test(normalized)) {
-      return '/tickets';
-    }
     return '/projects';
+  }
+
+  if (normalized.startsWith('/t/')) {
+    return '/tickets';
   }
 
   if (normalized.startsWith('/tickets')) {
@@ -120,26 +138,24 @@ export function buildShellMeta(pathname: string): ShellMeta {
 
     if (parts[2] === 'edit') {
       title = 'Edit Project';
-    } else if (parts[2] === 'create' && parts[3] === 'ticket') {
+    } else if (parts[2] === 'new') {
       title = 'Create Ticket';
-    } else if (parts[2] === 'tickets' && parts[3]) {
-      breadcrumbs.push({
-        label: toTitleCase(parts[3]),
-        path: `/projects/${parts[1]}/tickets/${parts[3]}`,
-      });
-      title = toTitleCase(parts[3]);
+    }
+  } else if (parts[0] === 't' && parts[1]) {
+    breadcrumbs.push({ label: 'Tickets', path: '/tickets' });
+    breadcrumbs.push({ label: parts[1], path: `/t/${parts[1]}` });
+    title = parts[1];
 
-      if (parts[4] === 'edit') {
-        title = 'Edit Ticket';
-      } else if (parts[4] === 'plan' && parts[5] === 'edit') {
-        title = 'Edit Plan';
-      } else if (parts[4] === 'scratchpad' && parts[5] === 'edit') {
-        title = 'Edit Scratchpad';
-      } else if (parts[4] === 'handoff' && parts[5] === 'edit') {
-        title = 'Append Handoff';
-      } else if (parts[4] === 'decision-record' && parts[5] === 'edit') {
-        title = 'Append Decision';
-      }
+    if (parts[2] === 'edit') {
+      title = 'Edit Ticket';
+    } else if (parts[2] === 'plan' && parts[3] === 'edit') {
+      title = 'Edit Plan';
+    } else if (parts[2] === 'scratchpad' && parts[3] === 'edit') {
+      title = 'Edit Scratchpad';
+    } else if (parts[2] === 'handoff' && parts[3] === 'edit') {
+      title = 'Append Handoff';
+    } else if (parts[2] === 'decision-record' && parts[3] === 'edit') {
+      title = 'Append Decision';
     }
   } else if (parts[0] === 'agents') {
     breadcrumbs.push({ label: 'Agents', path: '/agents' });

@@ -48,7 +48,7 @@ export function CreateStandaloneTicket() {
         setSaving(false);
         return;
       }
-      navigate(`/tickets/${newId}`);
+      navigate(`/t/${newId}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);

@@ -161,8 +161,5 @@ export function filterTicket(
 export const filterAssignment = filterTicket;
 
 export function ticketDetailHref(item: TicketBoardItem): string {
-  if (item.projectSlug === null) {
-    return `/tickets/${item.id}`;
-  }
-  return `/projects/${item.projectSlug}/tickets/${item.slug}`;
+  return `/t/${item.id}`;
 }

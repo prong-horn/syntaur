@@ -6,70 +6,6 @@ interface TransitionResponse {
 }
 
 export async function runTicketTransition(
-  projectSlug: string,
-  ticketSlug: string,
-  action: TicketTransitionAction,
-  reason?: string,
-): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}/transitions/${action.command}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reason ? { reason } : {}),
-    },
-  );
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-
-  return (payload as TransitionResponse).ticket;
-}
-
-export async function overrideTicketStatus(
-  projectSlug: string,
-  ticketSlug: string,
-  status: string,
-): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}/status-override`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    },
-  );
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-
-  return (payload as { ticket: TicketDetail }).ticket;
-}
-
-export async function deleteTicket(
-  projectSlug: string,
-  ticketSlug: string,
-): Promise<void> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}`,
-    { method: 'DELETE' },
-  );
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-}
-
-export function transitionNeedsReason(action: TicketTransitionAction): boolean {
-  return action.requiresReason || action.command === 'block';
-}
-
-export async function runTicketTransitionById(
   id: string,
   action: TicketTransitionAction,
   reason?: string,
@@ -91,7 +27,10 @@ export async function runTicketTransitionById(
   return (payload as TransitionResponse).ticket;
 }
 
-export async function overrideTicketStatusById(
+/** @deprecated Use {@link runTicketTransition} */
+export const runTicketTransitionById = runTicketTransition;
+
+export async function overrideTicketStatus(
   id: string,
   status: string,
 ): Promise<TicketDetail> {
@@ -112,33 +51,27 @@ export async function overrideTicketStatusById(
   return (payload as { ticket: TicketDetail }).ticket;
 }
 
-/**
- * Set the assignee on a project-scoped ticket via the dedicated
- * assignee endpoint. Body content stays untouched — only the
- * frontmatter `assignee:` field changes.
- */
-export async function claimTicket(args: {
-  projectSlug: string;
-  ticketSlug: string;
-  assignee: string | null;
-}): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/assignee`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignee: args.assignee }),
-    },
-  );
+/** @deprecated Use {@link overrideTicketStatus} */
+export const overrideTicketStatusById = overrideTicketStatus;
+
+export async function deleteTicket(id: string): Promise<void> {
+  const response = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
+
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
+    throw new Error(payload?.error || `HTTP ${response.status}`);
   }
-  return (payload as { ticket: TicketDetail }).ticket;
 }
 
-/** Standalone-ticket variant of {@link claimTicket}. */
-export async function claimTicketById(args: {
+export function transitionNeedsReason(action: TicketTransitionAction): boolean {
+  return action.requiresReason || action.command === 'block';
+}
+
+/**
+ * Set the assignee on a ticket via the dedicated assignee endpoint. Body content
+ * stays untouched — only the frontmatter `assignee:` field changes.
+ */
+export async function claimTicket(args: {
   id: string;
   assignee: string | null;
 }): Promise<TicketDetail> {
@@ -154,27 +87,10 @@ export async function claimTicketById(args: {
   return (payload as { ticket: TicketDetail }).ticket;
 }
 
-export async function updateTicketTitle(args: {
-  projectSlug: string;
-  ticketSlug: string;
-  title: string;
-}): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/title`,
-    {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: args.title }),
-    },
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return (payload as { ticket: TicketDetail }).ticket;
-}
+/** @deprecated Use {@link claimTicket} */
+export const claimTicketById = claimTicket;
 
-export async function updateTicketTitleById(args: {
+export async function updateTicketTitle(args: {
   id: string;
   title: string;
 }): Promise<TicketDetail> {
@@ -190,30 +106,19 @@ export async function updateTicketTitleById(args: {
   return (payload as { ticket: TicketDetail }).ticket;
 }
 
+/** @deprecated Use {@link updateTicketTitle} */
+export const updateTicketTitleById = updateTicketTitle;
+
 export type QuickCommentType = 'question' | 'note' | 'feedback';
 
-/**
- * Post a single quick comment to a project-scoped or standalone
- * ticket. Wraps the existing /comments endpoints.
- */
+/** Post a single quick comment to a ticket. */
 export async function postQuickComment(args: {
-  projectSlug: string | null;
-  ticketSlug?: string;
-  id?: string;
+  id: string;
   body: string;
   type?: QuickCommentType;
   author?: string;
 }): Promise<void> {
-  let url: string;
-  if (args.projectSlug && args.ticketSlug) {
-    url = `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/comments`;
-  } else if (args.id) {
-    url = `/api/tickets/${args.id}/comments`;
-  } else {
-    throw new Error('postQuickComment requires either (projectSlug + ticketSlug) or id');
-  }
-
-  const response = await fetch(url, {
+  const response = await fetch(`/api/tickets/${args.id}/comments`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -316,7 +221,7 @@ export async function getProjectRepositoryCandidates(
   return (body as { candidates: RepositoryCandidate[] }).candidates;
 }
 
-export async function getTicketRepositoryCandidatesById(
+export async function getTicketRepositoryCandidates(
   id: string,
 ): Promise<RepositoryCandidate[]> {
   const response = await fetch(`/api/tickets/${id}/repository-candidates`);
@@ -327,27 +232,10 @@ export async function getTicketRepositoryCandidatesById(
   return (body as { candidates: RepositoryCandidate[] }).candidates;
 }
 
-export async function createTicketWorktree(
-  projectSlug: string,
-  ticketSlug: string,
-  payload: CreateWorktreePayload,
-): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}/worktree`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    },
-  );
-  if (!response.ok) {
-    throw await readError(response);
-  }
-  const body = await response.json();
-  return (body as { ticket: TicketDetail }).ticket;
-}
+/** @deprecated Use {@link getTicketRepositoryCandidates} */
+export const getTicketRepositoryCandidatesById = getTicketRepositoryCandidates;
 
-export async function createTicketWorktreeById(
+export async function createTicketWorktree(
   id: string,
   payload: CreateWorktreePayload,
 ): Promise<TicketDetail> {
@@ -362,6 +250,9 @@ export async function createTicketWorktreeById(
   const body = await response.json();
   return (body as { ticket: TicketDetail }).ticket;
 }
+
+/** @deprecated Use {@link createTicketWorktree} */
+export const createTicketWorktreeById = createTicketWorktree;
 
 export interface RecreateWorktreeResult {
   /** Branch name or base ref used to rebuild the worktree. */
@@ -422,17 +313,6 @@ async function readJsonOrThrow<T>(response: Response): Promise<T> {
 }
 
 export async function getRepositoryBranches(
-  projectSlug: string,
-  ticketSlug: string,
-  repo: string,
-): Promise<RepositoryBranches> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}/repository-branches?repo=${encodeURIComponent(repo)}`,
-  );
-  return readJsonOrThrow<RepositoryBranches>(response);
-}
-
-export async function getRepositoryBranchesById(
   id: string,
   repo: string,
 ): Promise<RepositoryBranches> {
@@ -442,19 +322,17 @@ export async function getRepositoryBranchesById(
   return readJsonOrThrow<RepositoryBranches>(response);
 }
 
-export async function getProjectSourceTickets(
-  projectSlug: string,
-  ticketSlug: string,
-): Promise<SourceTicket[]> {
-  const response = await fetch(
-    `/api/projects/${projectSlug}/tickets/${ticketSlug}/source-tickets`,
-  );
-  const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
-  return body.sourceTickets;
-}
+/** @deprecated Use {@link getRepositoryBranches} */
+export const getRepositoryBranchesById = getRepositoryBranches;
 
-export async function getSourceTicketsById(id: string): Promise<SourceTicket[]> {
+export async function getSourceTickets(id: string): Promise<SourceTicket[]> {
   const response = await fetch(`/api/tickets/${id}/source-tickets`);
   const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
   return body.sourceTickets;
 }
+
+/** @deprecated Use {@link getSourceTickets} */
+export const getProjectSourceTickets = getSourceTickets;
+
+/** @deprecated Use {@link getSourceTickets} */
+export const getSourceTicketsById = getSourceTickets;

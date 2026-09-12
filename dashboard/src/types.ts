@@ -29,6 +29,8 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 export interface AgentSession {
   projectSlug: string | null;
   ticketSlug: string | null;
+  /** Resolved ticket UUID when the session binding has one. */
+  ticketId?: string | null;
   agent: string;
   sessionId: string;
   started: string;

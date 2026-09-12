@@ -15,7 +15,7 @@ const nestedHit: ContentHit = {
   matches: [{ start: 4, end: 8 }],
   line: 12,
   section: 'Auth',
-  route: '/projects/acme/tickets/login?tab=comments#auth',
+  route: '/t/a-1?tab=comments#auth',
 };
 
 const standaloneHit: ContentHit = {
@@ -30,7 +30,7 @@ const standaloneHit: ContentHit = {
   snippet: 'step one is to set up the repo',
   matches: [{ start: 0, end: 4 }],
   line: 3,
-  route: '/tickets/uuid-9?tab=plan',
+  route: '/t/uuid-9?tab=plan',
 };
 
 const nestedPlanHit: ContentHit = {
@@ -45,7 +45,7 @@ const nestedPlanHit: ContentHit = {
   snippet: 'always branch from main',
   matches: [{ start: 7, end: 13 }],
   line: 1,
-  route: '/projects/acme/tickets/login?tab=plan',
+  route: '/t/a-1?tab=plan',
 };
 
 describe('contentHitsToEntries', () => {
@@ -58,7 +58,7 @@ describe('contentHitsToEntries', () => {
 
   it('uses the hit route verbatim for project-nested ticket-pane hits', () => {
     const e = entries[0];
-    expect(e.route).toBe('/projects/acme/tickets/login?tab=comments#auth');
+    expect(e.route).toBe('/t/a-1?tab=comments#auth');
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 
@@ -70,7 +70,7 @@ describe('contentHitsToEntries', () => {
 
   it('leaves a nested plan hit UNPREFIXED', () => {
     const e = entries[2];
-    expect(e.route).toBe('/projects/acme/tickets/login?tab=plan');
+    expect(e.route).toBe('/t/a-1?tab=plan');
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 

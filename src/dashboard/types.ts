@@ -35,6 +35,7 @@ export interface ProjectSummary {
 }
 
 export interface EnrichedLink {
+  id: string;
   slug: string;
   projectSlug: string;
   ticketSlug: string;

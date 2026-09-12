@@ -25,10 +25,9 @@ export function AgentSessionDetail(): JSX.Element {
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!session) return <ErrorState error="Session not found." />;
 
-  const ticketHref =
-    session.projectSlug && session.ticketSlug
-      ? `/projects/${encodeURIComponent(session.projectSlug)}/tickets/${encodeURIComponent(session.ticketSlug)}?tab=chat`
-      : null;
+  const ticketHref = session.ticketId
+    ? `/t/${encodeURIComponent(session.ticketId)}?tab=chat`
+    : null;
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">

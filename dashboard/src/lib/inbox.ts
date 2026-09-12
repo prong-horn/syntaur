@@ -227,28 +227,16 @@ export function transitionEndpoint(
   command: string,
 ): EndpointDescriptor {
   const cmd = encodeURIComponent(command);
-  if (item.project === null) {
-    return {
-      method: 'POST',
-      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/transitions/${cmd}`,
-    };
-  }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/transitions/${cmd}`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/transitions/${cmd}`,
   };
 }
 
 export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
-  if (item.project === null) {
-    return {
-      method: 'POST',
-      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/plan/approve`,
-    };
-  }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/plan/approve`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/plan/approve`,
   };
 }
 
@@ -256,15 +244,9 @@ export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
  * Resolve the comments POST endpoint (used to answer a question by replying).
  */
 export function commentsEndpoint(item: RouteIdentity): EndpointDescriptor {
-  if (item.project === null) {
-    return {
-      method: 'POST',
-      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments`,
-    };
-  }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/comments`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments`,
   };
 }
 
@@ -276,15 +258,9 @@ export function resolveCommentEndpoint(
   commentId: string,
 ): EndpointDescriptor {
   const cid = encodeURIComponent(commentId);
-  if (item.project === null) {
-    return {
-      method: 'PATCH',
-      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments/${cid}/resolved`,
-    };
-  }
   return {
     method: 'PATCH',
-    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/comments/${cid}/resolved`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments/${cid}/resolved`,
   };
 }
 
@@ -297,10 +273,7 @@ export function ticketHref(
   tab?: 'plan' | 'comments' | 'chat',
 ): string {
   const query = tab ? `?tab=${tab}` : '';
-  if (item.project === null) {
-    return `/tickets/${encodeURIComponent(item.ticketId)}${query}`;
-  }
-  return `/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}${query}`;
+  return `/t/${encodeURIComponent(item.ticketId)}${query}`;
 }
 
 /** SPA href to a chat item anchor for a chat-sourced inbox row. */

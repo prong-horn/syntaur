@@ -53,11 +53,12 @@ describe('routeForHit', () => {
         fileKind: 'plan',
         projectSlug: 'proj',
         ticketSlug: 'my-assignment',
+        ticketId: 'ticket-uuid-1',
         standalone: false,
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=plan#open-questions');
+    expect(route).toBe('/t/ticket-uuid-1?tab=plan#open-questions');
   });
 
   it('keeps a section anchor for a decision-record hit (markdown-rendered pane)', () => {
@@ -66,11 +67,12 @@ describe('routeForHit', () => {
         fileKind: 'decision-record',
         projectSlug: 'proj',
         ticketSlug: 'a1',
+        ticketId: 'ticket-uuid-2',
         standalone: false,
         section: 'Why Postgres',
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/a1?tab=decisions#why-postgres');
+    expect(route).toBe('/t/ticket-uuid-2?tab=decisions#why-postgres');
   });
 
   it('omits the section anchor for ticket (summary pane builds SectionCards, no heading ids)', () => {
@@ -79,11 +81,12 @@ describe('routeForHit', () => {
         fileKind: 'ticket',
         projectSlug: 'proj',
         ticketSlug: 'my-assignment',
+        ticketId: 'ticket-uuid-3',
         standalone: false,
         section: 'Acceptance Criteria',
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=summary');
+    expect(route).toBe('/t/ticket-uuid-3?tab=summary');
     expect(route).not.toContain('#');
   });
 
@@ -93,11 +96,12 @@ describe('routeForHit', () => {
         fileKind: 'comments',
         projectSlug: 'proj',
         ticketSlug: 'my-assignment',
+        ticketId: 'ticket-uuid-4',
         standalone: false,
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=comments');
+    expect(route).toBe('/t/ticket-uuid-4?tab=comments');
     expect(route).not.toContain('#');
   });
 
@@ -107,11 +111,12 @@ describe('routeForHit', () => {
         fileKind: 'progress',
         projectSlug: 'proj',
         ticketSlug: 'my-assignment',
+        ticketId: 'ticket-uuid-5',
         standalone: false,
         section: 'Day 1',
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=progress');
+    expect(route).toBe('/t/ticket-uuid-5?tab=progress');
     expect(route).not.toContain('#');
   });
 
@@ -121,10 +126,11 @@ describe('routeForHit', () => {
         fileKind: 'plan',
         projectSlug: 'proj',
         ticketSlug: 'a1',
+        ticketId: 'ticket-uuid-6',
         standalone: false,
       }),
     );
-    expect(route).toBe('/projects/proj/tickets/a1?tab=plan');
+    expect(route).toBe('/t/ticket-uuid-6?tab=plan');
   });
 
   it('builds a standalone route off the ticket id', () => {
@@ -135,7 +141,7 @@ describe('routeForHit', () => {
         standalone: true,
       }),
     );
-    expect(route).toBe('/tickets/uuid-123?tab=plan');
+    expect(route).toBe('/t/uuid-123?tab=plan');
   });
 
   it('maps each FileKind to an existing TicketDetail tab', () => {

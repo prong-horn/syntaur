@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { useTicket, useProject, useTicketSessions, useTicketUsage, type TicketTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { ticketEditHref, ticketPageHref } from '../lib/routes';
 import { useTicketEvents } from '../hooks/useTicketEvents';
 import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
@@ -57,13 +58,13 @@ const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'imp
  * change route is project-scoped). */
 function WorkflowSelectRow({
   projectSlug,
-  aslug,
+  ticketId,
   workflow,
   workflowLabel,
   onChanged,
 }: {
   projectSlug: string | null;
-  aslug: string;
+  ticketId: string;
   workflow: string | null;
   workflowLabel: string;
   onChanged: () => void;
@@ -81,7 +82,7 @@ function WorkflowSelectRow({
     setErr(null);
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectSlug!)}/tickets/${encodeURIComponent(aslug)}/workflow`,
+        `/api/tickets/${encodeURIComponent(ticketId)}/workflow`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -122,8 +123,13 @@ function WorkflowSelectRow({
   );
 }
 
+/**
+ * Ticket detail for project-scoped and standalone tickets at `/t/:id`.
+ * Folded the former `StandaloneTicketDetail` into this page — `ticket.projectSlug`
+ * gates project-only UI (workflow binding, dependency panel, etc.).
+ */
 export function TicketDetail() {
-  const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transitionError, setTransitionError] = useState<string | null>(null);
@@ -143,12 +149,12 @@ export function TicketDetail() {
   // Honor `#section` deep-links from the command palette once the pane renders.
   useHashScroll(tab);
   const statusConfig = useStatusConfig();
-  const { data: ticket, loading, error, refetch } = useTicket(slug, aslug);
-  const { data: project } = useProject(slug);
-  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useTicketSessions(slug, aslug);
-  const { data: usageData, loading: usageLoading, error: usageError } = useTicketUsage(slug, aslug);
-  const eventsUrl =
-    slug && aslug ? `/api/projects/${slug}/tickets/${aslug}/events` : null;
+  const { data: ticket, loading, error, refetch } = useTicket(id);
+  const projectSlug = ticket?.projectSlug ?? undefined;
+  const { data: project } = useProject(projectSlug);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useTicketSessions(id);
+  const { data: usageData, loading: usageLoading, error: usageError } = useTicketUsage(id);
+  const eventsUrl = id ? `/api/tickets/${id}/events` : null;
   const {
     events,
     loading: eventsLoading,
@@ -162,6 +168,7 @@ export function TicketDetail() {
     return ticket.dependsOn.map((depSlug) => {
       const s = map.get(depSlug);
       return {
+        id: s?.id ?? depSlug,
         slug: depSlug,
         title: s?.title ?? depSlug,
         status: s?.status ?? 'pending',
@@ -177,63 +184,59 @@ export function TicketDetail() {
 
   // Hotkey wiring — scoped to 'ticket'.
   useHotkeyScope('ticket');
-  const siblingSlugs = useMemo(
-    () => (project?.tickets ?? []).map((a) => a.slug),
+  const siblingIds = useMemo(
+    () => (project?.tickets ?? []).map((a) => a.id),
     [project],
   );
-  const currentIndex = aslug ? siblingSlugs.indexOf(aslug) : -1;
-  const prevSlug = currentIndex > 0 ? siblingSlugs[currentIndex - 1] : null;
-  const nextSlug =
-    currentIndex >= 0 && currentIndex < siblingSlugs.length - 1
-      ? siblingSlugs[currentIndex + 1]
+  const currentIndex = id ? siblingIds.indexOf(id) : -1;
+  const prevId = currentIndex > 0 ? siblingIds[currentIndex - 1] : null;
+  const nextId =
+    currentIndex >= 0 && currentIndex < siblingIds.length - 1
+      ? siblingIds[currentIndex + 1]
       : null;
-  const baseRoute = `/projects/${slug}/tickets/${aslug}`;
-
   useHotkey({
     keys: 'e',
     scope: 'ticket',
     description: 'Edit ticket',
-    handler: () => navigate(`${baseRoute}/edit`),
+    handler: () => id && navigate(ticketEditHref(id)),
   });
   useHotkey({
     keys: 'p',
     scope: 'ticket',
     description: 'Edit plan',
-    handler: () => navigate(`${baseRoute}/plan/edit`),
+    handler: () => id && navigate(ticketEditHref(id, 'plan')),
   });
   useHotkey({
     keys: 'h',
     scope: 'ticket',
     description: 'Append handoff',
-    handler: () => navigate(`${baseRoute}/handoff/edit`),
+    handler: () => id && navigate(ticketEditHref(id, 'handoff')),
   });
   useHotkey({
     keys: 'd',
     scope: 'ticket',
     description: 'Append decision record',
-    handler: () => navigate(`${baseRoute}/decision-record/edit`),
+    handler: () => id && navigate(ticketEditHref(id, 'decision-record')),
   });
   useHotkey({
     keys: 's',
     scope: 'ticket',
     description: 'Edit scratchpad',
-    handler: () => navigate(`${baseRoute}/scratchpad/edit`),
+    handler: () => id && navigate(ticketEditHref(id, 'scratchpad')),
   });
   useHotkey({
     keys: '[',
     scope: 'ticket',
     description: 'Previous ticket in project',
-    enabled: !!prevSlug,
-    handler: () =>
-      prevSlug && navigate(`/projects/${slug}/tickets/${prevSlug}`),
+    enabled: !!prevId,
+    handler: () => prevId && navigate(ticketPageHref(prevId)),
   });
   useHotkey({
     keys: ']',
     scope: 'ticket',
     description: 'Next ticket in project',
-    enabled: !!nextSlug,
-    handler: () =>
-      nextSlug && navigate(`/projects/${slug}/tickets/${nextSlug}`),
+    enabled: !!nextId,
+    handler: () => nextId && navigate(ticketPageHref(nextId)),
   });
 
   const summarySections = useMemo(
@@ -272,12 +275,11 @@ export function TicketDetail() {
     return <LoadingState label="Loading ticket workspace…" />;
   }
 
-  if (error || !ticket || !slug || !aslug) {
+  if (error || !ticket || !id) {
     return <ErrorState error={error || 'Ticket not found.'} onRetry={refetch} />;
   }
 
-  const projectSlug = slug;
-  const ticketSlug = aslug;
+  const ticketSlug = ticket.slug;
   const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
 
   const transitions = ticket.availableTransitions ?? [];
@@ -296,7 +298,7 @@ export function TicketDetail() {
   async function handleStatusOverride(status: string) {
     setTransitionError(null);
     try {
-      await overrideTicketStatus(projectSlug, ticketSlug, status);
+      await overrideTicketStatus(id!, status);
       refetch();
       refetchEvents();
     } catch (err) {
@@ -308,7 +310,7 @@ export function TicketDetail() {
     setTransitionError(null);
     try {
       const response = await fetch(
-        `/api/projects/${projectSlug}/tickets/${ticketSlug}/${archived ? 'archive' : 'unarchive'}`,
+        `/api/tickets/${id}/${archived ? 'archive' : 'unarchive'}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } },
       );
       if (!response.ok) {
@@ -326,8 +328,8 @@ export function TicketDetail() {
   async function handleDeleteTicket() {
     setDeleteLoading(true);
     try {
-      await deleteTicket(projectSlug, ticketSlug);
-      navigate(`/projects/${projectSlug}`);
+      await deleteTicket(id!);
+      navigate(projectSlug ? `/projects/${projectSlug}` : '/tickets');
     } catch (err) {
       setTransitionError((err as Error).message);
       setDeleteLoading(false);
@@ -340,7 +342,7 @@ export function TicketDetail() {
     setTransitioning(action.command);
 
     try {
-      await runTicketTransition(projectSlug, ticketSlug, action, reason);
+      await runTicketTransition(id!, action, reason);
       refetch();
       refetchEvents();
       return true;
@@ -369,7 +371,7 @@ export function TicketDetail() {
 
     try {
       const response = await fetch(
-        `/api/projects/${projectSlug}/tickets/${ticketSlug}/acceptance-criteria/${index}`,
+        `/api/tickets/${id}/acceptance-criteria/${index}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -430,31 +432,31 @@ export function TicketDetail() {
       key: 'edit-ticket',
       label: 'Edit ticket source',
       icon: FilePenLine,
-      href: `/projects/${slug}/tickets/${aslug}/edit`,
+      href: ticketEditHref(id),
     },
     {
       key: 'edit-plan',
       label: 'Edit plan',
       icon: SendToBack,
-      href: `/projects/${slug}/tickets/${aslug}/plan/edit`,
+      href: ticketEditHref(id, 'plan'),
     },
     {
       key: 'edit-scratchpad',
       label: 'Edit scratchpad',
       icon: NotebookPen,
-      href: `/projects/${slug}/tickets/${aslug}/scratchpad/edit`,
+      href: ticketEditHref(id, 'scratchpad'),
     },
     {
       key: 'append-handoff',
       label: 'Append handoff',
       icon: ArrowUpRight,
-      href: `/projects/${slug}/tickets/${aslug}/handoff/edit`,
+      href: ticketEditHref(id, 'handoff'),
     },
     {
       key: 'append-decision',
       label: 'Append decision',
       icon: Hammer,
-      href: `/projects/${slug}/tickets/${aslug}/decision-record/edit`,
+      href: ticketEditHref(id, 'decision-record'),
     },
     {
       key: ticket.archived ? 'unarchive' : 'archive',
@@ -503,11 +505,14 @@ export function TicketDetail() {
             </span>
           )}
           <span className="flex shrink-0 items-center gap-2">
-            {!ticket.workspace?.worktreePath && slug && aslug && (
+            {!ticket.workspace?.worktreePath && (
               <CreateWorktreeButton
-                projectSlug={slug}
-                ticketSlug={aslug}
-                defaultBranch={`syntaur/${slug}/${aslug}`}
+                ticketId={ticket.id}
+                defaultBranch={
+                  projectSlug
+                    ? `syntaur/${projectSlug}/${ticket.slug}`
+                    : `syntaur/${ticket.slug}`
+                }
                 onCreated={() => refetch()}
               />
             )}
@@ -564,9 +569,9 @@ export function TicketDetail() {
         ) : null}
       </div>
 
-      {enrichedDeps.length > 0 && (
+      {enrichedDeps.length > 0 && projectSlug && (
         <DependencyPanel
-          projectSlug={slug!}
+          projectSlug={projectSlug}
           dependencies={enrichedDeps}
           blockedReason={ticket.blockedReason}
           onTicketChange={() => refetch()}
@@ -584,10 +589,7 @@ export function TicketDetail() {
         >
           <ul className="space-y-2">
             {ticket.referencedBy.map((ref) => {
-              const href =
-                ref.sourceProjectSlug === null
-                  ? `/tickets/${ref.sourceId}`
-                  : `/projects/${ref.sourceProjectSlug}/tickets/${ref.sourceSlug}`;
+              const href = ticketPageHref(ref.sourceId);
               return (
                 <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
                   <Link to={href} className="text-foreground hover:text-primary">
@@ -691,7 +693,7 @@ export function TicketDetail() {
                       title="Plan"
                       description="Shows plan.md only. Versioned plans (plan-v2.md, ...) are not yet rendered here — open them from the filesystem."
                       actions={
-                        <Link className="shell-action" to={`/projects/${slug}/tickets/${aslug}/plan/edit`}>
+                        <Link className="shell-action" to={ticketEditHref(id, 'plan')}>
                           <NotebookPen className="h-4 w-4" />
                           <span>Edit Plan</span>
                         </Link>
@@ -718,7 +720,7 @@ export function TicketDetail() {
                   <SectionCard
                     title="Scratchpad"
                     actions={
-                      <Link className="shell-action" to={`/projects/${slug}/tickets/${aslug}/scratchpad/edit`}>
+                      <Link className="shell-action" to={ticketEditHref(id, 'scratchpad')}>
                         <NotebookPen className="h-4 w-4" />
                         <span>Edit Scratchpad</span>
                       </Link>
@@ -789,8 +791,7 @@ export function TicketDetail() {
                   <div className="space-y-5">
                     {ticket.comments && ticket.comments.entries.length > 0 ? (
                       <CommentsThread
-                        projectSlug={slug!}
-                        ticketSlug={aslug!}
+                        ticketId={id}
                         entries={ticket.comments.entries}
                       />
                     ) : (
@@ -866,7 +867,7 @@ export function TicketDetail() {
               )}
               <WorkflowSelectRow
                 projectSlug={ticket.projectSlug}
-                aslug={aslug ?? ''}
+                ticketId={id}
                 workflow={ticket.workflow}
                 workflowLabel={ticket.workflowLabel}
                 onChanged={refetch}

@@ -12,11 +12,8 @@ import {
 } from '../hooks/useProjects';
 import {
   runTicketTransition,
-  runTicketTransitionById,
   overrideTicketStatus,
-  overrideTicketStatusById,
   updateTicketTitle,
-  updateTicketTitleById,
 } from '../lib/tickets';
 import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
 import { getTicketColumns } from '../lib/kanban';
@@ -884,13 +881,9 @@ export function TicketsPage() {
     try {
       // Project tickets use slug-based routes; standalone use by-id routes.
       // Both support transitions (with action) AND direct override (no action).
-      const updated = item.projectSlug === null
-        ? action
-          ? await runTicketTransitionById(item.id, action, reason)
-          : await overrideTicketStatusById(item.id, toColumnId)
-        : action
-          ? await runTicketTransition(item.projectSlug, item.slug, action, reason)
-          : await overrideTicketStatus(item.projectSlug, item.slug, toColumnId);
+      const updated = action
+        ? await runTicketTransition(item.id, action, reason)
+        : await overrideTicketStatus(item.id, toColumnId);
 
       setBoardItems((current) =>
         current.map((candidate) =>
@@ -970,9 +963,7 @@ export function TicketsPage() {
     setTransitioningId(key);
 
     try {
-      const updated = item.projectSlug === null
-        ? await updateTicketTitleById({ id: item.id, title: newTitle })
-        : await updateTicketTitle({ projectSlug: item.projectSlug, ticketSlug: item.slug, title: newTitle });
+      const updated = await updateTicketTitle({ id: item.id, title: newTitle });
 
       setBoardItems((current) =>
         current.map((candidate) =>
@@ -1584,7 +1575,7 @@ export function TicketsPage() {
           if (!next && deletingKey === null) setDeleteTarget(null);
         }}
         onConfirm={async () => {
-          if (!deleteTarget || deleteTarget.projectSlug === null) {
+          if (!deleteTarget) {
             setDeleteTarget(null);
             return;
           }
@@ -1592,7 +1583,7 @@ export function TicketsPage() {
           setDeletingKey(key);
           try {
             const res = await fetch(
-              `/api/projects/${encodeURIComponent(deleteTarget.projectSlug)}/tickets/${encodeURIComponent(deleteTarget.slug)}`,
+              `/api/tickets/${encodeURIComponent(deleteTarget.id)}`,
               { method: 'DELETE' },
             );
             if (!res.ok) {

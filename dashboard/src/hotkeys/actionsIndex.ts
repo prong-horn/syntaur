@@ -245,7 +245,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
           }
           const id = payload?.ticket?.id ?? payload?.id;
           if (id) {
-            helpers.navigate(`/tickets/${id}`);
+            helpers.navigate(`/t/${id}`);
           } else {
             helpers.navigate('/tickets');
           }
@@ -269,7 +269,11 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
           throw new Error(payload.error || `Failed to create ticket (HTTP ${res.status})`);
         }
         const aslug = payload.slug ?? slug;
-        helpers.navigate(`/projects/${projectChoice}/tickets/${aslug}`);
+        const projectRes = await fetch(`/api/projects/${encodeURIComponent(projectChoice)}`);
+        const projectPayload = await projectRes.json().catch(() => ({}));
+        const created = (projectPayload.tickets as Array<{ id: string; slug: string }> | undefined)
+          ?.find((ticket) => ticket.slug === aslug);
+        helpers.navigate(created ? `/t/${created.id}` : `/projects/${projectChoice}`);
       },
     },
   });
@@ -301,7 +305,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
       subtitle: projectSlug,
       group: 'Create',
       keywords: ['new', 'create', 'ticket', projectSlug],
-      run: () => navigate(`/projects/${projectSlug}/create/ticket`),
+      run: () => navigate(`/projects/${projectSlug}/new`),
     });
   }
 

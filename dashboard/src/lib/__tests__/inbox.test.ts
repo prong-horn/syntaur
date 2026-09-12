@@ -147,11 +147,11 @@ describe('waitingLabel', () => {
 });
 
 describe('planApproveEndpoint', () => {
-  it('maps project and standalone approve URLs', () => {
+  it('maps project and standalone approve URLs by ticket id', () => {
     const proj = makeItem({ category: 'plan-approval' });
     expect(planApproveEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/tickets/my-task/plan/approve',
+      url: '/api/tickets/uuid-1/plan/approve',
     });
     const standalone = makeItem({ category: 'plan-approval', project: null, ticketId: 'uuid-pa' });
     expect(planApproveEndpoint(standalone)).toEqual({
@@ -180,11 +180,11 @@ describe('formatAge', () => {
 });
 
 describe('transitionEndpoint', () => {
-  it('maps review accept for a project item', () => {
+  it('maps review accept for a project item by ticket id', () => {
     const item = makeItem({ category: 'review' });
     expect(transitionEndpoint(item, 'complete')).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/tickets/my-task/transitions/complete',
+      url: '/api/tickets/uuid-1/transitions/complete',
     });
   });
 
@@ -198,11 +198,11 @@ describe('transitionEndpoint', () => {
 });
 
 describe('commentsEndpoint', () => {
-  it('maps question reply for project and standalone', () => {
+  it('maps question reply for project and standalone by ticket id', () => {
     const proj = makeItem({ category: 'question' });
     expect(commentsEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/tickets/my-task/comments',
+      url: '/api/tickets/uuid-1/comments',
     });
     const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
     expect(commentsEndpoint(standalone)).toEqual({
@@ -213,11 +213,11 @@ describe('commentsEndpoint', () => {
 });
 
 describe('resolveCommentEndpoint', () => {
-  it('maps question resolve for project and standalone (PATCH)', () => {
+  it('maps question resolve for project and standalone by ticket id (PATCH)', () => {
     const proj = makeItem({ category: 'question' });
     expect(resolveCommentEndpoint(proj, 'c1')).toEqual({
       method: 'PATCH',
-      url: '/api/projects/proj/tickets/my-task/comments/c1/resolved',
+      url: '/api/tickets/uuid-1/comments/c1/resolved',
     });
     const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
     expect(resolveCommentEndpoint(standalone, 'c2')).toEqual({
@@ -230,17 +230,15 @@ describe('resolveCommentEndpoint', () => {
 describe('ticketHref', () => {
   it('builds the project jump-href, with and without a tab', () => {
     const item = makeItem({ category: 'plan-approval' });
-    expect(ticketHref(item)).toBe('/projects/proj/tickets/my-task');
-    expect(ticketHref(item, 'plan')).toBe('/projects/proj/tickets/my-task?tab=plan');
-    expect(ticketHref(item, 'comments')).toBe(
-      '/projects/proj/tickets/my-task?tab=comments',
-    );
+    expect(ticketHref(item)).toBe('/t/uuid-1');
+    expect(ticketHref(item, 'plan')).toBe('/t/uuid-1?tab=plan');
+    expect(ticketHref(item, 'comments')).toBe('/t/uuid-1?tab=comments');
   });
 
   it('builds the standalone jump-href keyed on the UUID', () => {
     const item = makeItem({ category: 'plan-approval', project: null, ticketId: 'uuid-pa' });
-    expect(ticketHref(item)).toBe('/tickets/uuid-pa');
-    expect(ticketHref(item, 'plan')).toBe('/tickets/uuid-pa?tab=plan');
+    expect(ticketHref(item)).toBe('/t/uuid-pa');
+    expect(ticketHref(item, 'plan')).toBe('/t/uuid-pa?tab=plan');
   });
 });
 
@@ -250,14 +248,14 @@ describe('chatItemHref', () => {
       category: 'question',
       chat: { kind: 'reply', itemId: 'item-1', agentId: 'claude' },
     });
-    expect(chatItemHref(item)).toBe('/projects/proj/tickets/my-task?tab=chat#item-1');
+    expect(chatItemHref(item)).toBe('/t/uuid-1?tab=chat#item-1');
     const standalone = makeItem({
       category: 'question',
       project: null,
       ticketId: 'uuid-q',
       chat: { kind: 'ask', itemId: 'q-2', agentId: 'cursor' },
     });
-    expect(chatItemHref(standalone)).toBe('/tickets/uuid-q?tab=chat#q-2');
+    expect(chatItemHref(standalone)).toBe('/t/uuid-q?tab=chat#q-2');
   });
 
   it('keeps colons in scope item ids unencoded in the hash', () => {
@@ -266,7 +264,7 @@ describe('chatItemHref', () => {
       chat: { kind: 'reply', itemId: 'd73e60eb-9891-4ad9-a817-92eeb1df40d1:1', agentId: 'claude' },
     });
     expect(chatItemHref(item)).toBe(
-      '/projects/proj/tickets/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
+      '/t/uuid-1?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
     );
   });
 });

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { recreateRequest, type RecreateIdentity } from '../../dashboard/src/lib/recreate';
 
 describe('recreateRequest', () => {
-  it('routes a project-nested ticket to the project recreate endpoint', () => {
+  it('routes a project-nested ticket to the by-id recreate endpoint', () => {
     const id: RecreateIdentity = {
       kind: 'ticket',
       id: 'uuid-1',
@@ -11,7 +11,7 @@ describe('recreateRequest', () => {
     };
     expect(recreateRequest(id)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/tickets/task-x/worktree/recreate',
+      url: '/api/tickets/uuid-1/worktree/recreate',
     });
   });
 

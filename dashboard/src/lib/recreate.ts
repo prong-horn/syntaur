@@ -15,9 +15,8 @@ export interface RecreateIdentity {
  * Resolve the server-authoritative recreate endpoint for an identity. The
  * server re-derives the path/repo/branch from persisted state, so the request
  * carries no path — only the route identifies the target:
- *   - session            -> /api/agent-sessions/:id/worktree/recreate
- *   - project ticket -> /api/projects/:slug/tickets/:aslug/worktree/recreate
- *   - standalone          -> /api/tickets/:id/worktree/recreate
+ *   - session -> /api/agent-sessions/:id/worktree/recreate
+ *   - ticket  -> /api/tickets/:id/worktree/recreate
  */
 export function recreateRequest(identity: RecreateIdentity): {
   method: 'POST';
@@ -27,12 +26,6 @@ export function recreateRequest(identity: RecreateIdentity): {
     return {
       method: 'POST',
       url: `/api/agent-sessions/${encodeURIComponent(identity.id)}/worktree/recreate`,
-    };
-  }
-  if (identity.projectSlug && identity.ticketSlug) {
-    return {
-      method: 'POST',
-      url: `/api/projects/${encodeURIComponent(identity.projectSlug)}/tickets/${encodeURIComponent(identity.ticketSlug)}/worktree/recreate`,
     };
   }
   return {

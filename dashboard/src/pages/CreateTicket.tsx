@@ -48,7 +48,11 @@ export function CreateTicket() {
         return;
       }
 
-      navigate(`/projects/${slug}/tickets/${payload.slug}`);
+      const projectRes = await fetch(`/api/projects/${slug}`);
+      const projectPayload = await projectRes.json();
+      const created = (projectPayload.tickets as Array<{ id: string; slug: string }> | undefined)
+        ?.find((ticket) => ticket.slug === payload.slug);
+      navigate(created ? `/t/${created.id}` : `/projects/${slug}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);

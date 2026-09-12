@@ -25,7 +25,7 @@ export function LinksPanel({ links, onTicketChange }: LinksPanelProps) {
         {forwardLinks.map((link) => (
           <Link
             key={`fwd-${link.slug}`}
-            to={`/projects/${link.projectSlug}/tickets/${link.ticketSlug}`}
+            to={`/t/${link.id}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -34,6 +34,7 @@ export function LinksPanel({ links, onTicketChange }: LinksPanelProps) {
               onPointerDown={(e) => e.stopPropagation()}
             >
               <TicketStatusPill
+                id={link.id}
                 projectSlug={link.projectSlug}
                 slug={link.ticketSlug}
                 status={link.status}
@@ -53,7 +54,7 @@ export function LinksPanel({ links, onTicketChange }: LinksPanelProps) {
         {reverseLinks.map((link) => (
           <Link
             key={`rev-${link.slug}`}
-            to={`/projects/${link.projectSlug}/tickets/${link.ticketSlug}`}
+            to={`/t/${link.id}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -62,6 +63,7 @@ export function LinksPanel({ links, onTicketChange }: LinksPanelProps) {
               onPointerDown={(e) => e.stopPropagation()}
             >
               <TicketStatusPill
+                id={link.id}
                 projectSlug={link.projectSlug}
                 slug={link.ticketSlug}
                 status={link.status}

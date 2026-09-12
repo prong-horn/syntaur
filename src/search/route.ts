@@ -57,8 +57,7 @@ const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
 /**
  * Build the UNPREFIXED deep-link for a hit:
  *   - assignment-scoped kinds → `<base>?tab=<pane>` + optional `#<slug(section)>`,
- *     where base is `/tickets/<id>` (standalone) or
- *     `/projects/<projectSlug>/tickets/<ticketSlug>` (nested).
+ *     where base is `/t/<ticketId>`.
  */
 export function routeForHit(
   hit: Pick<
@@ -71,9 +70,7 @@ export function routeForHit(
     | 'section'
   >,
 ): string {
-  const base = hit.standalone
-    ? `/tickets/${hit.ticketId}`
-    : `/projects/${hit.projectSlug}/tickets/${hit.ticketSlug}`;
+  const base = `/t/${hit.ticketId}`;
 
   const tab = FILE_KIND_TO_TAB[hit.fileKind];
   let route = `${base}?tab=${tab}`;

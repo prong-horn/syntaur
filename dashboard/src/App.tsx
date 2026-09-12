@@ -8,7 +8,6 @@ import { ProjectList } from './pages/ProjectList';
 import { Archive } from './pages/Archive';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { TicketDetail } from './pages/TicketDetail';
-import { StandaloneTicketDetail } from './pages/StandaloneTicketDetail';
 import { TicketsPage } from './pages/TicketsPage';
 import { CreateProject } from './pages/CreateProject';
 import { CreateTicket } from './pages/CreateTicket';
@@ -52,12 +51,12 @@ export function App() {
             <Route path="/archive" element={<Archive />} />
             <Route path="/tickets" element={<TicketsPage />} />
             <Route path="/tickets/new" element={<CreateStandaloneTicket />} />
-            <Route path="/tickets/:id" element={<StandaloneTicketDetail />} />
-            <Route path="/tickets/:id/edit" element={<EditTicket />} />
-            <Route path="/tickets/:id/plan/edit" element={<EditTicketPlan />} />
-            <Route path="/tickets/:id/scratchpad/edit" element={<EditTicketScratchpad />} />
-            <Route path="/tickets/:id/handoff/edit" element={<AppendTicketHandoff />} />
-            <Route path="/tickets/:id/decision-record/edit" element={<AppendTicketDecisionRecord />} />
+            <Route path="/t/:id" element={<TicketDetail />} />
+            <Route path="/t/:id/edit" element={<EditTicket />} />
+            <Route path="/t/:id/plan/edit" element={<EditTicketPlan />} />
+            <Route path="/t/:id/scratchpad/edit" element={<EditTicketScratchpad />} />
+            <Route path="/t/:id/handoff/edit" element={<AppendTicketHandoff />} />
+            <Route path="/t/:id/decision-record/edit" element={<AppendTicketDecisionRecord />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/new" element={<AgentEditorPage />} />
             <Route path="/agents/:id/edit" element={<AgentEditorPage />} />
@@ -74,13 +73,7 @@ export function App() {
             <Route path="/create/project" element={<CreateProject />} />
             <Route path="/projects/:slug" element={<ProjectDetail />} />
             <Route path="/projects/:slug/edit" element={<EditProject />} />
-            <Route path="/projects/:slug/create/ticket" element={<CreateTicket />} />
-            <Route path="/projects/:slug/tickets/:aslug" element={<TicketDetail />} />
-            <Route path="/projects/:slug/tickets/:aslug/edit" element={<EditTicket />} />
-            <Route path="/projects/:slug/tickets/:aslug/plan/edit" element={<EditTicketPlan />} />
-            <Route path="/projects/:slug/tickets/:aslug/scratchpad/edit" element={<EditTicketScratchpad />} />
-            <Route path="/projects/:slug/tickets/:aslug/handoff/edit" element={<AppendTicketHandoff />} />
-            <Route path="/projects/:slug/tickets/:aslug/decision-record/edit" element={<AppendTicketDecisionRecord />} />
+            <Route path="/projects/:slug/new" element={<CreateTicket />} />
 
             {/* Anything unmatched — a stale link or a retired page — says so instead of rendering nothing. */}
             <Route path="*" element={<NotFoundPage />} />

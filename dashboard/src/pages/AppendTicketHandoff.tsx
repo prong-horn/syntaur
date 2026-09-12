@@ -1,24 +1,15 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
+import { ticketPageHref } from '../lib/routes';
 
 export function AppendTicketHandoff() {
-  const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
-  const isStandalone = Boolean(id);
-  const loadUrl = isStandalone
-    ? `/api/tickets/${id}/handoff/edit`
-    : `/api/projects/${slug}/tickets/${aslug}/handoff/edit`;
-  const saveUrl = isStandalone
-    ? `/api/tickets/${id}/handoff/entries`
-    : `/api/projects/${slug}/tickets/${aslug}/handoff/entries`;
-  const redirectTo = isStandalone
-    ? `/tickets/${id}?tab=handoff`
-    : `/projects/${slug}/tickets/${aslug}?tab=handoff`;
+  const { id } = useParams<{ id: string }>();
 
   return (
     <AppendEntryPage
-      loadUrl={loadUrl}
-      saveUrl={saveUrl}
-      redirectTo={redirectTo}
+      loadUrl={`/api/tickets/${id}/handoff/edit`}
+      saveUrl={`/api/tickets/${id}/handoff/entries`}
+      redirectTo={ticketPageHref(id!, 'handoff')}
       title="Append Handoff Entry"
       description="Add a new handoff without rewriting previous history."
       helpTitle="Append-only handoff history"

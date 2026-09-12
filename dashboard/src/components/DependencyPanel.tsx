@@ -5,6 +5,7 @@ import { TicketStatusPill } from './TicketStatusPill';
 import { SectionCard } from './SectionCard';
 
 interface DependencyInfo {
+  id: string;
   slug: string;
   title: string;
   status: string;
@@ -82,7 +83,7 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason, onTi
           {dependencies.map((dep) => (
             <Link
               key={dep.slug}
-              to={`/projects/${projectSlug}/tickets/${dep.slug}`}
+              to={`/t/${dep.id}`}
               className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
             >
               <span
@@ -90,6 +91,7 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason, onTi
                 onPointerDown={(e) => e.stopPropagation()}
               >
                 <TicketStatusPill
+                  id={dep.id}
                   projectSlug={projectSlug}
                   slug={dep.slug}
                   status={dep.status}

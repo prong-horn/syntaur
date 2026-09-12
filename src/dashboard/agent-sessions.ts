@@ -30,11 +30,12 @@ import type {
 
 interface SessionRow {
   session_id: string;
-  // project_slug / assignment_slug are NOT columns on `sessions` (v6 moved the
-  // scalar binding onto `engagement`). They are PROJECTED here from the session's
-  // chosen engagement via SESSION_SELECT_WITH_BINDING below.
+  // project_slug / assignment_slug / assignment_id are NOT columns on `sessions`
+  // (v6 moved the scalar binding onto `engagement`). They are PROJECTED here
+  // from the session's chosen engagement via SESSION_SELECT_WITH_BINDING below.
   project_slug: string | null;
   assignment_slug: string | null;
+  assignment_id: string | null;
   agent: string;
   started: string;
   ended: string | null;
@@ -122,6 +123,7 @@ function rowToSession(row: SessionRow): AgentSession {
     sessionId: row.session_id,
     projectSlug: row.project_slug ?? null,
     ticketSlug: row.assignment_slug ?? null,
+    ticketId: row.assignment_id ?? null,
     agent: row.agent,
     started: row.started,
     ended: row.ended ?? null,

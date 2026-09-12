@@ -97,9 +97,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...idKeywords(a.externalIds)].filter(
         (s): s is string => Boolean(s),
       ),
-      route: a.projectSlug === null
-        ? `/tickets/${a.id}`
-        : `/projects/${a.projectSlug}/tickets/${a.slug}`,
+      route: `/t/${a.id}`,
       status: a.status,
       tags: a.tags,
       assignee: a.assignee,

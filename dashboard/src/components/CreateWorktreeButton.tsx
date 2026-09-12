@@ -12,30 +12,22 @@ import {
 import {
   CreateWorktreeError,
   createTicketWorktree,
-  createTicketWorktreeById,
-  getTicketRepositoryCandidatesById,
+  getTicketRepositoryCandidates,
   getProjectRepositoryCandidates,
-  getProjectSourceTickets,
+  getSourceTickets,
   getRepositoryBranches,
-  getRepositoryBranchesById,
-  getSourceTicketsById,
   validateBranchName,
   type RepositoryCandidate,
   type SourceTicket,
 } from '../lib/tickets';
 
-type Mode =
-  | { kind: 'project-nested'; projectSlug: string; ticketSlug: string }
-  | { kind: 'standalone'; ticketId: string };
-
 /** Which flavour of worktree the user is creating. */
 type FlowMode = 'new-branch' | 'branch-off';
 
 interface CreateWorktreeButtonProps {
-  /** Project-nested: pass slug + aslug. Standalone: pass ticket id only. */
+  ticketId: string;
+  /** When set, repository candidates come from the project scope. */
   projectSlug?: string;
-  ticketSlug?: string;
-  ticketId?: string;
   /**
    * Branch-name default. Caller computes this so the button doesn't have to
    * know the convention. Project-nested: `syntaur/<project>/<slug>`;
@@ -53,15 +45,11 @@ const SELECT_CLASS =
 
 export function CreateWorktreeButton({
   projectSlug,
-  ticketSlug,
   ticketId,
   defaultBranch,
   defaultParentBranch = 'main',
   onCreated,
 }: CreateWorktreeButtonProps): JSX.Element {
-  const mode: Mode = projectSlug && ticketSlug
-    ? { kind: 'project-nested', projectSlug, ticketSlug }
-    : { kind: 'standalone', ticketId: ticketId! };
 
   const [open, setOpen] = useState(false);
   const [flowMode, setFlowMode] = useState<FlowMode>('new-branch');
@@ -109,9 +97,9 @@ export function CreateWorktreeButton({
     setBranch(defaultBranch);
     setSubmitError(null);
 
-    const candLoader = mode.kind === 'project-nested'
-      ? getProjectRepositoryCandidates(mode.projectSlug)
-      : getTicketRepositoryCandidatesById(mode.ticketId);
+    const candLoader = projectSlug
+      ? getProjectRepositoryCandidates(projectSlug)
+      : getTicketRepositoryCandidates(ticketId);
     candLoader
       .then((list) => {
         if (cancelled) return;
@@ -132,9 +120,7 @@ export function CreateWorktreeButton({
         setShowAdvanced(true);
       });
 
-    const sourceLoader = mode.kind === 'project-nested'
-      ? getProjectSourceTickets(mode.projectSlug, mode.ticketSlug)
-      : getSourceTicketsById(mode.ticketId);
+    const sourceLoader = getSourceTickets(ticketId);
     sourceLoader
       .then((list) => {
         if (!cancelled) setSourceTickets(list);
@@ -150,7 +136,7 @@ export function CreateWorktreeButton({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode is rebuilt
     // each render from stable primitive props; listing those is the real dep set.
-  }, [open, defaultBranch, defaultParentBranch, projectSlug, ticketSlug, ticketId]);
+  }, [open, defaultBranch, defaultParentBranch, projectSlug, ticketId]);
 
   const selectedSource = flowMode === 'branch-off'
     ? (sourceTickets ?? []).find((s) => s.id === selectedSourceId) ?? null
@@ -183,9 +169,7 @@ export function CreateWorktreeButton({
     setBranchesError(null);
     // Clear the stale parent selection while the new repo's branches load.
     setParentBranch('');
-    const loader = mode.kind === 'project-nested'
-      ? getRepositoryBranches(mode.projectSlug, mode.ticketSlug, repository)
-      : getRepositoryBranchesById(mode.ticketId, repository);
+    const loader = getRepositoryBranches(ticketId, repository);
     loader
       .then((res) => {
         if (cancelled) return;
@@ -213,7 +197,7 @@ export function CreateWorktreeButton({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode rebuilt from
     // stable primitive props; repository/flowMode are the real triggers.
-  }, [open, flowMode, repository, defaultParentBranch, projectSlug, ticketSlug, ticketId]);
+  }, [open, flowMode, repository, defaultParentBranch, ticketId]);
 
   const branchValidationError = validateBranchName(branch.trim());
 
@@ -265,11 +249,7 @@ export function CreateWorktreeButton({
         branch: branch.trim(),
         parentBranch: parentBranch.trim(),
       };
-      if (mode.kind === 'project-nested') {
-        await createTicketWorktree(mode.projectSlug, mode.ticketSlug, payload);
-      } else {
-        await createTicketWorktreeById(mode.ticketId, payload);
-      }
+      await createTicketWorktree(ticketId, payload);
       setOpen(false);
       onCreated();
     } catch (err) {

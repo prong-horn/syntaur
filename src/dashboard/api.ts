@@ -1370,10 +1370,11 @@ export async function getTicketDetail(
   detail.reverseLinks = dedupedReverseLinks;
 
   // Build enriched links for the frontend
-  const allProjectAssignments = new Map<string, { title: string; status: string }>();
+  const allProjectAssignments = new Map<string, { id: string; title: string; status: string }>();
   for (const mr of projectRecords) {
     for (const a of mr.assignments) {
       allProjectAssignments.set(`${mr.summary.slug}/${a.slug}`, {
+        id: a.id,
         title: a.title,
         status: a.status,
       });
@@ -1385,6 +1386,7 @@ export async function getTicketDetail(
     const [ms, as] = linkSlug.split('/');
     const info = allProjectAssignments.get(linkSlug);
     enrichedLinks.push({
+      id: info?.id ?? linkSlug,
       slug: linkSlug,
       projectSlug: ms,
       ticketSlug: as,
@@ -1397,6 +1399,7 @@ export async function getTicketDetail(
     const [ms, as] = linkSlug.split('/');
     const info = allProjectAssignments.get(linkSlug);
     enrichedLinks.push({
+      id: info?.id ?? linkSlug,
       slug: linkSlug,
       projectSlug: ms,
       ticketSlug: as,
@@ -1519,9 +1522,10 @@ async function countMentionsInAssignment(
 function buildLinkPatternsForTarget(target: ReferenceTarget): RegExp[] {
   const patterns: RegExp[] = [];
   // Standalone absolute route
+  patterns.push(new RegExp(`/t/${escapeRegExpLocal(target.id)}(?:/|\\b)`, 'g'));
   patterns.push(new RegExp(`/tickets/${escapeRegExpLocal(target.id)}(?:/|\\b)`, 'g'));
   if (target.projectSlug) {
-    // Project-nested absolute route
+    // Legacy project-nested absolute route (pre-/t/ migration)
     patterns.push(
       new RegExp(
         `/projects/${escapeRegExpLocal(target.projectSlug)}/tickets/${escapeRegExpLocal(target.slug)}(?:/|\\b)`,
@@ -2536,7 +2540,7 @@ async function buildOverviewSegmentBuckets(
         assignmentTitle: assignment.title,
         status: assignment.status,
         updated: assignment.updated,
-        href: `/projects/${record.summary.slug}/tickets/${assignment.slug}`,
+        href: `/t/${assignment.id}`,
         blockedReason: assignment.blockedReason,
         stale,
         agingMs,
@@ -2623,7 +2627,7 @@ async function buildOverviewSegmentBuckets(
       assignmentTitle: assignment.title,
       status: assignment.status,
       updated: assignment.updated,
-      href: `/tickets/${sr.id}`,
+      href: `/t/${sr.id}`,
       blockedReason: assignment.blockedReason,
       stale,
       agingMs,
@@ -2758,7 +2762,7 @@ function buildRecentActivity(
         type: 'assignment',
         title: assignment.title,
         updated: assignment.updated,
-        href: `/projects/${record.summary.slug}/tickets/${assignment.slug}`,
+        href: `/t/${assignment.id}`,
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
         ticketSlug: assignment.slug,
@@ -2774,7 +2778,7 @@ function buildRecentActivity(
       type: 'assignment',
       title: assignment.title,
       updated: assignment.updated,
-      href: `/tickets/${sr.id}`,
+      href: `/t/${sr.id}`,
       projectSlug: null,
       projectTitle: null,
       ticketSlug: assignment.slug || sr.id,

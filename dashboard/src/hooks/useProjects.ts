@@ -32,6 +32,7 @@ export interface ProjectSummary {
 }
 
 export interface EnrichedLink {
+  id: string;
   slug: string;
   projectSlug: string;
   ticketSlug: string;
@@ -630,22 +631,14 @@ export function useProject(slug: string | undefined): FetchState<ProjectDetail> 
 }
 
 export function useTicket(
-  projectSlug: string | undefined,
-  ticketSlug: string | undefined,
-): FetchState<TicketDetail> {
-  const url =
-    projectSlug && ticketSlug
-      ? `/api/projects/${projectSlug}/tickets/${ticketSlug}`
-      : null;
-  return useFetch<TicketDetail>(url, 'ticket', true, true);
-}
-
-export function useTicketById(
   id: string | undefined,
 ): FetchState<TicketDetail> {
   const url = id ? `/api/tickets/${id}` : null;
   return useFetch<TicketDetail>(url, 'ticket', true, true);
 }
+
+/** @deprecated Use {@link useTicket} */
+export const useTicketById = useTicket;
 
 export function useEditableDocument(
   url: string | null,
@@ -729,22 +722,14 @@ export function useAgentSession(
 }
 
 export function useTicketSessions(
-  projectSlug: string | undefined,
-  ticketSlug: string | undefined,
-): FetchState<AgentSessionsResponse> {
-  const url =
-    projectSlug && ticketSlug
-      ? `/api/agent-sessions/${projectSlug}?ticket=${ticketSlug}`
-      : null;
-  return useFetch<AgentSessionsResponse>(url, 'agent-sessions', true, true);
-}
-
-export function useTicketSessionsById(
   id: string | undefined,
 ): FetchState<AgentSessionsResponse> {
   const url = id ? `/api/tickets/${id}/sessions` : null;
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions', true, true);
 }
+
+/** @deprecated Use {@link useTicketSessions} */
+export const useTicketSessionsById = useTicketSessions;
 
 export interface TicketUsageSummary {
   totalTokens: number;
@@ -764,27 +749,15 @@ export interface TicketUsageResponse {
 // the `websocketScope` arg — they fetch once per (project, ticket) and stay
 // inert to project/ticket/session broadcasts.
 export function useTicketUsage(
-  projectSlug: string | undefined,
-  ticketSlug: string | undefined,
+  id: string | undefined,
 ): FetchState<TicketUsageResponse> {
-  const url =
-    projectSlug && ticketSlug
-      ? `/api/usage/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}`
-      : null;
+  const url = id ? `/api/tickets/${encodeURIComponent(id)}/usage` : null;
   // resetDataOnUrlChange: never render a prior ticket's totals on a new one.
   return useFetch<TicketUsageResponse>(url, undefined, true, true);
 }
 
-// Keyed on the ticket SLUG (not the UUID id): the standalone usage endpoint
-// matches `assignment_slug`, and `sessions.assignment_slug` is written with the
-// slug. Passing the UUID would always return empty.
-export function useStandaloneTicketUsage(
-  slug: string | undefined,
-): FetchState<TicketUsageResponse> {
-  const url = slug ? `/api/usage/standalone/${encodeURIComponent(slug)}` : null;
-  // resetDataOnUrlChange: never render a prior ticket's totals on a new one.
-  return useFetch<TicketUsageResponse>(url, undefined, true, true);
-}
+/** @deprecated Use {@link useTicketUsage} */
+export const useStandaloneTicketUsage = useTicketUsage;
 
 export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {
   return useFetch<PlaybooksResponse>('/api/playbooks', 'playbooks', enabled);

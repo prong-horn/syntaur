@@ -21,9 +21,7 @@ function ArchivedPill() {
 }
 
 function ticketHref(item: ArchivedTicketItem): string {
-  return item.projectSlug
-    ? `/projects/${item.projectSlug}/tickets/${item.slug}`
-    : `/tickets/${item.id}`;
+  return `/t/${item.id}`;
 }
 
 export function Archive() {
@@ -56,10 +54,7 @@ export function Archive() {
   }
 
   function restoreTicket(item: ArchivedTicketItem) {
-    const url = item.projectSlug
-      ? `/api/projects/${item.projectSlug}/tickets/${item.slug}/unarchive`
-      : `/api/tickets/${item.id}/unarchive`;
-    return post(url, `ticket:${item.id}`, 'Ticket restored');
+    return post(`/api/tickets/${item.id}/unarchive`, `ticket:${item.id}`, 'Ticket restored');
   }
 
   if (loading) return <LoadingState label="Loading archived content…" />;

@@ -1,25 +1,15 @@
 import { useParams } from 'react-router-dom';
 import { DocumentEditorPage } from '../components/DocumentEditorPage';
+import { ticketPageHref } from '../lib/routes';
 
 export function EditTicket() {
-  const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
-
-  const isStandalone = Boolean(id);
-  const loadUrl = isStandalone
-    ? `/api/tickets/${id}/edit`
-    : `/api/projects/${slug}/tickets/${aslug}/edit`;
-  const saveUrl = isStandalone
-    ? `/api/tickets/${id}`
-    : `/api/projects/${slug}/tickets/${aslug}`;
-  const redirectTo = isStandalone
-    ? `/tickets/${id}`
-    : `/projects/${slug}/tickets/${aslug}`;
+  const { id } = useParams<{ id: string }>();
 
   return (
     <DocumentEditorPage
-      loadUrl={loadUrl}
-      saveUrl={saveUrl}
-      redirectTo={redirectTo}
+      loadUrl={`/api/tickets/${id}/edit`}
+      saveUrl={`/api/tickets/${id}`}
+      redirectTo={ticketPageHref(id!)}
       title="Edit Ticket"
       description="Edit ticket fields including status, priority, assignee, dependencies, and body."
       documentType="ticket"
