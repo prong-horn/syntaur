@@ -9,8 +9,8 @@
  *     produced by the pure normalizer and materialised into `chat_items` — a rebuildable
  *     index, never a source of truth.
  *
- * Item ids are `${scopeId}:${ordinal}`: `scopeId` is the broker-minted `turnId` inside a
- * turn, `replay:<n>` inside a `session/load` replay, and `session:<sessionKey>` otherwise;
+ * Item ids are `${scopeId}~${ordinal}`: `scopeId` is the broker-minted `turnId` inside a
+ * turn, `replay~<n>` inside a `session/load` replay, and `session~<sessionKey>` otherwise;
  * `ordinal` is a per-scope monotonic counter assigned at an item's first upsert and never
  * changed afterwards. Replaying the log in event order therefore reproduces the live ids
  * exactly (`rebuild == live`).
@@ -68,7 +68,7 @@ export interface ChatEvent {
   ts: string;
   ticketId: string;
   agentId: string;
-  /** `${ticketId}:${agentId}` — the broker's session key. */
+  /** `<ticketId>~<harness>` — the broker's session key. */
   sessionKey: string;
   /** Broker-minted UUID, stamped on every event between `turn.start` and its `turn.end`/`turn.cancel`. */
   turnId: string | null;
@@ -719,9 +719,7 @@ export interface HarnessSpec {
 
 export interface ChatSessionRow {
   session_key: string;
-  assignment_id: string;
-  project_slug: string | null;
-  assignment_slug: string | null;
+  ticket_id: string;
   agent_id: string;
   harness: string;
   acp_session_id: string | null;
@@ -740,7 +738,7 @@ export interface ChatSessionRow {
 
 export interface ChatItemRow {
   item_id: string;
-  assignment_id: string;
+  ticket_id: string;
   session_key: string;
   turn_id: string | null;
   agent_id: string;

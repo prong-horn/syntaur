@@ -45,10 +45,18 @@ async function parseSafe(path: string): Promise<ParsedTicketFull | null> {
  * (idempotency is per-event via `INSERT OR IGNORE` on `source_key`, NOT a
  * per-ticket skip):
  *   - one `status-change` per `statusHistory` entry whose `from !== to` —
- *     `backfill:<id>:status:<index>` (same-status entries are skipped, matching
+ *     `backfill~<id>~status~<index>` (same-status entries are skipped, matching
  *     the live emit's from!==to guard; index stays the ORIGINAL one for idempotency)
- *   - one `plan-approval` if `planApproval` is present — `backfill:<id>:plan-approval`
+ *   - one `plan-approval` if `planApproval` is present — `backfill~<id>~plan-approval`
  */
+export function backfillStatusSourceKey(ticketId: string, index: number): string {
+  return `backfill~${ticketId}~status~${index}`;
+}
+
+export function backfillPlanApprovalSourceKey(ticketId: string): string {
+  return `backfill~${ticketId}~plan-approval`;
+}
+
 function synthesizeEvents(fm: ParsedTicketFull): SynthEvent[] {
   const events: SynthEvent[] = [];
 
@@ -63,7 +71,7 @@ function synthesizeEvents(fm: ParsedTicketFull): SynthEvent[] {
       at: entry.at,
       actor: entry.by ?? 'system',
       details: { from: entry.from, to: entry.to, command: entry.command },
-      sourceKey: `backfill:${fm.id}:status:${index}`,
+      sourceKey: backfillStatusSourceKey(fm.id, index),
     });
   });
 
@@ -73,7 +81,7 @@ function synthesizeEvents(fm: ParsedTicketFull): SynthEvent[] {
       at: fm.planApproval.at || fm.updated,
       actor: fm.planApproval.by ?? 'system',
       details: { file: fm.planApproval.file, digest: fm.planApproval.digest },
-      sourceKey: `backfill:${fm.id}:plan-approval`,
+      sourceKey: backfillPlanApprovalSourceKey(fm.id),
     });
   }
 
@@ -249,7 +257,7 @@ export async function migrateEventsCommand(
 /** Count events for a ticket (used to measure inserts before/after apply). */
 function countEvents(ticketId: string): number {
   const row = getEventsDb()
-    .prepare('SELECT COUNT(*) AS n FROM events WHERE assignment_id = ?')
+    .prepare('SELECT COUNT(*) AS n FROM events WHERE ticket_id = ?')
     .get(ticketId) as { n: number };
   return row.n;
 }

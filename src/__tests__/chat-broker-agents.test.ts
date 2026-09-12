@@ -338,7 +338,7 @@ const ticket = (): ResolvedTicket => ({
   standalone: false,
 });
 
-const sessionKey = (agentId: string) => `${TICKET_ID}:${agentId}`;
+const sessionKey = (agentId: string) => `${TICKET_ID}~${agentId}`;
 
 async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;

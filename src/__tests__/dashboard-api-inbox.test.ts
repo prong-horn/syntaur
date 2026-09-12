@@ -297,7 +297,7 @@ describe('GET /api/inbox', () => {
 
 describe('GET /api/inbox — card enrichment', () => {
   const TICKET_ID = 'perm-ticket';
-  const SESSION_KEY = `${TICKET_ID}:cursor`;
+  const SESSION_KEY = `${TICKET_ID}~cursor`;
 
   beforeEach(async () => {
     await mkdir(join(projectsDir, 'p1'), { recursive: true });
@@ -586,7 +586,7 @@ describe('GET /api/inbox — maxAgeDays', () => {
   });
 
   it('keeps an unsettled permission row older than the window', async () => {
-    const permItemId = 'perm:old:window';
+    const permItemId = 'perm~old~window';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
     await seed({ id: 'perm-a', slug: 'perm-old', status: 'in_progress', project: 'p1' });
     await seedQuestionComment('p1', 'perm-old', 'perm-a', {
@@ -595,7 +595,7 @@ describe('GET /api/inbox — maxAgeDays', () => {
       timestamp: oldAt,
       body: `Waiting\n\n${marker}`,
     });
-    upsertChatItem('perm-a:cursor', {
+    upsertChatItem('perm-a~cursor', {
       itemId: permItemId,
       ticketId: 'perm-a',
       turnId: 'turn-1',
@@ -627,7 +627,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     );
   });
 
-  it('snoozes a review row and round-trips colon keys', async () => {
+  it('snoozes a plan-approval row and round-trips tilde keys', async () => {
     await seed({
       id: 'plan:uuid',
       slug: 'plan-check',
@@ -638,7 +638,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
     const row = inbox.items.find((i) => i.ticketSlug === 'plan-check')!;
     const key = inboxRowKey(row);
-    expect(key).toBe('plan-approval:plan:uuid');
+    expect(key).toBe('plan:uuid~plan-approval');
 
     const putRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
       method: 'PUT',
@@ -683,7 +683,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
       author: 'cursor',
       body: `Waiting\n\n${marker}`,
     });
-    upsertChatItem('perm-a:cursor', {
+    upsertChatItem('perm-a~cursor', {
       itemId: permItemId,
       ticketId: 'perm-a',
       turnId: 'turn-1',

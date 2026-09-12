@@ -143,8 +143,8 @@ describe('migrateEventsCommand', () => {
     const oldest = events[1];
     expect(oldest.actor).toBe('system');
     // deterministic source_key per index
-    expect(newest.source_key).toBe('backfill:a1-id:status:1');
-    expect(oldest.source_key).toBe('backfill:a1-id:status:0');
+    expect(newest.source_key).toBe('backfill~a1-id~status~1');
+    expect(oldest.source_key).toBe('backfill~a1-id~status~0');
     // project_slug from the scan
     expect(newest.project_slug).toBe('p1');
   });
@@ -183,7 +183,7 @@ describe('migrateEventsCommand', () => {
     const pe = planEvents[0];
     expect(pe.at).toBe('2026-03-03T00:00:00Z');
     expect(pe.actor).toBe('agent:rev');
-    expect(pe.source_key).toBe('backfill:a1-id:plan-approval');
+    expect(pe.source_key).toBe('backfill~a1-id~plan-approval');
     // status-change + plan-approval = 3 total for this ticket
     expect(listEventsByTicket('a1-id')).toHaveLength(3);
   });
@@ -225,9 +225,9 @@ describe('migrateEventsCommand', () => {
     const events = listEventsByTicket('a1-id');
     expect(events).toHaveLength(2);
     const keys = events.map((e) => e.source_key).sort();
-    expect(keys).toEqual(['backfill:a1-id:status:0', 'backfill:a1-id:status:2']);
+    expect(keys).toEqual(['backfill~a1-id~status~0', 'backfill~a1-id~status~2']);
     // The skipped index 1 never appears.
-    expect(keys).not.toContain('backfill:a1-id:status:1');
+    expect(keys).not.toContain('backfill~a1-id~status~1');
   });
 
   it('does not throw and writes nothing when there are no tickets', async () => {

@@ -36,7 +36,7 @@ let sandbox: string;
 let ticketDir: string;
 
 const TICKET_ID = 'ticket-1';
-const SESSION_KEY = 'ticket-1:claude';
+const SESSION_KEY = 'ticket-1~claude';
 
 function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'itemId'>): ChatItem {
   return {
@@ -204,8 +204,8 @@ describe('chat_items index', () => {
   });
 
   it('upsert is idempotent by item_id', () => {
-    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v1' }));
-    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v2', seqLast: 5 }));
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1~0', text: 'v1' }));
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1~0', text: 'v2', seqLast: 5 }));
     const items = listChatItems(TICKET_ID);
     expect(items).toHaveLength(1);
     expect((items[0] as { text: string }).text).toBe('v2');
@@ -213,9 +213,9 @@ describe('chat_items index', () => {
   });
 
   it('a retract patch deletes the row', () => {
-    applyChatPatch(SESSION_KEY, { op: 'upsert', item: item({ itemId: 't1:0' }) });
+    applyChatPatch(SESSION_KEY, { op: 'upsert', item: item({ itemId: 't1~0' }) });
     expect(countChatItems(TICKET_ID)).toBe(1);
-    applyChatPatch(SESSION_KEY, { op: 'retract', itemId: 't1:0' });
+    applyChatPatch(SESSION_KEY, { op: 'retract', itemId: 't1~0' });
     expect(countChatItems(TICKET_ID)).toBe(0);
     // Retracting an unknown id is a no-op, not an error.
     deleteChatItem('nope');
@@ -223,7 +223,7 @@ describe('chat_items index', () => {
 
   it('pages newest-first and returns each page oldest-first', () => {
     for (let i = 0; i < 10; i++) {
-      upsertChatItem(SESSION_KEY, item({ itemId: `t1:${i}`, seqFirst: i, seqLast: i }));
+      upsertChatItem(SESSION_KEY, item({ itemId: `t1~${i}`, seqFirst: i, seqLast: i }));
     }
     const newest = listChatItems(TICKET_ID, { limit: 3 });
     expect(newest.map((i) => i.seqFirst)).toEqual([7, 8, 9]);
@@ -232,8 +232,8 @@ describe('chat_items index', () => {
   });
 
   it('keeps tickets apart', () => {
-    upsertChatItem(SESSION_KEY, item({ itemId: 't1:0' }));
-    upsertChatItem('other:claude', item({ itemId: 't2:0', ticketId: 'ticket-2' }));
+    upsertChatItem(SESSION_KEY, item({ itemId: 't1~0' }));
+    upsertChatItem('other~claude', item({ itemId: 't2~0', ticketId: 'ticket-2' }));
     expect(countChatItems(TICKET_ID)).toBe(1);
     expect(deleteChatItems('ticket-2')).toBe(1);
     expect(countChatItems(TICKET_ID)).toBe(1);
@@ -340,16 +340,16 @@ describe('rebuild == live', () => {
   });
 
   it('rebuilding a ticket with no log clears its index', async () => {
-    upsertChatItem(SESSION_KEY, item({ itemId: 'stale:0' }));
+    upsertChatItem(SESSION_KEY, item({ itemId: 'stale~0' }));
     const result = await rebuildChatIndex(ticketDir, TICKET_ID);
     expect(result).toEqual({ events: 0, items: 0, deleted: 1 });
   });
 });
 
 describe('rebuild == live across the ticket scope (Task 5)', () => {
-  const TICKET_SCOPE = `${TICKET_ID}:@ticket`;
-  const PLANNER_KEY = `${TICKET_ID}:planner`;
-  const IMPLEMENTER_KEY = `${TICKET_ID}:implementer`;
+  const TICKET_SCOPE = `${TICKET_ID}~@ticket`;
+  const PLANNER_KEY = `${TICKET_ID}~planner`;
+  const IMPLEMENTER_KEY = `${TICKET_ID}~implementer`;
 
   /**
    * A two-agent chat as the broker writes it: the routing rows in the
@@ -424,7 +424,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       handoffId: 'h1',
       fromAgentId: 'planner',
       toAgentId: 'implementer',
-      triggerItemId: 'turn-p:1',
+      triggerItemId: 'turn-p~1',
       text: 'Done — over to you @implementer',
       hop: 1,
       budget: 4,
@@ -502,7 +502,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
       );
       INSERT INTO meta (key, value) VALUES ('chat_schema_version', '1');
       INSERT INTO chat_sessions (session_key, assignment_id, agent_id, harness, state, created_at)
-        VALUES ('a1:claude', 'a1', 'claude', 'claude', 'idle', '2026-09-02T12:00:00.000Z');
+        VALUES ('a1~claude', 'a1', 'claude', 'claude', 'idle', '2026-09-02T12:00:00.000Z');
     `);
     raw.close();
 
@@ -518,7 +518,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
     ).toBe('4');
     // The existing row survives and defaults to the start of the log.
     expect(
-      db.prepare("SELECT last_delivered_seq FROM chat_sessions WHERE session_key = 'a1:claude'").get(),
+      db.prepare("SELECT last_delivered_seq FROM chat_sessions WHERE session_key = 'a1~claude'").get(),
     ).toEqual({ last_delivered_seq: 0 });
 
     // Idempotent: a second init is a no-op, not a duplicate-column error.

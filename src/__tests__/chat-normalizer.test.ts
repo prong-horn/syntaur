@@ -29,7 +29,7 @@ export function normalizeEvents(events: ChatEvent[], agentId = 'claude'): ChatIt
   const normalizer = new ChatNormalizer({
     ticketId: 'ticket-fixture',
     agentId,
-    sessionKey: `ticket-fixture:${agentId}`,
+    sessionKey: `ticket-fixture~${agentId}`,
   });
   const items = new Map<string, ChatItem>();
   for (const event of events) applyPatches(items, normalizer.ingest(event));
@@ -250,7 +250,7 @@ describe('permissions', () => {
     const base = {
       ticketId: 'ticket-fixture',
       agentId: 'claude',
-      sessionKey: 'ticket-fixture:claude',
+      sessionKey: 'ticket-fixture~claude',
       turnId: 'turn-1',
       ts: '2026-09-05T12:00:00.000Z',
     };
@@ -302,10 +302,10 @@ describe('permissions', () => {
 });
 
 describe('session/load replay scope', () => {
-  it('14 p2: exactly one replayed user.message and one agent.message, in replay:1, before the first turn.status', () => {
+  it('14 p2: exactly one replayed user.message and one agent.message, in replay~1, before the first turn.status', () => {
     for (const adapter of ['claude', 'codex'] as const) {
       const items = normalizeFixture(`${adapter}/14-load-resume.p2.ndjson`);
-      const replayItems = items.filter((i) => i.itemId.startsWith('replay:1:'));
+      const replayItems = items.filter((i) => i.itemId.startsWith('replay~1~'));
       const users = replayItems.filter((i) => i.type === 'user.message');
       const agents = replayItems.filter((i) => i.type === 'agent.message');
       expect(users, `${adapter} p2 replayed user message`).toHaveLength(1);
@@ -323,7 +323,7 @@ describe('session/load replay scope', () => {
   it('14 p3: session/resume replays nothing', () => {
     for (const adapter of ['claude', 'codex'] as const) {
       const items = normalizeFixture(`${adapter}/14-load-resume.p3.ndjson`);
-      expect(items.filter((i) => i.itemId.startsWith('replay:'))).toHaveLength(0);
+      expect(items.filter((i) => i.itemId.startsWith('replay~'))).toHaveLength(0);
       expect(items.filter((i) => i.type === 'user.message')).toHaveLength(0);
     }
   });
@@ -417,7 +417,7 @@ describe('pure helpers', () => {
 });
 
 /**
- * Task 5 — the ticket scope (`${ticketId}:@ticket`, Decision 3).
+ * Task 5 — the ticket scope (`${ticketId}~@ticket`, Decision 3).
  * Routing rows belong to no agent session: a fan-out `user.message`, the
  * `handoff` rows between agents, and the router's notices all live here, and
  * each item's author comes from the EVENT rather than from the normalizer's own
@@ -425,7 +425,7 @@ describe('pure helpers', () => {
  */
 describe('ticket scope (Task 5)', () => {
   const TICKET = 'ticket-1';
-  const SCOPE = `${TICKET}:@ticket`;
+  const SCOPE = `${TICKET}~@ticket`;
 
   function scope(): { normalizer: ChatNormalizer; items: Map<string, ChatItem>; seq: number } {
     return {
@@ -624,7 +624,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
     const normalizer = new ChatNormalizer({
       ticketId: 'a1',
       agentId: 'implementer',
-      sessionKey: 'a1:implementer',
+      sessionKey: 'a1~implementer',
     });
     const items = new Map<string, ChatItem>();
     applyPatches(
@@ -634,7 +634,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
         ts: '2026-09-02T12:00:00.000Z',
         ticketId: 'a1',
         agentId: 'implementer',
-        sessionKey: 'a1:implementer',
+        sessionKey: 'a1~implementer',
         turnId: 'turn-1',
         kind: 'turn.start',
         payload: {
@@ -651,7 +651,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
   });
 
   it('leaves the trigger off a phase-2 turn.start that has none', () => {
-    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'claude', sessionKey: 'a1:claude' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'claude', sessionKey: 'a1~claude' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,
@@ -660,7 +660,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
         ts: '2026-09-02T12:00:00.000Z',
         ticketId: 'a1',
         agentId: 'claude',
-        sessionKey: 'a1:claude',
+        sessionKey: 'a1~claude',
         turnId: 'turn-1',
         kind: 'turn.start',
         payload: { messageId: 'm1', startedAt: '2026-09-02T12:00:00.000Z' },
@@ -674,13 +674,13 @@ describe('cursor extension events', () => {
   const base = {
     ticketId: 'a1',
     agentId: 'cursor',
-    sessionKey: 'a1:cursor',
+    sessionKey: 'a1~cursor',
     turnId: 'turn-1',
     ts: '2026-09-02T12:00:00.000Z',
   };
 
   it('maps update_todos onto the plan item', () => {
-    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1~cursor' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,
@@ -709,7 +709,7 @@ describe('cursor extension events', () => {
   });
 
   it('folds question.answered into the question card', () => {
-    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1~cursor' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,

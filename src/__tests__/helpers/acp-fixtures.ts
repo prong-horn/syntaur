@@ -83,7 +83,7 @@ export interface FixtureEventOptions {
 export function fixtureEvents(path: string, options: FixtureEventOptions = {}): ChatEvent[] {
   const ticketId = options.ticketId ?? 'ticket-fixture';
   const agentId = options.agentId ?? 'claude';
-  const sessionKey = options.sessionKey ?? `${ticketId}:${agentId}`;
+  const sessionKey = options.sessionKey ?? `${ticketId}~${agentId}`;
 
   const frames = readFrames(path);
   /** Outbound request id → what its response means. */

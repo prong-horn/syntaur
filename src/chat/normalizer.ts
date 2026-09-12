@@ -151,13 +151,13 @@ export class ChatNormalizer {
     if (this.replayScope) return this.replayScope;
     const turn = this.currentTurn;
     if (turn) return turn.turnId;
-    return `session:${this.sessionKey}`;
+    return `session~${this.sessionKey}`;
   }
 
   private nextItemId(scopeId: string): string {
     const next = this.ordinals.get(scopeId) ?? 0;
     this.ordinals.set(scopeId, next + 1);
-    return `${scopeId}:${next}`;
+    return `${scopeId}~${next}`;
   }
 
   private base(event: ChatEvent, type: ChatItem['type']) {
@@ -225,7 +225,7 @@ export class ChatNormalizer {
         break;
       case 'session.load':
         this.replayCount += 1;
-        this.replayScope = `replay:${this.replayCount}`;
+        this.replayScope = `replay~${this.replayCount}`;
         this.system(event, 'info', 'Replaying session history', patches);
         break;
       case 'session.loaded':
@@ -650,10 +650,10 @@ export class ChatNormalizer {
 
   private ingestTurnStart(event: ChatEvent, patches: ItemPatch[]): void {
     const payload = (event.payload ?? {}) as Partial<TurnStartPayload>;
-    const turnId = event.turnId ?? `turn:${event.seq}`;
+    const turnId = event.turnId ?? `turn~${event.seq}`;
     const scopeId = turnId;
     const status: TurnStatusItem = {
-      itemId: `${scopeId}:${this.ordinals.get(scopeId) ?? 0}`,
+      itemId: `${scopeId}~${this.ordinals.get(scopeId) ?? 0}`,
       ticketId: this.ticketId,
       turnId,
       agentId: event.agentId || this.agentId,

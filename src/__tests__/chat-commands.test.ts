@@ -190,7 +190,7 @@ function evt(kind: ChatEventKind, payload: unknown, seq: number): ChatEvent {
     ts: '2026-09-03T12:00:00.000Z',
     ticketId: 'a1',
     agentId: 'codex',
-    sessionKey: 'a1:codex',
+    sessionKey: 'a1~codex',
     turnId: null,
     kind,
     payload,

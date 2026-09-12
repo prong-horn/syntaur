@@ -37,29 +37,29 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
 }
 
 describe('rowKey', () => {
-  it('prefers commentId, then chat item id, then category:ticketId', () => {
-    expect(rowKey(makeItem({ category: 'question', commentId: 'c1' }))).toBe('c1');
+  it('uses chat item id, compact-ts log rows, or category ticket-level keys', () => {
+    expect(rowKey(makeItem({ category: 'question', commentId: 'c1', since: '2026-06-16T00:00:00Z' }))).toBe(
+      'uuid-1~20260616T000000Z',
+    );
     expect(
       rowKey(
         makeItem({
           category: 'question',
-          chat: { kind: 'reply', itemId: 'item:1', agentId: 'claude' },
+          chat: { kind: 'reply', itemId: 'item~1', agentId: 'claude' },
         }),
       ),
-    ).toBe('item:1');
-    expect(rowKey(makeItem({ category: 'review', ticketId: 'uuid-r' }))).toBe(
-      'review:uuid-r',
-    );
+    ).toBe('item~1');
+    expect(rowKey(makeItem({ category: 'review', ticketId: 'uuid-r' }))).toBe('uuid-r~review');
   });
 });
 
 describe('inboxRowHref', () => {
-  it('keeps colons literal in the hash', () => {
+  it('uses the row key literally in the hash', () => {
     const item = makeItem({
       category: 'question',
-      chat: { kind: 'permission', itemId: 'abc:def', agentId: 'cursor' },
+      chat: { kind: 'permission', itemId: 'abc~def', agentId: 'cursor' },
     });
-    expect(inboxRowHref(item)).toBe('/inbox#abc:def');
+    expect(inboxRowHref(item)).toBe('/inbox#abc~def');
   });
 });
 
@@ -258,21 +258,21 @@ describe('chatItemHref', () => {
     expect(chatItemHref(standalone)).toBe('/t/uuid-q?tab=chat#q-2');
   });
 
-  it('keeps colons in scope item ids unencoded in the hash', () => {
+  it('keeps chat item ids unencoded in the hash', () => {
     const item = makeItem({
       category: 'question',
-      chat: { kind: 'reply', itemId: 'd73e60eb-9891-4ad9-a817-92eeb1df40d1:1', agentId: 'claude' },
+      chat: { kind: 'reply', itemId: 'd73e60eb-9891-4ad9-a817-92eeb1df40d1~1', agentId: 'claude' },
     });
     expect(chatItemHref(item)).toBe(
-      '/t/uuid-1?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
+      '/t/uuid-1?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1~1',
     );
   });
 });
 
 describe('snooze endpoints', () => {
-  it('encode colons in row keys', () => {
-    const key = 'review:uuid:1';
-    expect(snoozeEndpoint(key).url).toBe('/api/inbox/snoozes/review%3Auuid%3A1');
+  it('encode row keys for the URL path', () => {
+    const key = 'uuid-1~review';
+    expect(snoozeEndpoint(key).url).toBe('/api/inbox/snoozes/uuid-1~review');
     expect(snoozeEndpoint(key).method).toBe('PUT');
     expect(unsnoozeEndpoint(key).method).toBe('DELETE');
   });

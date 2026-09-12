@@ -1122,7 +1122,7 @@ describe('computeInbox — snoozes', () => {
   });
 
   it('ignores a snooze entry keyed to a tier-0 card row', async () => {
-    const permId = 'perm:colon:id';
+    const permId = 'perm~colon~id';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
     await seed({
       id: 'a-tier0',
@@ -1158,7 +1158,7 @@ describe('computeInbox — snoozes', () => {
 });
 
 describe('inboxRowKey and rowFingerprint', () => {
-  it('uses commentId, chat itemId, or category:ticketId', async () => {
+  it('uses chat item id, compact-ts log rows, or category ticket-level keys', async () => {
     await seed({
       id: 'q-id',
       slug: 'q-slug',
@@ -1176,9 +1176,9 @@ describe('inboxRowKey and rowFingerprint', () => {
       ],
     });
     const plain = (await run()).items[0];
-    expect(inboxRowKey(plain)).toBe('comment-1');
+    expect(inboxRowKey(plain)).toBe('q-id~20260615T000000Z');
 
-    const permId = 'perm:colon:id';
+    const permId = 'perm~chat~item';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
     await seed({
       id: 'chat-id',
@@ -1200,12 +1200,12 @@ describe('inboxRowKey and rowFingerprint', () => {
     const chat = (await run({ lookupChatItem: (id) => lookup.get(id) ?? null })).items.find(
       (i) => i.ticketSlug === 'chat-slug',
     )!;
-    expect(inboxRowKey(chat)).toBe('c-chat');
+    expect(inboxRowKey(chat)).toBe('perm~chat~item');
     expect(rowFingerprint(chat)).toContain(permId);
 
     await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });
     const review = (await run()).items.find((i) => i.ticketSlug === 'rev-slug')!;
-    expect(inboxRowKey(review)).toBe('review:rev-id');
+    expect(inboxRowKey(review)).toBe('rev-id~review');
     expect(rowFingerprint(review)).toBe(`${review.since}|${review.ticketUpdated}|`);
   });
 });

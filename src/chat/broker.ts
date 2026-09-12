@@ -439,7 +439,12 @@ const EMPTY_TOKENS: ModelTokens = {
  * `rebuildChatIndex` treats like any other.
  */
 export function ticketScopeKey(ticketId: string): string {
-  return `${ticketId}:@assignment`;
+  return `${ticketId}~@ticket`;
+}
+
+/** Agent session key: `<ID>~<harness>`. */
+export function chatSessionKey(ticketId: string, harness: string): string {
+  return `${ticketId}~${harness}`;
 }
 
 /** The ticket scope's live normalizer, plus what the broker reads back. */
@@ -1196,7 +1201,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
 
-    const key = `${ticket.id}:${definition.id}`;
+    const key = chatSessionKey(ticket.id, definition.id);
     const existing = sessions.get(key);
     if (existing) {
       existing.ticket = ticket;
@@ -1794,7 +1799,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // Unreadable definitions must not hide the sessions that DO have rows.
     }
     for (const agentId of agentIds) {
-      const key = `${ticket.id}:${agentId}`;
+      const key = chatSessionKey(ticket.id, agentId);
       if (constructing.has(key)) continue;
       try {
         await ensureSession(ticket, agentId);

@@ -564,14 +564,14 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${TICKET_ID}:planner`,
+        sessionKey: `${TICKET_ID}~planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.start',
         payload: { startedAt: '2026-09-02T12:00:00.000Z', trigger: { kind: 'human', messageId: 'm-fanout' } },
       },
       {
-        sessionKey: `${TICKET_ID}:planner`,
+        sessionKey: `${TICKET_ID}~planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.end',
@@ -605,14 +605,14 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${TICKET_ID}:planner`,
+        sessionKey: `${TICKET_ID}~planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.start',
         payload: { startedAt: '2026-09-02T12:00:00.000Z', trigger: { kind: 'human', messageId: 'm1' } },
       },
       {
-        sessionKey: `${TICKET_ID}:planner`,
+        sessionKey: `${TICKET_ID}~planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.end',
@@ -710,7 +710,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${TICKET_ID}:implementer`,
+        sessionKey: `${TICKET_ID}~implementer`,
         agentId: 'implementer',
         turnId: 'turn-impl',
         kind: 'turn.start',

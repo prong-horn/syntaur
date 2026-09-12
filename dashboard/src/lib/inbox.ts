@@ -102,12 +102,30 @@ export interface EndpointDescriptor {
  */
 type RouteIdentity = Pick<InboxItem, 'project' | 'ticketSlug' | 'ticketId'>;
 
+/** Compact RFC 3339 for inbox entry row keys (`2026-09-11T05:20:00Z` → `20260911T052000Z`). */
+export function compactInboxTimestamp(iso: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) {
+    return iso.replace(/[-:]/g, '').replace(/\.\d{3}(?=Z)/i, '');
+  }
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}` +
+    `T${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}Z`
+  );
+}
+
 /**
  * Stable row key shared by the list, anchors, and notifier.
  * Must stay in lockstep with `inboxRowKey` in `src/inbox/index.ts`.
  */
 export function rowKey(item: InboxItem): string {
-  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.ticketId}`;
+  if (item.chat?.itemId) return item.chat.itemId;
+  if (item.category === 'question') {
+    return `${item.ticketId}~${compactInboxTimestamp(item.since)}`;
+  }
+  return `${item.ticketId}~${item.category}`;
 }
 
 export function snoozeEndpoint(rowKeyValue: string): EndpointDescriptor {

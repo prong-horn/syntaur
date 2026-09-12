@@ -1,6 +1,9 @@
 /**
  * Snooze store for the Needs me inbox — one JSON file under the Syntaur home.
  * Pure fs; no dashboard imports.
+ *
+ * Map keys match `inboxRowKey` in `index.ts`: a chat item id, `<ID>~<compact-ts>`
+ * for log question rows, or `<ID>~<category>` for ticket-level rows — no colons.
  */
 
 import { readFile } from 'node:fs/promises';

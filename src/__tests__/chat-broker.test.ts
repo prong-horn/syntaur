@@ -1159,7 +1159,7 @@ describe('resume keeps the cost snapshot on one key', () => {
  * seal its own turn, which is precisely NOT the case under test.
  */
 describe('startup repair after a crash (Decision 12)', () => {
-  const SESSION_KEY = `${TICKET_ID}:claude`;
+  const SESSION_KEY = `${TICKET_ID}~claude`;
   const CRASH_SNAPSHOT = {
     models: { 'opus[1m]': { input: 1, output: 1, cacheCreation: 0, cacheRead: 0, total: 2, cost: 0.5 } },
     collectorRunAt: null,
@@ -1261,7 +1261,7 @@ describe('startup repair after a crash (Decision 12)', () => {
       tokensAtOpen: CRASH_SNAPSHOT,
     });
     upsertChatItem(SESSION_KEY, {
-      itemId: 'turn-crashed:0',
+      itemId: 'turn-crashed~0',
       ticketId: TICKET_ID,
       turnId: 'turn-crashed',
       agentId: 'claude',
@@ -1526,7 +1526,7 @@ describe('one event log per ticket (finding 4)', () => {
     const authors = new Set(logged.map((e) => e.agentId));
     expect(authors).toEqual(new Set(['human', 'claude', 'codex']));
     expect(new Set(logged.map((e) => e.sessionKey))).toEqual(
-      new Set([`${TICKET_ID}:@assignment`, `${TICKET_ID}:claude`, `${TICKET_ID}:codex`]),
+      new Set([`${TICKET_ID}~@ticket`, `${TICKET_ID}~claude`, `${TICKET_ID}~codex`]),
     );
   });
 });
@@ -1751,7 +1751,7 @@ describe('chat image attachments', () => {
       bytes: PNG_1X1,
     });
     const log = await openChatLog(ticketDir);
-    const sessionKey = `${TICKET_ID}:claude`;
+    const sessionKey = `${TICKET_ID}~claude`;
     await log.append({
       ticketId: TICKET_ID,
       agentId: 'claude',
@@ -1868,7 +1868,7 @@ describe('slash commands', () => {
       },
     ]);
     upsertChatSession({
-      sessionKey: `${TICKET_ID}:claude`,
+      sessionKey: `${TICKET_ID}~claude`,
       ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
       ticketSlug: 'chat-demo',
@@ -1916,7 +1916,7 @@ describe('slash commands', () => {
 
   it('does not backfill when the newest harness marker names another harness', async () => {
     makeBroker({ turns: [{ steps: [] }] });
-    const key = `${TICKET_ID}:claude`;
+    const key = `${TICKET_ID}~claude`;
     const log = await openChatLog(ticketDir);
     await log.append({
       ticketId: TICKET_ID,

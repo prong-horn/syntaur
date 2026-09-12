@@ -294,7 +294,7 @@ describe('InboxPage', () => {
           {
             ...base,
             commentId: undefined,
-            chat: { kind: 'reply' as const, itemId: 'item:colon', agentId: 'claude' },
+            chat: { kind: 'reply' as const, itemId: 'item~tilde', agentId: 'claude' },
           },
         ],
         counts: { question: 1, review: 1, 'plan-approval': 0 },
@@ -318,8 +318,8 @@ describe('InboxPage', () => {
         <InboxPage />
       </MemoryRouter>,
     );
-    expect(html).toContain('id="review:uuid-1"');
-    expect(html).toContain('id="item:colon"');
+    expect(html).toContain('id="uuid-1~review"');
+    expect(html).toContain('id="item~tilde"');
   });
 
   it('shows Enable notifications when permission is default', async () => {
