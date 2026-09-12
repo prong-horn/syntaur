@@ -2,7 +2,7 @@
 name: "Ticket Planning"
 slug: ticket-planning
 description: "Rules for how agents should version plan files when planning"
-when_to_use: "When creating t plan for a ticket, or creating t new plan after a prior one has been executed"
+when_to_use: "When creating a plan for a ticket, or creating a new plan after a prior one has been executed"
 created: "2026-04-23T00:00:00Z"
 updated: "2026-04-23T00:00:00Z"
 tags:

@@ -136,7 +136,7 @@ await runScenario('06-edits-permissions', 'Agent mode edit + permission + usage'
 await runScenario('08-create-plan', 'Plan mode create_plan extension', async (h) => {
   const s = await h.newSession();
   await h.setMode(s.sessionId, 'plan');
-  const promptP = h.prompt(s.sessionId, 'Make a brief plan for adding t hello-world function to this repo. Keep it to 3 steps.');
+  const promptP = h.prompt(s.sessionId, 'Make a brief plan for adding a hello-world function to this repo. Keep it to 3 steps.');
   // Wait for create_plan request, record params, accept
   await new Promise<void>((resolve, reject) => {
     const deadline = Date.now() + 120_000;

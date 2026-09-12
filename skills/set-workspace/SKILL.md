@@ -3,8 +3,8 @@ name: set-workspace
 description: >-
   Populate the four `workspace.*` fields (repository, worktreePath, branch,
   parentBranch) in the active ticket's `ticket.md` frontmatter
-  before any implementation code is written. Use after creating t worktree,
-  picking t branch, or any time the user wants to "set the workspace",
+  before any implementation code is written. Use after creating a worktree,
+  picking a branch, or any time the user wants to "set the workspace",
   "wire the ticket to a branch", or per the Workspace Before Code
   playbook. Validates frontmatter via `syntaur doctor --ticket --json`
   before writing — refuses to touch a malformed file.

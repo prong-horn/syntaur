@@ -43,7 +43,7 @@ Every mutating subcommand supports `--dry-run`, which prints a unified diff of t
 
 Read the user's request and choose the subcommand. If ambiguous, ask. If the user says "make my workflow look like X", run `syntaur status list` first, present what's there, and confirm what they actually want changed.
 
-If the user is making t destructive change (`remove`, `rename`, `reset`), default to running with `--dry-run` first and showing the diff, then asking the user to confirm before re-running without `--dry-run`.
+If the user is making a destructive change (`remove`, `rename`, `reset`), default to running with `--dry-run` first and showing the diff, then asking the user to confirm before re-running without `--dry-run`.
 
 ## Step 2: Run the CLI
 
@@ -68,10 +68,10 @@ Beyond the 14 built-in derived-status facts, users can declare their **own** fac
 
 **Two ways to declare them**, kept in sync because both write the same `statuses.facts` block:
 
-- **Dashboard** — the Settings page has a **Facts** section that lists every declared fact and lets the user add/edit/delete declarations (name + kind, plus `binds` for attestations) with the same validation the CLI/doctor enforce. Deleting t fact that a derive rule still references prompts for confirmation before saving, and a Facts save preserves the existing statuses, ordering, and derive rules.
+- **Dashboard** — the Settings page has a **Facts** section that lists every declared fact and lets the user add/edit/delete declarations (name + kind, plus `binds` for attestations) with the same validation the CLI/doctor enforce. Deleting a fact that a derive rule still references prompts for confirmation before saving, and a Facts save preserves the existing statuses, ordering, and derive rules.
 - **Config / CLI** — hand-edit the `statuses.facts` block in `~/.syntaur/config.md` directly (the shapes below).
 
-Declaring t fact (either way) only defines the vocabulary; asserting per-ticket values is always `syntaur fact set` / `syntaur attest`.
+Declaring a fact (either way) only defines the vocabulary; asserting per-ticket values is always `syntaur fact set` / `syntaur attest`.
 
 **1. Custom asserted facts** — config-declared `bool` / `number` values, asserted via `syntaur fact set` and stored in a `facts:` frontmatter map:
 
@@ -132,7 +132,7 @@ The dashboard Settings page edits the **entire** `statuses:` workflow config, no
 
 **Hand-written rules survive a Settings save.** Transitions and derive rules you author directly in `config.md` are preserved across a dashboard save even if you only touched, say, the status list — the dashboard sends each section only when you change it, and the server preserves untouched sections (the old "transitions get wiped on save" bug is gone).
 
-**Cross-section integrity.** Deleting t status that ladder rungs, the headline projection, or transitions reference surfaces those exact rules in the delete dialog (even when no tickets use the status). Remap rewrites every reference to the chosen target; delete drops the referencing ladder rungs and transitions, and — because the headline projection cannot point at nothing — requires a remap target for any headline reference. Removing t fact that a remaining derive rule still references is blocked with an acknowledgement prompt, the same guard `syntaur doctor` enforces. The server re-validates everything with `validateDeriveConfig` before writing, so the dashboard can never persist a config the CLI/doctor would reject.
+**Cross-section integrity.** Deleting a status that ladder rungs, the headline projection, or transitions reference surfaces those exact rules in the delete dialog (even when no tickets use the status). Remap rewrites every reference to the chosen target; delete drops the referencing ladder rungs and transitions, and — because the headline projection cannot point at nothing — requires a remap target for any headline reference. Removing a fact that a remaining derive rule still references is blocked with an acknowledgement prompt, the same guard `syntaur doctor` enforces. The server re-validates everything with `validateDeriveConfig` before writing, so the dashboard can never persist a config the CLI/doctor would reject.
 
 ## Safety notes
 
@@ -140,5 +140,5 @@ The dashboard Settings page edits the **entire** `statuses:` workflow config, no
 - **`rename` rewrites many files.** It edits `config.md` AND every affected `ticket.md` in a single atomic transaction (with rollback if any write fails partway). Always run `--dry-run` first on a non-trivial codebase so the user sees the per-file diff.
 - **`terminal: true` is load-bearing.** Terminal statuses affect dashboard progress bars and dependency-satisfaction logic — a ticket with a terminal status counts as "done" for downstream `dependsOn` checks and project-rollup status. Don't toggle this on `pending`-style states without thinking.
 - **`init --force` overwrites a custom block.** Use `reset` first if the user wants a clean slate, OR confirm before passing `--force` if they have unsaved customizations. It resets to the built-in defaults and therefore **drops any `statuses.facts` declarations and `derive` rules** along with the custom statuses — every other `status` subcommand (`set`/`add`/`remove`/`rename`/`reorder`/`transition`) preserves them.
-- **Concurrency.** `rename`'s buffer-write-rollback strategy assumes no concurrent writers. Tell the user to close the dashboard / pause other agents during t rename.
+- **Concurrency.** `rename`'s buffer-write-rollback strategy assumes no concurrent writers. Tell the user to close the dashboard / pause other agents during a rename.
 - **`SYNTAUR_HOME` precedence.** If the user has `SYNTAUR_HOME` set, the CLI writes there instead of `~/.syntaur`. Mirror their environment.

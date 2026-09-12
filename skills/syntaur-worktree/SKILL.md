@@ -33,7 +33,7 @@ operations:
   `git worktree add` directly. This skill assumes a Syntaur ticket exists.
 - The ticket already has a worktree path set in `ticket.md` workspace
   fields. Check first; reuse the existing path.
-- You want to grab a ticket without creating t worktree — use
+- You want to grab a ticket without creating a worktree — use
   `/grab-ticket` directly.
 
 ## Step 1: Resolve inputs

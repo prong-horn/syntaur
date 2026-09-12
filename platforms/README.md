@@ -42,7 +42,7 @@ Caveats (see each plugin's `README.md`): **OpenClaw** is assumed to run on
 pi-coding-agent per the design memo — if a build diverges to its own plugin format,
 only the install dir needs repointing. **Hermes** `pre_tool_call` blocking is
 version-dependent (documented primarily as an observer hook), so the Hermes plugin
-logs every violation in addition to returning t deny signal; verify hard-block
+logs every violation in addition to returning a deny signal; verify hard-block
 against your live runtime. The boundary logic for both is unit-tested in
 `src/__tests__/pi-extension.test.ts` and `src/__tests__/hermes-plugin.test.ts`.
 

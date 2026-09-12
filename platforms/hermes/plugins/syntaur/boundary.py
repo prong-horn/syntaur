@@ -79,7 +79,7 @@ def is_write_allowed(abs_file_path, ctx, context_file_abs=None):
     # When the caller cannot supply ticketDir/projectDir (no engagement
     # resolved), we do NOT fail open — we enforce WORKSPACE-ONLY via the
     # workspaceRoot marker below. Each dir check is guarded for absence, so a
-    # missing tssignmentDir/projectDir simply narrows the allowlist rather than
+    # missing ticketDir/projectDir simply narrows the allowlist rather than
     # disabling it. (Ticket-record writes under ~/.syntaur go through the CLI,
     # not the agent's file tools, so they never hit this hook.)
     f = _norm(abs_file_path)

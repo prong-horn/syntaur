@@ -31,7 +31,7 @@ Check whether this session already has an open engagement — i.e., a different 
 syntaur session resume --json 2>/dev/null
 ```
 
-- If it reports an active ticket, warn the user: "You already have an active ticket: `<ticketSlug>` in project `<projectSlug>`. Grabbing t new one will rebind this session. Proceed?" — stop if the user says no.
+- If it reports an active ticket, warn the user: "You already have an active ticket: `<ticketSlug>` in project `<projectSlug>`. Grabbing a new one will rebind this session. Proceed?" — stop if the user says no.
 - If there is no open engagement (no active ticket), proceed. A `.syntaur/context.json` that holds only workspace-marker / session fields is expected — it does not represent an active ticket.
 
 ## Step 1: Discover the Project (project-nested path)

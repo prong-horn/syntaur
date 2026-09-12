@@ -24,7 +24,7 @@ Designed and implemented the complete PostgreSQL schema for the auth system: use
 ### Next Steps
 - JWT middleware should use `sessions.jti` for token validation lookups
 - Refresh endpoint should query `refresh_tokens.token_hash` and check `token_family` for rotation
-- When revoking t refresh token, revoke the entire `token_family` to invalidate stolen tokens
+- When revoking a refresh token, revoke the entire `token_family` to invalidate stolen tokens
 
 ### Important Context
 - The `sessions.revoked_at` column is nullable — NULL means active, non-NULL means revoked. This was chosen over a boolean `is_revoked` to preserve the revocation timestamp.

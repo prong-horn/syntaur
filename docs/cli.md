@@ -238,7 +238,7 @@ Each item in the `--json` array contains:
 }
 ```
 
-The `route` field is also used by the dashboard command palette: running t search from the palette deep-links directly to the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
+The `route` field is also used by the dashboard command palette: running a search from the palette deep-links directly to the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
 
 ### Examples
 
@@ -255,7 +255,7 @@ syntaur search "stripe webhook" --all --limit 5
 
 ## `syntaur inbox`
 
-One triage view of everything awaiting t human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
+One triage view of everything awaiting a human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
 ```
 syntaur inbox [options]

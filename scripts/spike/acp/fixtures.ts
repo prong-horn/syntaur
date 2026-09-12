@@ -1,7 +1,7 @@
 // Fixture export: `node fixtures.ts --claude <run> --codex <run>`
 // Copies each run's frame transcripts into src/__tests__/fixtures/acp/<adapter>/, writes manifest.json (run ids,
 // versions, scenario → file map with pass/fail) and regenerates the capture block of the fixtures README.
-// Exits 1 when a run is missing t scenario row this scenario list expects, a transcript is missing or not
+// Exits 1 when a run is missing a scenario row this scenario list expects, a transcript is missing or not
 // well-formed NDJSON in the {seq, ts, t, dir, msg} envelope, or a transcript lacks either direction.
 
 import fs from 'node:fs';

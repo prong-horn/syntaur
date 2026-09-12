@@ -17,7 +17,7 @@ Before writing any implementation code, you MUST set the workspace fields in tic
 ```yaml
 workspace:
   repository: <absolute path to the repo you're working in>
-  worktreePath: <absolute path if using t git worktree, otherwise null>
+  worktreePath: <absolute path if using a git worktree, otherwise null>
   branch: <branch name you're working on>
   parentBranch: <branch you branched from, usually main>
 ```

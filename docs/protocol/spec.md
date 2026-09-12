@@ -332,7 +332,7 @@ The current protocol version is **`"2.0"`**.
 - **Breaking changes** (removed fields, changed semantics, restructured directories) will increment the major version. Tooling should check the version field and warn if it encounters a version it does not support.
 - **The `version` field is a string**, not a number, to support semver-style versioning (e.g., `"2.0"`, `"2.1"`, `"3.0"`).
 
-Tooling should always write the version it supports and should handle unknown versions gracefully — logging t warning rather than failing silently or crashing.
+Tooling should always write the version it supports and should handle unknown versions gracefully — logging a warning rather than failing silently or crashing.
 
 ---
 

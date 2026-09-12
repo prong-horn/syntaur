@@ -3,8 +3,8 @@ name: log-progress
 description: >-
   Append a timestamped entry to the active ticket's `progress.md`,
   bumping `entryCount` and `updated` in its frontmatter. Use after every
-  meaningful action — completing an acceptance criterion, finishing t plan
-  task, hitting t blocker, deciding on an approach — per the Keep Records
+  meaningful action — completing an acceptance criterion, finishing a plan
+  task, hitting a blocker, deciding on an approach — per the Keep Records
   Updated playbook. Triggers on "log progress", "note progress", "record
   this in progress", or whenever the playbook says to update records.
 license: MIT

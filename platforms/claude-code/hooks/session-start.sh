@@ -24,7 +24,7 @@ INPUT=$(cat)
 # macOS). $1 = deadline in seconds; remaining args = the syntaur subcommand.
 # Stdin is forwarded; stdout is captured to a temp file and printed on success.
 # Returns non-zero if the CLI is absent, hangs past the deadline, or fails —
-# including t stale installed CLI that predates the subcommand.
+# including a stale installed CLI that predates the subcommand.
 syntaur_bounded() {
   command -v syntaur >/dev/null 2>&1 || return 1
   local deadline out cpid kpid rc

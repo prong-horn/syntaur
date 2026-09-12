@@ -2,7 +2,7 @@
 name: "Ticket Creation"
 slug: ticket-creation
 description: "Rules for how agents should create new tickets"
-when_to_use: "Before creating t new ticket (project-nested or standalone)"
+when_to_use: "Before creating a new ticket (project-nested or standalone)"
 created: "2026-04-23T00:00:00Z"
 updated: "2026-04-23T00:00:00Z"
 tags:

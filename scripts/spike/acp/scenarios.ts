@@ -706,7 +706,7 @@ export const scenarios: Scenario[] = [
   },
   {
     id: '13-queue-vs-steer',
-    title: 'Second prompt during t turn; steering',
+    title: 'Second prompt during a turn; steering',
     adapters: ['claude', 'codex'],
     async run(ctx) {
       const h = await ctx.spawn(undefined, { quiet: true });

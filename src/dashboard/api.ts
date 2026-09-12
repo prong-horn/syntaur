@@ -1170,10 +1170,6 @@ export async function getProjectDetail(
 }
 
 /**
- * Get full ticket detail with plan, scratchpad, handoff, and decision record.
- * Served through GET /api/tickets/:id
- */
-/**
  * Build the slim, camelCase engagement projection for a ticket's
  * "Session Activity" view: the full per-session stage history, agent-enriched.
  *
@@ -1203,6 +1199,10 @@ function buildTicketEngagements(ticketId: string): EngagementInfo[] {
   }));
 }
 
+/**
+ * Get full ticket detail with plan, scratchpad, handoff, and decision record
+ * (served through GET /api/tickets/:id).
+ */
 export async function getTicketDetail(
   projectsDir: string,
   projectSlug: string,
@@ -2848,7 +2848,6 @@ function getDocumentPath(
     case 'project':
       return resolve(projectsDir, projectSlug, 'project.md');
     case 'ticket':
-    case 'ticket':
       return ticketSlug
         ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md')
         : null;
@@ -2881,8 +2880,6 @@ function getEditableDocumentTitle(
   switch (documentType) {
     case 'project':
       return `Edit Project: ${projectSlug}`;
-    case 'ticket':
-      return `Edit Ticket: ${ticketSlug || 'ticket'}`;
     case 'ticket':
       return `Edit Ticket: ${ticketSlug || 'ticket'}`;
     case 'plan':

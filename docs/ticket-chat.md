@@ -1,6 +1,6 @@
 # Ticket chat
 
-Every ticket detail page has a **Chat** tab. Sending t message there spawns a
+Every ticket detail page has a **Chat** tab. Sending a message there spawns a
 real coding agent in the ticket's worktree and renders its work as a
 conversation — streaming replies, tool cards with diffs and command output, a
 plan checklist, and inline permission prompts.
@@ -88,7 +88,7 @@ the rest of the directory down.
 The **Agents** page (`/agents`) is a validated editor over the same file format
 above. Creating or saving writes `~/.syntaur/agents/<id>.md`; deleting an
 override file restores the builtin with that id. Exactly one agent may be marked
-`default: true` — saving t new default clears the flag on other file-backed
+`default: true` — saving a new default clears the flag on other file-backed
 definitions, and you cannot unset the current default without making another
 agent default first.
 
@@ -185,7 +185,7 @@ Four sources appear in the queue:
 3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and its choices. **Clears when** you pick an option or type an answer from the row.
 4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or a ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
 
-The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting t question to its current resolved state returns success without error.
+The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting a question to its current resolved state returns success without error.
 
 The queue asks once for browser notification permission (**Enable notifications** in the header). With permission granted, each new chat row raises a notification whose click opens the queue on that row. Plan-approval and review rows never notify, and nothing fires while no dashboard tab is open.
 
@@ -257,7 +257,7 @@ Then run `cursor-agent login` (or `agent login`) before chatting.
 **The agent is running from home** — the ticket has no `workspace.worktreePath`,
 `workspace.repository`, or project `repositories` entry that exists on disk, so
 the agent falls back to the home directory (`~`). A system row in the chat says
-so and suggests creating t worktree from the ticket header. At the home tier
+so and suggests creating a worktree from the ticket header. At the home tier
 the session defaults to `ask` mode (read-only) unless the agent definition pins
 a different mode. The four-tier resolution chain is: worktree → repository →
 project repository → home.
@@ -317,7 +317,7 @@ for a durable bypass. `--yolo` does nothing under ACP.
 ## Several agents in one chat
 
 A ticket's chat can hold more than one agent. Who a message is for is
-decided by Syntaur, in code — never by asking t model to work it out.
+decided by Syntaur, in code — never by asking a model to work it out.
 
 ### Who is in the room
 
@@ -377,7 +377,7 @@ triggered agent's prompt says which hop it is on and who handed it over.
 Three things stop a chain running away:
 
 - **The hop budget** (default 4, counted from the last human message). Past it,
-  Syntaur posts a `system` row instead of starting t turn.
+  Syntaur posts a `system` row instead of starting a turn.
 - **The bare-acknowledgement filter.** A triggered reply that did no work and
   names nobody but the agent that handed it over ends the chain. "Thanks
   @planner" is where a conversation stops, not where it loops.
@@ -419,7 +419,7 @@ concurrently while a second message to a busy agent waits behind the first.
 "Interrupt" on an agent's chip cancels that agent; "Interrupt all" appears when
 more than one is running.
 
-### Reading t room rather than a transcript
+### Reading a room rather than a transcript
 
 Every row shows its author — the human included — with that author's avatar and
 colour. The header carries one chip per attached agent with its state, a live
@@ -450,7 +450,7 @@ next open.
 
 Type `/` at the start of the message, or right after a leading `@mention`, to
 open a picker scoped to the **addressed agent** — the first attached mention, else
-the default. Selecting t command inserts `/name `; when the typed name exactly
+the default. Selecting a command inserts `/name `; when the typed name exactly
 matches a listed command and the caret is at its end, Enter sends instead of
 re-inserting the name (Tab still completes). An unlisted `/command` is allowed and
 still sends as-is.

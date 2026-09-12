@@ -354,7 +354,7 @@ const projects = [
     updated: iso(hoursAgo(3)),
     tags: ['backend', 'payments', 'compliance'],
     externalIds: ['PAY-421'],
-    overview: `Migrate the billing service off Stripe webhook v1 endpoints (\`/v1/events\`) onto v2 (\`/v2/billing.events\`) before the deprecation window closes on **2026-06-30**. All event handlers, signature verification, retry queue, and reconciliation jobs must move over without dropping t single production event.`,
+    overview: `Migrate the billing service off Stripe webhook v1 endpoints (\`/v1/events\`) onto v2 (\`/v2/billing.events\`) before the deprecation window closes on **2026-06-30**. All event handlers, signature verification, retry queue, and reconciliation jobs must move over without dropping a single production event.`,
     notes: `Stripe has indicated the v1 endpoint will stop signing new events on 2026-06-01 and will be removed on 2026-06-30. We have six weeks of dual-write overlap budgeted.`,
   },
   {
@@ -884,7 +884,7 @@ const playbooks = [
   {
     slug: 'read-before-plan',
     name: 'Read Before You Plan',
-    description: 'Read all project context files before creating or modifying t plan',
+    description: 'Read all project context files before creating or modifying a plan',
     whenToUse: 'Before creating or modifying plan.md',
     tags: ['planning', 'quality'],
     body: `Before writing or modifying any plan, read:

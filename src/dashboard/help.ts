@@ -219,7 +219,7 @@ const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }>
   },
   blocked: {
     meaning: 'The ticket hit a manual or runtime obstacle.',
-    useWhen: 'Use blocked when work hits an obstacle. Adding t blockedReason is recommended for traceability.',
+    useWhen: 'Use blocked when work hits an obstacle. Adding a blockedReason is recommended for traceability.',
   },
   review: {
     meaning: 'Implementation is ready for inspection or validation.',

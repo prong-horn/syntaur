@@ -32,7 +32,7 @@ RSS is not affected.
 | 10 | Slash commands + config option switch | PASS (6.2 s) | PASS (11.5 s) |
 | 11 | Usage updates | PASS (7.0 s) | PASS (3.3 s) |
 | 12 | Cancel mid-turn + process hygiene | PASS (38.0 s) | PASS (9.2 s) |
-| 13 | Second prompt during t turn; steering | **FAIL** (157.7 s) | **FAIL** (275.9 s) |
+| 13 | Second prompt during a turn; steering | **FAIL** (157.7 s) | **FAIL** (275.9 s) |
 | 14 | `session/load` and `session/resume` after adapter restart | PASS (15.3 s) | PASS (11.9 s) |
 | 15 | `kill -9` mid-turn | PASS (6.5 s) | PASS (5.9 s) |
 | 16 | Embedded resource block + standing-context cost | PASS (6.5 s) | PASS (3.5 s) |

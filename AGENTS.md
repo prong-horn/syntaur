@@ -22,7 +22,7 @@ Three install paths, one source (`<repo>/skills/`):
 2. Claude Code plugin via `/plugin` — manifests declare skills inline.
 3. `syntaur install-plugin` — CLI path; mirrors `<repo>/skills/` into the plugin target dir at install time.
 
-When editing t skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
+When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
 
 ## Codex + Syntaur
 
