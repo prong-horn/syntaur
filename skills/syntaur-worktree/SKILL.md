@@ -87,11 +87,12 @@ Skip `start` for any non-`pending` status — never rewind a `review`,
 
 `cd` into the new worktree path. Write `<worktreePath>/.syntaur/context.json`
 mirroring the WORKSPACE-MARKER format produced by `/grab-ticket`:
-`repository`, `branch`, `worktreePath`, `workspaceRoot`, `grabbedAt`, plus
-`sessionId` / `transcriptPath` when known. Do NOT write `projectSlug` /
-`ticketSlug` / `ticketDir` / `projectDir` / `title` — context.json is a
-workspace marker, not the active-ticket source. The ticket binds in the
-next step via the session's engagement (`track-session`).
+`repository`, `branch`, `worktreePath`, `workspaceRoot`, `ticketId`, `ticketDir`,
+`grabbedAt`, plus `sessionId` / `transcriptPath` when known. Write `ticketId`
+and `ticketDir` so doctor and the statusline can resolve the workspace ticket
+folder. Do NOT write `projectSlug` / `ticketSlug` / `projectDir` / `title` —
+context.json is a workspace marker, not the active-ticket source. The ticket
+binds in the next step via the session's engagement (`track-session`).
 
 If the runtime exposes a real session id (e.g. Claude Code's
 `~/.claude/sessions/`), include it. Otherwise omit `sessionId` entirely; the
@@ -101,7 +102,7 @@ SessionStart hook will populate it on next run.
 
 ```bash
 syntaur track-session \
-  --project <project-slug> --ticket <ticket-slug> \
+  --project <project-slug> --ticket <ticket-id> \
   --agent <your-agent-name> \
   --session-id <real-id> \
   --path "$(pwd)"

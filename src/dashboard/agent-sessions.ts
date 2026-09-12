@@ -943,15 +943,6 @@ async function readTicketStatusFromPath(
   return match ? match[1].trim() : null;
 }
 
-async function readTicketStatus(
-  projectDir: string,
-  ticketSlug: string,
-): Promise<string | null> {
-  return readTicketStatusFromPath(
-    resolve(projectDir, 'tickets', ticketSlug, 'ticket.md'),
-  );
-}
-
 /**
  * Reconcile active sessions against ticket statuses.
  * Sessions whose tickets have moved to completed/failed/review are

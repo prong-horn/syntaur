@@ -67,7 +67,7 @@ progressCommand
   .command('log')
   .description("Append a timestamped entry to the ticket's progress.md")
   .argument('<text>', 'Progress entry text')
-  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
   .action(async (text: string, options: { ticket?: string; project?: string }) => {
     try {

@@ -287,7 +287,7 @@ export function assertMayMutate(
 ): void {
   if (resolved.provenance === 'WEAK' && !opts.hasSelector) {
     throw new Error(
-      `Session id "${resolved.id}" was resolved from a weak source (transcript scan or legacy context.json hint) and cannot be used to mutate ticket state without an explicit target. Pass --ticket <slug> to confirm the target.`,
+      `Session id "${resolved.id}" was resolved from a weak source (transcript scan or legacy context.json hint) and cannot be used to mutate ticket state without an explicit target. Pass --ticket <id> to confirm the target.`,
     );
   }
 }

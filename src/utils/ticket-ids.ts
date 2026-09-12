@@ -138,7 +138,11 @@ async function ensureProjectTicketCounter(
 ): Promise<{ prefix: string; nextTicket: number }> {
   try {
     return await readProjectTicketCounter(projectDir);
-  } catch {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes('missing prefix')) {
+      throw err;
+    }
     const projectMd = resolve(projectDir, 'project.md');
     const content = await readFile(projectMd, 'utf-8');
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);

@@ -1076,32 +1076,6 @@ const id = getParam(req.params.id);
     }
   });
 
-  async function handleTicketArchive(
-    req: Request,
-    res: Response,
-    archived: boolean,
-  ): Promise<void> {
-    const projectSlug = getParam(req.params.slug);
-    const ticketSlug = getParam(req.params.aslug);
-    const ticketPath = resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md');
-    if (!(await fileExists(ticketPath))) {
-      res.status(404).json({ error: 'Ticket not found' });
-      return;
-    }
-    const content = await readFile(ticketPath, 'utf-8');
-    const reason = archived ? archiveReason(req.body) : null;
-    await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
-
-    // Audit event (best-effort).
-    const parsed = parseTicketFull(content);
-    emitDashboardEvent(parsed.id, projectSlug, archived ? 'archived' : 'restored', reason ? { reason } : {});
-
-    const ticket = await getTicketDetail(projectsDir, projectSlug, ticketSlug);
-    res.json({ ticket });
-  }
-
-
-
   async function handleTicketArchiveById(
     req: Request,
     res: Response,

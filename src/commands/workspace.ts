@@ -114,7 +114,7 @@ workspaceCommand
   .option('--worktree-path <path>', 'Worktree path (typically <repo>/.worktrees/<branch>)')
   .option('--branch <name>', 'Branch name')
   .option('--parent-branch <name>', 'Parent branch (typically main)')
-  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
   .action(async (options: WorkspaceSetOptions) => {
     try {

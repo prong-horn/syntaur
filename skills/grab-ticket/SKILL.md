@@ -82,7 +82,7 @@ If `workspace.repository` and `workspace.worktreePath` are both null, set them t
 
 ## Step 5: Create or Merge the Workspace Marker
 
-`.syntaur/context.json` is a WORKSPACE MARKER — it records the repository/branch/worktree so tooling can recognize this directory as a Syntaur workspace. It is NOT the active-ticket source of truth: the ticket binds via the session's open engagement (Step 6, `track-session`). Do NOT write `projectSlug` / `ticketSlug` / `ticketDir` / `projectDir` / `title` — those scalars are non-authoritative.
+`.syntaur/context.json` is a WORKSPACE MARKER — it records the repository/branch/worktree so tooling can recognize this directory as a Syntaur workspace. It is NOT the active-ticket source of truth: the ticket binds via the session's open engagement (Step 6, `track-session`). Write `ticketId` and `ticketDir` so doctor and the statusline can resolve the workspace ticket folder. Do NOT write `projectSlug` / `ticketSlug` / `projectDir` / `title` — those scalars are non-authoritative.
 
 Merge workspace markers into `.syntaur/context.json`. Never overwrite — if the file already exists (e.g., platform SessionStart hook populated `sessionId` / `transcriptPath`), preserve those fields.
 
@@ -98,6 +98,8 @@ Prepare the workspace-marker payload:
   "branch": "<workspace.branch or null>",
   "worktreePath": "<workspace.worktreePath or null>",
   "workspaceRoot": "<workspace path or current working directory>",
+  "ticketId": "<ticket id from frontmatter>",
+  "ticketDir": "<absolute path to the ticket folder>",
   "grabbedAt": "<ISO 8601 timestamp>"
 }
 ```

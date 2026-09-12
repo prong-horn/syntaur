@@ -23,7 +23,7 @@ export const usageCommand = new Command('usage')
   .option('--since <iso>', 'restrict report to events on or after this ISO date')
   .option('--until <iso>', 'restrict report to events on or before this ISO date')
   .option('--project <slug>', 'restrict to one project slug')
-  .option('--ticket <slug>', 'restrict to one ticket slug')
+  .option('--ticket <id>', 'restrict to one ticket id')
   .option('--json', 'emit JSON instead of a human-readable table')
   // Internal: skip ccusage ingest. Hidden from --help.
   .addOption(

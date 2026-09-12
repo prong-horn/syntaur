@@ -730,8 +730,8 @@ export function TicketsPage() {
     if (grouping === 'project') {
       const seen = new Map<string, string>();
       for (const it of sortedItems) {
-        const key = it.projectSlug ?? '__standalone__';
-        const label = it.projectTitle ?? 'Standalone';
+        const key = it.projectSlug ?? '';
+        const label = it.projectTitle ?? it.projectSlug ?? 'Unknown project';
         if (!seen.has(key)) seen.set(key, label);
       }
       return Array.from(seen.entries())
@@ -739,7 +739,7 @@ export function TicketsPage() {
         .map(([key, label]) => ({
           id: key,
           label,
-          items: sortedItems.filter((it) => (it.projectSlug ?? '__standalone__') === key),
+          items: sortedItems.filter((it) => (it.projectSlug ?? '') === key),
         }));
     }
     if (grouping === 'workflow') {
@@ -1265,11 +1265,7 @@ export function TicketsPage() {
                         disabled={transitioningId === getTicketKey(ticket)}
                       />
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {ticket.projectTitle ?? (
-                          <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
-                            Standalone
-                          </span>
-                        )}
+                        {ticket.projectTitle ?? ticket.projectSlug ?? ''}
                       </p>
                       <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={ticket.id}>
                         {ticket.id.slice(0, 8)}
@@ -1696,11 +1692,7 @@ function TicketBoardCard({
             </Link>
           )}
           <p className="text-sm text-muted-foreground">
-            {ticket.projectTitle ?? (
-              <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
-                Standalone
-              </span>
-            )}
+            {ticket.projectTitle ?? ticket.projectSlug ?? ''}
           </p>
           <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={ticket.id ?? ''}>
             {ticket.id?.slice(0, 8)}

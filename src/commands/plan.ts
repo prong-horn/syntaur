@@ -266,7 +266,7 @@ export const planCommand = new Command('plan')
 planCommand
   .command('create')
   .description('Create the initial plan.md for the ticket')
-  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--force', 'Overwrite an existing plan.md')
   .action(async (options: PlanCreateOptions) => {
@@ -283,7 +283,7 @@ planCommand
   .description(
     'Create the next plan-v<N>.md and carry forward unchecked tasks from the prior plan',
   )
-  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--force', 'Overwrite if the next plan-v<N>.md already exists')
   .action(async (options: PlanVersionOptions) => {

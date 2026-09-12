@@ -13,6 +13,41 @@ function assertNoColon(label: string, key: string): void {
 }
 
 describe('colon-free key builders', () => {
+  /**
+   * Lockstep with `rowKey` in `dashboard/src/lib/inbox.ts` — the dashboard suite
+   * (`dashboard/src/lib/__tests__/inbox.test.ts`) exercises the SPA copy; these
+   * cases keep the server `inboxRowKey` aligned.
+   */
+  it('inboxRowKey matches dashboard rowKey expectations', () => {
+    const review: InboxItem = {
+      project: 'p1',
+      ticketSlug: 'slug',
+      ticketId: 'SYN-142',
+      title: 't',
+      category: 'review',
+      since: '2026-09-11T05:20:00Z',
+      ageMs: 0,
+      summary: 's',
+      action: { verb: 'Review', command: 'review' },
+      ticketUpdated: '',
+    };
+    expect(inboxRowKey(review)).toBe('SYN-142~review');
+
+    const question: InboxItem = {
+      ...review,
+      category: 'question',
+      commentId: 'c1',
+      since: '2026-06-16T00:00:00Z',
+    };
+    expect(inboxRowKey(question)).toBe('SYN-142~20260616T000000Z');
+
+    const chatRow: InboxItem = {
+      ...question,
+      chat: { kind: 'reply', itemId: 'item~1', agentId: 'claude' },
+    };
+    expect(inboxRowKey(chatRow)).toBe('item~1');
+  });
+
   it('inboxRowKey shapes', () => {
     const review: InboxItem = {
       project: 'p1',

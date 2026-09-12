@@ -480,7 +480,7 @@ worktreeCommand
   .requiredOption('--branch <name>', 'Branch name to create (also used as worktree dir name)')
   .option('--repository <path>', 'Repository root (defaults to current working directory)')
   .option('--parent-branch <name>', 'Parent branch to fork from', 'main')
-  .option('--ticket <slug>', 'Ticket slug (UUID for standalone). Defaults to the session open engagement')
+  .option('--ticket <id>', 'Ticket id. Defaults to the session open engagement')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--worktree-path <path>', 'Override the computed <repository>/.worktrees/<branch> path')
   .action(async (options: WorktreeCreateOptions) => {
@@ -524,7 +524,7 @@ worktreeCommand
   .description(
     "Remove a ticket's git worktree and clear its workspace.* fields. Branch deletion is opt-in.",
   )
-  .option('--ticket <slug>', 'Ticket slug (UUID for standalone). Defaults to the session open engagement')
+  .option('--ticket <id>', 'Ticket id. Defaults to the session open engagement')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--repository <path>', 'Repository root (defaults to the recorded workspace.repository)')
   .option('--delete-branch', 'Also delete the branch after removing the worktree')
