@@ -27,16 +27,13 @@ import {
  * returns `{ events: [] }` and never 500s — a failed events fetch must not
  * break the ticket detail page (see Task F).
  */
-export function createEventsRouter(
-  projectsDir: string,
-  ticketsDir: string,
-): Router {
+export function createEventsRouter(projectsDir: string): Router {
   const router = Router();
 
   router.get('/tickets/:id/events', async (req, res) => {
     try {
       const { id } = req.params;
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.json({ events: [] });
         return;

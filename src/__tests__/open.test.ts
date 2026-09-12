@@ -74,7 +74,7 @@ workspace:
       'utf-8',
     );
     await mkdir(resolve(home, 'projects', 'p', 'tickets'), { recursive: true });
-    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
+    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\nprefix: PA\nnextTicket: 2\n---\n# P\n', 'utf-8');
   });
 
   afterEach(async () => {
@@ -86,7 +86,7 @@ workspace:
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
     await writeTicket('a', wt, 'feat-x');
 
-    const r = await runCli(['open', 'a', '--project', 'p'], home);
+    const r = await runCli(['open', 'PA-1', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain(wt);
   });
@@ -102,7 +102,7 @@ workspace:
 
   it('errors when no worktree is recorded', async () => {
     await writeTicket('a', null, null);
-    const r = await runCli(['open', 'a', '--project', 'p'], home);
+    const r = await runCli(['open', 'PA-1', '--project', 'p'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr.toLowerCase()).toContain('no worktree');
   });
@@ -115,7 +115,7 @@ workspace:
     git(repo, ['worktree', 'remove', wt]);
     expect(await fileExists(wt)).toBe(false);
 
-    const r = await runCli(['open', 'a', '--project', 'p'], home);
+    const r = await runCli(['open', 'PA-1', '--project', 'p'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('recreate');
   });
@@ -127,7 +127,7 @@ workspace:
     git(repo, ['worktree', 'remove', wt]);
     expect(await fileExists(wt)).toBe(false);
 
-    const r = await runCli(['open', 'a', '--project', 'p', '--recreate'], home);
+    const r = await runCli(['open', 'PA-1', '--project', 'p', '--recreate'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain(wt);
     expect(await fileExists(wt)).toBe(true);

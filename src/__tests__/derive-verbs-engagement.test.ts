@@ -37,6 +37,11 @@ async function fmOf(path: string) {
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-dve-'));
+  await mkdir(resolve(home, 'projects', 'p'), { recursive: true });
+  await writeFile(
+    resolve(home, 'projects', 'p', 'project.md'),
+    '---\nslug: p\ntitle: P\nprefix: T\nnextTicket: 10\n---\n',
+  );
   prevHome = process.env.SYNTAUR_HOME;
   prevSid = process.env.CLAUDE_CODE_SESSION_ID;
   process.env.SYNTAUR_HOME = home;
@@ -56,7 +61,7 @@ afterEach(async () => {
 describe('implement/review verbs drive engagement stage + facts (session-backed)', () => {
   it('implement switches the session engagement and asserts implementationStarted', async () => {
     const pathB = await writeTicket('b', ID_B);
-    await implementStartedCommand('b', { project: 'p', dir: resolve(home, 'projects'), cwd: home });
+    await implementStartedCommand(ID_B, { project: 'p', dir: resolve(home, 'projects'), cwd: home });
     expect((await fmOf(pathB)).implementationStarted).toBe(true);
     const open = getOpenEngagement(SESSION);
     expect(open?.stage).toBe('implement');
@@ -69,7 +74,7 @@ describe('implement/review verbs drive engagement stage + facts (session-backed)
     // session currently has an OPEN review engagement on A
     openEngagement({ sessionId: SESSION, ticketId: ID_A, projectSlug: 'p', ticketSlug: 'a', stage: 'review', startedAt: '2026-03-26T09:00:00Z' });
 
-    await implementStartedCommand('b', { project: 'p', dir: resolve(home, 'projects'), cwd: home });
+    await implementStartedCommand(ID_B, { project: 'p', dir: resolve(home, 'projects'), cwd: home });
 
     const fb = await fmOf(pathB);
     expect(fb.implementationStarted).toBe(true);
@@ -80,7 +85,7 @@ describe('implement/review verbs drive engagement stage + facts (session-backed)
     const pathB = await writeTicket('b', ID_B, { implementationStarted: 'true', reviewRequested: 'true', phase: 'review' });
     openEngagement({ sessionId: SESSION, ticketId: ID_B, projectSlug: 'p', ticketSlug: 'b', stage: 'review', startedAt: '2026-03-26T09:00:00Z' });
 
-    await implementStartedCommand('b', { project: 'p', dir: resolve(home, 'projects'), cwd: home });
+    await implementStartedCommand(ID_B, { project: 'p', dir: resolve(home, 'projects'), cwd: home });
 
     expect((await fmOf(pathB)).reworkRequested).toBe(true);
   });
@@ -89,7 +94,7 @@ describe('implement/review verbs drive engagement stage + facts (session-backed)
     const pathB = await writeTicket('b', ID_B, { implementationStarted: 'true' });
     openEngagement({ sessionId: SESSION, ticketId: ID_B, projectSlug: 'p', ticketSlug: 'b', stage: 'implement', startedAt: '2026-03-26T09:00:00Z' });
 
-    await requestReviewCommand('b', { project: 'p', dir: resolve(home, 'projects'), cwd: home });
+    await requestReviewCommand(ID_B, { project: 'p', dir: resolve(home, 'projects'), cwd: home });
 
     expect((await fmOf(pathB)).reviewRequested).toBe(true);
     expect(getOpenEngagement(SESSION)?.stage).toBe('review');
@@ -100,7 +105,7 @@ describe('implement/review verbs drive engagement stage + facts (session-backed)
     openEngagement({ sessionId: SESSION, ticketId: ID_B, projectSlug: 'p', ticketSlug: 'b', stage: 'plan', startedAt: '2026-03-26T09:00:00Z' });
 
     await expect(
-      implementStartedCommand('b', { project: 'p', dir: resolve(home, 'projects'), cwd: home }),
+      implementStartedCommand(ID_B, { project: 'p', dir: resolve(home, 'projects'), cwd: home }),
     ).rejects.toThrow(/terminal/i);
     // the engagement must NOT have been switched to implement
     expect(getOpenEngagement(SESSION)?.stage).toBe('plan');

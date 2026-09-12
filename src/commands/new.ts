@@ -75,7 +75,7 @@ export async function newCommand(
         `Invalid dependency id "${dep}". dependsOn entries must be ticket ids (e.g. SCR-1).`,
       );
     }
-    const resolved = await resolveTicketById(baseDir, undefined, dep);
+    const resolved = await resolveTicketById(baseDir, dep);
     if (!resolved) {
       console.warn(`Warning: dependency "${dep}" was not found on disk yet.`);
     }
@@ -90,7 +90,7 @@ export async function newCommand(
         `Invalid link "${link}". Links must be ticket ids (e.g. SCR-2).`,
       );
     }
-    const resolved = await resolveTicketById(baseDir, undefined, link);
+    const resolved = await resolveTicketById(baseDir, link);
     if (!resolved) {
       console.warn(`Warning: linked ticket "${link}" was not found on disk yet.`);
     }

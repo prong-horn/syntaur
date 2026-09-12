@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { ticketsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { updateTicketWorkspace, updateTicketFile } from '../lifecycle/frontmatter.js';
@@ -17,11 +16,11 @@ async function resolveTicketPath(opts: {
   cwd: string;
 }): Promise<string> {
   if (opts.ticket) {
-    if (opts.project) {
-      const projectsDir = (await readConfig()).defaultProjectDir;
-      return resolve(projectsDir, opts.project, 'tickets', opts.ticket, 'ticket.md');
-    }
-    return resolve(ticketsDir(), opts.ticket, 'ticket.md');
+    const target = await resolveTicketTarget(opts.ticket, {
+      project: opts.project,
+      cwd: opts.cwd,
+    });
+    return resolve(target.ticketDir, 'ticket.md');
   }
   // No explicit target → resolve from the session's OPEN engagement and gate
   // the mutation. context.json's ticket scalar is no longer a resolution

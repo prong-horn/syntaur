@@ -83,11 +83,6 @@ import type { WsMessage } from './types.js';
 export interface DashboardServerOptions {
   port: number;
   projectsDir: string;
-  /**
-   * Absolute path to the standalone tickets directory (`~/.syntaur/tickets/`).
-   * Standalone tickets have `project: null` and live in folders named by UUID.
-   */
-  ticketsDir: string;
   playbooksDir: string;
   serveStaticUi: boolean;
   /** Absolute path to the built dashboard UI (dashboard/dist). Required when serveStaticUi is true. */
@@ -95,7 +90,7 @@ export interface DashboardServerOptions {
 }
 
 export function createDashboardServer(options: DashboardServerOptions) {
-  const { port, projectsDir, ticketsDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
+  const { port, projectsDir, playbooksDir, serveStaticUi, dashboardDistPath } = options;
   const app = express();
   const server = createServer(app);
 
@@ -182,7 +177,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const staleOffsetRaw = req.query.staleOffset;
       const staleLimit = typeof staleLimitRaw === 'string' ? Number(staleLimitRaw) : undefined;
       const staleOffset = typeof staleOffsetRaw === 'string' ? Number(staleOffsetRaw) : undefined;
-      const overview = await getOverview(projectsDir, ticketsDir, {
+      const overview = await getOverview(projectsDir, {
         staleLimit,
         staleOffset,
       });
@@ -203,8 +198,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, ticketsDir));
-  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir, ticketsDir));
+  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir));
+  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir));
 
   app.get('/api/config/types', async (_req, res) => {
     try {
@@ -264,7 +259,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   });
 
   app.use('/api/config/search', createSearchConfigRouter());
-  app.use('/api/search', createContentSearchRouter(projectsDir, ticketsDir));
+  app.use('/api/search', createContentSearchRouter(projectsDir));
   app.get('/api/config/hotkeys', async (_req, res) => {
     try {
       const config = await readConfig();
@@ -531,7 +526,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/tickets', async (_req, res) => {
     try {
-      const result = await listTicketsBoard(projectsDir, ticketsDir);
+      const result = await listTicketsBoard(projectsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing tickets:', error);
@@ -541,7 +536,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/archived', async (_req, res) => {
     try {
-      const result = await listArchived(projectsDir, ticketsDir);
+      const result = await listArchived(projectsDir);
       res.json(result);
     } catch (error) {
       console.error('Error listing archived content:', error);
@@ -565,7 +560,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/tickets/:id', async (req, res) => {
     try {
-      const detail = await getTicketDetailById(projectsDir, ticketsDir, req.params.id);
+      const detail = await getTicketDetailById(projectsDir, req.params.id);
       if (!detail) {
         res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
         return;
@@ -579,12 +574,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/tickets/:id/sessions', async (req, res) => {
     try {
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, req.params.id);
+      const resolved = await resolveTicketById(projectsDir, req.params.id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
         return;
       }
-      await reconcileActiveSessions(projectsDir, ticketsDir);
+      await reconcileActiveSessions(projectsDir);
       const sessions = await listSessionsByTicket(resolved.id);
       res.json({
         sessions: withLiveness(sessions),
@@ -596,21 +591,21 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir, ticketsDir));
+  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir));
 
   // --- Write API (create projects/tickets) ---
-  app.use(createWriteRouter(projectsDir, ticketsDir));
+  app.use(createWriteRouter(projectsDir));
 
   // --- Usage API (per-ticket / per-project token usage rollups) ---
-  app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
+  app.use('/api/usage', createUsageRouter(projectsDir));
 
   // --- Events API (per-ticket audit Activity timeline) ---
   // Best-effort read-only; mounted at `/api`. Returns `{ events: [] }` rather than 500ing.
-  app.use('/api', createEventsRouter(projectsDir, ticketsDir));
+  app.use('/api', createEventsRouter(projectsDir));
 
   // --- Inbox API ("Needs me" triage view) ---
   // Best-effort read-only; returns safe empty shape rather than 500ing.
-  app.use('/api', createInboxRouter(projectsDir, ticketsDir));
+  app.use('/api', createInboxRouter(projectsDir));
 
   // --- Ticket chat API + ACP session broker ---
   // The broker is the only thing in Syntaur that owns an agent process. It is
@@ -618,16 +613,15 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // torn down FIRST in stop(), while the DBs are still open.
   const chatBroker = createChatBroker({
     projectsDir,
-    ticketsDir,
     broadcast: (message) => broadcast(message as WsMessage),
   });
-  app.use('/api', createChatRouter(projectsDir, ticketsDir, { broker: chatBroker }));
+  app.use('/api', createChatRouter(projectsDir, { broker: chatBroker }));
   app.use('/api', createChatAgentsRouter({ broker: chatBroker }));
 
   // --- Agent Sessions API ---
   app.use(
     '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, broadcast, ticketsDir),
+    createAgentSessionsRouter(projectsDir, broadcast),
   );
 
   // --- Agents Config API ---
@@ -715,12 +709,11 @@ export function createDashboardServer(options: DashboardServerOptions) {
       };
       const recomputeOne = async (projectSlug: string | null, ticketSlug: string): Promise<void> => {
         if (!(await migrationGate())) return;
+        if (!projectSlug) return;
         try {
           const { context, workflowResolver } = await resolveRecomputeContext();
-          const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
-          const path = projectDir
-            ? resolve(projectDir, 'tickets', ticketSlug, 'ticket.md')
-            : resolve(ticketsDir, ticketSlug, 'ticket.md');
+          const projectDir = resolve(projectsDir, projectSlug);
+          const path = resolve(projectDir, 'tickets', ticketSlug, 'ticket.md');
           if (!(await fileExists(path))) return;
           const result = await recomputeAndWrite(path, {
             cause: 'derive',
@@ -738,7 +731,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         if (!(await migrationGate())) return;
         try {
           const { context, workflowResolver } = await resolveRecomputeContext();
-          const summary = await recomputeAll(projectsDir, ticketsDir, {
+          const summary = await recomputeAll(projectsDir, {
             cause,
             by: 'system',
             context,
@@ -755,7 +748,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
       watcherHandle = createWatcher({
         projectsDir,
-        ticketsDir,
         playbooksDir,
         workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
@@ -776,7 +768,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
       startMaintenanceLoop({
         projectsDir,
-        ticketsDir,
         // Same WS frame the REST mutations emit, so the UI refreshes when the
         // stale sweep stops a row. The loop's immediate first tick covers
         // "sweep at dashboard start".
@@ -798,7 +789,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         const watchdogTick = async (): Promise<void> => {
           if (!(await migrationGate())) return;
           try {
-            const candidates = await collectStaleCandidates(projectsDir, ticketsDir);
+            const candidates = await collectStaleCandidates(projectsDir);
             const summary = runStalenessWatchdogTick(candidates, stalenessSeen, (e) => {
               emitEvent({
                 ticketId: e.ticketId,

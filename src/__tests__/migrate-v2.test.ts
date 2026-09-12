@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -22,6 +22,7 @@ import { renderProject } from '../templates/project.js';
 import { renderTicket } from '../templates/ticket.js';
 import { renderConfig } from '../templates/config.js';
 import { parseTicketFolderName } from '../utils/ticket-folder.js';
+import * as chatStore from '../chat/store.js';
 
 const UUID_P1A = '11111111-1111-4111-8111-111111111111';
 const UUID_P1B = '22222222-2222-4222-8222-222222222222';
@@ -110,10 +111,10 @@ async function buildFixture(root: string): Promise<void> {
     ticketWithMeta(UUID_P2A, 'gamma-ticket', 'p2', TS_P2A),
   );
 
-  const standaloneDir = resolve(root, 'tickets', UUID_STANDALONE);
-  await mkdir(standaloneDir, { recursive: true });
+  const legacyStandalonePath = resolve(root, 'tickets', UUID_STANDALONE);
+  await mkdir(legacyStandalonePath, { recursive: true });
   await writeFile(
-    resolve(standaloneDir, 'assignment.md'),
+    resolve(legacyStandalonePath, 'assignment.md'),
     ticketWithMeta(UUID_STANDALONE, 'orphan', null, TS_STANDALONE),
   );
 
@@ -140,8 +141,13 @@ async function buildFixture(root: string): Promise<void> {
       {
         [`${UUID_P1A}:review`]: {
           until: '2099-01-01T00:00:00.000Z',
-          fingerprint: 'fp',
+          fingerprint: 'fp-alpha',
           createdAt: TS_P1A,
+        },
+        [`review:${UUID_P1B}`]: {
+          until: '2099-01-02T00:00:00.000Z',
+          fingerprint: 'fp-beta',
+          createdAt: TS_P1B,
         },
       },
       null,
@@ -363,7 +369,7 @@ describe('migrate v2 key helpers', () => {
     });
   });
   it('migrates session keys and item ids', () => {
-    const uuidToId = new Map([[UUID_P1A, 'P1-1']]);
+    const uuidToId = new Map([[UUID_P1A, 'P1-1'], [UUID_P1B, 'P1-2']]);
     const itemMap = new Map<string, string>();
     expect(migrateSessionKey(`${UUID_P1A}:claude`, uuidToId)).toBe('P1-1~claude');
     expect(migrateSessionKey(`${UUID_P1A}:@assignment`, uuidToId)).toBe('P1-1~@ticket');
@@ -372,8 +378,30 @@ describe('migrate v2 key helpers', () => {
     );
     expect(migrateItemId('replay:1:2', uuidToId, itemMap)).toBe('replay~1~2');
     expect(migrateSnoozeKey(`${UUID_P1A}:review`, uuidToId, itemMap)).toBe('P1-1~review');
+    expect(migrateSnoozeKey(`review:${UUID_P1B}`, uuidToId, itemMap)).toBe('P1-2~review');
   });
 });
+
+const MIGRATION_TABLES = [
+  'meta',
+  'sessions',
+  'engagement',
+  'events',
+  'chat_sessions',
+  'chat_items',
+  'usage_events',
+  'usage_daily',
+] as const;
+
+function tableRowCounts(dbPath: string): Record<string, number> {
+  const db = new Database(dbPath, { readonly: true });
+  const counts: Record<string, number> = {};
+  for (const table of MIGRATION_TABLES) {
+    counts[table] = (db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  }
+  db.close();
+  return counts;
+}
 
 describe('migrateV2Command', () => {
   it('dry-run leaves the fixture byte-identical and prints [dry-run] transcript', async () => {
@@ -387,7 +415,10 @@ describe('migrateV2Command', () => {
   });
 
   it('apply renames folders, assigns ids, re-keys db, and writes marker', async () => {
+    const beforeCounts = tableRowCounts(resolve(home, 'syntaur.db'));
     await migrateV2Command({ root: home, apply: true });
+    const afterCounts = tableRowCounts(resolve(home, 'syntaur.db'));
+    expect(afterCounts).toEqual(beforeCounts);
 
     expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(true);
     expect(await fileExists(resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'ticket.md'))).toBe(
@@ -406,16 +437,31 @@ describe('migrateV2Command', () => {
     );
     expect(ticketMd).toContain('id: P1-1');
 
-    const eventsLine = await readFile(
-      resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'chat', 'events.jsonl'),
-      'utf-8',
+    const eventsPath = resolve(
+      home,
+      'projects',
+      'p1',
+      'tickets',
+      'P1-1-alpha-ticket',
+      'chat',
+      'events.jsonl',
     );
-    expect(eventsLine).toContain('"sessionKey":"P1-1~claude"');
-    expect(eventsLine).toContain('"ticketId":"P1-1"');
-    expect(eventsLine).not.toContain(`${UUID_P1A}:claude`);
+    const eventsLines = (await readFile(eventsPath, 'utf-8'))
+      .split('\n')
+      .filter((line) => line.trim().length > 0);
+    expect(eventsLines.length).toBeGreaterThan(0);
+    for (const line of eventsLines) {
+      const event = JSON.parse(line) as Record<string, unknown>;
+      expect(event).toHaveProperty('ticketId', 'P1-1');
+      expect(event).not.toHaveProperty('assignmentId');
+      expect(event.sessionKey).toBe('P1-1~claude');
+    }
 
-    const snoozes = JSON.parse(await readFile(resolve(home, 'inbox-snoozes.json'), 'utf-8'));
-    expect(Object.keys(snoozes)[0]).toBe('P1-1~review');
+    const snoozes = JSON.parse(await readFile(resolve(home, 'inbox-snoozes.json'), 'utf-8')) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(snoozes).sort()).toEqual(['P1-1~review', 'P1-2~review']);
 
     const dbPath = resolve(home, 'syntaur.db');
     resetSessionDb();
@@ -465,6 +511,20 @@ describe('migrateV2Command', () => {
     const halfDir = resolve(home, 'projects', 'p1', 'assignments', 'SYN-1-half-applied');
     await mkdir(halfDir, { recursive: true });
     await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(/half-applied/);
+  });
+
+  it('aborts with restore message and leaves no marker on mid-apply failure', async () => {
+    const spy = vi.spyOn(chatStore, 'rebuildChatIndex').mockRejectedValueOnce(new Error('injected'));
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(
+        /Migration aborted\. Restore from backup at/,
+      );
+      expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(false);
+    } finally {
+      spy.mockRestore();
+      logSpy.mockRestore();
+    }
   });
 });
 

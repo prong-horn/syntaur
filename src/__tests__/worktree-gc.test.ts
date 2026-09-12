@@ -97,7 +97,7 @@ describe('syntaur worktree gc', () => {
       'utf-8',
     );
     await mkdir(resolve(home, 'projects', 'p', 'tickets'), { recursive: true });
-    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
+    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\nprefix: PA\nnextTicket: 2\n---\n# P\n', 'utf-8');
   });
 
   afterEach(async () => {
@@ -132,7 +132,7 @@ describe('syntaur worktree gc', () => {
     expect(fm).toContain('branch: feat-done');
 
     // Roundtrip: open --recreate rebuilds it at the exact path.
-    const open = await runCli(['open', 'a', '--project', 'p', '--recreate'], home);
+    const open = await runCli(['open', 'PA-1', '--project', 'p', '--recreate'], home);
     expect(open.code, open.stderr).toBe(0);
     expect(await fileExists(wt)).toBe(true);
   });

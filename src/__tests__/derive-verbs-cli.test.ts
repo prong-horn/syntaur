@@ -73,7 +73,7 @@ A real objective.
     );
     ticketFolder = join(home, 'projects', 'p1', 'tickets', 'VRB-1-verb-test');
     await mkdir(ticketFolder, { recursive: true });
-    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
+    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\nprefix: VRB\nnextTicket: 2\n---\n# P1\n');
     ticketPath = join(ticketFolder, 'ticket.md');
     await writeFile(ticketPath, TICKET);
   });
@@ -88,31 +88,31 @@ A real objective.
 
   it('the full forward flow: recompute → approve → implement → review', async () => {
     // recompute: real objective + ACs → ready_for_planning
-    let r = await runCli(['recompute', 'verb-test', '--project', 'p1'], home);
+    let r = await runCli(['recompute', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect((await fm()).status).toBe('ready_for_planning');
 
     // plan approve requires a plan file
-    r = await runCli(['plan', 'approve', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['plan', 'approve', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('No plan file');
 
     await writeFile(join(ticketFolder, 'plan.md'), '# Plan');
-    r = await runCli(['plan', 'approve', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['plan', 'approve', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     let f = await fm();
     expect(f.status).toBe('ready_to_implement'); // the motivating rule
     expect(f.planApproval?.file).toBe('plan.md');
 
     // implement asserts the fact; derived → in_progress
-    r = await runCli(['implement', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['implement', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     f = await fm();
     expect(f.status).toBe('in_progress');
     expect(f.implementationStarted).toBe(true);
 
     // request review → review phase
-    r = await runCli(['request-review', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['request-review', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect((await fm()).status).toBe('review');
 
@@ -127,15 +127,15 @@ A real objective.
   });
 
   it('block/unblock are fact verbs: phase survives the blockade', async () => {
-    await runCli(['recompute', 'verb-test', '--project', 'p1'], home);
-    let r = await runCli(['block', 'verb-test', '--project', 'p1', '--reason', 'vendor down'], home);
+    await runCli(['recompute', 'VRB-1', '--project', 'p1'], home);
+    let r = await runCli(['block', 'VRB-1', '--project', 'p1', '--reason', 'vendor down'], home);
     expect(r.code).toBe(0);
     let f = await fm();
     expect(f.status).toBe('blocked');
     expect(f.phase).toBe('ready_for_planning'); // orthogonal: not erased
     expect(f.blockedReason).toBe('vendor down');
 
-    r = await runCli(['unblock', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['unblock', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     f = await fm();
     expect(f.status).toBe('ready_for_planning'); // self-cleared back to facts
@@ -143,14 +143,14 @@ A real objective.
   });
 
   it('pin/unpin: sticky override with divergence, terminal targets refused', async () => {
-    await runCli(['recompute', 'verb-test', '--project', 'p1'], home);
+    await runCli(['recompute', 'VRB-1', '--project', 'p1'], home);
 
-    let r = await runCli(['status', 'pin', 'verb-test', 'completed', '--project', 'p1'], home);
+    let r = await runCli(['status', 'pin', 'VRB-1', 'completed', '--project', 'p1'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('terminal');
 
     r = await runCli(
-      ['status', 'pin', 'verb-test', 'in_progress', '--project', 'p1', '--reason', 'forcing'],
+      ['status', 'pin', 'VRB-1', 'in_progress', '--project', 'p1', '--reason', 'forcing'],
       home,
     );
     expect(r.code).toBe(0);
@@ -159,7 +159,7 @@ A real objective.
     expect(f.status).toBe('in_progress');
     expect(f.override?.status).toBe('in_progress');
 
-    r = await runCli(['status', 'unpin', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['status', 'unpin', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     f = await fm();
     expect(f.status).toBe('ready_for_planning');
@@ -167,19 +167,19 @@ A real objective.
   });
 
   it('park/unpark; terminal tickets freeze facts', async () => {
-    let r = await runCli(['park', 'verb-test', '--project', 'p1'], home);
+    let r = await runCli(['park', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     // no 'parked' status defined → headline falls back to phase
     let f = await fm();
     expect(f.parked).toBe(true);
 
-    r = await runCli(['unpark', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['unpark', 'VRB-1', '--project', 'p1'], home);
     expect((await fm()).parked).toBe(false);
 
     // complete (gated) then try a fact verb → refused
-    await runCli(['complete', 'verb-test', '--project', 'p1'], home);
+    await runCli(['complete', 'VRB-1', '--project', 'p1'], home);
     expect((await fm()).status).toBe('completed');
-    r = await runCli(['park', 'verb-test', '--project', 'p1'], home);
+    r = await runCli(['park', 'VRB-1', '--project', 'p1'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('terminal');
   });
@@ -207,8 +207,8 @@ A real objective.
   });
 
   it('ls --query filters on facts and dimensions', async () => {
-    await runCli(['recompute', 'verb-test', '--project', 'p1'], home);
-    await runCli(['block', 'verb-test', '--project', 'p1', '--reason', 'x'], home);
+    await runCli(['recompute', 'VRB-1', '--project', 'p1'], home);
+    await runCli(['block', 'VRB-1', '--project', 'p1', '--reason', 'x'], home);
 
     let r = await runCli(
       ['ls', '--query', 'disposition:blocked AND phase:ready_for_planning', '--json'],

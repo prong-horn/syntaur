@@ -211,9 +211,16 @@ export function migrateSnoozeKey(
   const colonIdx = key.indexOf(':');
   const first = key.slice(0, colonIdx);
   const rest = key.slice(colonIdx + 1);
-  const id = uuidToId.get(first);
-  if (id) return `${id}~${rest}`;
 
+  // `<UUID>:<category>` or `<UUID>:<compact-ts>`
+  const idFromFirst = uuidToId.get(first);
+  if (idFromFirst) return `${idFromFirst}~${rest}`;
+
+  // `<category>:<UUID>` (legacy inbox row key)
+  const idFromRest = uuidToId.get(rest);
+  if (idFromRest && UUID_RE.test(rest)) return `${idFromRest}~${first}`;
+
+  // Chat item ids and other colon forms
   return migrateItemId(key, uuidToId, itemIdMap);
 }
 
@@ -242,6 +249,28 @@ function migratePayloadValue(
   return value;
 }
 
+function migratePayloadKeys(
+  value: unknown,
+  uuidToId: Map<string, string>,
+  itemIdMap: Map<string, string>,
+): unknown {
+  if (Array.isArray(value)) {
+    return value.map((v) => migratePayloadKeys(v, uuidToId, itemIdMap));
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (k === 'assignmentId' && typeof v === 'string') {
+        out.ticketId = uuidToId.get(v) ?? v;
+        continue;
+      }
+      out[k] = migratePayloadKeys(v, uuidToId, itemIdMap);
+    }
+    return out;
+  }
+  return migratePayloadValue(value, uuidToId, itemIdMap);
+}
+
 function migrateChatEventLine(
   line: string,
   uuidToId: Map<string, string>,
@@ -250,17 +279,17 @@ function migrateChatEventLine(
   if (!line.trim()) return line;
   try {
     const event = JSON.parse(line) as Record<string, unknown>;
-    if (typeof event.ticketId === 'string') {
-      event.ticketId = uuidToId.get(event.ticketId) ?? event.ticketId;
-    }
     if (typeof event.assignmentId === 'string') {
-      event.assignmentId = uuidToId.get(event.assignmentId) ?? event.assignmentId;
+      event.ticketId = uuidToId.get(event.assignmentId) ?? event.assignmentId;
+      delete event.assignmentId;
+    } else if (typeof event.ticketId === 'string') {
+      event.ticketId = uuidToId.get(event.ticketId) ?? event.ticketId;
     }
     if (typeof event.sessionKey === 'string') {
       event.sessionKey = migrateSessionKey(event.sessionKey, uuidToId);
     }
     if ('payload' in event) {
-      event.payload = migratePayloadValue(event.payload, uuidToId, itemIdMap);
+      event.payload = migratePayloadKeys(event.payload, uuidToId, itemIdMap);
     }
     return `${JSON.stringify(event)}\n`;
   } catch {
@@ -667,9 +696,9 @@ async function applyFilesystemMigration(
 
   for (const plan of plans) {
     const assignmentsDir = resolve(plan.projectDir, 'assignments');
-    const ticketsDir = resolve(plan.projectDir, 'tickets');
-    if (await fileExists(assignmentsDir) && !(await fileExists(ticketsDir))) {
-      await rename(assignmentsDir, ticketsDir);
+    const ticketsPath = resolve(plan.projectDir, 'tickets');
+    if (await fileExists(assignmentsDir) && !(await fileExists(ticketsPath))) {
+      await rename(assignmentsDir, ticketsPath);
       for (const ticket of plan.tickets) {
         retargetTicketDir(ticket, 'assignments', 'tickets');
       }

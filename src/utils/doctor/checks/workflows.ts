@@ -15,7 +15,7 @@ import { loadWorkflowLibrary, loadWorkflowIssues } from '../../workflow-library.
 import { readProjectBinding } from '../../project-binding.js';
 import { listTicketsByProject } from '../../ticket-walk.js';
 import { parseTicketFull } from '../../../dashboard/parser.js';
-import { ticketsDir as getStandaloneDir } from '../../paths.js';
+import { syntaurRoot } from '../../paths.js';
 import type { Check, CheckResult } from '../types.js';
 import type { StageWorkflow } from '../../stage-model.js';
 import { detectAutoRouteCycles } from '../../../lifecycle/stage-engine.js';
@@ -192,7 +192,7 @@ const referencesResolve: Check = {
     }
 
     // Per-ticket overrides.
-    const { withTicketMd } = await listTicketsByProject(projectsDir, getStandaloneDir());
+    const { withTicketMd } = await listTicketsByProject(projectsDir);
     for (const a of withTicketMd) {
       try {
         const parsed = parseTicketFull(

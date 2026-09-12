@@ -26,13 +26,11 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
   });
 }
 
-function ticketMd(slug: string, dependsOn: string[]): string {
-  // The frontmatter parser supports `dependsOn: []` (empty inline) or YAML
-  // block style — NOT inline non-empty arrays. Emit block style when present.
+function ticketMd(id: string, slug: string, dependsOn: string[]): string {
   const depsYaml =
     dependsOn.length === 0 ? 'dependsOn: []' : `dependsOn:\n${dependsOn.map((d) => `  - ${d}`).join('\n')}`;
   return `---
-id: ${slug}-id
+id: ${id}
 slug: ${slug}
 title: "${slug}"
 project: p1
@@ -76,16 +74,14 @@ describe('deps warning on start/implement (non-blocking)', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
     );
     await mkdir(join(home, 'projects', 'p1'), { recursive: true });
-    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-    // Dependency ticket, NOT terminal (status: draft).
-    const depDir = join(home, 'projects', 'p1', 'tickets', 'dep-a');
+    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\nprefix: DEP\nnextTicket: 3\n---\n# P1\n');
+    const depDir = join(home, 'projects', 'p1', 'tickets', 'DEP-1-dep-a');
     await mkdir(depDir, { recursive: true });
-    await writeFile(join(depDir, 'ticket.md'), ticketMd('dep-a', []));
-    // Main ticket depends on dep-a.
-    const mainDir = join(home, 'projects', 'p1', 'tickets', 'main');
+    await writeFile(join(depDir, 'ticket.md'), ticketMd('DEP-1', 'dep-a', []));
+    const mainDir = join(home, 'projects', 'p1', 'tickets', 'MAIN-1-main');
     await mkdir(mainDir, { recursive: true });
     mainPath = join(mainDir, 'ticket.md');
-    await writeFile(mainPath, ticketMd('main', ['dep-a']));
+    await writeFile(mainPath, ticketMd('MAIN-1', 'main', ['DEP-1']));
   });
 
   afterEach(async () => {
@@ -97,27 +93,26 @@ describe('deps warning on start/implement (non-blocking)', () => {
   }
 
   it('implement warns about unmet deps but still succeeds and asserts implementationStarted', async () => {
-    const r = await runCli(['implement', 'main', '--project', 'p1'], home);
+    const r = await runCli(['implement', 'MAIN-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect(r.stderr.toLowerCase()).toContain('unmet depend');
-    expect(r.stderr).toContain('dep-a');
+    expect(r.stderr).toContain('DEP-1');
     expect((await fm()).implementationStarted).toBe(true);
   });
 
   it('start also warns about unmet deps but still succeeds', async () => {
-    const r = await runCli(['start', 'main', '--project', 'p1'], home);
+    const r = await runCli(['start', 'MAIN-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect(r.stderr.toLowerCase()).toContain('unmet depend');
     expect((await fm()).implementationStarted).toBe(true);
   });
 
   it('no warning when the dependency is terminal (completed)', async () => {
-    // Mark dep-a completed so the dependency is satisfied.
-    const depPath = join(home, 'projects', 'p1', 'tickets', 'dep-a', 'ticket.md');
+    const depPath = join(home, 'projects', 'p1', 'tickets', 'DEP-1-dep-a', 'ticket.md');
     const depContent = await readFile(depPath, 'utf-8');
     await writeFile(depPath, depContent.replace('status: draft', 'status: completed'));
 
-    const r = await runCli(['implement', 'main', '--project', 'p1'], home);
+    const r = await runCli(['implement', 'MAIN-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect(r.stderr.toLowerCase()).not.toContain('unmet depend');
     expect((await fm()).implementationStarted).toBe(true);

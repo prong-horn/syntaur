@@ -19,7 +19,6 @@ import { formatCommentEntry, type Comment } from '../templates/index.js';
 
 let root: string;
 let projectsDir: string;
-let standaloneDir: string;
 
 const NOW = Date.parse('2026-06-16T12:00:00Z');
 
@@ -39,7 +38,7 @@ interface SeedOpts {
   slug: string;
   title?: string;
   status: string;
-  project?: string | null; // null/undefined → standalone
+  project?: string;
   archived?: boolean;
   blockedReason?: string;
   reviewRequested?: boolean;
@@ -61,12 +60,10 @@ function toTicketId(id: string, slug: string): string {
 
 /** Create a real on-disk ticket fixture (ticket.md + optional plan/comments). */
 async function seed(o: SeedOpts): Promise<string> {
-  const standalone = o.project === undefined || o.project === null;
+  const project = o.project ?? 'p1';
   const ticketId = toTicketId(o.id, o.slug);
   const folder = `${ticketId}-${o.slug}`;
-  const dir = standalone
-    ? join(standaloneDir, folder)
-    : join(projectsDir, o.project as string, 'tickets', folder);
+  const dir = join(projectsDir, project, 'tickets', folder);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
@@ -74,7 +71,7 @@ async function seed(o: SeedOpts): Promise<string> {
     `slug: ${o.slug}`,
     `title: ${o.title ?? o.slug}`,
     `status: ${o.status}`,
-    `project: ${standalone ? 'null' : o.project}`,
+    `project: ${project}`,
   ];
   if (o.archived) fm.push('archived: true');
   if (o.blockedReason) fm.push(`blockedReason: ${o.blockedReason}`);
@@ -114,9 +111,7 @@ async function seed(o: SeedOpts): Promise<string> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-inbox-agg-'));
   projectsDir = join(root, 'projects');
-  standaloneDir = join(root, 'standalone');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(standaloneDir, { recursive: true });
 });
 
 afterEach(async () => {
@@ -126,7 +121,6 @@ afterEach(async () => {
 async function run(opts?: Partial<Parameters<typeof computeInbox>[0]>) {
   return computeInbox({
     projectsDir,
-    ticketsDir: standaloneDir,
     statusConfig: statusConfig(),
     now: NOW,
     ...opts,

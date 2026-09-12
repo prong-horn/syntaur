@@ -89,8 +89,6 @@ export interface InboxStatusConfig {
 
 export interface ComputeInboxOptions {
   projectsDir: string;
-  /** Standalone tickets dir; `null` to skip standalone. */
-  ticketsDir?: string | null;
   /** Restrict to one project slug (matches `InboxItem.project`). */
   project?: string;
   /** Restrict to a subset of categories. */
@@ -525,19 +523,13 @@ export function chatItemPath(item: {
   return `/t/${item.ticketId}?tab=chat#${item.chat.itemId}`;
 }
 
-function resolveStandaloneTicketsDir(opts: ComputeInboxOptions): string | null {
-  if (opts.ticketsDir !== undefined) return opts.ticketsDir;
-  return null;
-}
 
 export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResult> {
   const now = opts.now ?? Date.now();
   const dashboardUrl = opts.dashboardUrl ?? 'http://localhost:4800';
   const typeFilter = opts.types && opts.types.length > 0 ? new Set(opts.types) : null;
   const reviewVerbs = deriveReviewVerbs(opts.statusConfig);
-  const standaloneDir = resolveStandaloneTicketsDir(opts);
-
-  const walk = await listTicketsByProject(opts.projectsDir, standaloneDir);
+  const walk = await listTicketsByProject(opts.projectsDir);
 
   const matched: InboxItem[] = [];
 

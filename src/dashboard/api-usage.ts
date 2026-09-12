@@ -26,10 +26,7 @@ import {
  * Per-ticket detail is served at `GET /api/tickets/:id/usage` (see
  * `getTicketUsageHandler`).
  */
-export function createUsageRouter(
-  projectsDir: string,
-  ticketsDir: string | undefined,
-): Router {
+export function createUsageRouter(projectsDir: string): Router {
   const router = Router();
 
   // Distinct model/tool facets for the widget + config-dialog dropdowns. Literal
@@ -68,7 +65,7 @@ export function createUsageRouter(
       const common = extractCommonFilter(req.query);
       const rows = listDaily({ ...common, projectSlug });
       const { listTicketsByProject } = await import('../utils/ticket-walk.js');
-      const walk = await listTicketsByProject(projectsDir, ticketsDir ?? null);
+      const walk = await listTicketsByProject(projectsDir);
       const ticketIds = walk.withTicketMd
         .filter((t) => t.projectSlug === projectSlug && t.ticketId)
         .map((t) => t.ticketId as string);
@@ -87,19 +84,12 @@ export function createUsageRouter(
   return router;
 }
 
-export function getTicketUsageHandler(
-  projectsDir: string,
-  ticketsDir: string | undefined,
-): RequestHandler {
+export function getTicketUsageHandler(projectsDir: string): RequestHandler {
   return async (req, res) => {
     try {
       initUsageDb();
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
       const id = typeof req.params.id === 'string' ? req.params.id : req.params.id[0];
-      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;

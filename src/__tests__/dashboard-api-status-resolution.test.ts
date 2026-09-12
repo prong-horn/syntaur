@@ -14,7 +14,6 @@ const originalSyntaurHome = process.env.SYNTAUR_HOME;
 
 let tmpHome: string;
 let projectsDir: string;
-let standaloneDir: string;
 let server: Server;
 let baseUrl: string;
 
@@ -81,9 +80,7 @@ beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-status-res-api-'));
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   projectsDir = join(tmpHome, 'projects');
-  standaloneDir = join(tmpHome, '.syntaur', 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(standaloneDir, { recursive: true });
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
 
@@ -92,7 +89,7 @@ beforeEach(async () => {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir, standaloneDir));
+  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir));
 
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());

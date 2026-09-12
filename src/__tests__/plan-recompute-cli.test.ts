@@ -21,7 +21,7 @@ async function runCli(args: string[], home: string): Promise<{ code: number; std
 }
 
 const TICKET = `---
-id: pr-test-id
+id: PRC-1
 slug: pr-test
 title: "Plan Recompute Test"
 project: p1
@@ -65,9 +65,9 @@ describe('plan create/version recompute derived status at the source', () => {
       join(home, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
     );
-    const aDir = join(home, 'projects', 'p1', 'tickets', 'pr-test');
+    const aDir = join(home, 'projects', 'p1', 'tickets', 'PRC-1-pr-test');
     await mkdir(aDir, { recursive: true });
-    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
+    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\nprefix: PRC\nnextTicket: 2\n---\n# P1\n');
     aPath = join(aDir, 'ticket.md');
     await writeFile(aPath, TICKET);
   });
@@ -82,15 +82,15 @@ describe('plan create/version recompute derived status at the source', () => {
 
   it('plan version invalidates approval and the derived status drops immediately (no manual recompute)', async () => {
     // Get to an approved plan: recompute → ready_for_planning, plan create, approve → ready_to_implement.
-    await runCli(['recompute', 'pr-test', '--project', 'p1'], home);
-    await runCli(['plan', 'create', '--ticket', 'pr-test', '--project', 'p1'], home);
-    await runCli(['plan', 'approve', 'pr-test', '--project', 'p1'], home);
+    await runCli(['recompute', 'PRC-1', '--project', 'p1'], home);
+    await runCli(['plan', 'create', '--ticket', 'PRC-1', '--project', 'p1'], home);
+    await runCli(['plan', 'approve', 'PRC-1', '--project', 'p1'], home);
     expect(await status()).toBe('ready_to_implement');
 
     // A new plan version invalidates the approval (latest plan file no longer
     // matches planApproval.file). Without recompute-at-source the status would
     // stay 'ready_to_implement' (stale); with it, it drops immediately.
-    await runCli(['plan', 'version', '--ticket', 'pr-test', '--project', 'p1'], home);
+    await runCli(['plan', 'version', '--ticket', 'PRC-1', '--project', 'p1'], home);
     expect(await status()).toBe('ready_for_planning');
   });
 });

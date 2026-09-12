@@ -15,7 +15,6 @@ export type RecreateTargetInput =
 
 export interface RecreateTargetDeps {
   projectsDir: string;
-  ticketsDir: string;
 }
 
 /**
@@ -49,12 +48,12 @@ export async function resolveRecreateTarget(
   deps: RecreateTargetDeps,
   target: RecreateTargetInput,
 ): Promise<RecreateTarget | null> {
-  const { projectsDir, ticketsDir } = deps;
+  const { projectsDir } = deps;
 
   if (target.kind === 'ticket') {
     const detail =
       'id' in target
-        ? await getTicketDetailById(projectsDir, ticketsDir, target.id)
+        ? await getTicketDetailById(projectsDir, target.id)
         : await getTicketDetail(
             projectsDir,
             target.projectSlug,
@@ -89,9 +88,7 @@ export async function resolveRecreateTarget(
   let branch: string | null = null;
   let ticketWorktreePath = '';
   if (session.ticketId) {
-    const detail = await getTicketDetailById(
-      projectsDir,
-      ticketsDir,
+    const detail = await getTicketDetailById(projectsDir,
       session.ticketId,
     );
     if (detail) {
@@ -111,9 +108,7 @@ export async function resolveRecreateTarget(
       ticketWorktreePath = detail.workspace.worktreePath ?? '';
     }
   } else if (session.ticketSlug) {
-    const detail = await getTicketDetailById(
-      projectsDir,
-      ticketsDir,
+    const detail = await getTicketDetailById(projectsDir,
       session.ticketSlug,
     );
     if (detail) {

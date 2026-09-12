@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readConfig, DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
-import { ticketsDir as getTicketsDir, syntaurRoot } from '../utils/paths.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { getStatusConfig } from '../dashboard/api.js';
 import {
   computeInbox,
@@ -52,7 +52,6 @@ export interface InboxOptions {
 export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   const config = await readConfig();
   const projectsDir = config.defaultProjectDir;
-  const ticketsDir = getTicketsDir();
 
   const limit = parseLimit(options.limit);
   const maxAgeMs = parseMaxAge(options.maxAge);
@@ -75,7 +74,6 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
 
   const result = await computeInbox({
     projectsDir,
-    ticketsDir,
     project: options.project,
     types,
     limit,

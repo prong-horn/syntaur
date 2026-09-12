@@ -8,7 +8,7 @@ import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { readConfig } from '../utils/config.js';
-import { ticketsDir, defaultProjectDir } from '../utils/paths.js';
+import { defaultProjectDir } from '../utils/paths.js';
 import { recreateForTarget, recreateOutcomeToHttp } from '../dashboard/worktree-recreate.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { openInEditor, openInTerminal } from '../utils/open-launch.js';
@@ -68,7 +68,6 @@ export async function runOpen(
     const outcome = await recreateForTarget(
       {
         projectsDir: config.defaultProjectDir || defaultProjectDir(),
-        ticketsDir: ticketsDir(),
       },
       { kind: 'ticket', id: resolved.id },
     );

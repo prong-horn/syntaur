@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
+import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { readConfig, type SyntaurConfig } from '../utils/config.js';
 import { appendStatusHistoryEntry, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
@@ -149,7 +149,7 @@ export async function migrateStatusHistoryCommand(
 ): Promise<void> {
   const config = await readConfig();
   const projectsBase = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const standaloneBase = getStandaloneDir();
+  const standaloneBase = resolve(syntaurRoot(), 'tickets');
   const terminalStatuses = resolveTerminalSet(config);
 
   const targets = await collectTargets([projectsBase, standaloneBase], terminalStatuses);

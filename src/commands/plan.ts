@@ -2,8 +2,6 @@ import { Command } from 'commander';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { ticketsDir } from '../utils/paths.js';
-import { readConfig } from '../utils/config.js';
 import { recomputeTicketDir } from '../lifecycle/recompute.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
@@ -16,11 +14,11 @@ async function resolveTicketDir(opts: {
 }): Promise<string> {
   const cwd = opts.cwd ?? process.cwd();
   if (opts.ticket) {
-    if (opts.project) {
-      return resolve((await readConfig()).defaultProjectDir, opts.project, 'tickets', opts.ticket);
-    }
-    // Standalone (ticket is UUID under ~/.syntaur/tickets/)
-    return resolve(ticketsDir(), opts.ticket);
+    const target = await resolveTicketTarget(opts.ticket, {
+      project: opts.project,
+      cwd,
+    });
+    return target.ticketDir;
   }
   // No explicit target → resolve from the session's OPEN engagement and gate
   // the mutation. context.json's ticket scalar is no longer a resolution

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
-import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
+import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { parseTicketFull, type ParsedTicketFull } from '../dashboard/parser.js';
@@ -195,7 +195,7 @@ export async function migrateEventsCommand(
 ): Promise<void> {
   const config = await readConfig();
   const projectsBase = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const standaloneBase = getStandaloneDir();
+  const standaloneBase = resolve(syntaurRoot(), 'tickets');
 
   const targets = await collectTargets([projectsBase, standaloneBase]);
 

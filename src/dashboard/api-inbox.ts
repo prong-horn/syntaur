@@ -34,28 +34,20 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
  * Write routes return 4xx/5xx with `{ error }`.
  */
 
-async function baseComputeOptions(
-  req: Request,
-  projectsDir: string,
-  ticketsDir: string | null,
-) {
+async function baseComputeOptions(req: Request, projectsDir: string) {
   const resolved = await getStatusConfig();
   const headline = (resolved.derive ?? DEFAULT_DERIVE_CONFIG).headline;
   const blockedParkedStatuses = new Set([headline.blocked, headline.parked].filter(Boolean));
   const statusConfig = { ...resolved, blockedParkedStatuses };
   return {
     projectsDir,
-    ticketsDir,
     statusConfig,
     dashboardUrl: `${req.protocol}://${req.get('host')}`,
     lookupChatItem: getChatItem,
   };
 }
 
-export function createInboxRouter(
-  projectsDir: string,
-  ticketsDir: string | null,
-): Router {
+export function createInboxRouter(projectsDir: string): Router {
   const router = Router();
 
   router.get('/inbox', async (req, res) => {
@@ -104,7 +96,7 @@ export function createInboxRouter(
       const snoozePath = snoozeFilePath();
       const snoozes = await readSnoozes(snoozePath, now);
 
-      const base = await baseComputeOptions(req, projectsDir, ticketsDir);
+      const base = await baseComputeOptions(req, projectsDir);
       const result = await computeInbox({
         ...base,
         project,
@@ -160,7 +152,7 @@ export function createInboxRouter(
       const snoozePath = snoozeFilePath();
       const snoozes = await readSnoozes(snoozePath, now);
 
-      const base = await baseComputeOptions(req, projectsDir, ticketsDir);
+      const base = await baseComputeOptions(req, projectsDir);
       const result = await computeInbox({
         ...base,
         snoozes,

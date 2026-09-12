@@ -438,7 +438,7 @@ tags: []
     expect(item!.slug).toBe('my-board');
     expect(item!.type).toBe('feature');
 
-    const detail = await getTicketDetailById(testDir, undefined, ticketId);
+    const detail = await getTicketDetailById(testDir, ticketId);
     expect(detail).not.toBeNull();
     expect(detail!.projectSlug).toBe('p1');
     expect(detail!.dependsOn).toEqual([]);
@@ -447,9 +447,7 @@ tags: []
 
   it('returns null from getTicketDetailById for an unknown id', async () => {
     const { getTicketDetailById } = await import('../dashboard/api.js');
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const detail = await getTicketDetailById(testDir, ticketsDir, 'no-such-id');
+    const detail = await getTicketDetailById(testDir, 'no-such-id');
     expect(detail).toBeNull();
   });
 });
@@ -596,45 +594,6 @@ tags: []
     expect(commands).not.toContain('unblock');
   });
 
-  it('only includes valid transitions for standalone tickets too', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const standaloneId = '99999999-9999-9999-9999-999999999999';
-    await mkdir(resolve(ticketsDir, standaloneId), { recursive: true });
-    // status: completed — from completed, only `reopen` should be valid
-    // under the default transition table. Commands like `start`, `block`,
-    // `review`, `complete` are not valid and used to leak through.
-    await writeFile(
-      resolve(ticketsDir, standaloneId, 'ticket.md'),
-      `---
-id: ${standaloneId}
-slug: standalone-task
-title: Standalone Task
-status: completed
-priority: medium
-created: "2026-04-01T10:00:00Z"
-updated: "2026-04-01T10:00:00Z"
-assignee: human
-externalIds: []
-dependsOn: []
-links: []
-blockedReason: null
-tags: []
----
-
-# Standalone Task`,
-      'utf-8',
-    );
-
-    const board = await listTicketsBoard(testDir, ticketsDir);
-    const standalone = board.tickets.find((a) => a.id === standaloneId);
-    expect(standalone).toBeDefined();
-    const commands = standalone!.availableTransitions.map((a) => a.command);
-    expect(commands).not.toContain('start');
-    expect(commands).not.toContain('block');
-    expect(commands).not.toContain('review');
-    expect(commands).not.toContain('complete');
-  });
 });
 
 describe('externalIds on board summaries', () => {
@@ -688,46 +647,6 @@ tags: []
     ]);
   });
 
-  it('standalone ticket board summary carries externalIds', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const uuid = 'eeee1111-2222-3333-4444-555566667777';
-    await mkdir(resolve(ticketsDir, uuid), { recursive: true });
-    await writeFile(
-      resolve(ticketsDir, uuid, 'ticket.md'),
-      `---
-id: ${uuid}
-slug: ext-standalone
-title: Ext Standalone
-project: null
-type: feature
-status: pending
-priority: medium
-created: "2026-04-20T10:00:00Z"
-updated: "2026-04-20T10:00:00Z"
-assignee: null
-externalIds:
-  - system: jira
-    id: STA-1
-    url: null
-dependsOn: []
-blockedReason: null
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []
----
-
-# Ext Standalone`,
-      'utf-8',
-    );
-    const board = await listTicketsBoard(testDir, ticketsDir);
-    const item = board.tickets.find((a) => a.id === uuid);
-    expect(item).toBeTruthy();
-    expect(item!.externalIds).toEqual([{ system: 'jira', id: 'STA-1', url: null }]);
-  });
 });
 
 describe('overview', () => {
@@ -793,7 +712,7 @@ describe('overview', () => {
       { slug: 'blocked-ticket', ticketMd: BLOCKED_TICKET_MD },
     ]);
 
-    const overview = await getOverview(testDir, undefined, { staleLimit: 1, staleOffset: 0 });
+    const overview = await getOverview(testDir, { staleLimit: 1, staleOffset: 0 });
     expect(overview.segments.stale.limit).toBe(1);
     expect(overview.segments.stale.offset).toBe(0);
     expect(overview.segments.stale.items.length).toBeLessThanOrEqual(1);
@@ -1284,8 +1203,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
   // Project A: active, with one active + one individually-archived ticket.
   // Project B: archived, with two tickets (one individually archived).
-  // Standalone: one active, one archived.
-  async function seed(ticketsDir: string): Promise<void> {
+  async function seed(): Promise<void> {
     clearStatusConfigCache();
     await createProjectFiles(testDir, 'proj-a', projectMd('proj-a'), [
       { slug: 'a-active', ticketMd: asgMd('a-active-id', 'a-active') },
@@ -1295,54 +1213,46 @@ describe('archive hiding + cascade + listArchived + migration', () => {
       { slug: 'b1', ticketMd: asgMd('b1-id', 'b1') },
       { slug: 'b2', ticketMd: asgMd('b2-id', 'b2', { archived: true }) },
     ]);
-    await mkdir(ticketsDir, { recursive: true });
-    await writeStandalone(ticketsDir, 'sa-active', 's-active', false);
-    await writeStandalone(ticketsDir, 'sa-arch', 's-arch', true);
   }
 
   it('listProjects excludes archived projects', async () => {
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
+    await seed();
     const projects = await listProjects(testDir);
     expect(projects.map((p) => p.slug).sort()).toEqual(['proj-a']);
   });
 
   it('listTicketsBoard default-excludes archived + cascade-hides archived-project children', async () => {
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
-    const board = await listTicketsBoard(testDir, ticketsDir);
+    await seed();
+    const board = await listTicketsBoard(testDir);
     const slugs = board.tickets.map((a) => a.slug).sort();
-    // a-active + s-active only. a-arch hidden; b1/b2 cascade-hidden; s-arch hidden.
-    expect(slugs).toEqual(['a-active', 's-active']);
+    // a-active only. a-arch hidden; b1/b2 cascade-hidden.
+    expect(slugs).toEqual(['a-active']);
   });
 
   it("listTicketsBoard { archived: 'only' } returns individually-archived only (no cascade children)", async () => {
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
-    const board = await listTicketsBoard(testDir, ticketsDir, { archived: 'only' });
+    await seed();
+    const board = await listTicketsBoard(testDir, { archived: 'only' });
     const slugs = board.tickets.map((a) => a.slug).sort();
-    // a-arch (individually) + b2 (individually, even under archived project) + s-arch.
+    // a-arch (individually) + b2 (individually, even under archived project).
     // b1 is NOT included (it is cascade-hidden, not individually archived).
-    expect(slugs).toEqual(['a-arch', 'b2', 's-arch']);
+    expect(slugs).toEqual(['a-arch', 'b2']);
   });
 
   it('listArchived returns archived projects with children + individually-archived (no double-listing)', async () => {
     const { listArchived } = await import('../dashboard/api.js');
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
-    const archived = await listArchived(testDir, ticketsDir);
+    await seed();
+    const archived = await listArchived(testDir);
 
     expect(archived.projects.map((p) => p.slug)).toEqual(['proj-b']);
     expect(archived.projects[0].tickets.map((a) => a.slug).sort()).toEqual(['b1', 'b2']);
 
-    // Top-level archived tickets: a-arch (parent active) + s-arch standalone.
+    // Top-level archived tickets: a-arch (parent active).
     // b2 must NOT appear here (it lives under archived proj-b).
-    expect(archived.tickets.map((a) => a.slug).sort()).toEqual(['a-arch', 's-arch']);
+    expect(archived.tickets.map((a) => a.slug).sort()).toEqual(['a-arch']);
   });
 
   it('buildProjectRollup progress.total excludes archived children', async () => {
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
+    await seed();
     const detail = await getProjectDetail(testDir, 'proj-a');
     expect(detail).not.toBeNull();
     // getProjectDetail still returns ALL tickets...
@@ -1351,10 +1261,9 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     expect(detail!.progress.total).toBe(1);
   });
 
-  it('getOverview excludes archived projects + individually-archived (incl. standalone) from stats', async () => {
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
-    const overview = await getOverview(testDir, ticketsDir);
+  it('getOverview excludes archived projects + individually-archived from stats', async () => {
+    await seed();
+    const overview = await getOverview(testDir);
     // proj-b is archived → not counted as an active project.
     expect(overview.recentProjects.map((p) => p.slug)).toEqual(['proj-a']);
     // in-progress count: only a-active (a-arch hidden, proj-b cascade-hidden).
@@ -1391,11 +1300,10 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
   it('restoring an archived project unhides cascade children but keeps individually-archived ones hidden', async () => {
     const { invalidateRecordsCache } = await import('../dashboard/api.js');
-    const ticketsDir = resolve(testDir, '.tickets');
-    await seed(ticketsDir);
+    await seed();
 
     // While proj-b is archived, both its children are hidden from the board.
-    let board = await listTicketsBoard(testDir, ticketsDir);
+    let board = await listTicketsBoard(testDir);
     expect(board.tickets.map((a) => a.slug)).not.toContain('b1');
     expect(board.tickets.map((a) => a.slug)).not.toContain('b2');
 
@@ -1407,7 +1315,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     );
     invalidateRecordsCache();
 
-    board = await listTicketsBoard(testDir, ticketsDir);
+    board = await listTicketsBoard(testDir);
     const slugs = board.tickets.map((a) => a.slug);
     expect(slugs).toContain('b1'); // cascade-hidden child reappears
     expect(slugs).not.toContain('b2'); // individually-archived child stays hidden
@@ -1500,23 +1408,20 @@ Ship it.
 describe('GET /api/tickets/:id/events', () => {
   let sandbox: string;
   let projectsDir: string;
-  let ticketsDir: string;
-  let server: Server;
+    let server: Server;
   let baseUrl: string;
   let originalEnv: string | undefined;
 
   beforeEach(async () => {
     sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-events-'));
     projectsDir = resolve(sandbox, 'projects');
-    ticketsDir = resolve(sandbox, 'tickets');
-    await mkdir(projectsDir, { recursive: true });
-    await mkdir(ticketsDir, { recursive: true });
-    originalEnv = process.env.SYNTAUR_HOME;
+      await mkdir(projectsDir, { recursive: true });
+      originalEnv = process.env.SYNTAUR_HOME;
     process.env.SYNTAUR_HOME = sandbox;
 
     const app = express();
     const { createEventsRouter } = await import('../dashboard/api-events.js');
-    app.use('/api', createEventsRouter(projectsDir, ticketsDir));
+    app.use('/api', createEventsRouter(projectsDir));
 
     await new Promise<void>((res) => {
       server = app.listen(0, '127.0.0.1', () => res());

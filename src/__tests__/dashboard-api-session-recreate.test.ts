@@ -19,7 +19,6 @@ const originalSyntaurHome = process.env.SYNTAUR_HOME;
 
 let tmpHome: string;
 let projectsDir: string;
-let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 
@@ -81,9 +80,7 @@ beforeEach(async () => {
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
   projectsDir = resolve(tmpHome, 'projects');
-  ticketsDir = resolve(tmpHome, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
 
   resetSessionDb();
   initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
@@ -92,7 +89,7 @@ beforeEach(async () => {
   app.use(express.json());
   app.use(
     '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, undefined, ticketsDir),
+    createAgentSessionsRouter(projectsDir, undefined),
   );
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());

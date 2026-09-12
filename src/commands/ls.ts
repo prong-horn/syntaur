@@ -76,7 +76,6 @@ export async function runLs(
 ): Promise<{ items: TicketBoardItem[] }> {
   const board = await listTicketsBoard(
     defaultProjectDir(),
-    undefined,
     { archived: options.archived ? 'only' : 'exclude' },
   );
   let items = board.tickets;

@@ -167,7 +167,7 @@ describe('two sessions, one worktree: engagement-keyed attribution', () => {
     expect(before?.ticket_id).toBe(A_ID);
 
     // Explicitly target B — Cases 1/2 win, the engagement seam is not consulted.
-    const targeted = await resolveTicketTarget(B_SLUG, {
+    const targeted = await resolveTicketTarget(B_ID, {
       project: PROJECT,
       dir: projectsDir,
       cwd: sharedWorktree,

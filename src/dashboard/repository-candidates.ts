@@ -74,12 +74,12 @@ export async function getProjectRepositoryCandidates(
     }
   }
 
-  const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
-  if (await fileExists(ticketsDir)) {
-    const entries = await readdir(ticketsDir, { withFileTypes: true });
+  const ticketsPath = resolve(projectsDir, projectSlug, 'tickets');
+  if (await fileExists(ticketsPath)) {
+    const entries = await readdir(ticketsPath, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+      const ticketMd = resolve(ticketsPath, entry.name, 'ticket.md');
       if (!(await fileExists(ticketMd))) continue;
       const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
       const repo = parsed.workspace.repository?.trim();
@@ -89,40 +89,6 @@ export async function getProjectRepositoryCandidates(
       seen.add(abs);
       out.push({ path: abs, source: 'sibling', sourceTicketSlug: parsed.slug });
     }
-  }
-
-  return out;
-}
-
-/**
- * Collect repository candidates for a standalone ticket by harvesting
- * `workspace.repository` from sibling standalone tickets. Excludes the
- * ticket id passed in (typically the one the user is configuring).
- */
-export async function getStandaloneRepositoryCandidates(
-  ticketsDir: string,
-  excludeTicketId: string,
-): Promise<RepositoryCandidate[]> {
-  if (!(await fileExists(ticketsDir))) {
-    return [];
-  }
-
-  const seen = new Set<string>();
-  const out: RepositoryCandidate[] = [];
-
-  const entries = await readdir(ticketsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name === excludeTicketId) continue;
-    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
-    if (!(await fileExists(ticketMd))) continue;
-    const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
-    const repo = parsed.workspace.repository?.trim();
-    if (!repo) continue;
-    const abs = resolve(repo);
-    if (seen.has(abs)) continue;
-    seen.add(abs);
-    out.push({ path: abs, source: 'sibling', sourceTicketSlug: parsed.slug });
   }
 
   return out;
@@ -139,59 +105,25 @@ export async function getProjectSourceTickets(
   projectSlug: string,
   excludeSlug: string,
 ): Promise<SourceTicket[]> {
-  const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
-  if (!(await fileExists(ticketsDir))) return [];
+  const ticketsPath = resolve(projectsDir, projectSlug, 'tickets');
+  if (!(await fileExists(ticketsPath))) return [];
 
   const seen = new Set<string>();
   const out: SourceTicket[] = [];
 
-  const entries = await readdir(ticketsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsPath, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const parsedFolder = parseTicketFolderName(entry.name);
     const entrySlug = parsedFolder?.slug ?? entry.name;
     if (entry.name === excludeSlug || entrySlug === excludeSlug) continue;
-    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+    const ticketMd = resolve(ticketsPath, entry.name, 'ticket.md');
     if (!(await fileExists(ticketMd))) continue;
     const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
     const source = toSourceTicket(parsed, entry.name);
     if (!source) continue;
     // Exclude + dedupe by the directory name (route-authoritative, unique within
     // the project) rather than parsed frontmatter, which could be malformed.
-    if (seen.has(entry.name)) continue;
-    seen.add(entry.name);
-    out.push(source);
-  }
-
-  return out;
-}
-
-/**
- * List standalone tickets that can be branched off (both
- * `workspace.repository` and `workspace.branch` are set). Excludes the
- * ticket being configured and dedupes by the UUID `id` (standalone slugs
- * are display-only and may collide). Missing directory returns `[]`.
- */
-export async function getStandaloneSourceTickets(
-  ticketsDir: string,
-  excludeTicketId: string,
-): Promise<SourceTicket[]> {
-  if (!(await fileExists(ticketsDir))) return [];
-
-  const seen = new Set<string>();
-  const out: SourceTicket[] = [];
-
-  const entries = await readdir(ticketsDir, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    if (entry.name === excludeTicketId) continue;
-    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
-    if (!(await fileExists(ticketMd))) continue;
-    const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
-    const source = toSourceTicket(parsed, entry.name);
-    if (!source) continue;
-    // Exclude + dedupe by the directory name (the authoritative UUID) rather
-    // than parsed frontmatter.
     if (seen.has(entry.name)) continue;
     seen.add(entry.name);
     out.push(source);

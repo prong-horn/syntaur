@@ -459,7 +459,7 @@ frozenChecks:
 ${ACS_CHECKED}`;
     await writeFile(join(dir, 'ticket.md'), content, 'utf-8');
 
-    await reopenCommand('t', { project: 'p1', dir: join(home, 'projects') });
+    await reopenCommand('ROP-1', { project: 'p1', dir: join(home, 'projects') });
 
     const fm = parseTicketFrontmatter(await readFile(join(dir, 'ticket.md'), 'utf-8'));
     // Guard held: the engine reopen re-placed it at `building` and the legacy

@@ -74,14 +74,12 @@ function projectKey(projectSlug: string, ticketSlug: string): string {
   return JSON.stringify([projectSlug, ticketSlug]);
 }
 
-/** Build the (project_slug, assignment_slug)->id and standalone-UUID->id maps. */
+/** Build the (project_slug, assignment_slug)->id map from project tickets. */
 function buildSlugIdMaps(): {
   project: Map<string, string>;
-  standalone: Map<string, string>;
 } {
   const root = syntaurRoot();
   const project = new Map<string, string>();
-  const standalone = new Map<string, string>();
 
   const projectsDir = resolve(root, 'projects');
   for (const proj of safeReaddir(projectsDir)) {
@@ -94,20 +92,11 @@ function buildSlugIdMaps(): {
     }
   }
 
-  const standaloneDir = resolve(root, 'tickets');
-  for (const asg of safeReaddir(standaloneDir)) {
-    if (!asg.isDirectory()) continue;
-    const id = readTicketId(resolve(standaloneDir, asg.name, 'ticket.md'));
-    // Standalone sessions store the ticket UUID (= dir name) in
-    // `assignment_slug` with `project_slug IS NULL`; key by that UUID.
-    if (id) standalone.set(asg.name, id);
-  }
-
-  return { project, standalone };
+  return { project };
 }
 
 export function backfillEngagements(db: Database.Database): BackfillCounts {
-  const { project, standalone } = buildSlugIdMaps();
+  const { project } = buildSlugIdMaps();
 
   const sessions = db
     .prepare(
@@ -130,8 +119,6 @@ export function backfillEngagements(db: Database.Database): BackfillCounts {
     let ticketId: string | null = null;
     if (s.project_slug && s.assignment_slug) {
       ticketId = project.get(projectKey(s.project_slug, s.assignment_slug)) ?? null;
-    } else if (!s.project_slug && s.assignment_slug) {
-      ticketId = standalone.get(s.assignment_slug) ?? null;
     }
 
     const isActive = s.status === 'active';

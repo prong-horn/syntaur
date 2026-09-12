@@ -23,17 +23,14 @@ import type { AgentSession } from '../dashboard/types.js';
 
 let sandbox: string;
 let projectsDir: string;
-let ticketsDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-sum-trigger-'));
   projectsDir = resolve(sandbox, 'projects');
-  ticketsDir = resolve(sandbox, 'tickets');
   dbPath = resolve(sandbox, 'syntaur.db');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = resolve(sandbox, 'home');
   await mkdir(resolve(sandbox, 'home'), { recursive: true });
@@ -61,8 +58,7 @@ describe('maintenance tick wiring', () => {
     });
     await runMaintenanceTick({
       projectsDir,
-      ticketsDir,
-      summarizeAfterScan: async (opts) => {
+            summarizeAfterScan: async (opts) => {
         calls.push(opts);
         signalCalled();
         return [];
@@ -83,8 +79,7 @@ describe('maintenance tick wiring', () => {
     let passEntered = false;
     await runMaintenanceTick({
       projectsDir,
-      ticketsDir,
-      summarizeAfterScan: async () => {
+            summarizeAfterScan: async () => {
         passEntered = true;
         await gate;
         return [];
@@ -100,8 +95,7 @@ describe('maintenance tick wiring', () => {
     await expect(
       runMaintenanceTick({
         projectsDir,
-        ticketsDir,
-        summarizeAfterScan: async () => {
+                summarizeAfterScan: async () => {
           throw new Error('backend exploded');
         },
       }),
@@ -120,8 +114,7 @@ describe('maintenance tick wiring', () => {
 
     await runMaintenanceTick({
       projectsDir,
-      ticketsDir,
-      summarizeAfterScan: async ({ signal }) => {
+            summarizeAfterScan: async ({ signal }) => {
         firstEntered = true;
         await new Promise<void>((res) => {
           signal?.addEventListener('abort', () => res(), { once: true });
@@ -135,8 +128,7 @@ describe('maintenance tick wiring', () => {
 
     await runMaintenanceTick({
       projectsDir,
-      ticketsDir,
-      summarizeAfterScan: async () => {
+            summarizeAfterScan: async () => {
         secondEntered = true;
         return [];
       },
@@ -159,8 +151,7 @@ describe('maintenance tick wiring', () => {
     let passFinished = false;
     await runMaintenanceTick({
       projectsDir,
-      ticketsDir,
-      summarizeAfterScan: async () => {
+            summarizeAfterScan: async () => {
         await gate;
         passFinished = true;
         return [];

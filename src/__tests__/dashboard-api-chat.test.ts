@@ -24,7 +24,6 @@ import { parseDecisionRecord } from '../dashboard/parser.js';
 
 let sandbox: string;
 let projectsDir: string;
-let ticketsDir: string;
 let ticketDir: string;
 let worktree: string;
 let server: Server;
@@ -87,8 +86,7 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
 
   broker = createChatBroker({
     projectsDir,
-    ticketsDir,
-    syntaurHome: sandbox,
+        syntaurHome: sandbox,
     broadcast: (message) => broadcast(message as WsMessage),
     clientFactory: (input) => {
       const client = connectAcpClient(fake.app, {
@@ -102,7 +100,7 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
     },
     timeouts: { flushMs: 1, permissionMs: 500, sessionIdleMs: 60_000 },
   });
-  app.use('/api', createChatRouter(projectsDir, ticketsDir, { broker }));
+  app.use('/api', createChatRouter(projectsDir, { broker }));
 
   server = http;
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -123,11 +121,9 @@ const url = (path: string) => `${baseUrl}/api${path}`;
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-chat-'));
   projectsDir = join(sandbox, 'projects');
-  ticketsDir = join(sandbox, 'tickets');
   ticketDir = join(projectsDir, 'syntaur-meta', 'tickets', `${TICKET_ID}-chat-demo`);
   worktree = join(sandbox, 'worktree');
   await mkdir(ticketDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
   await writeFile(
     join(ticketDir, 'ticket.md'),

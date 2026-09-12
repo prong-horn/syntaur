@@ -27,7 +27,7 @@ async function runCli(args: string[], cwd: string, syntaurHome: string): Promise
 }
 
 const TICKET_MD = `---
-id: abc-1
+id: PD-1
 slug: demo
 title: "Demo"
 project: p
@@ -95,8 +95,9 @@ describe('syntaur plan version', () => {
       resolve(syntaurHome, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\nonboarding:\n  completed: true\n---\n`,
     );
-    ticketDir = resolve(projectsDir, 'p', 'tickets', 'demo');
+    ticketDir = resolve(projectsDir, 'p', 'tickets', 'PD-1-demo');
     await mkdir(ticketDir, { recursive: true });
+    await writeFile(resolve(projectsDir, 'p', 'project.md'), '---\nslug: p\ntitle: P\nprefix: PD\nnextTicket: 2\n---\n', 'utf-8');
     await writeFile(resolve(ticketDir, 'ticket.md'), TICKET_MD);
     await writeFile(resolve(ticketDir, 'plan.md'), PLAN_MD);
   });
@@ -108,7 +109,7 @@ describe('syntaur plan version', () => {
   it('creates plan-v2.md and leaves ticket.md ## Todos unchanged', async () => {
     const before = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     const result = await runCli(
-      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'PD-1', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );
@@ -135,7 +136,7 @@ describe('syntaur plan version', () => {
     );
     await writeFile(resolve(ticketDir, 'ticket.md'), customTicket);
     const result = await runCli(
-      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'PD-1', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );
@@ -150,7 +151,7 @@ describe('syntaur plan version', () => {
   it('picks plan-v3.md when plan-v2.md already exists (no clobber)', async () => {
     await writeFile(resolve(ticketDir, 'plan-v2.md'), 'existing v2 body');
     const result = await runCli(
-      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'PD-1', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );

@@ -42,7 +42,6 @@ export function ignoreDotSegmentsBelow(
 
 export interface WatcherOptions {
   projectsDir: string;
-  ticketsDir?: string;
   playbooksDir?: string;
   /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
    * workflows invalidate the workflow-library cache and fire `onConfigChanged`

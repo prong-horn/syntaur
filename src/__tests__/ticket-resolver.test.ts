@@ -37,7 +37,7 @@ describe('resolveTicketById', () => {
       'FIT-1-my-ticket',
       'id: FIT-1\nslug: my-ticket\ntitle: My Ticket',
     );
-    const r = await resolveTicketById(projectsDir, undefined, 'FIT-1');
+    const r = await resolveTicketById(projectsDir, 'FIT-1');
     expect(r).toMatchObject({
       projectSlug: 'proj',
       ticketSlug: 'my-ticket',
@@ -47,14 +47,14 @@ describe('resolveTicketById', () => {
   });
 
   it('returns null when no folder matches the id prefix', async () => {
-    const r = await resolveTicketById(projectsDir, undefined, 'FIT-9');
+    const r = await resolveTicketById(projectsDir, 'FIT-9');
     expect(r).toBeNull();
   });
 
   it('throws when multiple folders match the same id', async () => {
     await writeProjectTicket('proj', 'FIT-1-a', 'id: FIT-1\nslug: a\ntitle: A');
     await writeProjectTicket('proj', 'FIT-1-b', 'id: FIT-1\nslug: b\ntitle: B');
-    await expect(resolveTicketById(projectsDir, undefined, 'FIT-1')).rejects.toBeInstanceOf(
+    await expect(resolveTicketById(projectsDir, 'FIT-1')).rejects.toBeInstanceOf(
       TicketResolverError,
     );
   });

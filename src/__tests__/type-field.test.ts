@@ -64,9 +64,9 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const ticketsDir = resolve(testDir, 'p', 'tickets');
-    const [folder] = await readdir(ticketsDir);
-    const ticketMd = await readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
+    const ticketsPath = resolve(testDir, 'p', 'tickets');
+    const [folder] = await readdir(ticketsPath);
+    const ticketMd = await readFile(resolve(ticketsPath, folder, 'ticket.md'), 'utf-8');
     expect(ticketMd).toContain('type: bug');
 
     const [fm] = extractFrontmatter(ticketMd);
@@ -80,9 +80,9 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const ticketsDir = resolve(testDir, 'p', 'tickets');
-    const [folder] = await readdir(ticketsDir);
-    const ticketMd = await readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
+    const ticketsPath = resolve(testDir, 'p', 'tickets');
+    const [folder] = await readdir(ticketsPath);
+    const ticketMd = await readFile(resolve(ticketsPath, folder, 'ticket.md'), 'utf-8');
     const [fm] = extractFrontmatter(ticketMd);
     expect(getField(fm, 'type')).toBe('feature');
   });

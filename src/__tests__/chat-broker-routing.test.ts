@@ -118,7 +118,6 @@ function makeBroker(
   clientsByAgent = new Map();
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     // Cloned: the broker broadcasts the live item object, which the normalizer
     // keeps mutating. In the server the WS layer serialises it immediately.

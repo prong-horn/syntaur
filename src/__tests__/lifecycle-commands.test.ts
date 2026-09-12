@@ -30,11 +30,11 @@ async function readTicketContent(
   projectSlug: string,
   ticketSlug: string,
 ): Promise<string> {
-  const ticketsDir = resolve(testDir, projectSlug, 'tickets');
-  const entries = await readdir(ticketsDir);
+  const ticketsPath = resolve(testDir, projectSlug, 'tickets');
+  const entries = await readdir(ticketsPath);
   const folder = entries.find((e) => e.endsWith(`-${ticketSlug}`) || e === ticketSlug);
-  if (!folder) throw new Error(`ticket folder for ${ticketSlug} not found under ${ticketsDir}`);
-  return readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
+  if (!folder) throw new Error(`ticket folder for ${ticketSlug} not found under ${ticketsPath}`);
+  return readFile(resolve(ticketsPath, folder, 'ticket.md'), 'utf-8');
 }
 
 describe('lifecycle integration', () => {
@@ -329,11 +329,11 @@ describe('lifecycle integration', () => {
     });
 
     it('executeTransitionByDir appends an entry', async () => {
-      const ticketsDir = resolve(testDir, projectSlug, 'tickets');
-      const entries = await readdir(ticketsDir);
+      const ticketsPath = resolve(testDir, projectSlug, 'tickets');
+      const entries = await readdir(ticketsPath);
       const folder = entries.find((e) => e.endsWith('-task-b'));
       if (!folder) throw new Error('task-b folder not found');
-      const ticketDir = resolve(ticketsDir, folder);
+      const ticketDir = resolve(ticketsPath, folder);
       await executeTransitionByDir(ticketDir, 'shape');
       const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(fm.statusHistory).toHaveLength(2);
@@ -476,11 +476,15 @@ describe('runTransition per-workflow context (Fix 1)', () => {
   });
 
   async function readWf(ticketSlug: string): Promise<string> {
-    const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
-    const entries = await readdir(ticketsDir);
+    const ticketsPath = resolve(projectsDir, projectSlug, 'tickets');
+    const entries = await readdir(ticketsPath);
     const folder = entries.find((e) => e.endsWith(`-${ticketSlug}`) || e === ticketSlug);
     if (!folder) throw new Error(`ticket folder for ${ticketSlug} not found`);
-    return readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
+    return readFile(resolve(ticketsPath, folder, 'ticket.md'), 'utf-8');
+  }
+
+  async function ticketIdForSlug(ticketSlug: string): Promise<string> {
+    return parseTicketFrontmatter(await readWf(ticketSlug)).id;
   }
 
   it('(a) complete lands on the workflow-renamed terminal status with disposition terminal', async () => {
@@ -489,8 +493,9 @@ describe('runTransition per-workflow context (Fix 1)', () => {
       dir: projectsDir,
       workflow: 'custom',
     });
-    await runTransition('task-custom', 'start', { project: projectSlug, dir: projectsDir });
-    const result = await runTransition('task-custom', 'complete', {
+    const customId = await ticketIdForSlug('task-custom');
+    await runTransition(customId, 'start', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition(customId, 'complete', {
       project: projectSlug,
       dir: projectsDir,
     });
@@ -507,9 +512,10 @@ describe('runTransition per-workflow context (Fix 1)', () => {
       dir: projectsDir,
       workflow: 'custom',
     });
-    await runTransition('task-reopen', 'start', { project: projectSlug, dir: projectsDir });
-    await runTransition('task-reopen', 'complete', { project: projectSlug, dir: projectsDir });
-    const result = await runTransition('task-reopen', 'reopen', {
+    const reopenId = await ticketIdForSlug('task-reopen');
+    await runTransition(reopenId, 'start', { project: projectSlug, dir: projectsDir });
+    await runTransition(reopenId, 'complete', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition(reopenId, 'reopen', {
       project: projectSlug,
       dir: projectsDir,
     });
@@ -525,11 +531,12 @@ describe('runTransition per-workflow context (Fix 1)', () => {
       dir: projectsDir,
       workflow: 'custom',
     });
-    await runTransition('task-refuse', 'start', { project: projectSlug, dir: projectsDir });
+    const refuseId = await ticketIdForSlug('task-refuse');
+    await runTransition(refuseId, 'start', { project: projectSlug, dir: projectsDir });
     // `shape` is a built-in command but the custom workflow defines no `shape`
     // transition and no unambiguous target — a non-empty custom table must NOT
     // fall through to the built-in guard-free target.
-    const result = await runTransition('task-refuse', 'shape', {
+    const result = await runTransition(refuseId, 'shape', {
       project: projectSlug,
       dir: projectsDir,
     });
@@ -544,8 +551,9 @@ describe('runTransition per-workflow context (Fix 1)', () => {
       dir: projectsDir,
       workflow: 'notransitions',
     });
-    await runTransition('task-empty', 'start', { project: projectSlug, dir: projectsDir });
-    const result = await runTransition('task-empty', 'complete', {
+    const emptyId = await ticketIdForSlug('task-empty');
+    await runTransition(emptyId, 'start', { project: projectSlug, dir: projectsDir });
+    const result = await runTransition(emptyId, 'complete', {
       project: projectSlug,
       dir: projectsDir,
     });

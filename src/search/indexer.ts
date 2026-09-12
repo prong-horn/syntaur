@@ -6,7 +6,7 @@
  * dashboard server and the CLI may use different configured dirs, so hardcoding
  * a default would index a different tree than is displayed (audit finding #8).
  *
- * A module-level cache keyed by `projectsDir|ticketsDir|includeArchived`
+ * A module-level cache keyed by `projectsDirincludeArchived`
  * makes the expensive body-read happen only on first query and after a content
  * change (detected by a cheap stat-only max-mtime sweep) — never per query.
  */
@@ -31,7 +31,6 @@ import type { FileKind, SearchDoc } from './types.js';
 export interface IndexOptions {
   projectsDir: string;
   /** @deprecated Standalone tickets were removed; ignored when set. */
-  ticketsDir?: string;
   includeArchived?: boolean;
 }
 
@@ -85,7 +84,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   }
 
   // ── project-nested tickets under tickets/<ID>-<slug>/ ───────────────
-  const { withTicketMd } = await listTicketsByProject(projectsDir, null);
+  const { withTicketMd } = await listTicketsByProject(projectsDir);
   for (const entry of withTicketMd) {
     const ticketMdPath = resolve(entry.ticketDir, 'ticket.md');
     let ticketContent: string;

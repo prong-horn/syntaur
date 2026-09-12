@@ -32,7 +32,7 @@ export async function renameCommand(
 
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const resolved = await resolveTicketById(baseDir, undefined, ticketId);
+  const resolved = await resolveTicketById(baseDir, ticketId);
   if (!resolved) {
     throw new Error(`Ticket "${ticketId}" not found.`);
   }

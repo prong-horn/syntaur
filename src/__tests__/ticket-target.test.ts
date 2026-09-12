@@ -86,10 +86,7 @@ describe('resolveTicketTarget', () => {
     await writeProject(projectSlug, 'MP');
     await writeTicket(projectSlug, 'MP-1-do-thing', 'MP-1', aslug, { project: projectSlug });
 
-    const resolved = await resolveTicketTarget(aslug, {
-      project: projectSlug,
-      dir: projectsDir,
-    });
+    const resolved = await resolveTicketTarget('MP-1', { project: projectSlug, dir: projectsDir });
 
     expect(resolved.projectSlug).toBe(projectSlug);
     expect(resolved.ticketSlug).toBe(aslug);
@@ -145,10 +142,7 @@ describe('resolveTicketTarget', () => {
     });
 
     let called = false;
-    const resolved = await resolveTicketTarget(aslug, {
-      project: projectSlug,
-      dir: projectsDir,
-      resolveEngagement: async () => {
+    const resolved = await resolveTicketTarget('XP-1', { project: projectSlug, dir: projectsDir, resolveEngagement: async () => {
         called = true;
         return { ticketId: 'XP-99', projectSlug: 'other', ticketSlug: 'other', stage: 'plan' };
       },
@@ -188,7 +182,7 @@ describe('resolveTicketTarget', () => {
 
   it('throws on missing project', async () => {
     await expect(
-      resolveTicketTarget('some-task', { project: 'no-such-project', dir: projectsDir }),
+      resolveTicketTarget('SCR-1', { project: 'no-such-project', dir: projectsDir }),
     ).rejects.toThrow(/not found/);
   });
 

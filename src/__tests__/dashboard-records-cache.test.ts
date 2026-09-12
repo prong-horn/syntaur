@@ -19,12 +19,9 @@ import { useHermeticSyntaurHome } from './hermetic-root.js';
 useHermeticSyntaurHome();
 
 let testDir: string;
-let ticketsDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-cache-test-'));
-  ticketsDir = resolve(testDir, 'tickets');
-  await mkdir(ticketsDir, { recursive: true });
   // Records cache is module-global; clear it so a prior test's snapshot for a
   // (now-deleted) tmp dir can never bleed into this one.
   invalidateRecordsCache();
@@ -162,7 +159,7 @@ describe('records cache', () => {
 
   it('returns fresh data immediately after a dashboard write (no stale-read-after-write)', async () => {
     await seedProjectWithTicket('pending');
-    const router = createWriteRouter(testDir, ticketsDir);
+    const router = createWriteRouter(testDir);
 
     // Warm the cache with the pending state.
     const before = await getOverview(testDir);

@@ -38,7 +38,7 @@ describe('resolveTicketById', () => {
       'id: FIT-1\nslug: build-thing\ntitle: Build Thing',
     );
 
-    const resolved = await resolveTicketById(projectsDir, undefined, 'FIT-1');
+    const resolved = await resolveTicketById(projectsDir, 'FIT-1');
 
     expect(resolved).not.toBeNull();
     expect(resolved!.standalone).toBe(false);
@@ -48,16 +48,13 @@ describe('resolveTicketById', () => {
   });
 
   it('returns null for non-ticket-id strings', async () => {
-    const resolved = await resolveTicketById(
-      projectsDir,
-      undefined,
-      'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+    const resolved = await resolveTicketById(projectsDir, 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
     );
     expect(resolved).toBeNull();
   });
 
   it('returns null when the id is not found anywhere', async () => {
-    const resolved = await resolveTicketById(projectsDir, undefined, 'FIT-99');
+    const resolved = await resolveTicketById(projectsDir, 'FIT-99');
     expect(resolved).toBeNull();
   });
 
@@ -65,7 +62,7 @@ describe('resolveTicketById', () => {
     await writeProjectTicket('proj', 'SCR-1-a', 'id: SCR-1\nslug: a\ntitle: A');
     await writeProjectTicket('proj', 'SCR-1-b', 'id: SCR-1\nslug: b\ntitle: B');
 
-    await expect(resolveTicketById(projectsDir, undefined, 'SCR-1')).rejects.toBeInstanceOf(
+    await expect(resolveTicketById(projectsDir, 'SCR-1')).rejects.toBeInstanceOf(
       TicketResolverError,
     );
   });

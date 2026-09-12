@@ -32,13 +32,13 @@ describe('syntaur unassign', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
       'utf-8',
     );
-    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'PX-1-a');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
+    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\nprefix: PX\nnextTicket: 2\n---\n# P\n', 'utf-8');
     ticketPath = resolve(dir, 'ticket.md');
     await writeFile(
       ticketPath,
-      '---\nid: x\nslug: a\ntitle: "A"\nstatus: in_progress\nassignee: claude\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n# A\n',
+      '---\nid: PX-1\nslug: a\ntitle: "A"\nstatus: in_progress\nassignee: claude\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n# A\n',
       'utf-8',
     );
   });
@@ -48,7 +48,7 @@ describe('syntaur unassign', () => {
   });
 
   it('clears the assignee to null and bumps updated', async () => {
-    const r = await runCli(['unassign', 'a', '--project', 'p'], home);
+    const r = await runCli(['unassign', 'PX-1', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain('assignee: null');

@@ -22,7 +22,6 @@ export interface TicketWalkResult {
 
 export async function listTicketsByProject(
   projectsDir: string,
-  _standaloneDir: string | null = null,
 ): Promise<TicketWalkResult> {
   const result: TicketWalkResult = {
     withTicketMd: [],
@@ -34,14 +33,14 @@ export async function listTicketsByProject(
     for (const m of projects) {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
-      const ticketsDir = resolve(projectsDir, m.name, 'tickets');
-      if (!(await fileExists(ticketsDir))) continue;
+      const ticketsPath = resolve(projectsDir, m.name, 'tickets');
+      if (!(await fileExists(ticketsPath))) continue;
 
-      const entries = await readdir(ticketsDir, { withFileTypes: true });
+      const entries = await readdir(ticketsPath, { withFileTypes: true });
       for (const a of entries) {
         if (!a.isDirectory()) continue;
         if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-        const ticketDir = resolve(ticketsDir, a.name);
+        const ticketDir = resolve(ticketsPath, a.name);
         const ticketMd = resolve(ticketDir, 'ticket.md');
         const parsedFolder = parseTicketFolderName(a.name);
         const entry: TicketEntry = {

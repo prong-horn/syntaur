@@ -12,7 +12,6 @@ import { runTimeline } from '../commands/timeline.js';
 
 let home: string;
 let projectsDir: string;
-let standaloneDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
@@ -65,7 +64,6 @@ async function seedProject(project: string, slug: string, id: string): Promise<v
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-timeline-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'tickets');
   dbPath = resolve(home, 'syntaur.db');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
@@ -96,7 +94,7 @@ describe('runTimeline', () => {
     recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
     recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
 
-    const events = await runTimeline(SLUG, { project: PROJECT });
+    const events = await runTimeline(TICKET_ID, { project: PROJECT });
     expect(events.map((e) => e.at)).toEqual([T3, T2, T1]);
     expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set', 'status-change']);
     // details parsed into an object, not a raw string
@@ -108,7 +106,7 @@ describe('runTimeline', () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
     recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
 
-    const events = await runTimeline(SLUG, { project: PROJECT });
+    const events = await runTimeline(TICKET_ID, { project: PROJECT });
     expect(events).toHaveLength(1);
     const e = events[0];
     expect(e.ticket_id).toBe(TICKET_ID);
@@ -127,7 +125,7 @@ describe('runTimeline', () => {
     recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
     recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
 
-    const events = await runTimeline(SLUG, { project: PROJECT, since: T2 });
+    const events = await runTimeline(TICKET_ID, { project: PROJECT, since: T2 });
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });
 
@@ -137,7 +135,7 @@ describe('runTimeline', () => {
     recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'human', at: T2 });
     recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'human', at: T3 });
 
-    const events = await runTimeline(SLUG, { project: PROJECT, type: ['fact-set', 'plan-approval'] });
+    const events = await runTimeline(TICKET_ID, { project: PROJECT, type: ['fact-set', 'plan-approval'] });
     expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set']);
   });
 
@@ -147,7 +145,7 @@ describe('runTimeline', () => {
     recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
     recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
 
-    const events = await runTimeline(SLUG, { project: PROJECT, limit: 2 });
+    const events = await runTimeline(TICKET_ID, { project: PROJECT, limit: 2 });
     // newest-first, so the two newest survive
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });

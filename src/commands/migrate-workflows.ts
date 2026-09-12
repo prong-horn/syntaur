@@ -282,7 +282,6 @@ function workflowTerminalIds(workflow: StageWorkflow): Set<string> {
 
 async function listTargets(
   projectsDir: string,
-  standaloneDir: string,
 ): Promise<Array<{ path: string; projectDir: string | null; ref: string }>> {
   const targets: Array<{ path: string; projectDir: string | null; ref: string }> = [];
   let projects: string[] = [];
@@ -313,18 +312,6 @@ async function listTargets(
       const path = resolve(projectDir, 'tickets', slug, 'ticket.md');
       if (await fileExists(path)) targets.push({ path, projectDir, ref: `${project}/${slug}` });
     }
-  }
-  let ids: string[] = [];
-  try {
-    ids = await readdir(standaloneDir);
-  } catch {
-    /* none */
-  }
-  for (const id of ids) {
-    const ticketPath = resolve(standaloneDir, id, 'ticket.md');
-    const legacyPath = resolve(standaloneDir, id, 'assignment.md');
-    const path = (await fileExists(ticketPath)) ? ticketPath : legacyPath;
-    if (await fileExists(path)) targets.push({ path, projectDir: null, ref: id });
   }
   return targets;
 }
@@ -449,8 +436,7 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
   // Projects + standalone dirs derive from <root> DIRECTLY — the copied
   // config.md carries an absolute `defaultProjectDir` pointing at the REAL root.
   const projectsDir = resolve(root, 'projects');
-  const standaloneDir = resolve(root, 'assignments');
-
+  
   const config = await readConfig();
   const originalDefault = config.defaultWorkflow ?? DEFAULT_WORKFLOW_ID;
   const expected = await loadExpectedWorkflows(config, root);
@@ -531,7 +517,7 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
     return b;
   };
 
-  const targets = await listTargets(projectsDir, standaloneDir);
+  const targets = await listTargets(projectsDir);
   const decisions: SeedDecision[] = [];
   const errors: string[] = [];
   for (const target of targets) {

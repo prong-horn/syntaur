@@ -22,7 +22,7 @@ async function runCli(args: string[], home: string): Promise<RunResult> {
 }
 
 const WELL_FORMED = `---
-id: aaaa-1111
+id: PX-1
 slug: a
 title: "A"
 status: pending
@@ -45,8 +45,14 @@ describe('syntaur workspace set', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-ws-'));
-    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    await writeFile(
+      resolve(home, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
+      'utf-8',
+    );
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'PX-1-a');
     await mkdir(dir, { recursive: true });
+    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: P\nprefix: PX\nnextTicket: 2\n---\n', 'utf-8');
     ticketPath = resolve(dir, 'ticket.md');
     await writeFile(ticketPath, WELL_FORMED, 'utf-8');
   });
@@ -58,7 +64,7 @@ describe('syntaur workspace set', () => {
   it('writes all four workspace fields, bumps updated, preserves unrelated frontmatter', async () => {
     const r = await runCli(
       [
-        'workspace', 'set', '--ticket', 'a', '--project', 'p',
+        'workspace', 'set', '--ticket', 'PX-1', '--project', 'p',
         '--repository', '/repo', '--worktree-path', '/repo/.worktrees/feat',
         '--branch', 'feat', '--parent-branch', 'main',
       ],
@@ -75,7 +81,7 @@ describe('syntaur workspace set', () => {
   });
 
   it('requires at least one field flag', async () => {
-    const r = await runCli(['workspace', 'set', '--ticket', 'a', '--project', 'p'], home);
+    const r = await runCli(['workspace', 'set', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('at least one');
   });
@@ -84,7 +90,7 @@ describe('syntaur workspace set', () => {
     // Missing required id/title/status → validateTicketFile fails.
     await writeFile(ticketPath, '---\nslug: a\n---\n# A\n', 'utf-8');
     const r = await runCli(
-      ['workspace', 'set', '--ticket', 'a', '--project', 'p', '--branch', 'feat'],
+      ['workspace', 'set', '--ticket', 'PX-1', '--project', 'p', '--branch', 'feat'],
       home,
     );
     expect(r.code).toBe(1);

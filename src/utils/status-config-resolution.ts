@@ -81,7 +81,6 @@ export class StatusResolutionError extends Error {
  */
 export async function scanTicketsByStatus(
   projectsDir: string,
-  standaloneDir: string | null,
   ids: string[],
   scope: WorkflowScanScope = {},
 ): Promise<Map<string, AffectedTicket[]>> {
@@ -93,7 +92,7 @@ export async function scanTicketsByStatus(
   if (ids.length === 0) return result;
   const idSet = new Set(ids);
 
-  const walk = await listTicketsByProject(projectsDir, standaloneDir);
+  const walk = await listTicketsByProject(projectsDir);
 
   for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;
@@ -402,12 +401,11 @@ export async function applyStatusResolutions(
  */
 export async function verifyNoDriftedOrphans(
   projectsDir: string,
-  standaloneDir: string | null,
   droppedIds: string[],
   scope: WorkflowScanScope = {},
 ): Promise<void> {
   if (droppedIds.length === 0) return;
-  const finalScan = await scanTicketsByStatus(projectsDir, standaloneDir, droppedIds, scope);
+  const finalScan = await scanTicketsByStatus(projectsDir, droppedIds, scope);
   const remaining: string[] = [];
   for (const id of droppedIds) {
     const list = finalScan.get(id) ?? [];
@@ -432,11 +430,10 @@ export async function verifyNoDriftedOrphans(
  */
 export async function scanTicketsReferencingStatus(
   projectsDir: string,
-  standaloneDir: string | null,
   id: string,
   scope: WorkflowScanScope = {},
 ): Promise<AffectedTicket[]> {
-  const walk = await listTicketsByProject(projectsDir, standaloneDir);
+  const walk = await listTicketsByProject(projectsDir);
   const affected: AffectedTicket[] = [];
   for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;
@@ -504,7 +501,6 @@ export interface WorkflowUsageOptions {
   /** Whether this id is the config's global `defaultWorkflow`. */
   isGlobalDefault: boolean;
   projectsDir: string;
-  standaloneDir: string | null;
 }
 
 /**
@@ -537,7 +533,7 @@ export async function scanWorkflowUsage(
   }
 
   // Tickets that resolve to the workflow (headline scan across all statuses).
-  const walk = await listTicketsByProject(opts.projectsDir, opts.standaloneDir);
+  const walk = await listTicketsByProject(opts.projectsDir);
   const tickets: AffectedTicket[] = [];
   for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;

@@ -76,7 +76,7 @@ statuses:
 
 function ticketMd(): string {
   return `---
-id: feat-x-id
+id: FTX-1
 slug: feat-x
 title: "Feat X"
 project: p1
@@ -117,9 +117,9 @@ beforeEach(async () => {
 
   await writeFile(join(home, 'config.md'), configMd(resolve(home, 'projects')));
   projectDir = join(home, 'projects', 'p1');
-  const aDir = join(projectDir, 'tickets', 'feat-x');
+  const aDir = join(projectDir, 'tickets', 'FTX-1-feat-x');
   await mkdir(aDir, { recursive: true });
-  await writeFile(join(projectDir, 'project.md'), '---\nslug: p1\n---\n# P1\n');
+  await writeFile(join(projectDir, 'project.md'), '---\nslug: p1\nprefix: FTX\nnextTicket: 2\n---\n# P1\n');
   ticketPath = join(aDir, 'ticket.md');
   await writeFile(ticketPath, ticketMd());
 });
@@ -174,7 +174,7 @@ describe('recordStatusEvent self-guard (R5)', () => {
 
 describe('CLI status transition emits exactly one status-change', () => {
   it('records one status-change with correct from/to/actor', async () => {
-    const result = await executeTransition(projectDir, 'feat-x', 'shape', { agent: 'codex' });
+    const result = await executeTransition(projectDir, 'FTX-1', 'shape', { agent: 'codex' });
     expect(result.success).toBe(true);
     const id = (await readFm()).id;
 
@@ -192,7 +192,7 @@ describe('CLI status transition emits exactly one status-change', () => {
 describe('same-status fact set (R5)', () => {
   it('records a fact-set event and ZERO status-change events', async () => {
     const before = (await readFm()).status;
-    await factSetCommand('feat-x', 'qaPassed', 'true', { project: 'p1' });
+    await factSetCommand('FTX-1', 'qaPassed', 'true', { project: 'p1' });
     const after = (await readFm()).status;
     // qaPassed does not feed any rung here → headline unchanged.
     expect(after).toBe(before);
@@ -257,7 +257,7 @@ describe('best-effort: a forced events-db failure leaves the transition succeedi
 
     let threw = false;
     try {
-      await executeTransition(projectDir, 'feat-x', 'shape', { agent: 'codex' });
+      await executeTransition(projectDir, 'FTX-1', 'shape', { agent: 'codex' });
     } catch {
       threw = true;
     }

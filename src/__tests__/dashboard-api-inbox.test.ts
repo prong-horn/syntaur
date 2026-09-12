@@ -30,7 +30,6 @@ import { formatChatQuestionMarker } from '../chat/questions.js';
 
 let sandbox: string;
 let projectsDir: string;
-let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 let origSyntaurHome: string | undefined;
@@ -40,25 +39,31 @@ interface SeedOpts {
   slug: string;
   title?: string;
   status: string;
-  project?: string | null; // null/undefined → standalone
+  project?: string;
   statusHistory?: string[];
   updated?: string;
   planFiles?: Record<string, string>;
 }
 
+function toTicketId(id: string, slug: string): string {
+  if (/^[A-Z]{2,5}-\d+$/.test(id)) return id;
+  const letters = id.replace(/[^A-Za-z]/g, '').toUpperCase().padEnd(2, 'X').slice(0, 3);
+  const num = (id.match(/\d+/) ?? slug.match(/\d+/) ?? ['1'])[0];
+  return `${letters}-${num}`;
+}
+
 async function seed(o: SeedOpts): Promise<void> {
-  const standalone = o.project === undefined || o.project === null;
-  const dir = standalone
-    ? join(ticketsDir, o.slug)
-    : join(projectsDir, o.project as string, 'tickets', o.slug);
+  const project = o.project ?? 'p1';
+  const ticketId = toTicketId(o.id, o.slug);
+  const dir = join(projectsDir, project, 'tickets', `${ticketId}-${o.slug}`);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
-    `id: ${o.id}`,
+    `id: ${ticketId}`,
     `slug: ${o.slug}`,
     `title: "${o.title ?? o.slug}"`,
     `status: ${o.status}`,
-    `project: ${standalone ? 'null' : o.project}`,
+    `project: ${project}`,
     `created: "2026-01-01T00:00:00Z"`,
     `updated: "${o.updated ?? '2026-01-01T00:00:00Z'}"`,
   ];
@@ -89,7 +94,8 @@ async function seedQuestionComment(
   },
 ): Promise<void> {
   const ts = comment.timestamp ?? '2026-06-16T00:00:00Z';
-  const dir = join(projectsDir, project, 'tickets', slug);
+  const ticketId = toTicketId(_ticketId, slug);
+  const dir = join(projectsDir, project, 'tickets', `${ticketId}-${slug}`);
   await writeFile(
     join(dir, 'comments.md'),
     `---\nticket: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
@@ -106,9 +112,7 @@ async function seedQuestionComment(
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-inbox-'));
   projectsDir = join(sandbox, 'projects');
-  ticketsDir = join(sandbox, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
 
   // A minimal config.md so getStatusConfig() resolves the default status config.
   await writeFile(
@@ -125,7 +129,7 @@ beforeEach(async () => {
 
   const app = express();
   app.use(express.json());
-  app.use('/api', createInboxRouter(projectsDir, ticketsDir));
+  app.use('/api', createInboxRouter(projectsDir));
 
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res()) as Server;
@@ -273,7 +277,7 @@ describe('GET /api/inbox', () => {
     // Spin up a router pointing at a non-existent projectsDir to trigger an
     // internal error path — the router must catch it and return the safe shape.
     const badApp = express();
-    badApp.use('/api', createInboxRouter('/nonexistent/__does_not_exist__', null));
+    badApp.use('/api', createInboxRouter('/nonexistent/__does_not_exist__'));
     const badServer: Server = await new Promise((res) => {
       const s = badApp.listen(0, '127.0.0.1', () => res(s as Server));
     });
@@ -638,7 +642,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
     const row = inbox.items.find((i) => i.ticketSlug === 'plan-check')!;
     const key = inboxRowKey(row);
-    expect(key).toBe('plan:uuid~plan-approval');
+    expect(key).toBe(`${toTicketId('plan:uuid', 'plan-check')}~plan-approval`);
 
     const putRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
       method: 'PUT',
@@ -773,7 +777,8 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     let getBody = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
     expect(getBody.items.find((i) => i.ticketSlug === 'old-review')).toBeUndefined();
 
-    const dir = join(projectsDir, 'p1', 'tickets', 'old-review');
+    const ticketId = toTicketId('old-r', 'old-review');
+    const dir = join(projectsDir, 'p1', 'tickets', `${ticketId}-old-review`);
     const md = await readFile(join(dir, 'ticket.md'), 'utf-8');
     await writeFile(
       join(dir, 'ticket.md'),

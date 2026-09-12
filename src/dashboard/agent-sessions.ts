@@ -175,7 +175,7 @@ export async function parseSessionsIndex(
   projectSlug: string,
 ): Promise<AgentSession[]> {
   const { listTicketsByProject } = await import('../utils/ticket-walk.js');
-  const walk = await listTicketsByProject(projectsDir, null);
+  const walk = await listTicketsByProject(projectsDir);
   const ticketIds = walk.withTicketMd
     .filter((t) => t.projectSlug === projectSlug && t.ticketId)
     .map((t) => t.ticketId as string);
@@ -882,7 +882,7 @@ export async function listProjectSessions(
   const db = getSessionDb();
   const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
   const { listTicketsByProject } = await import('../utils/ticket-walk.js');
-  const walk = await listTicketsByProject(projectsDir, null);
+  const walk = await listTicketsByProject(projectsDir);
   let ticketIds = walk.withTicketMd
     .filter((t) => t.projectSlug === projectSlug && t.ticketId)
     .map((t) => t.ticketId as string);
@@ -956,7 +956,7 @@ async function readTicketStatus(
  * Reconcile active sessions against ticket statuses.
  * Sessions whose tickets have moved to completed/failed/review are
  * marked as completed (or stopped for failed tickets).
- * Standalone sessions (project_slug NULL) are resolved via ticketsDir.
+ * Legacy standalone sessions are no longer supported.
  * Returns the number of sessions that were updated.
  */
 /**
@@ -972,18 +972,17 @@ async function readTicketStatus(
  * wrong fact about the work.
  *
  * `reconcileActiveSessions` reads ticket.md files, so it is given the same
- * `projectsDir` / `ticketsDir` the watcher already carries.
+ * `projectsDir` the watcher already carries.
  */
 export interface SessionMaintenanceDeps {
   /** Override the reconcile pass (tests inject a failing one). */
-  reconcile?: (projectsDir: string, ticketsDir?: string) => Promise<number>;
+  reconcile?: (projectsDir: string) => Promise<number>;
   /** Where a reconcile failure is reported. Defaults to `console.error`. */
   log?: (message: string, err: unknown) => void;
 }
 
 export async function runSessionMaintenance(
   projectsDir: string,
-  ticketsDir?: string,
   sweepOptions: StaleSweepOptions = {},
   deps: SessionMaintenanceDeps = {},
 ): Promise<{ reconciled: number; swept: string[]; engagementsClosed: number }> {
@@ -996,7 +995,7 @@ export async function runSessionMaintenance(
   // must not quietly take that away (review round 2, finding 2).
   let reconciled = 0;
   try {
-    reconciled = await reconcile(projectsDir, ticketsDir);
+    reconciled = await reconcile(projectsDir);
   } catch (err) {
     log('[sessions] reconcileActiveSessions failed; sweeping anyway:', err);
   }
@@ -1005,9 +1004,7 @@ export async function runSessionMaintenance(
   return { reconciled, ...sweep };
 }
 
-export async function reconcileActiveSessions(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function reconcileActiveSessions(projectsDir: string,
 ): Promise<number> {
   const db = getSessionDb();
 
@@ -1033,7 +1030,7 @@ export async function reconcileActiveSessions(
     if (!ticketId || seen.has(ticketId)) continue;
     seen.add(ticketId);
 
-    const resolved = await resolveTicketById(projectsDir, ticketsDir, ticketId);
+    const resolved = await resolveTicketById(projectsDir, ticketId);
     if (!resolved) continue;
     const status = await readTicketStatusFromPath(resolve(resolved.ticketDir, 'ticket.md'));
     if (status) ticketStatuses.set(ticketId, status);

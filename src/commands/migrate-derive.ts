@@ -21,7 +21,7 @@ import {
   toTitleCase,
   writeStatusConfig,
 } from '../utils/config.js';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseTicketFrontmatter, updateTicketFile } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
@@ -51,7 +51,7 @@ interface DivergenceRow {
   phase: string | null;
 }
 
-async function listTargets(projectsDir: string, standaloneDir: string): Promise<Array<{ path: string; projectDir: string | null; ref: string }>> {
+async function listTargets(projectsDir: string): Promise<Array<{ path: string; projectDir: string | null; ref: string }>> {
   const targets: Array<{ path: string; projectDir: string | null; ref: string }> = [];
   let projects: string[] = [];
   try {
@@ -82,18 +82,6 @@ async function listTargets(projectsDir: string, standaloneDir: string): Promise<
       if (await fileExists(path)) targets.push({ path, projectDir, ref: `${project}/${slug}` });
     }
   }
-  let ids: string[] = [];
-  try {
-    ids = await readdir(standaloneDir);
-  } catch {
-    /* none */
-  }
-  for (const id of ids) {
-    const ticketPath = resolve(standaloneDir, id, 'ticket.md');
-    const legacyPath = resolve(standaloneDir, id, 'assignment.md');
-    const path = (await fileExists(ticketPath)) ? ticketPath : legacyPath;
-    if (await fileExists(path)) targets.push({ path, projectDir: null, ref: id });
-  }
   return targets;
 }
 
@@ -121,8 +109,7 @@ function seedFacts(content: string, status: string, blockedReason: string | null
 export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promise<void> {
   const config = await readConfig();
   const projectsDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
-  const standaloneDir = ticketsDirFn();
-  const context: DeriveContext = await resolveDeriveContext();
+    const context: DeriveContext = await resolveDeriveContext();
 
   // Materialize the parked headline status (codex finding: without a defined
   // id, parking silently falls back to the phase). Adds the definition + order
@@ -148,7 +135,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
     }
   }
 
-  const targets = await listTargets(projectsDir, standaloneDir);
+  const targets = await listTargets(projectsDir);
   const divergences: DivergenceRow[] = [];
   let seeded = 0;
   let recomputed = 0;

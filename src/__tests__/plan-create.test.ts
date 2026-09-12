@@ -22,7 +22,7 @@ async function runCli(args: string[], home: string): Promise<RunResult> {
 }
 
 const TICKET = `---
-id: aaaa
+id: PX-1
 slug: a
 title: "A"
 status: in_progress
@@ -43,9 +43,9 @@ describe('syntaur plan create', () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-plan-'));
     await writeFile(resolve(home, 'config.md'), `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`, 'utf-8');
-    ticketDir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    ticketDir = resolve(home, 'projects', 'p', 'tickets', 'PX-1-a');
     await mkdir(ticketDir, { recursive: true });
-    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
+    await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\nprefix: PX\nnextTicket: 2\n---\n# P\n', 'utf-8');
     await writeFile(resolve(ticketDir, 'ticket.md'), TICKET, 'utf-8');
   });
 
@@ -55,7 +55,7 @@ describe('syntaur plan create', () => {
 
   it('writes an initial plan.md without changing ticket.md ## Todos', async () => {
     const before = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
-    const r = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
+    const r = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
 
     const plan = await readFile(resolve(ticketDir, 'plan.md'), 'utf-8');
@@ -71,11 +71,11 @@ describe('syntaur plan create', () => {
   });
 
   it('refuses to overwrite an existing plan.md without --force', async () => {
-    await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
-    const again = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
+    await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p'], home);
+    const again = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(again.code).toBe(1);
     expect(again.stderr).toContain('already exists');
-    const forced = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p', '--force'], home);
+    const forced = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p', '--force'], home);
     expect(forced.code, forced.stderr).toBe(0);
   });
 });

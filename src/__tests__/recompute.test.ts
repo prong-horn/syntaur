@@ -228,26 +228,23 @@ describe('recomputeDependents + recomputeAll', () => {
     expect(results[0].changed).toBe(true);
   });
 
-  it('recomputeAll sweeps projects + standalone and reports a summary', async () => {
+  it('recomputeAll sweeps project tickets and reports a summary', async () => {
     const root = await mkdtemp(join(tmpdir(), 'syntaur-root-'));
     tmpDirs.push(root);
     const projectsDir = join(root, 'projects');
-    const standaloneDir = join(root, 'tickets');
     await mkdir(join(projectsDir, 'p1', 'tickets', 'a1'), { recursive: true });
-    await mkdir(join(standaloneDir, 'u1'), { recursive: true });
     await writeFile(
       join(projectsDir, 'p1', 'tickets', 'a1', 'ticket.md'),
-      ticketContent({ slug: 'a1' }),
+      ticketContent({ slug: 'a1', status: 'completed' }),
     );
-    await writeFile(join(standaloneDir, 'u1', 'ticket.md'), ticketContent({ slug: 'u1', status: 'completed' }));
 
-    const summary = await recomputeAll(projectsDir, standaloneDir, {
+    const summary = await recomputeAll(projectsDir, {
       cause: 'sweep',
       by: 'system',
       context: CONTEXT,
     });
-    expect(summary.scanned).toBe(2);
-    expect(summary.changed).toBe(1);
+    expect(summary.scanned).toBe(1);
+    expect(summary.changed).toBe(0);
     expect(summary.deferredTerminal).toBe(1);
     expect(summary.warnings).toEqual([]);
   });

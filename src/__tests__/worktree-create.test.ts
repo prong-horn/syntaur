@@ -35,7 +35,7 @@ async function runCli(args: string[], cwd: string, syntaurHome: string): Promise
 }
 
 const TICKET_MD = `---
-id: abc
+id: PW-1
 slug: demo
 title: "Demo"
 project: p
@@ -66,8 +66,9 @@ describe('syntaur worktree create', () => {
       resolve(syntaurHome, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
-    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'PW-1-demo');
     await mkdir(ticketDir, { recursive: true });
+    await writeFile(resolve(syntaurHome, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: P\nprefix: PW\nnextTicket: 2\n---\n', 'utf-8');
     await writeFile(resolve(ticketDir, 'ticket.md'), TICKET_MD);
 
     scratch = await mkdtemp(join(tmpdir(), 'syntaur-wtc-repo-'));
@@ -98,7 +99,7 @@ describe('syntaur worktree create', () => {
         '--parent-branch',
         'main',
         '--ticket',
-        'demo',
+        'PW-1',
         '--project',
         'p',
       ],
@@ -129,7 +130,7 @@ describe('syntaur worktree create', () => {
         '--parent-branch',
         'main',
         '--ticket',
-        'demo',
+        'PW-1',
         '--project',
         'p',
       ],

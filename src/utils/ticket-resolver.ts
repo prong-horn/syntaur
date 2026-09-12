@@ -26,7 +26,6 @@ export class TicketResolverError extends Error {}
 
 export async function resolveTicketById(
   projectsDir: string,
-  _ticketsDir: string | undefined,
   id: string,
 ): Promise<ResolvedTicket | null> {
   if (!isTicketId(id)) return null;
@@ -91,17 +90,17 @@ export async function resolveTicketMdPathInProject(
   projectDir: string,
   slugOrId: string,
 ): Promise<string | null> {
-  const ticketsDir = resolve(projectDir, 'tickets');
-  const direct = resolve(ticketsDir, slugOrId, 'ticket.md');
+  const ticketsPath = resolve(projectDir, 'tickets');
+  const direct = resolve(ticketsPath, slugOrId, 'ticket.md');
   if (await fileExists(direct)) return direct;
 
   if (isTicketId(slugOrId)) {
     try {
-      const entries = await readdir(ticketsDir, { withFileTypes: true });
+      const entries = await readdir(ticketsPath, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         if (!folderNameForTicketId(entry.name, slugOrId)) continue;
-        const path = resolve(ticketsDir, entry.name, 'ticket.md');
+        const path = resolve(ticketsPath, entry.name, 'ticket.md');
         if (await fileExists(path)) return path;
       }
     } catch {

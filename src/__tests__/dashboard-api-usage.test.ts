@@ -23,7 +23,6 @@ import { createUsageRouter, getTicketUsageHandler } from '../dashboard/api-usage
 
 let sandbox: string;
 let projectsDir: string;
-let ticketsDir: string;
 let server: ReturnType<typeof express>['listen'] extends (port: number) => infer T ? T : never;
 let baseUrl: string;
 let originalEnv: string | undefined;
@@ -57,7 +56,7 @@ async function writeProjectTicket(
 
 /** Write a minimal standalone ticket.md (folder name = id). */
 async function writeStandalone(id: string, archived = false): Promise<void> {
-  const dir = resolve(ticketsDir, id);
+  const dir = resolve(ticketsPath, id);
   await mkdir(dir, { recursive: true });
   await writeFile(
     resolve(dir, 'ticket.md'),
@@ -69,7 +68,6 @@ async function writeStandalone(id: string, archived = false): Promise<void> {
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-usage-'));
   projectsDir = resolve(sandbox, 'projects');
-  ticketsDir = resolve(sandbox, 'tickets');
   originalEnv = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = sandbox;
   invalidateRecordsCache();
@@ -81,8 +79,8 @@ beforeEach(async () => {
   initSessionDb();
 
   const app = express();
-  app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
-  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir, ticketsDir));
+  app.use('/api/usage', createUsageRouter(projectsDir));
+  app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir));
 
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res());

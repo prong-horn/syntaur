@@ -202,10 +202,7 @@ function requestWorkflowId(req: Request): string {
   return isString(id) ? id : DEFAULT_WORKFLOW_ID;
 }
 
-export function createStatusConfigRouter(
-  projectsDir: string,
-  ticketsDir: string | null,
-): Router {
+export function createStatusConfigRouter(projectsDir: string): Router {
   // mergeParams so a parent mount at `/api/config/workflows/:workflowId` exposes
   // `req.params.workflowId` in these handlers; the legacy `/api/config/statuses`
   // mount has no such param and every handler falls back to `default`.
@@ -236,7 +233,7 @@ export function createStatusConfigRouter(
       // Scope to tickets resolving to THIS workflow so a status shared with
       // another workflow doesn't over-report.
       const resolver = makeWorkflowContextResolver(await readConfig());
-      const affected = await scanTicketsByStatus(projectsDir, ticketsDir, [id], {
+      const affected = await scanTicketsByStatus(projectsDir, [id], {
         resolver,
         workflowId: requestWorkflowId(req),
       });
@@ -511,7 +508,7 @@ export function createStatusConfigRouter(
       const scanScope = { resolver: makeWorkflowContextResolver(await readConfig()), workflowId };
       let affectedMap: Awaited<ReturnType<typeof scanTicketsByStatus>>;
       try {
-        affectedMap = await scanTicketsByStatus(projectsDir, ticketsDir, droppedIds, scanScope);
+        affectedMap = await scanTicketsByStatus(projectsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, null);
@@ -554,7 +551,7 @@ export function createStatusConfigRouter(
       // references a dropped id, abort before config write so the user can
       // retry cleanly.
       try {
-        await verifyNoDriftedOrphans(projectsDir, ticketsDir, droppedIds, scanScope);
+        await verifyNoDriftedOrphans(projectsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, {
@@ -635,7 +632,6 @@ export function createStatusConfigRouter(
         resolver: makeWorkflowContextResolver(config),
         isGlobalDefault: config.defaultWorkflow === workflowId,
         projectsDir,
-        standaloneDir: ticketsDir,
       });
       if (!usage.deletable) {
         res.status(409).json({
@@ -732,10 +728,7 @@ function isValidWorkflowId(id: string): boolean {
  * `/:workflowId` for the per-workflow GET/POST/DELETE + affected/default/
  * duplicate routes.
  */
-export function createWorkflowConfigRouter(
-  projectsDir: string,
-  ticketsDir: string | null,
-): Router {
+export function createWorkflowConfigRouter(projectsDir: string): Router {
   const router = Router();
   installRecordsInvalidation(router);
 
@@ -817,7 +810,7 @@ export function createWorkflowConfigRouter(
     }
   });
 
-  router.use('/:workflowId', createStatusConfigRouter(projectsDir, ticketsDir));
+  router.use('/:workflowId', createStatusConfigRouter(projectsDir));
 
   return router;
 }

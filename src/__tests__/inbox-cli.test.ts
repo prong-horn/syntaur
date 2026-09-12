@@ -21,7 +21,6 @@ import { formatChatQuestionMarker } from '../chat/questions.js';
 
 let root: string;
 let projectsDir: string;
-let standaloneDir: string;
 let origSyntaurHome: string | undefined;
 
 interface SeedOpts {
@@ -29,7 +28,7 @@ interface SeedOpts {
   slug: string;
   title?: string;
   status: string;
-  project?: string | null; // null/undefined → standalone
+  project?: string; // project slug required — standalone root removed
   blockedReason?: string;
   comments?: Comment[];
   statusHistory?: string[];
@@ -38,10 +37,8 @@ interface SeedOpts {
 
 /** Create a real on-disk ticket fixture under the seeded SYNTAUR_HOME. */
 async function seed(o: SeedOpts): Promise<void> {
-  const standalone = o.project === undefined || o.project === null;
-  const dir = standalone
-    ? join(standaloneDir, o.slug)
-    : join(projectsDir, o.project as string, 'tickets', o.slug);
+  if (!o.project) throw new Error('seed() requires project');
+  const dir = join(projectsDir, o.project, 'tickets', o.slug);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
@@ -49,7 +46,7 @@ async function seed(o: SeedOpts): Promise<void> {
     `slug: ${o.slug}`,
     `title: ${o.title ?? o.slug}`,
     `status: ${o.status}`,
-    `project: ${standalone ? 'null' : o.project}`,
+    `project: ${o.project}`,
   ];
   if (o.blockedReason) fm.push(`blockedReason: ${o.blockedReason}`);
   if (o.updated) fm.push(`updated: "${o.updated}"`);
@@ -71,9 +68,7 @@ async function seed(o: SeedOpts): Promise<void> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-inbox-cli-'));
   projectsDir = join(root, 'projects');
-  standaloneDir = join(root, 'tickets'); // ticketsDir() = <home>/tickets
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(standaloneDir, { recursive: true });
 
   // An explicit config.md points the CLI's `readConfig().defaultProjectDir` at
   // this temp tree (the in-code default is captured before SYNTAUR_HOME is set).
@@ -187,7 +182,6 @@ describe('runInbox — --project filter', () => {
   beforeEach(async () => {
     await seed({ id: 'r1', slug: 'r1', status: 'review', project: 'p1' });
     await seed({ id: 'r2', slug: 'r2', status: 'review', project: 'p2' });
-    await seed({ id: 's1', slug: 's1', status: 'review' }); // standalone
   });
 
   it('restricts to one project slug', async () => {

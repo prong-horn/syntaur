@@ -16,7 +16,7 @@ import {
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { ticketsDir, syntaurRoot } from '../utils/paths.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
 import { isTerminalStatus } from '../lifecycle/state-machine.js';
@@ -39,11 +39,11 @@ async function resolveTicketPath(opts: {
   cwd: string;
 }): Promise<string> {
   if (opts.ticket) {
-    if (opts.project) {
-      const projectsDir = (await readConfig()).defaultProjectDir;
-      return resolve(projectsDir, opts.project, 'tickets', opts.ticket, 'ticket.md');
-    }
-    return resolve(ticketsDir(), opts.ticket, 'ticket.md');
+    const target = await resolveTicketTarget(opts.ticket, {
+      project: opts.project,
+      cwd: opts.cwd,
+    });
+    return resolve(target.ticketDir, 'ticket.md');
   }
   // No explicit target → resolve from the session's OPEN engagement and gate the
   // mutation (worktree create/remove edit the ticket's workspace.* block).
@@ -283,7 +283,7 @@ export async function runWorktreeGc(
   // claimed by more than one ticket record; we keep ALL owners so a single
   // completed record can never mask a still-active one (see classification).
   const config = await readConfig();
-  const walk = await listTicketsByProject(config.defaultProjectDir, ticketsDir());
+  const walk = await listTicketsByProject(config.defaultProjectDir);
   const owners = new Map<string, GcOwner[]>();
   for (const entry of walk.withTicketMd) {
     try {

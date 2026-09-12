@@ -41,7 +41,6 @@ export interface ChatRouterDeps {
 
 export function createChatRouter(
   projectsDir: string,
-  ticketsDir: string,
   deps: ChatRouterDeps,
 ): Router {
   const router = Router();
@@ -52,7 +51,7 @@ export function createChatRouter(
     // Express 5 types `params` values as `string | string[]`; these routes take
     // a single segment.
     const id = String(req.params.id);
-    const ticket = await resolveTicketById(projectsDir, ticketsDir, id);
+    const ticket = await resolveTicketById(projectsDir, id);
     if (!ticket) {
       res.status(404).json({ error: `No ticket with id ${JSON.stringify(id)}` });
       return null;

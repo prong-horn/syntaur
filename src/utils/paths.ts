@@ -20,10 +20,6 @@ export function defaultProjectDir(): string {
   return resolve(syntaurRoot(), 'projects');
 }
 
-export function ticketsDir(): string {
-  return resolve(syntaurRoot(), 'tickets');
-}
-
 export function playbooksDir(): string {
   return resolve(syntaurRoot(), 'playbooks');
 }

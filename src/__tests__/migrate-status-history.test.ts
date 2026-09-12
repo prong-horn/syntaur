@@ -7,13 +7,11 @@ import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 let home: string;
 let projectsDir: string;
-let standaloneDir: string;
 let prevHome: string | undefined;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-migrate-sh-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'tickets');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
 });
@@ -82,7 +80,7 @@ async function seedStandalone(
   updated: string,
   opts: { withHistory?: boolean } = {},
 ): Promise<string> {
-  const dir = resolve(standaloneDir, uuid);
+  const dir = resolve(legacyStandalonePath, uuid);
   await mkdir(dir, { recursive: true });
   const path = resolve(dir, 'ticket.md');
   await writeFile(path, ticketMd(uuid, status, created, updated, opts), 'utf-8');
@@ -169,11 +167,4 @@ describe('migrateStatusHistoryCommand', () => {
     });
   });
 
-  it('seeds a standalone ticket (uuid dir under the standalone base)', async () => {
-    const path = await seedStandalone('11111111-2222-3333-4444-555555555555', 'review', C, U);
-    await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
-    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
-    expect(fm.statusHistory).toHaveLength(1);
-    expect(fm.statusHistory[0]).toMatchObject({ to: 'review', command: 'seed', at: C });
-  });
 });

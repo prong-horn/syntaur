@@ -92,7 +92,7 @@ describe('syntaur progress log', () => {
   });
 
   it('replaces the placeholder, increments entryCount, preserves ticket/generated', async () => {
-    const r = await runCli(['progress', 'log', 'First entry', '--ticket', 'a', '--project', 'p'], home);
+    const r = await runCli(['progress', 'log', 'First entry', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).not.toContain('No progress yet.');
@@ -104,8 +104,8 @@ describe('syntaur progress log', () => {
   });
 
   it('keeps entries reverse-chronological (newest right after the H1)', async () => {
-    await runCli(['progress', 'log', 'OLDER', '--ticket', 'a', '--project', 'p'], home);
-    await runCli(['progress', 'log', 'NEWER', '--ticket', 'a', '--project', 'p'], home);
+    await runCli(['progress', 'log', 'OLDER', '--ticket', 'PX-1', '--project', 'p'], home);
+    await runCli(['progress', 'log', 'NEWER', '--ticket', 'PX-1', '--project', 'p'], home);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).toContain('entryCount: 2');
     const h1 = content.indexOf('# Progress');

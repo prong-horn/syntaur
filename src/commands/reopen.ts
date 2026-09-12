@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
 import { readConfig } from '../utils/config.js';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { expandHome } from '../utils/paths.js';
 import { resolveTicketById, resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
@@ -35,7 +35,7 @@ export async function reopenCommand(
     ticketPath = resolvedPath;
     changedTicketId = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8')).id;
   } else {
-    const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
+    const resolved = await resolveTicketById(baseDir, ticket);
     if (!resolved) return;
     ticketPath = resolve(resolved.ticketDir, 'ticket.md');
     projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');

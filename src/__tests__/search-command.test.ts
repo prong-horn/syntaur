@@ -14,7 +14,7 @@ let origSyntaurHome: string | undefined;
  */
 async function seedHome(root: string): Promise<void> {
   const projectsDir = join(root, 'projects');
-  const ticketsDir = join(root, 'tickets');
+  const ticketsPath = join(root, 'tickets');
 
   await mkdir(root, { recursive: true });
   await writeFile(

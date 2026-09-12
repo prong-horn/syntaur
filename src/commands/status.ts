@@ -15,7 +15,7 @@ import {
 import { writeWorkflowBundle } from '../utils/workflow-write.js';
 import { DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
 import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
-import { syntaurRoot, ticketsDir } from '../utils/paths.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
@@ -53,9 +53,9 @@ import {
  * *configured* project dir — not the fixed paths.defaultProjectDir() — keeps the
  * CLI's remove/rename scans in sync with the dashboard for custom project roots.
  */
-async function scanDirs(): Promise<{ projectsDir: string; standaloneDir: string }> {
+async function scanDirs(): Promise<{ projectsDir: string }> {
   const config = await readConfig();
-  return { projectsDir: config.defaultProjectDir, standaloneDir: ticketsDir() };
+  return { projectsDir: config.defaultProjectDir };
 }
 
 function fail(error: unknown): never {
@@ -525,13 +525,10 @@ export async function runStatusRemove(
     throw new Error(`Status "${id}" does not exist.`);
   }
 
-  const { projectsDir, standaloneDir } = await scanDirs();
+  const { projectsDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned ticket can reference the id only there.
-  const affected = await scanTicketsReferencingStatus(
-    projectsDir,
-    standaloneDir,
-    id,
+  const affected = await scanTicketsReferencingStatus(projectsDir, id,
     scanScope(config, bundle),
   );
 
@@ -616,13 +613,10 @@ export async function runStatusRename(
     facts: before.facts ?? null,
   };
 
-  const { projectsDir, standaloneDir } = await scanDirs();
+  const { projectsDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned ticket can reference the id only there.
-  const affected = await scanTicketsReferencingStatus(
-    projectsDir,
-    standaloneDir,
-    id,
+  const affected = await scanTicketsReferencingStatus(projectsDir, id,
     scanScope(config, bundle),
   );
 

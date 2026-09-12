@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
@@ -57,7 +57,7 @@ async function resolveTarget(target: string, options: ArchiveOptions): Promise<R
   }
 
   // 2. Ticket by UUID (standalone or project-nested).
-  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), target);
+  const resolved = await resolveTicketById(baseDir, target);
   if (resolved) {
     return {
       kind: 'ticket',

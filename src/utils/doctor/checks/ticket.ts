@@ -3,7 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseTicketFull } from '../../../dashboard/parser.js';
 import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
-import { ticketsDir as getStandaloneDir } from '../../paths.js';
+import { syntaurRoot } from '../../paths.js';
 import { listTicketsByProject, type TicketEntry } from '../../ticket-walk.js';
 import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
@@ -46,7 +46,7 @@ async function listTickets(ctx: CheckContext): Promise<{
   withTicketMd: TicketEntry[];
   orphanFolders: TicketEntry[];
 }> {
-  return listTicketsByProject(ctx.config.defaultProjectDir, getStandaloneDir());
+  return listTicketsByProject(ctx.config.defaultProjectDir);
 }
 
 function configuredStatuses(ctx: CheckContext): Set<string> {

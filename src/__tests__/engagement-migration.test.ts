@@ -144,8 +144,8 @@ describe('backfill', () => {
     expect(bySession['s-proj'].ticket_id).toBe(PROJ_ASG_ID);
     expect(bySession['s-proj'].ended_at).toBeNull();
 
-    // standalone completed → closed 'completed', resolved by UUID, ended preserved
-    expect(bySession['s-standalone'].ticket_id).toBe(STANDALONE_UUID);
+    // legacy standalone slug (no project) → unattributed after standalone root removal
+    expect(bySession['s-standalone'].ticket_id).toBeNull();
     expect(bySession['s-standalone'].ended_at).toBe('2026-03-26 14:00:00');
     expect(bySession['s-standalone'].close_reason).toBe('completed');
 
@@ -159,13 +159,13 @@ describe('backfill', () => {
     expect(bySession['s-noslug'].ticket_id).toBeNull();
 
     const attributed = rows.filter((r) => r.ticket_id !== null).length;
-    expect(attributed).toBe(2);
+    expect(attributed).toBe(1);
 
     // counts logged
     const logged = logSpy.mock.calls.map((c) => String(c[0])).join('\n');
     expect(logged).toMatch(/backfill/i);
     expect(logged).toMatch(/backfilled=4/);
-    expect(logged).toMatch(/unattributed=2/);
+    expect(logged).toMatch(/unattributed=3/);
     logSpy.mockRestore();
   });
 

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type SyntaurConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
@@ -19,7 +19,8 @@ import {
 } from '../lifecycle/index.js';
 import { resolveTicketWorkflowContext } from '../lifecycle/workflow-context.js';
 import { runEngineTransition } from '../lifecycle/engine-transition.js';
-import { resolveTicketById, resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { isTicketId } from '../utils/ticket-ids.js';
 
 type WorkflowTransitionOptions = Pick<
   TransitionOptions,
@@ -72,6 +73,39 @@ export interface LifecycleOptions {
   agent?: string;
 }
 
+async function resolveScopedTicket(
+  baseDir: string,
+  ticket: string,
+  projectSlug?: string,
+): Promise<{ projectDir: string; ticketPath: string; ticketSlug: string; ticketDir: string }> {
+  if (!isTicketId(ticket)) {
+    throw new Error(`Ticket "${ticket}" is not a valid ticket id. Use <PREFIX>-<n>.`);
+  }
+  const resolved = await resolveTicketById(baseDir, ticket);
+  if (!resolved) {
+    throw new Error(`Ticket "${ticket}" not found.`);
+  }
+  if (projectSlug) {
+    if (!isValidSlug(projectSlug)) {
+      throw new Error(`Invalid project slug "${projectSlug}".`);
+    }
+    if (resolved.projectSlug !== projectSlug) {
+      throw new Error(`Ticket "${ticket}" not found in project "${projectSlug}".`);
+    }
+  }
+  const projectDir = resolve(resolved.ticketDir, '..', '..');
+  const projectMdPath = resolve(projectDir, 'project.md');
+  if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
+    throw new Error(`Project "${resolved.projectSlug}" not found at ${projectDir}.`);
+  }
+  return {
+    projectDir,
+    ticketPath: resolve(resolved.ticketDir, 'ticket.md'),
+    ticketSlug: resolved.ticketSlug,
+    ticketDir: resolved.ticketDir,
+  };
+}
+
 export async function runTransition(
   ticket: string,
   command: Exclude<TransitionCommand, 'assign'>,
@@ -81,21 +115,11 @@ export async function runTransition(
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
   if (options.project) {
-    if (!isValidSlug(options.project)) {
-      throw new Error(`Invalid project slug "${options.project}".`);
-    }
-    if (!isValidSlug(ticket)) {
-      throw new Error(`Invalid ticket slug "${ticket}".`);
-    }
-    const projectDir = resolve(baseDir, options.project);
-    const projectMdPath = resolve(projectDir, 'project.md');
-    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
-    }
-    const ticketPath = await resolveTicketMdPathInProject(projectDir, ticket);
-    if (!ticketPath) {
-      throw new Error(`Ticket file not found for "${ticket}" in project "${options.project}".`);
-    }
+    const { projectDir, ticketPath, ticketSlug } = await resolveScopedTicket(
+      baseDir,
+      ticket,
+      options.project,
+    );
     // WS-2 (Decision 1): on the MIGRATED path a terminal command is realized as
     // an ENGINE move through the locked recompute. `null` ⇒ not migrated / no
     // per-file workflow / not an engine command → fall through to the ladder.
@@ -113,21 +137,14 @@ export async function runTransition(
       command,
       config,
     );
-    return executeTransition(projectDir, ticket, command, {
+    return executeTransition(projectDir, ticketSlug, command, {
       reason: options.reason,
       agent: options.agent,
       ...workflowOpts,
     });
   }
 
-  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
-  if (!resolved) {
-    throw new Error(
-      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
-    );
-  }
-  const projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
-  const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
+  const { projectDir, ticketPath, ticketDir } = await resolveScopedTicket(baseDir, ticket);
   const engineResult = await runEngineTransition({
     ticketPath,
     projectDir,
@@ -142,10 +159,10 @@ export async function runTransition(
     command,
     config,
   );
-  return executeTransitionByDir(resolved.ticketDir, command, {
+  return executeTransitionByDir(ticketDir, command, {
     reason: options.reason,
     agent: options.agent,
-    standalone: resolved.standalone,
+    standalone: false,
     ...workflowOpts,
   });
 }
@@ -159,27 +176,12 @@ export async function runAssign(
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
   if (options.project) {
-    if (!isValidSlug(options.project)) {
-      throw new Error(`Invalid project slug "${options.project}".`);
-    }
-    if (!isValidSlug(ticket)) {
-      throw new Error(`Invalid ticket slug "${ticket}".`);
-    }
-    const projectDir = resolve(baseDir, options.project);
-    const projectMdPath = resolve(projectDir, 'project.md');
-    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
-    }
-    return executeAssign(projectDir, ticket, agent);
+    const { projectDir, ticketSlug } = await resolveScopedTicket(baseDir, ticket, options.project);
+    return executeAssign(projectDir, ticketSlug, agent);
   }
 
-  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
-  if (!resolved) {
-    throw new Error(
-      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
-    );
-  }
-  return executeAssignByDir(resolved.ticketDir, agent);
+  const { ticketDir } = await resolveScopedTicket(baseDir, ticket);
+  return executeAssignByDir(ticketDir, agent);
 }
 
 export async function runUnassign(
@@ -190,27 +192,12 @@ export async function runUnassign(
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
   if (options.project) {
-    if (!isValidSlug(options.project)) {
-      throw new Error(`Invalid project slug "${options.project}".`);
-    }
-    if (!isValidSlug(ticket)) {
-      throw new Error(`Invalid ticket slug "${ticket}".`);
-    }
-    const projectDir = resolve(baseDir, options.project);
-    const projectMdPath = resolve(projectDir, 'project.md');
-    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
-    }
-    return executeUnassign(projectDir, ticket);
+    const { projectDir, ticketSlug } = await resolveScopedTicket(baseDir, ticket, options.project);
+    return executeUnassign(projectDir, ticketSlug);
   }
 
-  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
-  if (!resolved) {
-    throw new Error(
-      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
-    );
-  }
-  return executeUnassignByDir(resolved.ticketDir);
+  const { ticketDir } = await resolveScopedTicket(baseDir, ticket);
+  return executeUnassignByDir(ticketDir);
 }
 
 export function reportResult(result: TransitionResult): void {

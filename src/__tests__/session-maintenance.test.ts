@@ -87,7 +87,7 @@ describe('runSessionMaintenance', () => {
     // Old enough that the sweep would take it if it got there first.
     await seed('sess-done', 'done-task', 9 * HOUR);
 
-    const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
+    const result = await runSessionMaintenance(projectsDir, { idleMs: 6 * HOUR });
 
     expect(result.reconciled).toBe(1);
     // `completed` — the ticket finished. If the sweep had run first this
@@ -100,7 +100,7 @@ describe('runSessionMaintenance', () => {
     await writeTicket('live-task', 'in_progress');
     await seed('sess-stale', 'live-task', 9 * HOUR);
 
-    const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
+    const result = await runSessionMaintenance(projectsDir, { idleMs: 6 * HOUR });
 
     expect(result.reconciled).toBe(0);
     expect(result.swept).toEqual(['sess-stale']);
@@ -112,7 +112,7 @@ describe('runSessionMaintenance', () => {
     await writeTicket('live-task', 'in_progress');
     await seed('sess-fresh', 'live-task', 1 * HOUR);
 
-    const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
+    const result = await runSessionMaintenance(projectsDir, { idleMs: 6 * HOUR });
 
     expect(result).toMatchObject({ reconciled: 0, swept: [] });
     expect(statusOf('sess-fresh')).toBe('active');
@@ -128,7 +128,7 @@ describe('runSessionMaintenance failure isolation (review round 2, finding 2)', 
     // A corrupt ticket.md or a transient FS error must not cost the tick its
     // sweep: before the reconcile was added, the tick ALWAYS swept, and adding a
     // step must not take that away.
-    const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR }, {
+    const result = await runSessionMaintenance(projectsDir, { idleMs: 6 * HOUR }, {
       reconcile: async () => {
         throw new Error('EIO: corrupt ticket.md');
       },

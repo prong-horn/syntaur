@@ -191,14 +191,6 @@ interface ProjectRecord {
   dependencyGraph: string | null;
 }
 
-/** A standalone ticket lives at `<ticketsDir>/<uuid>/` and has no containing project. */
-interface StandaloneRecord {
-  ticketDir: string;
-  /** The UUID (folder name). */
-  id: string;
-  record: TicketRecord;
-}
-
 // ---------------------------------------------------------------------------
 // Shared records cache (coarse, clear-all).
 //
@@ -223,12 +215,10 @@ interface StandaloneRecord {
 // mutators (deleteWorkspace) call invalidateRecordsCache() directly, and the
 // file watcher clears it for edits made outside the dashboard.
 const projectRecordsCache = new Map<string, Promise<ProjectRecord[]>>();
-const standaloneRecordsCache = new Map<string, Promise<StandaloneRecord[]>>();
 
 /** Drop all cached record snapshots. Cheap and idempotent. */
 export function invalidateRecordsCache(): void {
   projectRecordsCache.clear();
-  standaloneRecordsCache.clear();
   // Content-search index shares this invalidation seam: every record mutation
   // (write routers, file watcher, broadcast, deleteWorkspace) funnels here, so
   // clearing the search index alongside keeps `/api/search` consistent with the
@@ -267,40 +257,6 @@ export function installRecordsInvalidation(router: MutatingRouter): void {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-async function listStandaloneRecords(ticketsDir: string | undefined): Promise<StandaloneRecord[]> {
-  const key = ticketsDir ?? '';
-  const cached = standaloneRecordsCache.get(key);
-  if (cached) return cached;
-  const promise = computeStandaloneRecords(ticketsDir);
-  standaloneRecordsCache.set(key, promise);
-  promise.catch(() => standaloneRecordsCache.delete(key));
-  return promise;
-}
-
-async function computeStandaloneRecords(ticketsDir: string | undefined): Promise<StandaloneRecord[]> {
-  if (!ticketsDir) return [];
-  if (!(await fileExists(ticketsDir))) return [];
-
-  const entries = await readdir(ticketsDir, { withFileTypes: true });
-  const records: StandaloneRecord[] = [];
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
-    const ticketDir = resolve(ticketsDir, entry.name);
-    const ticketMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(ticketMdPath))) continue;
-    try {
-      const content = await readFile(ticketMdPath, 'utf-8');
-      const record = parseTicketFull(content);
-      records.push({ ticketDir, id: entry.name, record });
-    } catch {
-      // skip unreadable
-    }
-  }
-
-  records.sort((left, right) => compareTimestamps(right.record.updated, left.record.updated));
-  return records;
-}
 
 const DEFAULT_TRANSITION_DEFINITIONS: Array<{
   command: string;
@@ -689,9 +645,7 @@ export async function listProjects(projectsDir: string): Promise<ProjectSummary[
  * ticket's folder name equals its slug, and standalone folders are named by
  * UUID, so `ticketSlug` matches the scanner's prior folder-name behavior.
  */
-export async function listWorkspaceRecords(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function listWorkspaceRecords(projectsDir: string,
 ): Promise<
   Array<{
     projectSlug: string | null;
@@ -701,10 +655,7 @@ export async function listWorkspaceRecords(
     branch: string | null;
   }>
 > {
-  const [projectRecords, standaloneRecords] = await Promise.all([
-    listProjectRecords(projectsDir),
-    listStandaloneRecords(ticketsDir),
-  ]);
+  const projectRecords = await listProjectRecords(projectsDir);
 
   const records: Array<{
     projectSlug: string | null;
@@ -726,16 +677,6 @@ export async function listWorkspaceRecords(
     }
   }
 
-  for (const standalone of standaloneRecords) {
-    records.push({
-      projectSlug: null,
-      ticketSlug: standalone.id,
-      ticketTitle: standalone.record.title || standalone.id,
-      worktreePath: standalone.record.workspace.worktreePath ?? null,
-      branch: standalone.record.workspace.branch ?? null,
-    });
-  }
-
   return records;
 }
 
@@ -743,9 +684,7 @@ export async function listWorkspaceRecords(
  * Get overview data used by the app landing page.
  * GET /api/overview?staleLimit=&staleOffset=
  */
-export async function getOverview(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function getOverview(projectsDir: string,
   options: { staleLimit?: number; staleOffset?: number } = {},
 ): Promise<OverviewResponse> {
   const traceEnabled = process.env.SYNTAUR_PERF_TRACE === '1';
@@ -755,16 +694,8 @@ export async function getOverview(
   const projectRecords = await timed(traces, 'list-project-records', () =>
     listProjectRecords(projectsDir, traces),
   );
-  const standaloneRecords = await timed(traces, 'list-standalone-records', () =>
-    listStandaloneRecords(ticketsDir),
-  );
-  // Archived projects + individually-archived tickets are hidden from every
-  // overview aggregate (stats, recent projects, recent activity). The full record
-  // sets are still used for firstRun detection and the segment-bucket builder
-  // (which applies its own cascade filtering internally).
   const activeProjectRecords = projectRecords.filter((record) => !isProjectArchived(record.summary));
-  const activeStandaloneRecords = standaloneRecords.filter((sr) => sr.record.archived !== true);
-  const recentActivity = buildRecentActivity(activeProjectRecords, activeStandaloneRecords);
+  const recentActivity = buildRecentActivity(activeProjectRecords);
 
   const staleLimit = clamp(
     Number.isFinite(options.staleLimit) ? Number(options.staleLimit) : STALE_LIMIT_DEFAULT,
@@ -774,7 +705,7 @@ export async function getOverview(
   const staleOffset = Math.max(0, Number.isFinite(options.staleOffset) ? Number(options.staleOffset) : 0);
 
   const buckets = await timed(traces, 'build-segment-buckets', () =>
-    buildOverviewSegmentBuckets(projectsDir, projectRecords, standaloneRecords, traces),
+    buildOverviewSegmentBuckets(projectsDir, projectRecords, traces),
   );
   const segments = toOverviewSegments(buckets, { staleLimit, staleOffset });
   const hero = pickOverviewHero(buckets);
@@ -790,7 +721,7 @@ export async function getOverview(
   if (traces) {
     const wallMs = performance.now() - overallStart;
     const totalTickets =
-      projectRecords.reduce((sum, r) => sum + r.tickets.length, 0) + standaloneRecords.length;
+      projectRecords.reduce((sum, r) => sum + r.tickets.length, 0);
     emitTrace(traces, {
       wallMs,
       fixture: { projects: projectRecords.length, tickets: totalTickets },
@@ -799,7 +730,7 @@ export async function getOverview(
 
   return {
     generatedAt: new Date().toISOString(),
-    firstRun: projectRecords.length === 0 && standaloneRecords.length === 0,
+    firstRun: projectRecords.length === 0,
     stats: {
       activeProjects: activeProjectRecords.filter((record) => record.summary.status === 'active').length,
       inProgressTickets: activeProjectRecords.reduce(
@@ -838,9 +769,7 @@ export async function getOverview(
  * Get all tickets across all projects for the global kanban board.
  * GET /api/tickets
  */
-export async function listTicketsBoard(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function listTicketsBoard(projectsDir: string,
   options: { archived?: 'exclude' | 'only' } = {},
 ): Promise<TicketsBoardResponse> {
   const mode = options.archived ?? 'exclude';
@@ -866,18 +795,9 @@ export async function listTicketsBoard(
     }),
   );
 
-  const standaloneRecords = await listStandaloneRecords(ticketsDir);
-  const filteredStandalone =
-    mode === 'only'
-      ? standaloneRecords.filter((sr) => sr.record.archived === true)
-      : standaloneRecords.filter((sr) => sr.record.archived !== true);
-  const standaloneItems = await Promise.all(
-    filteredStandalone.map(async (sr) => toStandaloneBoardItem(sr)),
-  );
-
   return {
     generatedAt: new Date().toISOString(),
-    tickets: [...projectItems.flat(), ...standaloneItems]
+    tickets: [...projectItems.flat()]
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
   };
 }
@@ -910,13 +830,9 @@ function toArchivedTicketItem(
  * (so they are never double-listed) and archived standalone tickets.
  * GET /api/archived
  */
-export async function listArchived(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function listArchived(projectsDir: string,
 ): Promise<ArchiveResponse> {
   const projectRecords = await listProjectRecords(projectsDir);
-  const standaloneRecords = await listStandaloneRecords(ticketsDir);
-
   const projects: ArchivedProjectItem[] = projectRecords
     .filter((record) => isProjectArchived(record.summary))
     .map((record) => ({
@@ -943,78 +859,11 @@ export async function listArchived(
       }
     }
   }
-  for (const sr of standaloneRecords) {
-    if (sr.record.archived === true) {
-      individuallyArchived.push(toArchivedTicketItem(sr.record, null, null));
-    }
-  }
   individuallyArchived.sort((left, right) => compareTimestamps(right.updated, left.updated));
 
   return { projects, tickets: individuallyArchived };
 }
 
-async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<TicketBoardItem> {
-  // Standalone → the ticket's own workflow (no project binding).
-  const config = await statusConfigForTicket(sr.record, null);
-  const { terminalStatuses } = config;
-
-  let facts: TicketBoardItem['facts'];
-  try {
-    const { computeFacts } = await import('../lifecycle/facts.js');
-    facts = await computeFacts({
-      ticketDir: sr.ticketDir,
-      frontmatter: sr.record as unknown as import('../lifecycle/types.js').TicketFrontmatter,
-      body: sr.record.body,
-      projectDir: null,
-      terminalStatuses,
-      declarations: config.factDeclarations,
-    });
-  } catch (err) {
-    console.warn(`toStandaloneBoardItem: computeFacts failed for ${sr.ticketDir}:`, err);
-  }
-
-  return {
-    ...toTicketSummary(sr.record, config),
-    projectSlug: null,
-    projectTitle: null,
-    blockedReason: sr.record.blockedReason,
-    availableTransitions: await getStandaloneAvailableTransitions(sr.record),
-    facts,
-  };
-}
-
-async function getStandaloneAvailableTransitions(
-  ticket: TicketRecord,
-): Promise<TicketTransitionAction[]> {
-  // Standalone tickets have no dependencies, so skip dependency gating.
-  // Commands offered come from the ticket's OWN workflow (no project binding).
-  const config = await statusConfigForTicket(ticket, null);
-  const transitionDefs = getTransitionDefinitions(config);
-  const actions: TicketTransitionAction[] = [];
-
-  for (const definition of transitionDefs) {
-    const target = getTargetStatus(ticket.status, definition.command, config.transitionTable);
-    // Only valid transitions reach the client; the kanban inline picker renders them directly.
-    if (target === null) continue;
-
-    let warning: string | null = null;
-    if (definition.command === 'start' && !ticket.assignee) {
-      warning = 'No assignee set — consider assigning before starting.';
-    }
-    actions.push({
-      command: definition.command,
-      label: definition.label,
-      description: definition.description,
-      targetStatus: target,
-      disabled: false,
-      disabledReason: null,
-      warning,
-      requiresReason: definition.requiresReason,
-    });
-  }
-
-  return actions;
-}
 
 /**
  * Get the structured help model used by Help and onboarding surfaces.
@@ -1069,11 +918,10 @@ export async function getEditableDocument(
  */
 export async function getEditableDocumentById(
   projectsDir: string,
-  ticketsDir: string,
   documentType: EditableDocumentResponse['documentType'],
   id: string,
 ): Promise<EditableDocumentResponse | null> {
-  const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+  const resolved = await resolveTicketById(projectsDir, id);
   if (!resolved) return null;
 
   if (!resolved.standalone && resolved.projectSlug) {
@@ -1434,7 +1282,6 @@ export async function getTicketDetail(
   detail.referencedBy = await computeReferencedBy(
     { id: ticket.id, projectSlug, slug: detail.slug },
     projectsDir,
-    undefined,
   );
 
   return detail;
@@ -1456,7 +1303,6 @@ interface ReferenceTarget {
 async function computeReferencedBy(
   target: ReferenceTarget,
   projectsDir: string,
-  ticketsDir: string | undefined,
 ): Promise<TicketReference[]> {
   const sources: Array<{
     id: string;
@@ -1478,17 +1324,6 @@ async function computeReferencedBy(
         ticketDir: resolve(rec.projectPath, 'tickets', a.slug),
       });
     }
-  }
-  // standalone
-  const standaloneRecords = await listStandaloneRecords(ticketsDir);
-  for (const sr of standaloneRecords) {
-    sources.push({
-      id: sr.id,
-      slug: sr.record.slug || sr.id,
-      title: sr.record.title,
-      projectSlug: null,
-      ticketDir: sr.ticketDir,
-    });
   }
 
   const references: TicketReference[] = [];
@@ -1569,133 +1404,16 @@ function escapeRegExpLocal(value: string): string {
  */
 export async function getTicketDetailById(
   projectsDir: string,
-  ticketsDir: string,
   id: string,
 ): Promise<TicketDetail | null> {
-  const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
-  if (!resolved) return null;
-
-  if (!resolved.standalone && resolved.projectSlug) {
-    // Use the standard detail fetcher, then also scan standalone tickets
-    // for backlinks.
-    const detail = await getTicketDetail(projectsDir, resolved.projectSlug, resolved.ticketSlug);
-    if (!detail) return null;
-    detail.referencedBy = await computeReferencedBy(
-      { id: detail.id, projectSlug: detail.projectSlug, slug: detail.slug },
-      projectsDir,
-      ticketsDir,
-    );
-    return detail;
-  }
-
-  // Standalone path — load companion docs directly from the resolved dir.
-  const standaloneDetail = await buildStandaloneTicketDetail(resolved);
-  if (!standaloneDetail) return null;
-  standaloneDetail.referencedBy = await computeReferencedBy(
-    { id: standaloneDetail.id, projectSlug: null, slug: standaloneDetail.slug },
+  const resolved = await resolveTicketById(projectsDir, id);
+  if (!resolved || !resolved.projectSlug) return null;
+  const detail = await getTicketDetail(projectsDir, resolved.projectSlug, resolved.ticketSlug);
+  if (!detail) return null;
+  detail.referencedBy = await computeReferencedBy(
+    { id: detail.id, projectSlug: detail.projectSlug, slug: detail.slug },
     projectsDir,
-    ticketsDir,
   );
-  return standaloneDetail;
-}
-
-async function buildStandaloneTicketDetail(
-  resolved: ResolvedTicket,
-): Promise<TicketDetail | null> {
-  const ticketDir = resolved.ticketDir;
-  const ticketMdPath = resolve(ticketDir, 'ticket.md');
-  if (!(await fileExists(ticketMdPath))) return null;
-
-  const ticketContent = await readFile(ticketMdPath, 'utf-8');
-  const ticket = parseTicketFull(ticketContent);
-
-  let plan: TicketDetail['plan'] = null;
-  const planFile = await latestPlanFile(ticketDir);
-  if (planFile) {
-    const planPath = resolve(ticketDir, planFile);
-    if (await fileExists(planPath)) {
-      const parsed = parsePlan(await readFile(planPath, 'utf-8'));
-      plan = { status: parsed.status, updated: parsed.updated, body: parsed.body };
-    }
-  }
-
-  let scratchpad: TicketDetail['scratchpad'] = null;
-  const scratchpadPath = resolve(ticketDir, 'scratchpad.md');
-  if (await fileExists(scratchpadPath)) {
-    const parsed = parseScratchpad(await readFile(scratchpadPath, 'utf-8'));
-    scratchpad = { updated: parsed.updated, body: parsed.body };
-  }
-
-  let handoff: TicketDetail['handoff'] = null;
-  const handoffPath = resolve(ticketDir, 'handoff.md');
-  if (await fileExists(handoffPath)) {
-    const parsed = parseHandoff(await readFile(handoffPath, 'utf-8'));
-    handoff = { updated: parsed.updated, handoffCount: parsed.handoffCount, body: parsed.body };
-  }
-
-  let decisionRecord: TicketDetail['decisionRecord'] = null;
-  const decisionRecordPath = resolve(ticketDir, 'decision-record.md');
-  if (await fileExists(decisionRecordPath)) {
-    const parsed = parseDecisionRecord(await readFile(decisionRecordPath, 'utf-8'));
-    decisionRecord = { updated: parsed.updated, decisionCount: parsed.decisionCount, body: parsed.body };
-  }
-
-  let progress: TicketDetail['progress'] = null;
-  const progressPath = resolve(ticketDir, 'progress.md');
-  if (await fileExists(progressPath)) {
-    const parsed = parseProgress(await readFile(progressPath, 'utf-8'));
-    progress = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
-  }
-
-  let comments: TicketDetail['comments'] = null;
-  const commentsPath = resolve(ticketDir, 'comments.md');
-  if (await fileExists(commentsPath)) {
-    const parsed = parseComments(await readFile(commentsPath, 'utf-8'));
-    comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
-  }
-
-  const wfConfig = await statusConfigForTicket(ticket, null);
-  const detail: TicketDetail = {
-    id: ticket.id,
-    projectSlug: null,
-    slug: ticket.slug || resolved.id,
-    title: ticket.title,
-    status: ticket.status,
-    type: ticket.type,
-    workflow: ticket.workflow,
-    resolvedWorkflow: wfConfig.workflowId,
-    workflowLabel: wfConfig.label,
-    statusLabel: statusLabelFor(wfConfig, ticket.status),
-    priority: ticket.priority as TicketDetail['priority'],
-    assignee: ticket.assignee,
-    dependsOn: [], // standalone cannot declare dependencies
-    links: [],
-    reverseLinks: [],
-    enrichedLinks: [],
-    blockedReason: ticket.blockedReason,
-    workspace: ticket.workspace,
-    externalIds: ticket.externalIds,
-    tags: ticket.tags,
-    archived: ticket.archived,
-    archivedAt: ticket.archivedAt,
-    archivedReason: ticket.archivedReason,
-    ...deriveStatusVirtuals(ticket, wfConfig.terminalStatuses),
-    override: ticket.override,
-    derived: await buildDerivedDetail(ticket, ticketDir, null),
-    created: ticket.created,
-    updated: ticket.updated,
-    body: ticket.body,
-    plan,
-    scratchpad,
-    handoff,
-    decisionRecord,
-    progress,
-    comments,
-    referencedBy: [],
-    engagements: buildTicketEngagements(ticket.id),
-    availableTransitions: await getStandaloneAvailableTransitions(ticket),
-  };
-
   return detail;
 }
 
@@ -1800,17 +1518,17 @@ async function listTicketRecords(
   projectPath: string,
   traces?: OverviewTraces,
 ): Promise<TicketRecord[]> {
-  const ticketsDir = resolve(projectPath, 'tickets');
-  if (!(await fileExists(ticketsDir))) {
+  const ticketsPath = resolve(projectPath, 'tickets');
+  if (!(await fileExists(ticketsPath))) {
     return [];
   }
 
-  const entries = await readdir(ticketsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsPath, { withFileTypes: true });
   const dirEntries = entries.filter((entry) => entry.isDirectory());
 
   const maybeRecords = await Promise.all(
     dirEntries.map(async (entry): Promise<TicketRecord | null> => {
-      const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+      const ticketMd = resolve(ticketsPath, entry.name, 'ticket.md');
       if (!(await fileExists(ticketMd))) {
         return null;
       }
@@ -2407,14 +2125,9 @@ function classifyTicketRecord(
  * config thresholds as the overview, keyed by ticket id (stable UUID). Never
  * writes anything.
  */
-export async function collectStaleCandidates(
-  projectsDir: string,
-  ticketsDir?: string,
+export async function collectStaleCandidates(projectsDir: string,
 ): Promise<StaleCandidate[]> {
-  const [projectRecords, standaloneRecords] = await Promise.all([
-    listProjectRecords(projectsDir),
-    listStandaloneRecords(ticketsDir),
-  ]);
+  const projectRecords = await listProjectRecords(projectsDir);
   const thresholds = resolveStaleThresholds((await readConfig()).staleness);
   const now = Date.now();
   const out: StaleCandidate[] = [];
@@ -2449,21 +2162,12 @@ export async function collectStaleCandidates(
     }
   }
 
-  for (const sr of standaloneRecords) {
-    if (sr.record.archived === true) continue;
-    const { terminalStatuses } = await statusConfigForTicket(sr.record, null);
-    const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
-    const reasons = classifyTicketRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
-    if (reasons.length > 0) out.push({ ticketId: sr.record.id, projectSlug: null, reasons });
-  }
-
   return out;
 }
 
 async function buildOverviewSegmentBuckets(
   projectsDir: string,
   projectRecords: ProjectRecord[],
-  standaloneRecords: StandaloneRecord[],
   traces?: OverviewTraces,
 ): Promise<OverviewSegmentBuckets> {
   const now = Date.now();
@@ -2609,102 +2313,6 @@ async function buildOverviewSegmentBuckets(
     }
   }
 
-  const resolvedStandaloneTransitions = await Promise.all(
-    standaloneRecords
-      .filter((sr) => sr.record.archived !== true)
-      .map(async (sr) => {
-      const t0 = traces ? performance.now() : 0;
-      const availableTransitions = await getStandaloneAvailableTransitions(sr.record);
-      if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
-      const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
-      // Standalone → the ticket's own workflow terminal set (no project binding).
-      const { terminalStatuses: ticketTerminal } = await statusConfigForTicket(sr.record, null);
-      return { sr, availableTransitions, lastActivityMs, ticketTerminal };
-    }),
-  );
-
-  for (const { sr, availableTransitions, lastActivityMs, ticketTerminal } of resolvedStandaloneTransitions) {
-    const ticket = sr.record;
-    const segmentId = STATUS_TO_SEGMENT[ticket.status];
-    const isTerminal = ticketTerminal.has(ticket.status);
-    // Standalone tickets cannot declare dependencies → depsSatisfied is true.
-    const staleReasons = classifyTicketRecord(
-      ticket,
-      ticketTerminal,
-      true,
-      lastActivityMs,
-      staleThresholds,
-    );
-    const stale = staleReasons.length > 0;
-    const agingMs = Math.max(0, now - parseTimestamp(ticket.updated));
-    const baseId = `standalone:${sr.id}`;
-
-    const shared = {
-      projectSlug: null,
-      projectTitle: null,
-      ticketSlug: ticket.slug || sr.id,
-      ticketTitle: ticket.title,
-      status: ticket.status,
-      updated: ticket.updated,
-      href: `/t/${sr.id}`,
-      blockedReason: ticket.blockedReason,
-      stale,
-      agingMs,
-      assignee: ticket.assignee ?? null,
-      availableTransitions,
-    };
-
-    if (segmentId) {
-      const reason =
-        segmentId === 'blocked' && ticket.blockedReason
-          ? ticket.blockedReason
-          : SEGMENT_REASON[segmentId];
-      buckets[segmentId].push({
-        ...shared,
-        id: `${baseId}:${segmentId}`,
-        severity: segmentSeverity(segmentId),
-        reason,
-        segment: segmentId,
-      });
-    }
-
-    if (stale && !isTerminal) {
-      const top = topStaleReason(staleReasons);
-      buckets.stale.push({
-        ...shared,
-        id: `${baseId}:stale`,
-        severity: 'low',
-        reason: top?.label ?? SEGMENT_REASON.stale,
-        segment: 'stale',
-      });
-    }
-
-    if (!isTerminal) {
-      newestPool.push({
-        created: ticket.created,
-        clone: {
-          ...shared,
-          id: `${baseId}:newest`,
-          severity: 'low',
-          reason: SEGMENT_REASON.newestCreated,
-          segment: 'newestCreated',
-        },
-      });
-    }
-  }
-
-  newestPool.sort((a, b) => compareTimestamps(b.created, a.created));
-  buckets.newestCreated = newestPool.slice(0, NEWEST_CREATED_LIMIT).map((entry) => entry.clone);
-
-  for (const key of Object.keys(buckets) as OverviewSegmentId[]) {
-    if (key === 'newestCreated') continue; // already sorted by `created`
-    if (key === 'stale') {
-      buckets[key].sort((a, b) => b.agingMs - a.agingMs);
-      continue;
-    }
-    buckets[key].sort((a, b) => compareTimestamps(b.updated, a.updated));
-  }
-
   return buckets;
 }
 
@@ -2758,7 +2366,6 @@ function clamp(value: number, min: number, max: number): number {
 
 function buildRecentActivity(
   projectRecords: ProjectRecord[],
-  standaloneRecords: StandaloneRecord[] = [],
 ): RecentActivityItem[] {
   const activity: RecentActivityItem[] = [];
 
@@ -2788,21 +2395,6 @@ function buildRecentActivity(
         summary: `Ticket is ${ticket.status} with ${ticket.priority} priority.`,
       });
     }
-  }
-
-  for (const sr of standaloneRecords) {
-    const ticket = sr.record;
-    activity.push({
-      id: `standalone-ticket:${sr.id}`,
-      type: 'ticket',
-      title: ticket.title,
-      updated: ticket.updated,
-      href: `/t/${sr.id}`,
-      projectSlug: null,
-      projectTitle: null,
-      ticketSlug: ticket.slug || sr.id,
-      summary: `Standalone ticket is ${ticket.status} with ${ticket.priority} priority.`,
-    });
   }
 
   activity.sort((left, right) => compareTimestamps(right.updated, left.updated));

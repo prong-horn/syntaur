@@ -523,10 +523,10 @@ export async function recomputeDependents(
   changedTicketId: string,
   opts: Omit<RecomputeOptions, 'projectDir'>,
 ): Promise<RecomputeResult[]> {
-  const ticketsDir = resolve(projectDir, 'tickets');
+  const ticketsPath = resolve(projectDir, 'tickets');
   let entries: string[];
   try {
-    entries = await readdir(ticketsDir);
+    entries = await readdir(ticketsPath);
   } catch {
     return [];
   }
@@ -535,7 +535,7 @@ export async function recomputeDependents(
   const workflowResolver = opts.workflowResolver ?? makeWorkflowContextResolver(await readConfig());
   const results: RecomputeResult[] = [];
   for (const slug of entries) {
-    const path = resolve(ticketsDir, slug, 'ticket.md');
+    const path = resolve(ticketsPath, slug, 'ticket.md');
     if (!(await fileExists(path))) continue;
     try {
       const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
@@ -565,7 +565,6 @@ export interface SweepSummary {
  */
 export async function recomputeAll(
   projectsDir: string,
-  standaloneDir: string | null,
   opts: Omit<RecomputeOptions, 'projectDir'>,
 ): Promise<SweepSummary> {
   const summary: SweepSummary = { scanned: 0, changed: 0, deferredTerminal: 0, warnings: [] };
@@ -596,29 +595,16 @@ export async function recomputeAll(
   }
   for (const project of projects) {
     const projectDir = resolve(projectsDir, project);
-    const ticketsDir = resolve(projectDir, 'tickets');
+    const ticketsPath = resolve(projectDir, 'tickets');
     let slugs: string[] = [];
     try {
-      slugs = await readdir(ticketsDir);
+      slugs = await readdir(ticketsPath);
     } catch {
       continue;
     }
     for (const slug of slugs) {
-      const path = resolve(ticketsDir, slug, 'ticket.md');
+      const path = resolve(ticketsPath, slug, 'ticket.md');
       if (await fileExists(path)) await sweepOne(path, projectDir);
-    }
-  }
-
-  if (standaloneDir) {
-    let ids: string[] = [];
-    try {
-      ids = await readdir(standaloneDir);
-    } catch {
-      /* none */
-    }
-    for (const id of ids) {
-      const path = resolve(standaloneDir, id, 'ticket.md');
-      if (await fileExists(path)) await sweepOne(path, null);
     }
   }
 

@@ -21,7 +21,6 @@ import {
   listProjects,
   listTicketsBoard,
 } from '../dashboard/api.js';
-import { ticketsDir as getTicketsDir } from '../utils/paths.js';
 
 const ENABLED = process.env.SYNTAUR_PERF_BENCH === '1';
 
@@ -146,10 +145,9 @@ async function runOnce(label: string, projectsDir: string): Promise<number> {
 async function runFullOverview(
   label: string,
   projectsDir: string,
-  ticketsDir: string,
-): Promise<number> {
+  ): Promise<number> {
   const start = performance.now();
-  const overview = await getOverview(projectsDir, ticketsDir);
+  const overview = await getOverview(projectsDir);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console
   console.log(
@@ -161,13 +159,12 @@ async function runFullOverview(
 async function runStartupSet(
   label: string,
   projectsDir: string,
-  ticketsDir: string,
-): Promise<number> {
+  ): Promise<number> {
   const start = performance.now();
   await Promise.all([
-    getOverview(projectsDir, ticketsDir),
+    getOverview(projectsDir),
     listProjects(projectsDir),
-    listTicketsBoard(projectsDir, ticketsDir),
+    listTicketsBoard(projectsDir),
   ]);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console
@@ -209,13 +206,13 @@ describe.skipIf(!ENABLED || !process.env.SYNTAUR_PERF_BENCH_REAL)('perf-overview
 
   it('full startup path against ~/.syntaur', async () => {
     const projectsDir = resolve(homedir(), '.syntaur', 'projects');
-    const ticketsDir = getTicketsDir();
+    const ticketsPath = getTicketsDir();
 
-    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir, ticketsDir);
-    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir, ticketsDir);
+    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir);
+    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir);
 
-    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir, ticketsDir);
-    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir, ticketsDir);
+    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir);
+    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir);
 
     // eslint-disable-next-line no-console
     console.log(

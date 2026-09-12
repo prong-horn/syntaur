@@ -127,7 +127,6 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
     clientFactory,
@@ -887,7 +886,6 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     const failing = createFakeAgent({ resumeError: 'session not found', sessionIds: ['acp-session-2'] });
     const secondBroker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -1487,7 +1485,6 @@ describe('one event log per ticket (finding 4)', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2288,7 +2285,6 @@ describe('turn progress entries', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2483,7 +2479,6 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2518,7 +2513,6 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {

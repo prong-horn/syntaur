@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import { readConfig } from '../utils/config.js';
-import { ticketsDir as getTicketsDir } from '../utils/paths.js';
 import {
   getIndex,
   resolveProvider,
@@ -48,7 +47,6 @@ const DEFAULT_LIMIT = 20;
 export async function runSearch(query: string, options: SearchOptions): Promise<SearchHit[]> {
   const config = await readConfig();
   const projectsDir = config.defaultProjectDir;
-  const ticketsDir = getTicketsDir();
 
   const limit = parseLimit(options.limit);
   // Parse `--in` INSIDE the command's error path (not as a Commander coercion)
@@ -57,7 +55,6 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
 
   const docs = await getIndex({
     projectsDir,
-    ticketsDir,
     includeArchived: options.all,
   });
 

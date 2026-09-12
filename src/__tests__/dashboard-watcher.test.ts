@@ -69,7 +69,7 @@ describe('watcher derive hooks', () => {
     const { join } = await import('node:path');
     const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-derive-'));
     const projectsDir = join(root, 'projects');
-    const ticketsDir = join(root, 'tickets');
+    const ticketsPath = join(root, 'tickets');
     const configPath = join(root, 'config.md');
     await mkdir(join(projectsDir, 'p1', 'tickets', 'TP-1-a1'), { recursive: true });
     await writeFile(configPath, '---\nversion: "2.0"\n---\n');
@@ -79,8 +79,7 @@ describe('watcher derive hooks', () => {
 
     const watcher = createWatcher({
       projectsDir,
-      ticketsDir,
-      configPath,
+            configPath,
       onMessage: () => {},
       onTicketChanged: (p, a) => ticketEvents.push([p, a]),
       onConfigChanged: () => configEvents++,

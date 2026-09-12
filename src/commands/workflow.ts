@@ -11,7 +11,7 @@ import {
 import { scanWorkflowUsage } from '../utils/status-config-resolution.js';
 import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { readProjectBinding, setProjectWorkflowBinding } from '../utils/project-binding.js';
-import { defaultProjectDir, ticketsDir } from '../utils/paths.js';
+import { defaultProjectDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 // Shared with the per-file storage boundary (workflow-file.ts) so the id
 // validation can't drift between the legacy CLI and the new WS-0 writers.
@@ -123,7 +123,6 @@ workflowCommand
       resolver: makeWorkflowContextResolver(config),
       isGlobalDefault: config.defaultWorkflow === id,
       projectsDir: defaultProjectDir(),
-      standaloneDir: ticketsDir(),
     });
     if (!usage.deletable) {
       console.error(`cannot delete workflow "${id}":`);
