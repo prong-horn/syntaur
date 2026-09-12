@@ -1875,9 +1875,12 @@ export async function readConfig(): Promise<SyntaurConfig> {
   };
 }
 
-export function getAssignmentTypes(config: SyntaurConfig): TypesConfig {
+export function getTicketTypes(config: SyntaurConfig): TypesConfig {
   return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
 }
+
+/** @deprecated Dashboard compat until Task 2 */
+export const getAssignmentTypes = getTicketTypes;
 
 
 export class TerminalConfigError extends Error {}

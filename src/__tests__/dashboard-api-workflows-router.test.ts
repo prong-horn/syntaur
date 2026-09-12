@@ -19,11 +19,11 @@ let server: Server;
 let baseUrl: string;
 
 async function seedAssignment(slug: string, workflow: string | null): Promise<void> {
-  const dir = join(projectsDir, 'p1', 'assignments', slug);
+  const dir = join(projectsDir, 'p1', 'tickets', slug);
   await mkdir(dir, { recursive: true });
   const wf = workflow ? `\nworkflow: ${workflow}` : '';
   await writeFile(
-    join(dir, 'assignment.md'),
+    join(dir, 'ticket.md'),
     `---\nid: 33333333-3333-3333-3333-${slug.padEnd(12, '0').slice(0, 12)}\nslug: ${slug}\ntitle: ${slug}\nproject: p1\nstatus: in_progress\npriority: medium${wf}\n---\n\n# ${slug}\n`,
   );
 }
@@ -46,7 +46,7 @@ beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-wf-router-'));
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   projectsDir = join(tmpHome, 'projects');
-  standaloneDir = join(tmpHome, '.syntaur', 'assignments');
+  standaloneDir = join(tmpHome, '.syntaur', 'tickets');
   await mkdir(projectsDir, { recursive: true });
   await mkdir(standaloneDir, { recursive: true });
   process.env.HOME = tmpHome;
@@ -126,10 +126,10 @@ describe('workflow library routes', () => {
     expect(blocked.status).toBe(409);
     const blockedBody = await blocked.json();
     expect(blockedBody.error).toBe('workflow-in-use');
-    expect(blockedBody.assignmentCount).toBe(1);
+    expect(blockedBody.ticketCount).toBe(1);
 
     // Remove the ticket → deletion succeeds.
-    await rm(join(projectsDir, 'p1', 'assignments', 'a1'), { recursive: true, force: true });
+    await rm(join(projectsDir, 'p1', 'tickets', 'a1'), { recursive: true, force: true });
     const ok = await del('/bug');
     expect(ok.status).toBe(200);
     expect((await ok.json()).deleted).toBe(true);

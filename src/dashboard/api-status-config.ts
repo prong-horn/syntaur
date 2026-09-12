@@ -54,7 +54,7 @@ function toSummary(a: AffectedAssignment): AffectedAssignmentSummary {
   return {
     display: a.display,
     projectSlug: a.projectSlug,
-    assignmentSlug: a.assignmentSlug,
+    assignmentSlug: a.assignmentSlug ?? a.ticketSlug ?? '',
     status: a.status,
   };
 }

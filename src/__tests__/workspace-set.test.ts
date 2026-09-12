@@ -41,14 +41,14 @@ workspace:
 
 describe('syntaur workspace set', () => {
   let home: string;
-  let assignmentPath: string;
+  let ticketPath: string;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-ws-'));
-    const dir = resolve(home, 'projects', 'p', 'assignments', 'a');
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
     await mkdir(dir, { recursive: true });
-    assignmentPath = resolve(dir, 'assignment.md');
-    await writeFile(assignmentPath, WELL_FORMED, 'utf-8');
+    ticketPath = resolve(dir, 'ticket.md');
+    await writeFile(ticketPath, WELL_FORMED, 'utf-8');
   });
 
   afterEach(async () => {
@@ -58,14 +58,14 @@ describe('syntaur workspace set', () => {
   it('writes all four workspace fields, bumps updated, preserves unrelated frontmatter', async () => {
     const r = await runCli(
       [
-        'workspace', 'set', '--assignment', 'a', '--project', 'p',
+        'workspace', 'set', '--ticket', 'a', '--project', 'p',
         '--repository', '/repo', '--worktree-path', '/repo/.worktrees/feat',
         '--branch', 'feat', '--parent-branch', 'main',
       ],
       home,
     );
     expect(r.code, r.stderr).toBe(0);
-    const content = await readFile(assignmentPath, 'utf-8');
+    const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain('repository: /repo');
     expect(content).toContain('worktreePath: /repo/.worktrees/feat');
     expect(content).toContain('branch: feat');
@@ -75,21 +75,21 @@ describe('syntaur workspace set', () => {
   });
 
   it('requires at least one field flag', async () => {
-    const r = await runCli(['workspace', 'set', '--assignment', 'a', '--project', 'p'], home);
+    const r = await runCli(['workspace', 'set', '--ticket', 'a', '--project', 'p'], home);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('at least one');
   });
 
-  it('refuses to write a malformed assignment (pre-validation)', async () => {
-    // Missing required id/title/status → validateAssignmentFile fails.
-    await writeFile(assignmentPath, '---\nslug: a\n---\n# A\n', 'utf-8');
+  it('refuses to write a malformed ticket (pre-validation)', async () => {
+    // Missing required id/title/status → validateTicketFile fails.
+    await writeFile(ticketPath, '---\nslug: a\n---\n# A\n', 'utf-8');
     const r = await runCli(
-      ['workspace', 'set', '--assignment', 'a', '--project', 'p', '--branch', 'feat'],
+      ['workspace', 'set', '--ticket', 'a', '--project', 'p', '--branch', 'feat'],
       home,
     );
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('invalid');
     // The file was not modified.
-    expect(await readFile(assignmentPath, 'utf-8')).toBe('---\nslug: a\n---\n# A\n');
+    expect(await readFile(ticketPath, 'utf-8')).toBe('---\nslug: a\n---\n# A\n');
   });
 });

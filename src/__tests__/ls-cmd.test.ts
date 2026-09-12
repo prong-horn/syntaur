@@ -20,7 +20,7 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
   });
 }
 
-function assignmentMd(opts: {
+function ticketMd(opts: {
   id: string;
   slug: string;
   title: string;
@@ -64,7 +64,7 @@ describe('syntaur ls', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\nonboarding:\n  completed: true\n---\n`,
     );
     const projDir = resolve(projectsDir, 'p');
-    await mkdir(resolve(projDir, 'assignments'), { recursive: true });
+    await mkdir(resolve(projDir, 'tickets'), { recursive: true });
     await writeFile(
       resolve(projDir, 'project.md'),
       '---\nid: pid\nslug: p\ntitle: "P"\nworkspace: null\n---\n',
@@ -80,10 +80,10 @@ describe('syntaur ls', () => {
       { id: 'a2', slug: 'a-progress', status: 'in_progress', tags: ['x'], updated: today },
       { id: 'a3', slug: 'a-old', status: 'pending', tags: ['z'], updated: old },
     ]) {
-      const adir = resolve(projDir, 'assignments', a.slug);
+      const adir = resolve(projDir, 'tickets', a.slug);
       await mkdir(adir, { recursive: true });
       await writeFile(
-        resolve(adir, 'assignment.md'),
+        resolve(adir, 'ticket.md'),
         assignmentMd({
           id: a.id,
           slug: a.slug,
@@ -132,12 +132,12 @@ describe('syntaur ls', () => {
   });
 
   it('hides archived by default and shows only archived with --archived', async () => {
-    // Add an individually-archived assignment to the existing project.
+    // Add an individually-archived ticket to the existing project.
     const projDir = resolve(syntaurHome, 'projects', 'p');
-    const adir = resolve(projDir, 'assignments', 'a-archived');
+    const adir = resolve(projDir, 'tickets', 'a-archived');
     await mkdir(adir, { recursive: true });
     await writeFile(
-      resolve(adir, 'assignment.md'),
+      resolve(adir, 'ticket.md'),
       `---\nid: a4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
     );
 

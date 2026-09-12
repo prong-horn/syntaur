@@ -28,9 +28,9 @@ async function seedProject(slug: string): Promise<void> {
 }
 
 async function seedAssignment(project: string, slug: string): Promise<string> {
-  const dir = join(projectsDir, project, 'assignments', slug);
+  const dir = join(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  const path = join(dir, 'assignment.md');
+  const path = join(dir, 'ticket.md');
   await writeFile(
     path,
     `---\nid: 55555555-5555-5555-5555-${slug.padEnd(12, '0').slice(0, 12)}\nslug: ${slug}\ntitle: ${slug}\nproject: ${project}\ntype: feature\nstatus: in_progress\npriority: medium\n---\n# ${slug}\n`,
@@ -51,7 +51,7 @@ beforeEach(async () => {
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   projectsDir = join(tmpHome, 'projects');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(join(tmpHome, '.syntaur', 'assignments'), { recursive: true });
+  await mkdir(join(tmpHome, '.syntaur', 'tickets'), { recursive: true });
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
 
@@ -62,7 +62,7 @@ beforeEach(async () => {
 
   const app = express();
   app.use(express.json());
-  app.use(createWriteRouter(projectsDir, join(tmpHome, '.syntaur', 'assignments'), undefined));
+  app.use(createWriteRouter(projectsDir, join(tmpHome, '.syntaur', 'tickets'), undefined));
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());
   });
@@ -109,13 +109,13 @@ describe('project workflow-binding route', () => {
   });
 });
 
-describe('assignment workflow route', () => {
+describe('ticket workflow route', () => {
   it('sets the workflow override and re-derives', async () => {
     await seedProject('p');
     await seedAssignment('p', 'a1');
-    const res = await put('/api/projects/p/assignments/a1/workflow', { workflow: 'bug' });
+    const res = await put('/api/projects/p/tickets/a1/workflow', { workflow: 'bug' });
     expect(res.status).toBe(200);
-    const md = await readFile(join(projectsDir, 'p', 'assignments', 'a1', 'assignment.md'), 'utf-8');
+    const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');
     expect(md).toMatch(/^workflow: bug$/m);
   });
 
@@ -123,16 +123,16 @@ describe('assignment workflow route', () => {
     await seedProject('p');
     await seedAssignment('p', 'a1');
     expect(
-      (await put('/api/projects/p/assignments/a1/workflow', { workflow: 'ghost' })).status,
+      (await put('/api/projects/p/tickets/a1/workflow', { workflow: 'ghost' })).status,
     ).toBe(400);
   });
 
   it('clears the workflow override when given null', async () => {
     await seedProject('p');
     await seedAssignment('p', 'a1');
-    await put('/api/projects/p/assignments/a1/workflow', { workflow: 'bug' });
-    await put('/api/projects/p/assignments/a1/workflow', { workflow: null });
-    const md = await readFile(join(projectsDir, 'p', 'assignments', 'a1', 'assignment.md'), 'utf-8');
+    await put('/api/projects/p/tickets/a1/workflow', { workflow: 'bug' });
+    await put('/api/projects/p/tickets/a1/workflow', { workflow: null });
+    const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');
     expect(md).not.toMatch(/^workflow:/m);
   });
 });

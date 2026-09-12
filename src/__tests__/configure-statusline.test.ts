@@ -38,7 +38,7 @@ describe('configure-statusline', () => {
   it('writes a default config via writeDefaultConfigIfMissing', async () => {
     await writeDefaultConfigIfMissing(installRoot);
     const cfg = await readJson(resolve(installRoot, 'statusline.config.json'));
-    expect(cfg.segments).toEqual(['git', 'assignment', 'session']);
+    expect(cfg.segments).toEqual(['git', 'ticket', 'session']);
     expect(cfg.separator).toBe(' · ');
   });
 
@@ -172,20 +172,20 @@ describe('configure-statusline', () => {
       installRoot,
     });
     const cfg = await readJson(resolve(installRoot, 'statusline.config.json'));
-    expect(cfg.segments).toEqual(['git', 'assignment', 'session']);
+    expect(cfg.segments).toEqual(['git', 'ticket', 'session']);
   });
 
-  it('external segment renders Jira/Linear ids from assignment.md', async () => {
+  it('external segment renders Jira/Linear ids from ticket.md', async () => {
     await writeFile(
       resolve(installRoot, 'statusline.config.json'),
       JSON.stringify({ segments: ['external', 'session'], separator: ' · ' }, null, 2),
       'utf-8',
     );
 
-    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       [
         '---',
         'id: demo-id',
@@ -208,8 +208,8 @@ describe('configure-statusline', () => {
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
         projectSlug: 'p',
-        assignmentSlug: 'demo',
-        assignmentDir,
+        ticketSlug: 'demo',
+        ticketDir,
       }),
     );
 
@@ -234,16 +234,16 @@ describe('configure-statusline', () => {
       'utf-8',
     );
 
-    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nid: d\nslug: demo\ntitle: "X"\nexternalIds: []\nstatus: in_progress\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(sandbox, '.syntaur', 'context.json'),
-      JSON.stringify({ projectSlug: 'p', assignmentSlug: 'demo', assignmentDir }),
+      JSON.stringify({ projectSlug: 'p', ticketSlug: 'demo', ticketDir }),
     );
 
     const res = spawnSync('bash', [sourceScript], {
@@ -261,21 +261,21 @@ describe('configure-statusline', () => {
   });
 
   it('supports all segments rendering together', async () => {
-    // Config with every segment; syntaur context lets assignment render.
+    // Config with every segment; syntaur context lets ticket render.
     await writeFile(
       resolve(installRoot, 'statusline.config.json'),
       JSON.stringify(
-        { segments: ['git', 'assignment', 'model', 'ctx', 'cwd', 'session'], separator: ' · ' },
+        { segments: ['git', 'ticket', 'model', 'ctx', 'cwd', 'session'], separator: ' · ' },
         null,
         2,
       ),
       'utf-8',
     );
 
-    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\ntitle: "My Demo"\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
@@ -283,8 +283,8 @@ describe('configure-statusline', () => {
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
         projectSlug: 'p',
-        assignmentSlug: 'demo',
-        assignmentDir,
+        ticketSlug: 'demo',
+        ticketDir,
       }),
     );
     spawnSync('git', ['init', '-q'], { cwd: sandbox });

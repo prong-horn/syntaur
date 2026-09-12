@@ -2,7 +2,7 @@ import { existsSync, statSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 
 /**
- * Resolving an assignment's workspace directory. Neutral by design: the chat
+ * Resolving a ticket's workspace directory. Neutral by design: the chat
  * broker, worktree recreation, the session commands and the git-worktree helper
  * all need it, so it lives under `src/utils/` rather than inside any one
  * feature.
@@ -26,7 +26,7 @@ export interface WorkspaceCwdInput {
   worktreePath: string | null;
   repository: string | null;
   branch: string | null;
-  assignmentSlug: string;
+  ticketSlug: string;
 }
 
 export interface WorkspaceCwdResult {
@@ -39,7 +39,7 @@ export interface WorkspaceCwdResult {
 }
 
 /**
- * Resolve the working directory for an assignment, preferring a validated
+ * Resolve the working directory for a ticket, preferring a validated
  * `worktreePath`, then a validated `repository`. NEVER returns `process.cwd()`:
  * when neither is an existing directory, returns `{ cwd: null, invalidReason }`
  * so the caller decides whether to fail or fall back to its own path.
@@ -47,7 +47,7 @@ export interface WorkspaceCwdResult {
 export function resolveWorkspaceCwd(
   input: WorkspaceCwdInput,
 ): WorkspaceCwdResult {
-  const { worktreePath, repository, branch, assignmentSlug } = input;
+  const { worktreePath, repository, branch, ticketSlug } = input;
 
   if (isExistingDir(worktreePath)) {
     return { cwd: worktreePath, fallbackWarning: null, invalidReason: null };
@@ -58,9 +58,9 @@ export function resolveWorkspaceCwd(
     // worktreePath reuses the standard missing-field warning so existing
     // behavior (and its tests) are preserved.
     const fallbackWarning = worktreePath
-      ? `syntaur: workspace.worktreePath ${worktreePath} is not an existing directory for ${assignmentSlug} — launching in ${repository}`
+      ? `syntaur: workspace.worktreePath ${worktreePath} is not an existing directory for ${ticketSlug} — launching in ${repository}`
       : formatFallbackCwdWarning({
-          assignmentSlug,
+          ticketSlug,
           workspaceDir: repository as string,
           worktreePath,
           branch,
@@ -74,7 +74,7 @@ export function resolveWorkspaceCwd(
     cwd: null,
     fallbackWarning: null,
     invalidReason:
-      `workspace path invalid for ${assignmentSlug}: tried worktreePath ` +
+      `workspace path invalid for ${ticketSlug}: tried worktreePath ` +
       `${shown(worktreePath)} and repository ${shown(repository)} — ` +
       `neither is an existing directory`,
   };
@@ -82,11 +82,11 @@ export function resolveWorkspaceCwd(
 
 /**
  * Build the one-line warning emitted when a caller falls back to a cwd because
- * the assignment is missing `workspace.worktreePath` and/or `workspace.branch`.
+ * the ticket is missing `workspace.worktreePath` and/or `workspace.branch`.
  * Returns null when both fields are populated (no warning needed).
  */
 export function formatFallbackCwdWarning(opts: {
-  assignmentSlug: string;
+  ticketSlug: string;
   workspaceDir: string;
   worktreePath: string | null;
   branch: string | null;
@@ -96,5 +96,5 @@ export function formatFallbackCwdWarning(opts: {
   if (!opts.branch) missing.push('branch');
   if (missing.length === 0) return null;
   const fields = missing.map((m) => `workspace.${m}`).join(' and ');
-  return `syntaur: ${fields} not set for ${opts.assignmentSlug} — launching in ${opts.workspaceDir}`;
+  return `syntaur: ${fields} not set for ${opts.ticketSlug} — launching in ${opts.workspaceDir}`;
 }

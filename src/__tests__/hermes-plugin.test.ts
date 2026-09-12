@@ -54,7 +54,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       'import sys, os',
       'sys.path.insert(0, os.environ["PLUGIN_DIR"])',
       'import boundary',
-      'ctx = {"assignmentDir": "/work/assign", "projectDir": "/proj", "workspaceRoot": "/ws"}',
+      'ctx = {"ticketDir": "/work/assign", "projectDir": "/proj", "workspaceRoot": "/ws"}',
       'assert boundary.is_write_allowed("/work/assign/plan.md", ctx)[0] is True',
       'assert boundary.is_write_allowed("/etc/passwd", ctx)[0] is False',
       'assert boundary.is_write_allowed("/proj/resources/foo.md", ctx)[0] is True',
@@ -69,9 +69,9 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       '# workspace-only enforcement via the workspaceRoot marker (no engagement)',
       'assert boundary.is_write_allowed("/ws/src/app.py", {"workspaceRoot": "/ws"})[0] is True',
       'assert boundary.is_write_allowed("/outside/x", {"workspaceRoot": "/ws"})[0] is False',
-      '# assignmentDir-only still allows writes under it, blocks elsewhere',
-      'assert boundary.is_write_allowed("/work/assign/x", {"assignmentDir": "/work/assign"})[0] is True',
-      'assert boundary.is_write_allowed("/anywhere", {"assignmentDir": "/work/assign"})[0] is False',
+      '# ticketDir-only still allows writes under it, blocks elsewhere',
+      'assert boundary.is_write_allowed("/work/assign/x", {"ticketDir": "/work/assign"})[0] is True',
+      'assert boundary.is_write_allowed("/anywhere", {"ticketDir": "/work/assign"})[0] is False',
       'print("OK")',
     ].join('\n');
     const r = spawnSync('python3', ['-c', harness], {
@@ -88,10 +88,10 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
     try {
       const ws = join(tmp, 'ws');
       const pdir = join(tmp, 'home', 'projects', 'p');
-      const adir = join(pdir, 'assignments', 'a');
+      const adir = join(pdir, 'tickets', 'a');
       mkdirSync(join(ws, '.syntaur'), { recursive: true });
       mkdirSync(adir, { recursive: true });
-      // Marker-only context.json — NO assignment scalars (the demoted shape).
+      // Marker-only context.json — NO ticket scalars (the demoted shape).
       writeFileSync(
         join(ws, '.syntaur', 'context.json'),
         JSON.stringify({ workspaceRoot: ws, sessionId: 'sid-x', repository: '/repo' }),
@@ -102,7 +102,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       const fake = join(binDir, 'syntaur');
       writeFileSync(
         fake,
-        `#!/usr/bin/env bash\nprintf '%s' '{"assignmentDir":"${adir}","projectDir":"${pdir}","workspaceRoot":"${ws}"}'\n`,
+        `#!/usr/bin/env bash\nprintf '%s' '{"ticketDir":"${adir}","projectDir":"${pdir}","workspaceRoot":"${ws}"}'\n`,
       );
       chmodSync(fake, 0o755);
 
@@ -111,7 +111,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
         'import sys',
         `sys.path.insert(0, ${JSON.stringify(parent)})`,
         'import syntaur',
-        // write inside the engagement-resolved assignment dir → allowed (None)
+        // write inside the engagement-resolved ticket dir → allowed (None)
         `r1 = syntaur._on_pre_tool_call(tool_name="write_file", args={"path": ${JSON.stringify(
           join(adir, 'progress.md'),
         )}})`,
@@ -191,7 +191,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       writeFileSync(
         join(ws, '.syntaur', 'context.json'),
         JSON.stringify({
-          assignmentDir: staleAssign,
+          ticketDir: staleAssign,
           projectDir: staleProj,
           workspaceRoot: ws,
           sessionId: 'sid-x',
@@ -209,7 +209,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
         'import sys',
         `sys.path.insert(0, ${JSON.stringify(parent)})`,
         'import syntaur',
-        // write under the STALE assignment dir → BLOCKED (scalar not surfaced; CLI returned {})
+        // write under the STALE ticket dir → BLOCKED (scalar not surfaced; CLI returned {})
         `r1 = syntaur._on_pre_tool_call(tool_name="write_file", args={"path": ${JSON.stringify(
           join(staleAssign, 'x.md'),
         )}})`,

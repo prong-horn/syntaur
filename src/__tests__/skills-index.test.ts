@@ -85,7 +85,7 @@ describe('build-skills-index generator', () => {
     const protocol = index.skills.find((s) => s.name === 'syntaur-protocol');
     expect(protocol?.type).toBe('archive');
     // Spot-check a couple of single-file skills.
-    for (const name of ['log-progress', 'grab-assignment']) {
+    for (const name of ['log-progress', 'grab-ticket']) {
       expect(index.skills.find((s) => s.name === name)?.type).toBe('skill-md');
     }
   });

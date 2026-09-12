@@ -63,7 +63,7 @@ function extractTodosSection(content: string): string {
 }
 
 const PLAN_MD = `---
-assignment: demo
+ticket: demo
 status: in_progress
 created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
@@ -85,7 +85,7 @@ Run.
 describe('syntaur plan version', () => {
   let syntaurHome: string;
   let projectsDir: string;
-  let assignmentDir: string;
+  let ticketDir: string;
 
   beforeEach(async () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-planv-'));
@@ -95,26 +95,26 @@ describe('syntaur plan version', () => {
       resolve(syntaurHome, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\nonboarding:\n  completed: true\n---\n`,
     );
-    assignmentDir = resolve(projectsDir, 'p', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
-    await writeFile(resolve(assignmentDir, 'assignment.md'), ASSIGNMENT_MD);
-    await writeFile(resolve(assignmentDir, 'plan.md'), PLAN_MD);
+    ticketDir = resolve(projectsDir, 'p', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT_MD);
+    await writeFile(resolve(ticketDir, 'plan.md'), PLAN_MD);
   });
 
   afterEach(async () => {
     await rm(syntaurHome, { recursive: true, force: true });
   });
 
-  it('creates plan-v2.md and leaves assignment.md ## Todos unchanged', async () => {
-    const before = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+  it('creates plan-v2.md and leaves ticket.md ## Todos unchanged', async () => {
+    const before = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     const result = await runCli(
-      ['plan', 'version', '--assignment', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );
     expect(result.code, result.stderr).toBe(0);
 
-    const planV2 = await readFile(resolve(assignmentDir, 'plan-v2.md'), 'utf-8');
+    const planV2 = await readFile(resolve(ticketDir, 'plan-v2.md'), 'utf-8');
     expect(planV2).toContain('Implementation Plan v2');
     expect(planV2).toContain('Supersedes:');
     expect(planV2).toContain('- [ ] First task');
@@ -122,8 +122,8 @@ describe('syntaur plan version', () => {
     // Checked items from prior plan are NOT carried forward.
     expect(planV2).not.toContain('Second task done');
 
-    const assignment = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
-    expect(extractTodosSection(assignment)).toBe(extractTodosSection(before));
+    const ticket = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    expect(extractTodosSection(ticket)).toBe(extractTodosSection(before));
   });
 
   it('does NOT rewrite non-canonical checkbox lines that happen to reference the old plan link', async () => {
@@ -133,14 +133,14 @@ describe('syntaur plan version', () => {
 - [ ] Review implementation of [plan](./plan.md)
 - [ ] Custom follow-up referencing [plan](./plan.md) in prose`,
     );
-    await writeFile(resolve(assignmentDir, 'assignment.md'), customAssignment);
+    await writeFile(resolve(ticketDir, 'ticket.md'), customAssignment);
     const result = await runCli(
-      ['plan', 'version', '--assignment', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );
     expect(result.code, result.stderr).toBe(0);
-    const updated = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    const updated = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     expect(updated).toContain(
       '- [ ] Custom follow-up referencing [plan](./plan.md) in prose',
     );
@@ -148,16 +148,16 @@ describe('syntaur plan version', () => {
   });
 
   it('picks plan-v3.md when plan-v2.md already exists (no clobber)', async () => {
-    await writeFile(resolve(assignmentDir, 'plan-v2.md'), 'existing v2 body');
+    await writeFile(resolve(ticketDir, 'plan-v2.md'), 'existing v2 body');
     const result = await runCli(
-      ['plan', 'version', '--assignment', 'demo', '--project', 'p'],
+      ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
       syntaurHome,
       syntaurHome,
     );
     expect(result.code, result.stderr).toBe(0);
-    const v2 = await readFile(resolve(assignmentDir, 'plan-v2.md'), 'utf-8');
+    const v2 = await readFile(resolve(ticketDir, 'plan-v2.md'), 'utf-8');
     expect(v2).toBe('existing v2 body');
-    const v3 = await readFile(resolve(assignmentDir, 'plan-v3.md'), 'utf-8');
+    const v3 = await readFile(resolve(ticketDir, 'plan-v3.md'), 'utf-8');
     expect(v3).toContain('Implementation Plan v3');
   });
 });

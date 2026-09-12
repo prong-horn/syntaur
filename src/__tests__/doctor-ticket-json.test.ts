@@ -59,7 +59,7 @@ tags: []
 Body.
 `;
 
-describe('syntaur doctor --assignment --json', () => {
+describe('syntaur doctor --ticket --json', () => {
   let syntaurHome: string;
   let scratch: string;
 
@@ -78,10 +78,10 @@ describe('syntaur doctor --assignment --json', () => {
     await rm(scratch, { recursive: true, force: true });
   });
 
-  it('returns ok:true with no errors for a valid assignment.md', async () => {
-    const path = resolve(scratch, 'assignment.md');
+  it('returns ok:true with no errors for a valid ticket.md', async () => {
+    const path = resolve(scratch, 'ticket.md');
     await writeFile(path, VALID_ASSIGNMENT);
-    const r = await runCli(['doctor', '--assignment', path, '--json'], syntaurHome);
+    const r = await runCli(['doctor', '--ticket', path, '--json'], syntaurHome);
     expect(r.code).toBe(0);
     const data = JSON.parse(r.stdout);
     expect(data.ok).toBe(true);
@@ -90,9 +90,9 @@ describe('syntaur doctor --assignment --json', () => {
   });
 
   it('returns ok:false when slug is missing', async () => {
-    const path = resolve(scratch, 'assignment.md');
+    const path = resolve(scratch, 'ticket.md');
     await writeFile(path, MISSING_SLUG);
-    const r = await runCli(['doctor', '--assignment', path, '--json'], syntaurHome);
+    const r = await runCli(['doctor', '--ticket', path, '--json'], syntaurHome);
     expect(r.code).toBe(1);
     const data = JSON.parse(r.stdout);
     expect(data.ok).toBe(false);
@@ -100,9 +100,9 @@ describe('syntaur doctor --assignment --json', () => {
   });
 
   it('returns ok:false when workspace block is missing required fields', async () => {
-    const path = resolve(scratch, 'assignment.md');
+    const path = resolve(scratch, 'ticket.md');
     await writeFile(path, MISSING_WORKSPACE);
-    const r = await runCli(['doctor', '--assignment', path, '--json'], syntaurHome);
+    const r = await runCli(['doctor', '--ticket', path, '--json'], syntaurHome);
     expect(r.code).toBe(1);
     const data = JSON.parse(r.stdout);
     expect(data.ok).toBe(false);
@@ -112,7 +112,7 @@ describe('syntaur doctor --assignment --json', () => {
   });
 
   it('returns ok:false when the file does not exist', async () => {
-    const r = await runCli(['doctor', '--assignment', '/no/such/file.md', '--json'], syntaurHome);
+    const r = await runCli(['doctor', '--ticket', '/no/such/file.md', '--json'], syntaurHome);
     expect(r.code).toBe(1);
     const data = JSON.parse(r.stdout);
     expect(data.ok).toBe(false);

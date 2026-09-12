@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { readConfig, DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
-import { assignmentsDir as getAssignmentsDir, syntaurRoot } from '../utils/paths.js';
+import { ticketsDir as getTicketsDir, syntaurRoot } from '../utils/paths.js';
 import { getStatusConfig } from '../dashboard/api.js';
 import {
   computeInbox,
@@ -32,7 +32,7 @@ export interface InboxOptions {
  * lifecycle status-config.
  *
  * Dir resolution mirrors `search.ts` (the mandatory audit-#8 pattern):
- * `readConfig().defaultProjectDir` + `getAssignmentsDir()` — never the hardcoded
+ * `readConfig().defaultProjectDir` + `getTicketsDir()` — never the hardcoded
  * `defaultProjectDir()` path helper — so the CLI scans the same tree the
  * dashboard displays.
  *
@@ -42,7 +42,7 @@ export interface InboxOptions {
  * custom status configs. It is import-safe: `api.ts` is a pure data/logic module
  * (no Express, no `app.listen`/`app.use` at module top — it only imports
  * fs/path/lifecycle/utils/parser), and existing CLI commands already import it
- * (`ls.ts` imports `listAssignmentsBoard`). Its `ResolvedStatusConfig` return is a
+ * (`ls.ts` imports `listTicketsBoard`). Its `ResolvedStatusConfig` return is a
  * structural superset of `InboxStatusConfig` (statuses `{id,terminal?}`,
  * transitions `{from,command,to}`, `transitionTable`, `terminalStatuses`), so it
  * is assignable directly. A lifecycle-level `resolveDeriveContext` exists but does
@@ -52,7 +52,7 @@ export interface InboxOptions {
 export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   const config = await readConfig();
   const projectsDir = config.defaultProjectDir;
-  const assignmentsDir = getAssignmentsDir();
+  const ticketsDir = getTicketsDir();
 
   const limit = parseLimit(options.limit);
   const maxAgeMs = parseMaxAge(options.maxAge);
@@ -75,7 +75,7 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
 
   const result = await computeInbox({
     projectsDir,
-    assignmentsDir,
+    ticketsDir,
     project: options.project,
     types,
     limit,
@@ -168,8 +168,8 @@ function humanizeAge(ageMs: number): string {
 
 /** `project/slug` for project assignments; the standalone UUID otherwise. */
 function locator(item: InboxItem): string {
-  if (item.project === null) return item.assignmentId;
-  return `${item.project}/${item.assignmentSlug}`;
+  if (item.project === null) return item.ticketId;
+  return `${item.project}/${item.ticketSlug}`;
 }
 
 /** Render the at-a-glance header: total + per-category counts. */

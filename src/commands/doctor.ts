@@ -6,14 +6,14 @@ import { renderHuman } from '../utils/doctor/output-human.js';
 import { renderJson } from '../utils/doctor/output-json.js';
 import { fileExists } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 interface DoctorOptions {
   json?: boolean;
   fix?: boolean;
   only?: string;
   verbose?: boolean;
-  assignment?: string;
+  ticket?: string;
 }
 
 interface AssignmentValidationResult {
@@ -32,7 +32,7 @@ const REQUIRED_WORKSPACE_FIELDS = [
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 
-export async function validateAssignmentFile(
+export async function validateTicketFile(
   inputPath: string,
   cwd: string = process.cwd(),
 ): Promise<AssignmentValidationResult> {
@@ -63,9 +63,9 @@ export async function validateAssignmentFile(
   if (!content.startsWith('---')) {
     errors.push('Missing YAML frontmatter — file does not start with `---`.');
   }
-  let parsed: ReturnType<typeof parseAssignmentFrontmatter>;
+  let parsed: ReturnType<typeof parseTicketFrontmatter>;
   try {
-    parsed = parseAssignmentFrontmatter(content);
+    parsed = parseTicketFrontmatter(content);
   } catch (err) {
     errors.push(
       `Frontmatter parse error: ${err instanceof Error ? err.message : String(err)}`,
@@ -101,12 +101,12 @@ export const doctorCommand = new Command('doctor')
   .option('--only <check-id>', 'Run only the check with this ID')
   .option('--verbose', 'Include passing checks in human output')
   .option(
-    '--assignment <path>',
-    'Validate a single assignment.md frontmatter and exit (used by set-workspace skill pre-write)',
+    '--ticket <path>',
+    'Validate a single ticket.md frontmatter and exit (used by set-workspace skill pre-write)',
   )
   .action(async (options: DoctorOptions) => {
-    if (options.assignment) {
-      const result = await validateAssignmentFile(options.assignment);
+    if (options.ticket) {
+      const result = await validateTicketFile(options.ticket);
       if (options.json) {
         process.stdout.write(JSON.stringify(result, null, 2) + '\n');
       } else if (result.ok) {

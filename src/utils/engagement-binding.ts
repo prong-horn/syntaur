@@ -1,13 +1,13 @@
 /**
  * The session→assignment binding read from the session's engagement edge.
  *
- * After the context.json demotion, the active (assignment, stage) is resolved
+ * After the context.json demotion, the active (ticket, stage) is resolved
  * from the session's OPEN engagement — not the cwd scalar. This module is the
- * single seam that turns "the process I am running in" into "the assignment I am
+ * single seam that turns "the process I am running in" into "the ticket I am
  * working on", by resolving the caller's own session id (with provenance) and
  * reading its engagement row.
  *
- * Used by `resolveAssignmentTarget`'s injectable `resolveEngagement` option and
+ * Used by `resolveTicketTarget`'s injectable `resolveEngagement` option and
  * by the commands that need the binding directly.
  */
 
@@ -22,9 +22,9 @@ import {
 import { getCumulativeTokenSource } from '../db/engagement-tokens.js';
 
 export interface EngagementBinding {
-  assignmentId: string | null;
+  ticketId: string | null;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   stage: string;
 }
 
@@ -37,9 +37,9 @@ export interface SessionEngagement {
 
 function rowToBinding(row: EngagementRow): EngagementBinding {
   return {
-    assignmentId: row.assignment_id,
+    ticketId: row.assignment_id,
     projectSlug: row.project_slug,
-    assignmentSlug: row.assignment_slug,
+    ticketSlug: row.assignment_slug,
     stage: row.stage,
   };
 }
@@ -62,7 +62,7 @@ export async function resolveSessionEngagement(
 
 /**
  * The open-engagement binding for the session resolved from `cwd`, or null.
- * This is the `resolveEngagement` seam passed into `resolveAssignmentTarget`.
+ * This is the `resolveEngagement` seam passed into `resolveTicketTarget`.
  */
 export async function resolveEngagementBinding(
   cwd: string,
@@ -107,15 +107,15 @@ export interface StageSwitchResult {
   current: EngagementRow;
   /** The engagement that was open before the switch, or null when none was. */
   previous: EngagementRow | null;
-  /** False when the session was already on (assignment, stage) — no switch made. */
+  /** False when the session was already on (ticket, stage) — no switch made. */
   switched: boolean;
 }
 
 export interface SwitchSessionStageInput {
   sessionId: string;
-  assignmentId: string | null;
+  ticketId: string | null;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   stage: string;
   /** Defaults to now. */
   startedAt?: string;
@@ -128,17 +128,17 @@ export interface SwitchSessionStageInput {
  * being split just to backfill a now-resolved id (M1).
  */
 function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): boolean {
-  if (open.assignment_id && input.assignmentId) {
-    return open.assignment_id === input.assignmentId;
+  if (open.assignment_id && input.ticketId) {
+    return open.assignment_id === input.ticketId;
   }
   return (
     open.project_slug === input.projectSlug &&
-    open.assignment_slug === input.assignmentSlug
+    open.assignment_slug === input.ticketSlug
   );
 }
 
 /**
- * Switch the session's open engagement to a new stage for the target assignment.
+ * Switch the session's open engagement to a new stage for the target ticket.
  *
  * - Captures the token snapshot via the async source BEFORE the synchronous
  *   `switchEngagement` (the #1 boundary; stage-fact-status-bridge Decision 10).
@@ -149,9 +149,9 @@ function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): bool
  * - **id-else-slugs target match (M1):** the skip compares by `assignment_id`
  *   only when BOTH the open row and the input carry one; otherwise it falls back
  *   to `(project_slug, assignment_slug)`. So a slug-only interval (e.g. a freshly
- *   grabbed/tracked assignment whose `assignment_id` was not yet resolved) is NOT
+ *   grabbed/tracked ticket whose `assignment_id` was not yet resolved) is NOT
  *   split merely to write the id when the first resolved-id stage assertion
- *   arrives for the SAME (assignment, stage) — splitting the cost window is worse
+ *   arrives for the SAME (ticket, stage) — splitting the cost window is worse
  *   than a null id, and per-assignment attribution falls back to slugs anyway.
  */
 export async function switchSessionStage(
@@ -165,9 +165,9 @@ export async function switchSessionStage(
   const snapshot = await getCumulativeTokenSource()(input.sessionId);
   const current = switchEngagement({
     sessionId: input.sessionId,
-    assignmentId: input.assignmentId,
+    ticketId: input.ticketId,
     projectSlug: input.projectSlug,
-    assignmentSlug: input.assignmentSlug,
+    ticketSlug: input.ticketSlug,
     stage: input.stage,
     startedAt: input.startedAt ?? new Date().toISOString(),
     tokensSnapshot: snapshot,

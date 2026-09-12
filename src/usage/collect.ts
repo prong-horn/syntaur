@@ -119,7 +119,7 @@ export async function collectAndPersist(): Promise<CollectInfo> {
       totalCost,
       cwd,
       projectSlug: attr.projectSlug ?? '',
-      assignmentSlug: attr.assignmentSlug ?? '',
+      ticketSlug: attr.ticketSlug ?? '',
       rawJson: row.rawJson,
     };
   });
@@ -204,7 +204,7 @@ interface OrphanRow {
 
 /**
  * Re-attribute usage rows still in the unattributed bucket (empty project AND
- * empty assignment). Once a session is registered (e.g. the pi sessions
+ * empty ticket). Once a session is registered (e.g. the pi sessions
  * descriptor now backfills pi sessions), `resolveAttribution`'s Stage-1 PK match
  * succeeds for rows whose session was previously unknown — repairing pi usage
  * that was orphaned before its session existed. Uses the row's stored `cwd`.
@@ -223,7 +223,7 @@ export function reattributeOrphanEvents(): number {
   // other writers); the guard is belt-and-suspenders and yields an accurate count.
   const update = db.prepare(
     `UPDATE usage_events
-        SET project_slug = @projectSlug, assignment_slug = @assignmentSlug, updated_at = @updatedAt
+        SET project_slug = @projectSlug, assignment_slug = @ticketSlug, updated_at = @updatedAt
       WHERE session_id = @sessionId AND model = @model
         AND project_slug = '' AND assignment_slug = ''`,
   );
@@ -237,10 +237,10 @@ export function reattributeOrphanEvents(): number {
         eventTs: r.event_ts,
       });
       const projectSlug = attr.projectSlug ?? '';
-      const assignmentSlug = attr.assignmentSlug ?? '';
-      if (projectSlug !== '' || assignmentSlug !== '') {
+      const ticketSlug = attr.ticketSlug ?? '';
+      if (projectSlug !== '' || ticketSlug !== '') {
         updated += update
-          .run({ projectSlug, assignmentSlug, updatedAt, sessionId: r.session_id, model: r.model })
+          .run({ projectSlug, ticketSlug, updatedAt, sessionId: r.session_id, model: r.model })
           .changes;
       }
     }

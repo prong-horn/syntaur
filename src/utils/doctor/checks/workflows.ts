@@ -1,7 +1,7 @@
 /**
  * Doctor check: every workflow binding references a workflow that actually
  * exists in the library. A dangling binding (project `defaultWorkflow` /
- * `workflowByType[type]`, global `defaultWorkflow`, or an assignment `workflow:`
+ * `workflowByType[type]`, global `defaultWorkflow`, or a ticket `workflow:`
  * override that names a workflow that was deleted or misspelled) silently
  * resolves to `default` at runtime — this surfaces it as an error instead so the
  * ticket lands where the author intended.
@@ -13,9 +13,9 @@ import { fileExists } from '../../fs.js';
 import { getWorkflowLibrary, DEFAULT_WORKFLOW_ID } from '../../workflow-resolve.js';
 import { loadWorkflowLibrary, loadWorkflowIssues } from '../../workflow-library.js';
 import { readProjectBinding } from '../../project-binding.js';
-import { listAssignmentsByProject } from '../../assignment-walk.js';
-import { parseAssignmentFull } from '../../../dashboard/parser.js';
-import { assignmentsDir as getStandaloneDir } from '../../paths.js';
+import { listTicketsByProject } from '../../ticket-walk.js';
+import { parseTicketFull } from '../../../dashboard/parser.js';
+import { ticketsDir as getStandaloneDir } from '../../paths.js';
 import type { Check, CheckResult } from '../types.js';
 import type { StageWorkflow } from '../../stage-model.js';
 import { detectAutoRouteCycles } from '../../../lifecycle/stage-engine.js';
@@ -192,18 +192,18 @@ const referencesResolve: Check = {
     }
 
     // Per-assignment overrides.
-    const { withAssignmentMd } = await listAssignmentsByProject(projectsDir, getStandaloneDir());
+    const { withAssignmentMd } = await listTicketsByProject(projectsDir, getStandaloneDir());
     for (const a of withAssignmentMd) {
       try {
-        const parsed = parseAssignmentFull(
-          await readFile(resolve(a.assignmentDir, 'assignment.md'), 'utf-8'),
+        const parsed = parseTicketFull(
+          await readFile(resolve(a.ticketDir, 'ticket.md'), 'utf-8'),
         );
         if (parsed.workflow && !known.has(parsed.workflow)) {
-          const where = a.projectSlug ? `${a.projectSlug}/${a.assignmentSlug}` : a.assignmentSlug;
+          const where = a.projectSlug ? `${a.projectSlug}/${a.ticketSlug}` : a.ticketSlug;
           problems.push(`${where}: workflow "${parsed.workflow}" is not a defined workflow`);
         }
       } catch {
-        // A malformed assignment.md is the assignment checks' concern, not ours.
+        // A malformed ticket.md is the ticket checks' concern, not ours.
       }
     }
 

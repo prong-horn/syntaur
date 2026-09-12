@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   appendStatusHistoryEntry,
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   renameStatusInHistory,
-  updateAssignmentFile,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 
 const SIMPLE_ASSIGNMENT = `---
@@ -64,9 +64,9 @@ tags: []
 Body content here.
 `;
 
-describe('parseAssignmentFrontmatter', () => {
-  it('parses simple assignment with empty arrays and null fields', () => {
-    const fm = parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT);
+describe('parseTicketFrontmatter', () => {
+  it('parses simple ticket with empty arrays and null fields', () => {
+    const fm = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
     expect(fm.id).toBe('test-id-123');
     expect(fm.slug).toBe('test-assignment');
     expect(fm.title).toBe('Test Assignment');
@@ -86,8 +86,8 @@ describe('parseAssignmentFrontmatter', () => {
     expect(fm.tags).toEqual([]);
   });
 
-  it('parses assignment with populated fields', () => {
-    const fm = parseAssignmentFrontmatter(COMPLEX_ASSIGNMENT);
+  it('parses ticket with populated fields', () => {
+    const fm = parseTicketFrontmatter(COMPLEX_ASSIGNMENT);
     expect(fm.status).toBe('in_progress');
     expect(fm.assignee).toBe('claude-1');
     expect(fm.dependsOn).toEqual(['design-auth-schema']);
@@ -98,7 +98,7 @@ describe('parseAssignmentFrontmatter', () => {
   });
 
   it('parses externalIds with nested objects', () => {
-    const fm = parseAssignmentFrontmatter(COMPLEX_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(COMPLEX_ASSIGNMENT);
     expect(fm.externalIds.length).toBe(1);
     expect(fm.externalIds[0]).toEqual({
       system: 'jira',
@@ -136,7 +136,7 @@ tags: []
 
 # x
 `;
-    const fm = parseAssignmentFrontmatter(URL_LESS_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(URL_LESS_ASSIGNMENT);
     expect(fm.externalIds).toHaveLength(2);
     expect(fm.externalIds[0]).toEqual({ system: 'linear', id: 'ENG-7', url: null });
     expect(fm.externalIds[1]).toEqual({
@@ -185,7 +185,7 @@ tags: []
 
 # x
 `;
-    const fm = parseAssignmentFrontmatter(QUIRKY);
+    const fm = parseTicketFrontmatter(QUIRKY);
     expect(fm.externalIds).toHaveLength(5);
     expect(fm.externalIds[0].url).toBeNull();
     expect(fm.externalIds[1].url).toBeNull();
@@ -195,15 +195,15 @@ tags: []
   });
 
   it('throws on content without frontmatter', () => {
-    expect(() => parseAssignmentFrontmatter('no frontmatter here')).toThrow(
+    expect(() => parseTicketFrontmatter('no frontmatter here')).toThrow(
       'No frontmatter found',
     );
   });
 });
 
-describe('updateAssignmentFile', () => {
+describe('updateTicketFile', () => {
   it('updates status field', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       status: 'in_progress',
     });
     expect(result).toContain('status: in_progress');
@@ -211,7 +211,7 @@ describe('updateAssignmentFile', () => {
   });
 
   it('updates assignee from null to a name', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       assignee: 'claude-3',
     });
     expect(result).toContain('assignee: claude-3');
@@ -219,7 +219,7 @@ describe('updateAssignmentFile', () => {
   });
 
   it('updates assignee from a name back to null', () => {
-    const result = updateAssignmentFile(COMPLEX_ASSIGNMENT, {
+    const result = updateTicketFile(COMPLEX_ASSIGNMENT, {
       assignee: null,
     });
     expect(result).toContain('assignee: null');
@@ -227,24 +227,24 @@ describe('updateAssignmentFile', () => {
   });
 
   it('updates blockedReason to a string value', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       blockedReason: 'Waiting for API key',
     });
     expect(result).toContain('blockedReason: Waiting for API key');
   });
 
   it('updates blockedReason back to null', () => {
-    const withReason = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const withReason = updateTicketFile(SIMPLE_ASSIGNMENT, {
       blockedReason: 'some reason',
     });
-    const result = updateAssignmentFile(withReason, {
+    const result = updateTicketFile(withReason, {
       blockedReason: null,
     });
     expect(result).toContain('blockedReason: null');
   });
 
   it('updates timestamp with quotes', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       updated: '2026-03-18T15:00:00Z',
     });
     expect(result).toContain('updated: "2026-03-18T15:00:00Z"');
@@ -252,7 +252,7 @@ describe('updateAssignmentFile', () => {
 
   it('preserves the markdown body unchanged', () => {
     const body = '# Test Assignment\n\nBody content here.\n';
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       status: 'in_progress',
       assignee: 'claude-1',
       updated: '2026-03-18T15:00:00Z',
@@ -261,7 +261,7 @@ describe('updateAssignmentFile', () => {
   });
 
   it('updates multiple fields at once', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       status: 'blocked',
       blockedReason: 'Need API key',
       updated: '2026-03-18T16:00:00Z',
@@ -274,24 +274,24 @@ describe('updateAssignmentFile', () => {
   // AC2: formatYamlValue must quote a scalar that is itself wrapped in quote
   // chars, else parseSimpleValue strips the literal quotes on read.
   it('round-trips a blockedReason whose value is wrapped in double quotes (AC2)', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       blockedReason: '"connection refused"',
     });
-    expect(parseAssignmentFrontmatter(result).blockedReason).toBe('"connection refused"');
+    expect(parseTicketFrontmatter(result).blockedReason).toBe('"connection refused"');
   });
 
   it('round-trips a blockedReason wrapped in single quotes (AC2)', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       blockedReason: "'singlequoted'",
     });
-    expect(parseAssignmentFrontmatter(result).blockedReason).toBe("'singlequoted'");
+    expect(parseTicketFrontmatter(result).blockedReason).toBe("'singlequoted'");
   });
 
   it('still round-trips a value with only interior quotes (AC2 over-trigger guard)', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       blockedReason: 'say "hello" now',
     });
-    expect(parseAssignmentFrontmatter(result).blockedReason).toBe('say "hello" now');
+    expect(parseTicketFrontmatter(result).blockedReason).toBe('say "hello" now');
   });
 });
 
@@ -333,7 +333,7 @@ tags: []
 
 describe('parseStatusHistory', () => {
   it('parses a block of entries including one with a reason', () => {
-    const fm = parseAssignmentFrontmatter(WITH_HISTORY);
+    const fm = parseTicketFrontmatter(WITH_HISTORY);
     expect(fm.statusHistory).toHaveLength(2);
     expect(fm.statusHistory[0]).toEqual({
       at: '2026-03-18T10:00:00Z',
@@ -353,14 +353,14 @@ describe('parseStatusHistory', () => {
   });
 
   it('returns [] for the inline empty list form', () => {
-    const fm = parseAssignmentFrontmatter(
+    const fm = parseTicketFrontmatter(
       SIMPLE_ASSIGNMENT.replace('externalIds: []', 'externalIds: []\nstatusHistory: []'),
     );
     expect(fm.statusHistory).toEqual([]);
   });
 
   it('returns [] when the key is absent', () => {
-    expect(parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT).statusHistory).toEqual([]);
+    expect(parseTicketFrontmatter(SIMPLE_ASSIGNMENT).statusHistory).toEqual([]);
   });
 
   it('parses the real block even when an earlier scalar contains "statusHistory:"', () => {
@@ -395,7 +395,7 @@ tags: []
 
 # x
 `;
-    const fm = parseAssignmentFrontmatter(TRICKY);
+    const fm = parseTicketFrontmatter(TRICKY);
     expect(fm.title).toBe('Audit statusHistory: behavior');
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({ to: 'draft', command: 'create' });
@@ -438,7 +438,7 @@ statusHistory:
 
 # EOF
 `;
-    const fm = parseAssignmentFrontmatter(LAST_KEY);
+    const fm = parseTicketFrontmatter(LAST_KEY);
     expect(fm.statusHistory).toHaveLength(2);
     expect(fm.statusHistory[1].to).toBe('in_progress');
     expect(fm.statusHistory[1].command).toBe('start');
@@ -465,7 +465,7 @@ describe('appendStatusHistoryEntry', () => {
     });
     expect(appended).toContain('statusHistory:');
     // statusHistory is now the LAST key — parse must still find it.
-    const fm = parseAssignmentFrontmatter(appended);
+    const fm = parseTicketFrontmatter(appended);
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toEqual({
       at: '2026-04-01T12:00:00Z',
@@ -483,14 +483,14 @@ describe('appendStatusHistoryEntry', () => {
     );
     const appended = appendStatusHistoryEntry(inline, ENTRY);
     expect(appended).not.toContain('statusHistory: []');
-    const fm = parseAssignmentFrontmatter(appended);
+    const fm = parseTicketFrontmatter(appended);
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0].to).toBe('review');
   });
 
   it('appends to an existing block, preserving prior entries and order', () => {
     const appended = appendStatusHistoryEntry(WITH_HISTORY, ENTRY);
-    const fm = parseAssignmentFrontmatter(appended);
+    const fm = parseTicketFrontmatter(appended);
     expect(fm.statusHistory).toHaveLength(3);
     expect(fm.statusHistory[0].to).toBe('draft');
     expect(fm.statusHistory[1].to).toBe('blocked');
@@ -499,7 +499,7 @@ describe('appendStatusHistoryEntry', () => {
 
   it('does not disturb other frontmatter fields', () => {
     const appended = appendStatusHistoryEntry(WITH_HISTORY, ENTRY);
-    const fm = parseAssignmentFrontmatter(appended);
+    const fm = parseTicketFrontmatter(appended);
     expect(fm.id).toBe('h-1');
     expect(fm.assignee).toBe('claude-1');
     expect(fm.blockedReason).toBe('waiting on API');
@@ -519,7 +519,7 @@ describe('appendStatusHistoryEntry', () => {
       by: null,
       reason: 'blocked: needs review',
     });
-    const fm = parseAssignmentFrontmatter(appended);
+    const fm = parseTicketFrontmatter(appended);
     expect(fm.statusHistory[0].reason).toBe('blocked: needs review');
   });
 
@@ -568,7 +568,7 @@ tags: []
 
   it('relabels from/to in place, preserving at and appending no entry', () => {
     const renamed = renameStatusInHistory(FIXTURE, 'completed', 'done');
-    const fm = parseAssignmentFrontmatter(renamed);
+    const fm = parseTicketFrontmatter(renamed);
     expect(fm.statusHistory).toHaveLength(2); // no new entry
     expect(fm.statusHistory[0]).toEqual({
       at: '2026-03-18T10:00:00Z',
@@ -588,20 +588,20 @@ tags: []
   it('rewrites both from and to occurrences of the old id', () => {
     // Rename in_review → review: the create entry's `to` and the complete
     // entry's `from` both reference in_review.
-    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'in_review', 'review'));
+    const fm = parseTicketFrontmatter(renameStatusInHistory(FIXTURE, 'in_review', 'review'));
     expect(fm.statusHistory[0].to).toBe('review');
     expect(fm.statusHistory[1].from).toBe('review');
   });
 
   it('does not relabel a status whose id is only a substring', () => {
     // 'review' must NOT match 'in_review'.
-    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'review', 'x'));
+    const fm = parseTicketFrontmatter(renameStatusInHistory(FIXTURE, 'review', 'x'));
     expect(fm.statusHistory[0].to).toBe('in_review');
     expect(fm.statusHistory[1].from).toBe('in_review');
   });
 
   it('leaves null `from` entries untouched', () => {
-    const fm = parseAssignmentFrontmatter(renameStatusInHistory(FIXTURE, 'completed', 'done'));
+    const fm = parseTicketFrontmatter(renameStatusInHistory(FIXTURE, 'completed', 'done'));
     expect(fm.statusHistory[0].from).toBeNull();
   });
 
@@ -613,7 +613,7 @@ tags: []
     // in_review -> null writes the create entry's `to`. Unquoted `to: null`
     // makes parseStatusHistory drop the entry (data loss).
     const renamed = renameStatusInHistory(FIXTURE, 'in_review', 'null');
-    const fm = parseAssignmentFrontmatter(renamed);
+    const fm = parseTicketFrontmatter(renamed);
     expect(fm.statusHistory).toHaveLength(2); // create entry NOT dropped
     expect(fm.statusHistory[0].to).toBe('null'); // string, intact
     expect(fm.statusHistory[1].from).toBe('null');
@@ -634,14 +634,14 @@ tags: []
 
 describe('archive frontmatter fields', () => {
   it('defaults missing archive fields to false/null/null', () => {
-    const fm = parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
     expect(fm.archived).toBe(false);
     expect(fm.archivedAt).toBeNull();
     expect(fm.archivedReason).toBeNull();
   });
 
   it('inserts archive fields into a file that lacks them, and round-trips', () => {
-    const result = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
       archived: true,
       archivedAt: '2026-05-31T12:00:00Z',
       archivedReason: 'superseded',
@@ -652,7 +652,7 @@ describe('archive frontmatter fields', () => {
     expect(result).toContain('archivedReason: superseded');
     // status untouched
     expect(result).toContain('status: pending');
-    const fm = parseAssignmentFrontmatter(result);
+    const fm = parseTicketFrontmatter(result);
     expect(fm.archived).toBe(true);
     expect(fm.archivedAt).toBe('2026-05-31T12:00:00Z');
     expect(fm.archivedReason).toBe('superseded');
@@ -660,20 +660,20 @@ describe('archive frontmatter fields', () => {
   });
 
   it('replaces existing archive fields in place (no duplicate keys)', () => {
-    const archived = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+    const archived = updateTicketFile(SIMPLE_ASSIGNMENT, {
       archived: true,
       archivedAt: '2026-05-31T12:00:00Z',
       archivedReason: 'temp',
       updated: '2026-05-31T12:00:00Z',
     });
-    const restored = updateAssignmentFile(archived, {
+    const restored = updateTicketFile(archived, {
       archived: false,
       archivedAt: null,
       archivedReason: null,
       updated: '2026-05-31T13:00:00Z',
     });
     expect(restored.match(/^archived:/gm)).toHaveLength(1);
-    const fm = parseAssignmentFrontmatter(restored);
+    const fm = parseTicketFrontmatter(restored);
     expect(fm.archived).toBe(false);
     expect(fm.archivedAt).toBeNull();
     expect(fm.archivedReason).toBeNull();
@@ -701,7 +701,7 @@ describe('dimension-aware statusHistory (v3)', () => {
       dispositionTo: 'blocked',
     };
     const content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, entry);
-    const parsed = parseAssignmentFrontmatter(content);
+    const parsed = parseTicketFrontmatter(content);
     expect(parsed.statusHistory).toHaveLength(1);
     expect(parsed.statusHistory[0]).toMatchObject(entry);
   });
@@ -714,7 +714,7 @@ describe('dimension-aware statusHistory (v3)', () => {
       command: 'start',
       by: null,
     });
-    const parsed = parseAssignmentFrontmatter(content);
+    const parsed = parseTicketFrontmatter(content);
     const e = parsed.statusHistory[0];
     expect(e.phaseFrom).toBeUndefined();
     expect(e.dispositionTo).toBeUndefined();
@@ -735,7 +735,7 @@ describe('dimension-aware statusHistory (v3)', () => {
       dispositionTo: 'active',
     });
     content = renameStatusInHistory(content, 'review', 'code_review');
-    const e = parseAssignmentFrontmatter(content).statusHistory[0];
+    const e = parseTicketFrontmatter(content).statusHistory[0];
     expect(e.from).toBe('code_review');
     expect(e.phaseFrom).toBe('code_review');
     expect(e.phaseTo).toBe('code_review');
@@ -745,7 +745,7 @@ describe('dimension-aware statusHistory (v3)', () => {
 
 describe('asserted-fact frontmatter fields (v3)', () => {
   it('defaults are null/false on legacy files', () => {
-    const parsed = parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT);
+    const parsed = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
     expect(parsed.phase).toBeNull();
     expect(parsed.disposition).toBeNull();
     expect(parsed.planApproval).toBeNull();
@@ -764,15 +764,15 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       at: '2026-06-09T12:00:00Z',
     };
     let content = updatePlanApproval(SIMPLE_ASSIGNMENT, approval);
-    expect(parseAssignmentFrontmatter(content).planApproval).toEqual(approval);
+    expect(parseTicketFrontmatter(content).planApproval).toEqual(approval);
     // set again in place (edit, not duplicate)
     content = updatePlanApproval(content, { ...approval, file: 'plan-v3.md' });
-    const reparsed = parseAssignmentFrontmatter(content);
+    const reparsed = parseTicketFrontmatter(content);
     expect(reparsed.planApproval?.file).toBe('plan-v3.md');
     expect(content.match(/^planApproval:/gm)).toHaveLength(1);
     // clear → null, key preserved
     content = updatePlanApproval(content, null);
-    expect(parseAssignmentFrontmatter(content).planApproval).toBeNull();
+    expect(parseTicketFrontmatter(content).planApproval).toBeNull();
     expect(content).toMatch(/^planApproval: null$/m);
   });
 
@@ -784,13 +784,13 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       at: '2026-06-09T12:00:00Z',
     };
     let content = updateOverride(COMPLEX_ASSIGNMENT, pin);
-    expect(parseAssignmentFrontmatter(content).override).toEqual(pin);
+    expect(parseTicketFrontmatter(content).override).toEqual(pin);
     content = updateOverride(content, null);
-    expect(parseAssignmentFrontmatter(content).override).toBeNull();
+    expect(parseTicketFrontmatter(content).override).toBeNull();
   });
 
-  it('updateAssignmentFile handles new scalar fields incl. insertion when missing', () => {
-    const content = updateAssignmentFile(SIMPLE_ASSIGNMENT, {
+  it('updateTicketFile handles new scalar fields incl. insertion when missing', () => {
+    const content = updateTicketFile(SIMPLE_ASSIGNMENT, {
       phase: 'planning',
       disposition: 'active',
       parked: false,
@@ -798,7 +798,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       reworkRequested: true,
       implementationStarted: true,
     });
-    const parsed = parseAssignmentFrontmatter(content);
+    const parsed = parseTicketFrontmatter(content);
     expect(parsed.phase).toBe('planning');
     expect(parsed.disposition).toBe('active');
     expect(parsed.reviewRequested).toBe(true);
@@ -807,30 +807,30 @@ describe('asserted-fact frontmatter fields (v3)', () => {
   });
 });
 
-import { parseAssignmentFull } from '../dashboard/parser.js';
+import { parseTicketFull } from '../dashboard/parser.js';
 
-describe('assignment workflow: field (both parsers + updater)', () => {
+describe('ticket workflow: field (both parsers + updater)', () => {
   const withWorkflow = SIMPLE_ASSIGNMENT.replace(
     'status: pending',
     'workflow: bugfix\nstatus: pending',
   );
 
-  it('parseAssignmentFrontmatter reads an explicit workflow id', () => {
-    expect(parseAssignmentFrontmatter(withWorkflow).workflow).toBe('bugfix');
+  it('parseTicketFrontmatter reads an explicit workflow id', () => {
+    expect(parseTicketFrontmatter(withWorkflow).workflow).toBe('bugfix');
   });
 
-  it('parseAssignmentFrontmatter yields null when workflow is absent', () => {
-    expect(parseAssignmentFrontmatter(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+  it('parseTicketFrontmatter yields null when workflow is absent', () => {
+    expect(parseTicketFrontmatter(SIMPLE_ASSIGNMENT).workflow).toBeNull();
   });
 
-  it('the dashboard parseAssignmentFull reads the same workflow id (parser parity)', () => {
-    expect(parseAssignmentFull(withWorkflow).workflow).toBe('bugfix');
-    expect(parseAssignmentFull(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+  it('the dashboard parseTicketFull reads the same workflow id (parser parity)', () => {
+    expect(parseTicketFull(withWorkflow).workflow).toBe('bugfix');
+    expect(parseTicketFull(SIMPLE_ASSIGNMENT).workflow).toBeNull();
   });
 
-  it('updateAssignmentFile sets workflow (whitelisted) and it round-trips through both parsers', () => {
-    const updated = updateAssignmentFile(SIMPLE_ASSIGNMENT, { workflow: 'research' });
-    expect(parseAssignmentFrontmatter(updated).workflow).toBe('research');
-    expect(parseAssignmentFull(updated).workflow).toBe('research');
+  it('updateTicketFile sets workflow (whitelisted) and it round-trips through both parsers', () => {
+    const updated = updateTicketFile(SIMPLE_ASSIGNMENT, { workflow: 'research' });
+    expect(parseTicketFrontmatter(updated).workflow).toBe('research');
+    expect(parseTicketFull(updated).workflow).toBe('research');
   });
 });

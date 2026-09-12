@@ -28,15 +28,15 @@ export interface MessageTurnState {
  * liveness was written to avoid.
  */
 export function messageTurnState(
-  assignmentId: string,
+  ticketId: string,
   messageId: string,
 ): MessageTurnState | null {
-  const item = getUserMessageItem(assignmentId, messageId) as UserMessageItem | null;
+  const item = getUserMessageItem(ticketId, messageId) as UserMessageItem | null;
   if (!item) return null;
 
   if (item.state === 'withdrawn') return { state: 'ended', stopReason: 'withdrawn' };
 
-  const turns = listTurnsForMessage(assignmentId, messageId) as TurnStatusItem[];
+  const turns = listTurnsForMessage(ticketId, messageId) as TurnStatusItem[];
   if (turns.length === 0) {
     // No turn has started yet. A message routed to nobody has no turn coming,
     // so it is finished rather than waiting forever.

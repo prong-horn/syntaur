@@ -10,10 +10,10 @@ export interface WorktreeDefaults {
 }
 
 /**
- * Compute branch + worktree-path defaults for an assignment.
+ * Compute branch + worktree-path defaults for a ticket.
  *
- * Branch: `syntaur/<projectSlug>/<assignmentSlug>` when `projectSlug` is
- * non-empty, else `syntaur/<assignmentSlug>` (standalone).
+ * Branch: `syntaur/<projectSlug>/<ticketSlug>` when `projectSlug` is
+ * non-empty, else `syntaur/<ticketSlug>` (standalone).
  *
  * Worktree path: `<repository>/.worktrees/<branch>` when a repository is
  * known. Falls back to `~/.syntaur/worktrees/<project|standalone>/<slug>` only
@@ -27,14 +27,17 @@ export interface WorktreeDefaults {
  */
 export function computeWorktreeDefaults(opts: {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentSlug?: string;
   existing: { repository: string | null; branch: string | null; parentBranch: string | null };
   cwd?: string;
 }): Partial<WorktreeDefaults> & { repository?: string } {
+  const ticketSlug = opts.ticketSlug ?? opts.assignmentSlug ?? '';
   const repository = opts.existing.repository ?? detectCurrentGitRoot(opts.cwd);
   const branch = opts.projectSlug
-    ? `syntaur/${opts.projectSlug}/${opts.assignmentSlug}`
-    : `syntaur/${opts.assignmentSlug}`;
+    ? `syntaur/${opts.projectSlug}/${ticketSlug}`
+    : `syntaur/${ticketSlug}`;
   const parentBranch = opts.existing.parentBranch ?? detectCurrentBranch(opts.cwd) ?? 'main';
   const worktreeBase = repository
     ? resolve(repository, '.worktrees', branch)
@@ -42,7 +45,7 @@ export function computeWorktreeDefaults(opts: {
         syntaurRoot(),
         'worktrees',
         opts.projectSlug || 'standalone',
-        opts.assignmentSlug,
+        ticketSlug,
       );
   return {
     ...(repository ? { repository } : {}),

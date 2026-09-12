@@ -1,8 +1,8 @@
 /**
- * The per-assignment participant set — `<assignmentDir>/chat/participants.json`
+ * The per-assignment participant set — `<ticketDir>/chat/participants.json`
  * (Decision 1).
  *
- * It lives beside `events.jsonl` rather than in `assignment.md` frontmatter (the
+ * It lives beside `events.jsonl` rather than in `ticket.md` frontmatter (the
  * nested-block writer handles flat scalar maps only) or in SQLite (not
  * human-editable, and the chat's other state is file-first). Syntaur owns the
  * file the same way it owns the log: hand-editable, but written atomically by
@@ -43,15 +43,15 @@ export class ParticipantsError extends Error {
   }
 }
 
-export function participantsPath(assignmentDir: string): string {
-  return resolve(assignmentDir, 'chat', 'participants.json');
+export function participantsPath(ticketDir: string): string {
+  return resolve(ticketDir, 'chat', 'participants.json');
 }
 
 export async function readParticipantsDetailed(
-  assignmentDir: string,
+  ticketDir: string,
   definitions: readonly AgentDefinition[],
 ): Promise<{ participants: Participants; dropped: string[] }> {
-  const stored = await readStored(assignmentDir);
+  const stored = await readStored(ticketDir);
   if (!stored) return { participants: derive(definitions), dropped: [] };
 
   const known = new Set(definitions.map((d) => d.id));
@@ -68,15 +68,15 @@ export async function readParticipantsDetailed(
 }
 
 /**
- * The assignment's participants, always filtered to definitions that exist. A
+ * The ticket's participants, always filtered to definitions that exist. A
  * missing, unreadable or corrupt file derives the default rather than failing:
  * the chat must open even when the file is nonsense.
  */
 export async function readParticipants(
-  assignmentDir: string,
+  ticketDir: string,
   definitions: readonly AgentDefinition[],
 ): Promise<Participants> {
-  const { participants } = await readParticipantsDetailed(assignmentDir, definitions);
+  const { participants } = await readParticipantsDetailed(ticketDir, definitions);
   return participants;
 }
 
@@ -86,7 +86,7 @@ export async function readParticipants(
  * silently detach every agent.
  */
 export async function writeParticipants(
-  assignmentDir: string,
+  ticketDir: string,
   next: Participants,
   definitions: readonly AgentDefinition[],
 ): Promise<Participants> {
@@ -101,7 +101,7 @@ export async function writeParticipants(
 
   if (agents.length > MAX_ATTACHED_AGENTS) {
     throw new ParticipantsError(
-      `At most ${MAX_ATTACHED_AGENTS} agents can be attached to one assignment (got ${agents.length}); ` +
+      `At most ${MAX_ATTACHED_AGENTS} agents can be attached to one ticket (got ${agents.length}); ` +
         'every attached agent costs a full standing context per turn it is given.',
     );
   }
@@ -125,8 +125,8 @@ export async function writeParticipants(
     ...(next.hopBudget === undefined ? {} : { hopBudget: next.hopBudget }),
   };
 
-  const path = participantsPath(assignmentDir);
-  await mkdir(resolve(assignmentDir, 'chat'), { recursive: true });
+  const path = participantsPath(ticketDir);
+  await mkdir(resolve(ticketDir, 'chat'), { recursive: true });
   const temp = `${path}.${randomUUID()}.tmp`;
   await writeFile(temp, `${JSON.stringify(participants, null, 2)}\n`, 'utf-8');
   await rename(temp, path);
@@ -135,10 +135,10 @@ export async function writeParticipants(
 
 // --- helpers ---------------------------------------------------------------
 
-async function readStored(assignmentDir: string): Promise<Participants | null> {
+async function readStored(ticketDir: string): Promise<Participants | null> {
   let raw: string;
   try {
-    raw = await readFile(participantsPath(assignmentDir), 'utf-8');
+    raw = await readFile(participantsPath(ticketDir), 'utf-8');
   } catch {
     return null;
   }

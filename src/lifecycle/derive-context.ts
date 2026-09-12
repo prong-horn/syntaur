@@ -8,7 +8,7 @@
  * context from its workflow's bundle. {@link buildDeriveContext} is the single
  * constructor both the global resolver (`resolveDeriveContext`,
  * `lifecycle/recompute.ts`) and the per-workflow helper
- * (`resolveAssignmentWorkflowContext`, `lifecycle/workflow-context.ts`) call, so
+ * (`resolveTicketWorkflowContext`, `lifecycle/workflow-context.ts`) call, so
  * the two can never drift — the core "one derive-context construction" invariant.
  *
  * Node-safe leaf module (no imports of recompute/workflow-context) so both can

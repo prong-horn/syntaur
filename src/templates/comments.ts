@@ -1,5 +1,7 @@
 export interface CommentsParams {
-  assignment: string;
+  ticket?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignment?: string;
   timestamp: string;
 }
 
@@ -17,7 +19,7 @@ export interface Comment {
 
 export function renderComments(params: CommentsParams): string {
   return `---
-assignment: ${params.assignment}
+ticket: ${params.ticket ?? params.assignment ?? ''}
 entryCount: 0
 generated: "${params.timestamp}"
 updated: "${params.timestamp}"

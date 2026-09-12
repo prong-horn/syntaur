@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -145,16 +145,16 @@ A real objective.
 describe('custom facts + attestations CLI (end-to-end)', () => {
   let home: string;
   let aDir: string;
-  let assignmentPath: string;
+  let ticketPath: string;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-cf-'));
     await writeFile(join(home, 'config.md'), configMd(resolve(home, 'projects')));
-    aDir = join(home, 'projects', 'p1', 'assignments', 'feat-x');
+    aDir = join(home, 'projects', 'p1', 'tickets', 'feat-x');
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-    assignmentPath = join(aDir, 'assignment.md');
-    await writeFile(assignmentPath, ASSIGNMENT('/repo'));
+    ticketPath = join(aDir, 'ticket.md');
+    await writeFile(ticketPath, ASSIGNMENT('/repo'));
   });
 
   afterEach(async () => {
@@ -162,7 +162,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
   });
 
   async function fm() {
-    return parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+    return parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
   }
 
   it('AC7 forward + reverse: fact set + attest fire the rung; replan regresses it', async () => {
@@ -217,7 +217,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
     await writeFile(join(repo, 'a.txt'), 'one');
     git(['add', '.']);
     git(['commit', '-q', '-m', 'one']);
-    await writeFile(assignmentPath, ASSIGNMENT(repo));
+    await writeFile(ticketPath, ASSIGNMENT(repo));
 
     try {
       await runCli(['recompute', 'feat-x', '--project', 'p1'], home);
@@ -240,7 +240,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
   });
 
   it('binds:commit attest refuses when the workspace is not a git repo', async () => {
-    await writeFile(assignmentPath, ASSIGNMENT('/definitely/not/a/repo'));
+    await writeFile(ticketPath, ASSIGNMENT('/definitely/not/a/repo'));
     await runCli(['recompute', 'feat-x', '--project', 'p1'], home);
     const r = await runCli(['attest', 'feat-x', 'deploy', '--agent', 'ci', '--project', 'p1'], home);
     expect(r.code).not.toBe(0);

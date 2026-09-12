@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 import { recomputeAndWrite, recomputeAll, recomputeDependents, type DeriveContext } from '../lifecycle/recompute.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { planDigest } from '../lifecycle/facts.js';
 import { buildDeriveRegistry } from '../lifecycle/derive.js';
 
@@ -31,7 +31,7 @@ afterAll(async () => {
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
-function assignmentContent(opts: {
+function ticketContent(opts: {
   slug?: string;
   status?: string;
   body?: string;
@@ -81,7 +81,7 @@ Real objective text.
 async function makeAssignment(opts: Parameters<typeof assignmentContent>[0] = {}): Promise<{ dir: string; path: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'syntaur-recompute-'));
   tmpDirs.push(dir);
-  const path = join(dir, 'assignment.md');
+  const path = join(dir, 'ticket.md');
   await writeFile(path, assignmentContent(opts));
   return { dir, path };
 }
@@ -98,7 +98,7 @@ describe('recomputeAndWrite', () => {
     expect(result.changed).toBe(true);
     expect(result.status).toBe('ready_for_planning'); // real objective + ACs
 
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('ready_for_planning');
     expect(fm.phase).toBe('ready_for_planning');
     expect(fm.disposition).toBe('active');
@@ -120,7 +120,7 @@ describe('recomputeAndWrite', () => {
     const r2 = await recomputeAndWrite(path, opts);
     expect(r1.changed).toBe(true);
     expect(r2.changed).toBe(false);
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
   });
 
@@ -147,7 +147,7 @@ describe('recomputeAndWrite', () => {
     // first recompute: blocked headline, phase ready_for_planning
     const opts = { cause: 'derive', by: 'system', projectDir: null, context: CONTEXT };
     await recomputeAndWrite(path, opts);
-    let fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    let fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('blocked');
     expect(fm.phase).toBe('ready_for_planning');
 
@@ -162,7 +162,7 @@ describe('recomputeAndWrite', () => {
 
     const r = await recomputeAndWrite(path, opts);
     expect(r.changed).toBe(true);
-    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('blocked'); // headline unchanged
     expect(fm.phase).toBe('ready_to_implement'); // phase advanced
     const last = fm.statusHistory[fm.statusHistory.length - 1];
@@ -181,7 +181,7 @@ describe('recomputeAndWrite', () => {
       recomputeAndWrite(path, opts),
     ]);
     expect(results.filter((r) => r.changed)).toHaveLength(1);
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
   });
 
@@ -206,14 +206,14 @@ describe('recomputeDependents + recomputeAll', () => {
   it('reverse-dependency: dependent re-derives when its dep goes terminal', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'syntaur-proj-'));
     tmpDirs.push(projectDir);
-    await mkdir(join(projectDir, 'assignments', 'dep-a'), { recursive: true });
-    await mkdir(join(projectDir, 'assignments', 'dep-b'), { recursive: true });
+    await mkdir(join(projectDir, 'tickets', 'dep-a'), { recursive: true });
+    await mkdir(join(projectDir, 'tickets', 'dep-b'), { recursive: true });
     await writeFile(
-      join(projectDir, 'assignments', 'dep-a', 'assignment.md'),
+      join(projectDir, 'tickets', 'dep-a', 'ticket.md'),
       assignmentContent({ slug: 'dep-a', status: 'completed' }),
     );
     await writeFile(
-      join(projectDir, 'assignments', 'dep-b', 'assignment.md'),
+      join(projectDir, 'tickets', 'dep-b', 'ticket.md'),
       assignmentContent({ slug: 'dep-b', status: 'draft', dependsOn: ['dep-a'] }),
     );
     const results = await recomputeDependents(projectDir, 'dep-a', {
@@ -229,14 +229,14 @@ describe('recomputeDependents + recomputeAll', () => {
     const root = await mkdtemp(join(tmpdir(), 'syntaur-root-'));
     tmpDirs.push(root);
     const projectsDir = join(root, 'projects');
-    const standaloneDir = join(root, 'assignments');
-    await mkdir(join(projectsDir, 'p1', 'assignments', 'a1'), { recursive: true });
+    const standaloneDir = join(root, 'tickets');
+    await mkdir(join(projectsDir, 'p1', 'tickets', 'a1'), { recursive: true });
     await mkdir(join(standaloneDir, 'u1'), { recursive: true });
     await writeFile(
-      join(projectsDir, 'p1', 'assignments', 'a1', 'assignment.md'),
+      join(projectsDir, 'p1', 'tickets', 'a1', 'ticket.md'),
       assignmentContent({ slug: 'a1' }),
     );
-    await writeFile(join(standaloneDir, 'u1', 'assignment.md'), assignmentContent({ slug: 'u1', status: 'completed' }));
+    await writeFile(join(standaloneDir, 'u1', 'ticket.md'), assignmentContent({ slug: 'u1', status: 'completed' }));
 
     const summary = await recomputeAll(projectsDir, standaloneDir, {
       cause: 'sweep',

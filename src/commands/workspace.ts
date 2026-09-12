@@ -2,29 +2,29 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir } from '../utils/paths.js';
+import { ticketsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { updateAssignmentWorkspace, updateAssignmentFile } from '../lifecycle/frontmatter.js';
-import { validateAssignmentFile } from './doctor.js';
+import { updateTicketWorkspace, updateTicketFile } from '../lifecycle/frontmatter.js';
+import { validateTicketFile } from './doctor.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
 
-async function resolveAssignmentPath(opts: {
-  assignment?: string;
+async function resolveTicketPath(opts: {
+  ticket?: string;
   project?: string;
   cwd: string;
 }): Promise<string> {
-  if (opts.assignment) {
+  if (opts.ticket) {
     if (opts.project) {
       const projectsDir = (await readConfig()).defaultProjectDir;
-      return resolve(projectsDir, opts.project, 'assignments', opts.assignment, 'assignment.md');
+      return resolve(projectsDir, opts.project, 'tickets', opts.ticket, 'ticket.md');
     }
-    return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
+    return resolve(ticketsDir(), opts.ticket, 'ticket.md');
   }
   // No explicit target → resolve from the session's OPEN engagement and gate
-  // the mutation. context.json's assignment scalar is no longer a resolution
+  // the mutation. context.json's ticket scalar is no longer a resolution
   // source (it is a workspace marker only).
   const { initSessionDb } = await import('../dashboard/session-db.js');
   initSessionDb(); // idempotent; no-op if already open
@@ -32,12 +32,12 @@ async function resolveAssignmentPath(opts: {
   if (se) {
     assertMayMutate(se.session, { hasSelector: false });
   }
-  const target = await resolveAssignmentTarget(undefined, {
+  const target = await resolveTicketTarget(undefined, {
     project: opts.project,
     cwd: opts.cwd,
     resolveEngagement: async () => se?.open ?? null,
   });
-  return resolve(target.assignmentDir, 'assignment.md');
+  return resolve(target.ticketDir, 'ticket.md');
 }
 
 export interface WorkspaceSetOptions {
@@ -45,7 +45,7 @@ export interface WorkspaceSetOptions {
   worktreePath?: string;
   branch?: string;
   parentBranch?: string;
-  assignment?: string;
+  ticket?: string;
   project?: string;
 }
 
@@ -70,30 +70,30 @@ export async function runWorkspaceSet(
     );
   }
 
-  const path = await resolveAssignmentPath({
-    assignment: options.assignment,
+  const path = await resolveTicketPath({
+    ticket: options.ticket,
     project: options.project,
     cwd,
   });
   if (!(await fileExists(path))) {
-    throw new Error(`Assignment file not found: ${path}`);
+    throw new Error(`Ticket file not found: ${path}`);
   }
 
-  // Pre-write validation — refuse to touch a malformed assignment.
-  const pre = await validateAssignmentFile(path);
+  // Pre-write validation — refuse to touch a malformed ticket.
+  const pre = await validateTicketFile(path);
   if (!pre.ok) {
     throw new Error(
-      `Refusing to write — assignment.md is invalid:\n${pre.errors.map((e) => `  - ${e}`).join('\n')}`,
+      `Refusing to write — ticket.md is invalid:\n${pre.errors.map((e) => `  - ${e}`).join('\n')}`,
     );
   }
 
   const original = await readFile(path, 'utf-8');
-  let next = updateAssignmentWorkspace(original, partial);
-  next = updateAssignmentFile(next, { updated: nowTimestamp() });
+  let next = updateTicketWorkspace(original, partial);
+  next = updateTicketFile(next, { updated: nowTimestamp() });
   await writeFileForce(path, next); // atomic: a crash can't leave a half-written file
 
   // Post-write validation — restore the original if we somehow broke it.
-  const post = await validateAssignmentFile(path);
+  const post = await validateTicketFile(path);
   if (!post.ok) {
     await writeFileForce(path, original);
     throw new Error(
@@ -105,7 +105,7 @@ export async function runWorkspaceSet(
 }
 
 export const workspaceCommand = new Command('workspace').description(
-  'Manage the active assignment workspace binding',
+  'Manage the active ticket workspace binding',
 );
 
 workspaceCommand
@@ -115,8 +115,8 @@ workspaceCommand
   .option('--worktree-path <path>', 'Worktree path (typically <repo>/.worktrees/<branch>)')
   .option('--branch <name>', 'Branch name')
   .option('--parent-branch <name>', 'Parent branch (typically main)')
-  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
-  .option('--project <slug>', 'Project slug. Required with --assignment for a project-nested assignment')
+  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
   .action(async (options: WorkspaceSetOptions) => {
     try {
       const { path, fields } = await runWorkspaceSet(options);

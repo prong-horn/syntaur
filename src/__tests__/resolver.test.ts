@@ -2,25 +2,25 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 
 let tmpRoot: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 
 beforeEach(async () => {
   tmpRoot = await mkdtemp(join(tmpdir(), 'syntaur-resolver-test-'));
   projectsDir = resolve(tmpRoot, 'projects');
-  assignmentsDir = resolve(tmpRoot, 'assignments');
+  ticketsDir = resolve(tmpRoot, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
 });
 
 afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-async function writeAssignment(
+async function writeTicket(
   dir: string,
   id: string,
   extra: Record<string, string> = {},
@@ -41,45 +41,45 @@ async function writeAssignment(
     '# Example',
     '',
   ];
-  await writeFile(resolve(dir, 'assignment.md'), lines.join('\n'));
+  await writeFile(resolve(dir, 'ticket.md'), lines.join('\n'));
 }
 
-describe('resolveAssignmentById', () => {
-  it('finds a standalone assignment by its UUID folder name', async () => {
+describe('resolveTicketById', () => {
+  it('finds a standalone ticket by its UUID folder name', async () => {
     const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    const dir = resolve(assignmentsDir, id);
-    await writeAssignment(dir, id, { project: 'null' });
+    const dir = resolve(ticketsDir, id);
+    await writeTicket(dir, id, { project: 'null' });
 
-    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
 
     expect(resolved).not.toBeNull();
     expect(resolved!.standalone).toBe(true);
     expect(resolved!.projectSlug).toBeNull();
-    expect(resolved!.assignmentSlug).toBe(id);
-    expect(resolved!.assignmentDir).toBe(dir);
+    expect(resolved!.ticketSlug).toBe(id);
+    expect(resolved!.ticketDir).toBe(dir);
     expect(resolved!.id).toBe(id);
   });
 
-  it('finds a project-nested assignment by scanning frontmatter ids', async () => {
+  it('finds a project-nested ticket by scanning frontmatter ids', async () => {
     const id = '11111111-2222-3333-4444-555555555555';
     const projectSlug = 'my-project';
     const aslug = 'build-thing';
-    const dir = resolve(projectsDir, projectSlug, 'assignments', aslug);
-    await writeAssignment(dir, id, { slug: aslug, project: projectSlug });
+    const dir = resolve(projectsDir, projectSlug, 'tickets', aslug);
+    await writeTicket(dir, id, { slug: aslug, project: projectSlug });
 
-    const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+    const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
 
     expect(resolved).not.toBeNull();
     expect(resolved!.standalone).toBe(false);
     expect(resolved!.projectSlug).toBe(projectSlug);
-    expect(resolved!.assignmentSlug).toBe(aslug);
-    expect(resolved!.assignmentDir).toBe(dir);
+    expect(resolved!.ticketSlug).toBe(aslug);
+    expect(resolved!.ticketDir).toBe(dir);
   });
 
   it('returns null when the id is not found anywhere', async () => {
-    const resolved = await resolveAssignmentById(
+    const resolved = await resolveTicketById(
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       'no-such-id-1234-5678-9012-345678901234',
     );
     expect(resolved).toBeNull();
@@ -87,21 +87,21 @@ describe('resolveAssignmentById', () => {
 
   it('prefers the standalone match when the same id appears in both locations', async () => {
     const id = '99999999-8888-7777-6666-555555555555';
-    const standaloneDir = resolve(assignmentsDir, id);
-    const projectNestedDir = resolve(projectsDir, 'proj', 'assignments', 'slug-form');
-    await writeAssignment(standaloneDir, id, { project: 'null' });
-    await writeAssignment(projectNestedDir, id, { slug: 'slug-form', project: 'proj' });
+    const standaloneDir = resolve(ticketsDir, id);
+    const projectNestedDir = resolve(projectsDir, 'proj', 'tickets', 'slug-form');
+    await writeTicket(standaloneDir, id, { project: 'null' });
+    await writeTicket(projectNestedDir, id, { slug: 'slug-form', project: 'proj' });
 
     const warn = console.warn;
     const warnings: string[] = [];
     console.warn = (msg: string) => warnings.push(msg);
     try {
-      const resolved = await resolveAssignmentById(projectsDir, assignmentsDir, id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
 
       expect(resolved).not.toBeNull();
       expect(resolved!.standalone).toBe(true);
-      expect(resolved!.assignmentDir).toBe(standaloneDir);
-      expect(warnings.some((w) => w.includes('Duplicate assignment ID'))).toBe(true);
+      expect(resolved!.ticketDir).toBe(standaloneDir);
+      expect(warnings.some((w) => w.includes('Duplicate ticket ID'))).toBe(true);
     } finally {
       console.warn = warn;
     }

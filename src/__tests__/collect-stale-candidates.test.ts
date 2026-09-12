@@ -65,12 +65,12 @@ tags: []
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-collect-'));
   projectsDir = resolve(testDir, 'projects');
-  const aDir = resolve(projectsDir, 'p1', 'assignments');
+  const aDir = resolve(projectsDir, 'p1', 'tickets');
   await mkdir(resolve(aDir, 'stale-one'), { recursive: true });
   await mkdir(resolve(aDir, 'fresh-one'), { recursive: true });
   await writeFile(resolve(projectsDir, 'p1', 'project.md'), PROJECT_MD);
-  await writeFile(resolve(aDir, 'stale-one', 'assignment.md'), STALE_MD);
-  await writeFile(resolve(aDir, 'fresh-one', 'assignment.md'), FRESH_MD);
+  await writeFile(resolve(aDir, 'stale-one', 'ticket.md'), STALE_MD);
+  await writeFile(resolve(aDir, 'fresh-one', 'ticket.md'), FRESH_MD);
 });
 
 afterEach(async () => {
@@ -80,10 +80,10 @@ afterEach(async () => {
 describe('collectStaleCandidates', () => {
   it('returns only contradiction-stale assignments, keyed by id with reasons', async () => {
     const candidates = await collectStaleCandidates(projectsDir, resolve(testDir, 'standalone'));
-    const ids = candidates.map((c) => c.assignmentId);
+    const ids = candidates.map((c) => c.ticketId);
     expect(ids).toContain('stale-1');
     expect(ids).not.toContain('fresh-1');
-    const stale = candidates.find((c) => c.assignmentId === 'stale-1')!;
+    const stale = candidates.find((c) => c.ticketId === 'stale-1')!;
     expect(stale.projectSlug).toBe('p1');
     expect(stale.reasons.map((r) => r.kind)).toContain('blocked_aging');
   });

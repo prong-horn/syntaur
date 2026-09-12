@@ -88,7 +88,7 @@ function isNpxAvailable(): boolean {
 }
 
 /**
- * The project-nested assignment binding for the cwd session's OPEN engagement,
+ * The project-nested ticket binding for the cwd session's OPEN engagement,
  * sourced from the engagement edge (NOT the demoted context.json scalar).
  * Returns null — degrading to the skip-Tier-2 path — when the session DB can't
  * be initialized, the session has no open engagement, or the binding is
@@ -97,7 +97,7 @@ function isNpxAvailable(): boolean {
  */
 async function readProjectNestedBinding(): Promise<{
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
 } | null> {
   try {
     // getOpenEngagement (via resolveEngagementBinding) reads the session-db
@@ -105,8 +105,8 @@ async function readProjectNestedBinding(): Promise<{
     const { initSessionDb } = await import('../dashboard/session-db.js');
     initSessionDb();
     const binding = await resolveEngagementBinding(process.cwd());
-    if (!binding?.projectSlug || !binding?.assignmentSlug) return null;
-    return { projectSlug: binding.projectSlug, assignmentSlug: binding.assignmentSlug };
+    if (!binding?.projectSlug || !binding?.ticketSlug) return null;
+    return { projectSlug: binding.projectSlug, ticketSlug: binding.ticketSlug };
   } catch {
     return null;
   }
@@ -118,7 +118,7 @@ async function readProjectNestedBinding(): Promise<{
  *
  * Tier 1: `npx skills add prong-horn/syntaur --agent <skills.sh ids>` (with an
  * offline copy fallback). Tier 2: render the protocol-instruction files for
- * each selected agent that has an adapter, when an assignment context is
+ * each selected agent that has an adapter, when a ticket context is
  * present. `--dry-run` prints every intended action and writes nothing.
  */
 export async function crossAgentInstallCommand(
@@ -222,10 +222,10 @@ export async function crossAgentInstallCommand(
     console.log(`Copied skills -> ${globalDir}${reason}`);
   }
 
-  // --- Tier 2: protocol-instruction files (needs an assignment context) ---
+  // --- Tier 2: protocol-instruction files (needs a ticket context) ---
   const adapterTargets = targets.filter((t) => t.instructions);
   if (adapterTargets.length > 0) {
-    // The active project-nested assignment now comes from the cwd session's OPEN
+    // The active project-nested ticket now comes from the cwd session's OPEN
     // engagement, not the demoted context.json scalar. No open engagement (or a
     // standalone binding with no project slug) → no project-nested context →
     // skip Tier-2, exactly as before.
@@ -243,14 +243,14 @@ export async function crossAgentInstallCommand(
       }
       if (!haveCtx) {
         console.log(
-          `No project-nested assignment context in cwd; skipping Tier-2 files for ${t.id}.`,
+          `No project-nested ticket context in cwd; skipping Tier-2 files for ${t.id}.`,
         );
         continue;
       }
       try {
         await setupAdapterCommand(t.id, {
           project: binding!.projectSlug,
-          assignment: binding!.assignmentSlug,
+          ticket: binding!.ticketSlug,
           force,
         });
       } catch (err) {

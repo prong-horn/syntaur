@@ -9,12 +9,12 @@ let origSyntaurHome: string | undefined;
 
 /**
  * Seed a SYNTAUR_HOME with one project (workspace `acme-ws`) containing one
- * assignment (assignment.md + comments.md), plus a standalone assignment.
+ * ticket (ticket.md + comments.md), plus a standalone ticket.
  * Each file body carries the searchable term "widget".
  */
 async function seedHome(root: string): Promise<void> {
   const projectsDir = join(root, 'projects');
-  const assignmentsDir = join(root, 'assignments');
+  const ticketsDir = join(root, 'tickets');
 
   await mkdir(root, { recursive: true });
   await writeFile(
@@ -29,21 +29,21 @@ async function seedHome(root: string): Promise<void> {
     `---\nslug: acme\ntitle: Acme\nworkspace: acme-ws\n---\n# Acme\n`,
   );
 
-  const aDir = join(projectDir, 'assignments', 'build-widget');
+  const aDir = join(projectDir, 'tickets', 'build-widget');
   await mkdir(aDir, { recursive: true });
   await writeFile(
-    join(aDir, 'assignment.md'),
-    `---\nid: 11111111-1111-1111-1111-111111111111\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget assignment body.\n`,
+    join(aDir, 'ticket.md'),
+    `---\nid: 11111111-1111-1111-1111-111111111111\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget ticket body.\n`,
   );
   await writeFile(
     join(aDir, 'comments.md'),
     `---\nassignment: build-widget\n---\n# Comments\n\nA comment mentioning the widget feature.\n`,
   );
 
-  const sDir = join(assignmentsDir, '22222222-2222-2222-2222-222222222222');
+  const sDir = join(ticketsDir, '22222222-2222-2222-2222-222222222222');
   await mkdir(sDir, { recursive: true });
   await writeFile(
-    join(sDir, 'assignment.md'),
+    join(sDir, 'ticket.md'),
     `---\nid: 22222222-2222-2222-2222-222222222222\nslug: solo-widget\ntitle: Solo Widget\ntype: chore\nstatus: pending\n---\n# Solo Widget\n\nA standalone widget task.\n`,
   );
 }
@@ -66,10 +66,10 @@ describe('runSearch', () => {
     const hits = await runSearch('widget', {});
     expect(hits.length).toBeGreaterThan(0);
 
-    const nested = hits.find((h) => h.fileKind === 'assignment' && !h.standalone);
+    const nested = hits.find((h) => h.fileKind === 'ticket' && !h.standalone);
     expect(nested).toBeDefined();
     expect(nested!.projectSlug).toBe('acme');
-    expect(nested!.assignmentSlug).toBe('build-widget');
+    expect(nested!.ticketSlug).toBe('build-widget');
 
     for (const h of hits) {
       expect(typeof h.path).toBe('string');
@@ -82,10 +82,10 @@ describe('runSearch', () => {
     }
   });
 
-  it('indexes assignment, comments, and standalone content kinds', async () => {
+  it('indexes ticket, comments, and standalone content kinds', async () => {
     const hits = await runSearch('widget', { limit: '50' });
     const kinds = new Set(hits.map((h) => h.fileKind));
-    expect(kinds.has('assignment')).toBe(true);
+    expect(kinds.has('ticket')).toBe(true);
     expect(kinds.has('comments')).toBe(true);
   });
 

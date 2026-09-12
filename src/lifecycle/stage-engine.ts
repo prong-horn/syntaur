@@ -13,7 +13,7 @@
  * (`src/utils/query`, verified Node-free), `DERIVE_FIELDS`, and type-only shapes.
  * A purity-guard test enforces it. All fs-bound facts (attestation validity,
  * solicitation currentness, git HEAD) are computed Node-side and passed IN — the
- * engine never reads disk. See the assignment decision record (Decisions 1, 5).
+ * engine never reads disk. See the ticket decision record (Decisions 1, 5).
  *
  * @see design authority §2.2–2.6 (routes, gates, the four check states, regression,
  *      placement) and parent-plan decisions #7 (judged gates: evaluate, don't

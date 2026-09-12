@@ -5,7 +5,7 @@ import { resolve, join } from 'node:path';
 import { executeTransition } from '../lifecycle/transitions.js';
 import { factSetCommand } from '../commands/derive-verbs.js';
 import { migrateStatusHistoryCommand } from '../commands/migrate-status-history.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import {
   initEventsDb,
   closeEventsDb,
@@ -74,7 +74,7 @@ statuses:
 `;
 }
 
-function assignmentMd(): string {
+function ticketMd(): string {
   return `---
 id: feat-x-id
 slug: feat-x
@@ -106,7 +106,7 @@ A real objective.
 }
 
 let projectDir: string;
-let assignmentPath: string;
+let ticketPath: string;
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-event-emit-'));
@@ -117,11 +117,11 @@ beforeEach(async () => {
 
   await writeFile(join(home, 'config.md'), configMd(resolve(home, 'projects')));
   projectDir = join(home, 'projects', 'p1');
-  const aDir = join(projectDir, 'assignments', 'feat-x');
+  const aDir = join(projectDir, 'tickets', 'feat-x');
   await mkdir(aDir, { recursive: true });
   await writeFile(join(projectDir, 'project.md'), '---\nslug: p1\n---\n# P1\n');
-  assignmentPath = join(aDir, 'assignment.md');
-  await writeFile(assignmentPath, assignmentMd());
+  ticketPath = join(aDir, 'ticket.md');
+  await writeFile(ticketPath, assignmentMd());
 });
 
 afterEach(async () => {
@@ -139,14 +139,14 @@ function openEvents() {
 }
 
 async function readFm() {
-  return parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+  return parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
 }
 
 describe('recordStatusEvent self-guard (R5)', () => {
   it('emits nothing when from === to', () => {
     openEvents();
     recordStatusEvent({
-      assignmentId: 'a1',
+      ticketId: 'a1',
       projectSlug: 'p1',
       actor: 'human',
       from: 'draft',
@@ -159,7 +159,7 @@ describe('recordStatusEvent self-guard (R5)', () => {
   it('emits one status-change when from !== to', () => {
     openEvents();
     recordStatusEvent({
-      assignmentId: 'a1',
+      ticketId: 'a1',
       projectSlug: 'p1',
       actor: 'human',
       from: 'draft',
@@ -224,7 +224,7 @@ describe('migration suppression', () => {
     openEvents();
     withSuppressedEvents(() => {
       recordStatusEvent({
-        assignmentId: 's1',
+        ticketId: 's1',
         projectSlug: null,
         actor: 'human',
         from: 'draft',
@@ -235,7 +235,7 @@ describe('migration suppression', () => {
     expect(listEventsByAssignment('s1')).toHaveLength(0);
     // Restored: a post-suppression emit lands.
     recordStatusEvent({
-      assignmentId: 's1',
+      ticketId: 's1',
       projectSlug: null,
       actor: 'human',
       from: 'draft',

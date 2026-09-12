@@ -1,7 +1,7 @@
 import { Command, InvalidArgumentError } from 'commander';
 import { initCommand } from './commands/init.js';
 import { createProjectCommand } from './commands/create-project.js';
-import { createAssignmentCommand } from './commands/create-assignment.js';
+import { newCommand } from './commands/new.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { unassignCommand } from './commands/unassign.js';
@@ -117,33 +117,33 @@ program
   );
 
 program
-  .command('create-assignment')
-  .description('Create a new assignment within a project')
-  .argument('<title>', 'Assignment title')
+  .command('new')
+  .description('Create a new ticket within a project')
+  .argument('<title>', 'Ticket title')
   .option('--project <slug>', 'Target project slug (required unless --one-off)')
-  .option('--one-off', 'Create a standalone assignment at ~/.syntaur/assignments/<uuid>/')
+  .option('--one-off', 'Create a standalone ticket at ~/.syntaur/tickets/<uuid>/')
   .option('--slug <slug>', 'Override auto-generated slug (display only for standalone; folder name for project-nested)')
   .option(
     '--priority <level>',
     'Priority level (low|medium|high|critical)',
     'medium',
   )
-  .option('--type <type>', 'Assignment type (e.g. feature, bug, refactor)')
-  .option('--workflow <id>', 'Lifecycle workflow this assignment follows (defaults to the resolved binding)')
+  .option('--type <type>', 'Ticket type (e.g. feature, bug, refactor)')
+  .option('--workflow <id>', 'Lifecycle workflow this ticket follows (defaults to the resolved binding)')
   .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
-  .option('--links <slugs>', 'Comma-separated linked assignment slugs (projectSlug/assignmentSlug format)')
+  .option('--links <slugs>', 'Comma-separated linked ticket slugs (projectSlug/ticketSlug format)')
   .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
-  .option('--ready', 'Create the assignment directly as ready_for_planning (skips the draft phase)')
+  .option('--ready', 'Create the ticket directly as ready_for_planning (skips the draft phase)')
   .action(
     runCommand(async (title, options) => {
-      await createAssignmentCommand(title, options);
+      await newCommand(title, options);
     }),
   );
 
 program
   .command('comment')
-  .description('Add a comment to an assignment (CLI-mediated, append-only)')
-  .argument('<assignment>', 'Target assignment slug (with --project) or UUID (standalone)')
+  .description('Add a comment to a ticket (CLI-mediated, append-only)')
+  .argument('<ticket>', 'Target ticket slug (with --project) or UUID (standalone)')
   .argument('<text>', 'Comment body')
   .option('--project <slug>', 'Project slug if the target is project-nested')
   .option('--reply-to <id>', 'ID of the comment this replies to')
@@ -151,8 +151,8 @@ program
   .option('--author <name>', 'Override author (default: $USER or "unknown")')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, text, options) => {
-      await commentCommand(assignment, text, options);
+    runCommand(async (ticket, text, options) => {
+      await commentCommand(ticket, text, options);
     }),
   );
 
@@ -176,47 +176,47 @@ program
 
 program
   .command('assign')
-  .description('Set the assignee on an assignment')
-  .argument('<assignment>', 'Assignment slug')
+  .description('Set the assignee on a ticket')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name to assign')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await assignCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await assignCommand(ticket, options);
     }),
   );
 
 program
   .command('unassign')
-  .description('Clear the assignee on an assignment (inverse of assign)')
-  .argument('<assignment>', 'Assignment slug (UUID for standalone)')
+  .description('Clear the assignee on a ticket (inverse of assign)')
+  .argument('<ticket>', 'Ticket slug (UUID for standalone)')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await unassignCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await unassignCommand(ticket, options);
     }),
   );
 
 program
   .command('start')
   .description('Assert implementation has started (alias of implement under derived status)')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await startCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await startCommand(ticket, options);
     }),
   );
 
 program
   .command('archive')
-  .description('Archive an assignment or a project (hidden from normal views; restorable)')
-  .argument('<target>', 'Assignment slug/UUID, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as an assignment within this project')
+  .description('Archive a ticket or a project (hidden from normal views; restorable)')
+  .argument('<target>', 'Ticket slug/UUID, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as a ticket within this project')
   .option('--reason <text>', 'Optional reason recorded with the archive')
   .option('--dir <path>', 'Override default project directory')
   .action(
@@ -227,9 +227,9 @@ program
 
 program
   .command('restore')
-  .description('Restore an archived assignment or project (preserves prior status)')
-  .argument('<target>', 'Assignment slug/UUID, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as an assignment within this project')
+  .description('Restore an archived ticket or project (preserves prior status)')
+  .argument('<target>', 'Ticket slug/UUID, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as a ticket within this project')
   .option('--dir <path>', 'Override default project directory')
   .action(
     runCommand(async (target, options) => {
@@ -240,26 +240,26 @@ program
 program
   .command('shape')
   .description('Recompute derived status; ready_for_planning follows once objective + ACs are real')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await shapeCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await shapeCommand(ticket, options);
     }),
   );
 
 program
   .command('plan-ready')
   .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await planReadyCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await planReadyCommand(ticket, options);
     }),
   );
 
@@ -276,7 +276,7 @@ program
 
 program
   .command('migrate-status-history')
-  .description('Seed a synthetic statusHistory entry on assignments that lack one (use --apply to write)')
+  .description('Seed a synthetic statusHistory entry on tickets that lack one (use --apply to write)')
   .option('--dir <path>', 'Override default project directory')
   .option('--apply', 'Apply the migration (default: dry-run)')
   .action(
@@ -320,42 +320,42 @@ program
 
 program
   .command('park')
-  .description('Park an assignment (intentional withhold); disposition derives to parked')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .description('Park a ticket (intentional withhold); disposition derives to parked')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Why it is parked (recorded in history)')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await parkCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await parkCommand(ticket, options);
     }),
   );
 
 program
   .command('unpark')
-  .description('Unpark an assignment; status re-derives from facts')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .description('Unpark a ticket; status re-derives from facts')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await unparkCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await unparkCommand(ticket, options);
     }),
   );
 
 program
   .command('request-review')
   .description('Request review (sets reviewRequested); the review phase derives from it')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--clear', 'Clear the review request instead')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await requestReviewCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await requestReviewCommand(ticket, options);
     }),
   );
 
@@ -366,22 +366,22 @@ const factCommand = program
 factCommand
   .command('set')
   .description('Set a declared custom fact (bool/number); status re-derives from it')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .argument('<name>', 'Declared fact name (statuses.facts)')
   .argument('<value>', 'Value (bool: true/false; number: any finite number)')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, name, value, options) => {
-      await factSetCommand(assignment, name, value, options);
+    runCommand(async (ticket, name, value, options) => {
+      await factSetCommand(ticket, name, value, options);
     }),
   );
 
 program
   .command('attest')
   .description('Record an attestation (agent reviewed a revision with a verdict); revision-bound')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .argument('<fact>', 'Declared attestation fact name (statuses.facts)')
   .option('--verdict <verdict>', 'approved | changes-requested', 'approved')
   .option('--note <text>', 'Optional note recorded on the attestation')
@@ -389,16 +389,16 @@ program
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, fact, options) => {
-      await attestCommand(assignment, fact, options);
+    runCommand(async (ticket, fact, options) => {
+      await attestCommand(ticket, fact, options);
     }),
   );
 
 program
   .command('recompute')
-  .description('Recompute derived status for one assignment or --all (headless reconcile)')
-  .argument('[assignment]', 'Assignment slug or standalone UUID')
-  .option('--all', 'Recompute every assignment (projects + standalone)')
+  .description('Recompute derived status for one ticket or --all (headless reconcile)')
+  .argument('[assignment]', 'Ticket slug or standalone UUID')
+  .option('--all', 'Recompute every ticket (projects + standalone)')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
@@ -408,94 +408,94 @@ program
     'Resolve the implicit target from this session\'s latest engagement (open-else-latest). The SessionEnd cleanup hook passes the ending session id here; explicit provenance lets it recompute after `session stop` closed the engagement.',
   )
   .action(
-    runCommand(async (assignment, options) => {
-      await recomputeCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await recomputeCommand(ticket, options);
     }),
   );
 
 program
   .command('implement')
   .description('Assert implementation has started; status derives to in_progress when the plan is approved')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Agent name (sets assignee if not already set)')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await implementCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await implementCommand(ticket, options);
     }),
   );
 
 program
   .command('complete')
-  .description('Transition an assignment to completed')
-  .argument('<assignment>', 'Assignment slug')
+  .description('Transition a ticket to completed')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await completeCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await completeCommand(ticket, options);
     }),
   );
 
 program
   .command('block')
   .description('Assert a blocker (sets blockedReason); disposition derives to blocked')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Reason for blocking')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await blockCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await blockCommand(ticket, options);
     }),
   );
 
 program
   .command('unblock')
   .description('Clear the blocker; status re-derives from facts')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await unblockCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await unblockCommand(ticket, options);
     }),
   );
 
 program
   .command('review')
   .description('Request review; the review phase derives from it (or from all ACs checked)')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await reviewCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await reviewCommand(ticket, options);
     }),
   );
 
 program
   .command('fail')
-  .description('Transition an assignment to failed')
-  .argument('<assignment>', 'Assignment slug')
+  .description('Transition a ticket to failed')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await failCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await failCommand(ticket, options);
     }),
   );
 
 program
   .command('reopen')
   .description('Reopen a completed or failed assignment')
-  .argument('<assignment>', 'Assignment slug')
+  .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
-    runCommand(async (assignment, options) => {
-      await reopenCommand(assignment, options);
+    runCommand(async (ticket, options) => {
+      await reopenCommand(ticket, options);
     }),
   );
 
@@ -590,7 +590,7 @@ program
 program
   .command('configure-statusline')
   .description(
-    'Configure which segments (git, assignment, session, model, ctx, cwd, wrap) appear in the syntaur statusLine and in what order.',
+    'Configure which segments (git, ticket, session, model, ctx, cwd, wrap) appear in the syntaur statusLine and in what order.',
   )
   .option(
     '--preset <name>',
@@ -655,7 +655,7 @@ program
   .description('Generate adapter instruction files for a framework in the current directory')
   .argument('<framework>', 'Target framework: built-in ids cursor, codex, opencode, pi, openclaw, hermes (plus any user descriptor with an instructions adapter in ~/.syntaur/targets/)')
   .option('--project <slug>', 'Target project slug (required)')
-  .option('--assignment <slug>', 'Target assignment slug (required)')
+  .option('--ticket <slug>', 'Target ticket slug (required)')
   .option('--force', 'Overwrite existing adapter files')
   .option('--dir <path>', 'Override default project directory')
   .action(
@@ -668,7 +668,7 @@ program
   .command('track-session')
   .description('Register an agent session (optionally linked to a project/assignment)')
   .option('--project <slug>', 'Target project slug')
-  .option('--assignment <slug>', 'Assignment slug')
+  .option('--ticket <slug>', 'Ticket slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
   .option(
     '--session-id <id>',
@@ -769,7 +769,7 @@ program.addHelpText(
 Common workflow:
   $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
   $ syntaur create-project "My App"                Start a new project
-  $ syntaur create-assignment --project my-app "Add login"   Add a task to a project
+  $ syntaur new --project my-app "Add login"   Add a ticket to a project
   $ syntaur dashboard                              Open the local web dashboard
   $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes
 

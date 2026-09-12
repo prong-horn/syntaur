@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { rawPatchMoverViolation } from '../dashboard/api-write.js';
-import { parseAssignmentFull } from '../dashboard/parser.js';
+import { parseTicketFull } from '../dashboard/parser.js';
 
 /**
  * WS-2 Task 2.6 — the raw whole-document PATCH is default-deny on a migrated
- * assignment: only inert scalar-metadata edits pass; any field that moves a
+ * ticket: only inert scalar-metadata edits pass; any field that moves a
  * ticket or alters derived/gate/pause state is rejected. This pins the exact
  * allow/reject list (the codex r5 `blockedReason` correction in particular).
  */
@@ -55,7 +55,7 @@ Real.
 `;
 
 function violation(next: string): string | null {
-  return rawPatchMoverViolation(parseAssignmentFull(BASE), parseAssignmentFull(next));
+  return rawPatchMoverViolation(parseTicketFull(BASE), parseTicketFull(next));
 }
 
 describe('rawPatchMoverViolation', () => {

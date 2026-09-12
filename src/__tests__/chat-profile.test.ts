@@ -30,7 +30,7 @@ const BASE: AgentDefinition = {
   harness: 'claude',
   respondsTo: 'all-human',
   default: true,
-  systemPrompt: 'You are the assignment agent.',
+  systemPrompt: 'You are the ticket agent.',
   source: null,
 };
 
@@ -84,7 +84,7 @@ describe('newSessionMeta', () => {
   it('claude carries the system prompt in _meta.systemPrompt.append', () => {
     const profile = resolveSessionProfile(BASE, HARNESSES.claude);
     const meta = newSessionMeta(profile, HARNESSES.claude, BASE.systemPrompt);
-    expect(meta._meta).toEqual({ systemPrompt: { append: 'You are the assignment agent.' } });
+    expect(meta._meta).toEqual({ systemPrompt: { append: 'You are the ticket agent.' } });
     expect(meta.mcpServers).toEqual([]);
   });
 
@@ -191,7 +191,7 @@ describe('applyProfile', () => {
 
 describe('prompt framing', () => {
   async function seedAssignment(files: Record<string, string>): Promise<string> {
-    const dir = join(sandbox, 'assignment');
+    const dir = join(sandbox, 'ticket');
     await mkdir(dir, { recursive: true });
     for (const [name, content] of Object.entries(files)) {
       await writeFile(join(dir, name), content, 'utf-8');
@@ -201,22 +201,22 @@ describe('prompt framing', () => {
 
   const context = {
     projectSlug: 'syntaur-meta',
-    assignmentSlug: 'assignment-chat-single-agent',
-    assignmentTitle: 'Assignment chat',
+    ticketSlug: 'assignment-chat-single-agent',
+    ticketTitle: 'Ticket chat',
     worktreePath: '/tmp/worktree',
     branch: 'feat/chat',
   };
 
   it('claude gets resource blocks and a <context> section, but no <system> block', async () => {
     const dir = await seedAssignment({
-      'assignment.md': '# Assignment\n',
+      'ticket.md': '# Assignment\n',
       'plan.md': '# Plan v1\n',
       'progress.md': '# Progress\n',
     });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
-      assignmentDir: dir,
+      ticketDir: dir,
       context,
     });
     expect(blocks.map((b) => b.type)).toEqual(['resource', 'resource', 'resource', 'text']);
@@ -227,21 +227,21 @@ describe('prompt framing', () => {
   });
 
   it('codex gets a <system> block first', async () => {
-    const dir = await seedAssignment({ 'assignment.md': '# Assignment\n' });
+    const dir = await seedAssignment({ 'ticket.md': '# Assignment\n' });
     const blocks = await buildStandingContext({
       definition: { ...BASE, harness: 'codex' },
       harness: HARNESSES.codex,
-      assignmentDir: dir,
+      ticketDir: dir,
       context,
     });
     expect(blocks[0].type).toBe('text');
-    expect(text(blocks[0])).toBe('<system>\nYou are the assignment agent.\n</system>');
+    expect(text(blocks[0])).toBe('<system>\nYou are the ticket agent.\n</system>');
     expect(blocks.map((b) => b.type)).toEqual(['text', 'resource', 'text']);
   });
 
   it('picks the highest plan version', async () => {
     const dir = await seedAssignment({
-      'assignment.md': '# Assignment\n',
+      'ticket.md': '# Assignment\n',
       'plan.md': '# Plan v1\n',
       'plan-v2.md': '# Plan v2\n',
       'plan-v10.md': '# Plan v10\n',
@@ -249,7 +249,7 @@ describe('prompt framing', () => {
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
-      assignmentDir: dir,
+      ticketDir: dir,
       context,
     });
     const plans = blocks.filter(
@@ -266,13 +266,13 @@ describe('prompt framing', () => {
 
   it('truncates a long progress.md to its newest entries', async () => {
     const dir = await seedAssignment({
-      'assignment.md': '# Assignment\n',
+      'ticket.md': '# Assignment\n',
       'progress.md': Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n'),
     });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
-      assignmentDir: dir,
+      ticketDir: dir,
       context,
     });
     const progress = blocks.find(
@@ -287,11 +287,11 @@ describe('prompt framing', () => {
   });
 
   it('skips records that are missing or empty', async () => {
-    const dir = await seedAssignment({ 'assignment.md': '   \n' });
+    const dir = await seedAssignment({ 'ticket.md': '   \n' });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
-      assignmentDir: dir,
+      ticketDir: dir,
       context,
     });
     expect(blocks.map((b) => b.type)).toEqual(['text']);
@@ -335,8 +335,8 @@ describe('prompt framing', () => {
     expect(buildTurnPrompt({ author: 'human', text: 'hi' })).toHaveLength(1);
   });
 
-  it('escapes an assignment title in the context section', () => {
-    expect(buildContextSection({ ...context, assignmentTitle: 'A <b> title' })).toContain(
+  it('escapes a ticket title in the context section', () => {
+    expect(buildContextSection({ ...context, ticketTitle: 'A <b> title' })).toContain(
       'A &lt;b&gt; title',
     );
   });

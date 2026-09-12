@@ -48,7 +48,9 @@ interface InsertEventRow {
 
 /** Caller-facing input for the single exported writer, `recordEvent`. */
 export interface RecordEventInput {
-  assignmentId: string;
+  ticketId?: string;
+  /** @deprecated Dashboard/migrate compat until Task 2 */
+  assignmentId?: string;
   projectSlug?: string | null;
   type: string;
   /** Object (JSON-stringified before storage) or a pre-stringified string. NEVER pass secrets/raw bodies. */
@@ -165,6 +167,8 @@ function insertEvent(row: InsertEventRow): void {
 export function recordEvent(input: RecordEventInput): void {
   try {
     if (!db) initEventsDb();
+    const ticketId = input.ticketId ?? input.assignmentId;
+    if (!ticketId) throw new Error('recordEvent requires ticketId');
 
     let details: string | null = null;
     if (input.details !== undefined && input.details !== null) {
@@ -174,7 +178,7 @@ export function recordEvent(input: RecordEventInput): void {
 
     insertEvent({
       event_id: generateId(),
-      assignment_id: input.assignmentId,
+      assignment_id: ticketId,
       project_slug: input.projectSlug ?? null,
       at: input.at ?? new Date().toISOString(),
       actor: input.actor,
@@ -188,17 +192,17 @@ export function recordEvent(input: RecordEventInput): void {
 }
 
 /**
- * List events for an assignment, newest-first (`ORDER BY at DESC`). Optional
+ * List events for a ticket, newest-first (`ORDER BY at DESC`). Optional
  * filters: `since` (`at >= since`), `types` (`type IN (...)`), `limit`.
  */
 export function listEventsByAssignment(
-  assignmentId: string,
+  ticketId: string,
   filters?: ListEventsFilters,
 ): EventRow[] {
   const database = getEventsDb();
 
   const clauses: string[] = ['assignment_id = ?'];
-  const params: Array<string | number> = [assignmentId];
+  const params: Array<string | number> = [ticketId];
 
   if (filters?.since) {
     clauses.push('at >= ?');
@@ -225,14 +229,14 @@ export function listEventsByAssignment(
 }
 
 /**
- * Whether any events exist for an assignment. Used ONLY for the backfill
+ * Whether any events exist for a ticket. Used ONLY for the backfill
  * dry-run preview count — NOT as an idempotency gate (idempotency is the
  * `source_key` UNIQUE constraint via `INSERT OR IGNORE`).
  */
-export function hasEventsForAssignment(assignmentId: string): boolean {
+export function hasEventsForAssignment(ticketId: string): boolean {
   const database = getEventsDb();
   const row = database
     .prepare('SELECT 1 FROM events WHERE assignment_id = ? LIMIT 1')
-    .get(assignmentId);
+    .get(ticketId);
   return row !== undefined;
 }

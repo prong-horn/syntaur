@@ -1,11 +1,14 @@
 export interface ScratchpadParams {
-  assignmentSlug: string;
+  ticketSlug?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentSlug?: string;
   timestamp: string;
 }
 
 export function renderScratchpad(params: ScratchpadParams): string {
+  const slug = params.ticketSlug ?? params.assignmentSlug ?? '';
   return `---
-assignment: ${params.assignmentSlug}
+ticket: ${slug}
 updated: "${params.timestamp}"
 ---
 

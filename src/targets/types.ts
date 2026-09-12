@@ -16,9 +16,9 @@
  */
 export interface ProtocolContext {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   projectDir: string;
-  assignmentDir: string;
+  ticketDir: string;
 }
 
 /**

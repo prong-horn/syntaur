@@ -6,7 +6,7 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { createProjectCommand } from '../commands/create-project.js';
-import { createAssignmentCommand } from '../commands/create-assignment.js';
+import { newCommand } from '../commands/new.js';
 import { trackSessionCommand } from '../commands/track-session.js';
 import {
   closeSessionDb,
@@ -43,11 +43,11 @@ describe('createProjectCommand', () => {
     expect(files).toContain('project.md');
     expect(files).not.toContain('agent.md');
     expect(files).not.toContain('claude.md');
-    expect(files).toContain('_index-assignments.md');
+    expect(files).toContain('_index-tickets.md');
     expect(files).toContain('_index-plans.md');
     expect(files).toContain('_index-decisions.md');
     expect(files).toContain('_status.md');
-    expect(files).toContain('assignments');
+    expect(files).toContain('tickets');
     expect(files).not.toContain('resources');
     expect(files).not.toContain('memories');
   });
@@ -85,20 +85,20 @@ describe('createProjectCommand', () => {
   });
 });
 
-describe('createAssignmentCommand', () => {
-  it('creates a standalone assignment via --one-off at ~/.syntaur/assignments/<uuid>/', async () => {
-    await createAssignmentCommand('Write Tests', {
+describe('newCommand', () => {
+  it('creates a standalone ticket via --one-off at ~/.syntaur/tickets/<uuid>/', async () => {
+    await newCommand('Write Tests', {
       oneOff: true,
     });
 
-    const standaloneRoot = resolve(testDir, 'assignments');
+    const standaloneRoot = resolve(testDir, 'tickets');
     const folders = await readdir(standaloneRoot);
     expect(folders.length).toBe(1);
     const uuid = folders[0];
-    const assignmentDir = resolve(standaloneRoot, uuid);
+    const ticketDir = resolve(standaloneRoot, uuid);
 
-    const files = await readdir(assignmentDir);
-    expect(files).toContain('assignment.md');
+    const files = await readdir(ticketDir);
+    expect(files).toContain('ticket.md');
     expect(files).not.toContain('plan.md');
     expect(files).toContain('scratchpad.md');
     expect(files).toContain('handoff.md');
@@ -108,7 +108,7 @@ describe('createAssignmentCommand', () => {
     expect(files.length).toBe(6);
 
     const content = await readFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('slug: write-tests');
@@ -119,16 +119,16 @@ describe('createAssignmentCommand', () => {
     expect(content).toContain('assignee: null');
   });
 
-  it('writes acceptanceCriteria as checkbox items in assignment.md when option is set', async () => {
+  it('writes acceptanceCriteria as checkbox items in ticket.md when option is set', async () => {
     await createProjectCommand('Test Project', { dir: testDir });
-    await createAssignmentCommand('Promoted Task', {
+    await newCommand('Promoted Task', {
       project: 'test-project',
       dir: testDir,
       silent: true,
       acceptanceCriteria: ['fix the parser', 'add a test'],
     });
     const content = await readFile(
-      resolve(testDir, 'test-project', 'assignments', 'promoted-task', 'assignment.md'),
+      resolve(testDir, 'test-project', 'tickets', 'promoted-task', 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('## Acceptance Criteria');
@@ -139,31 +139,31 @@ describe('createAssignmentCommand', () => {
 
   it('rejects --one-off with --depends-on', async () => {
     await expect(
-      createAssignmentCommand('Test', {
+      newCommand('Test', {
         oneOff: true,
         dependsOn: 'foo',
       }),
-    ).rejects.toThrow('Standalone assignments cannot have dependencies');
+    ).rejects.toThrow('Standalone tickets cannot have dependencies');
   });
 
-  it('creates assignment with --project in specified dir', async () => {
+  it('creates ticket with --project in specified dir', async () => {
     await createProjectCommand('Test Project', { dir: testDir });
 
-    await createAssignmentCommand('My Task', {
+    await newCommand('My Task', {
       project: 'test-project',
       dir: testDir,
       priority: 'high',
       dependsOn: 'dep-one,dep-two',
     });
 
-    const assignmentDir = resolve(
+    const ticketDir = resolve(
       testDir,
       'test-project',
-      'assignments',
+      'tickets',
       'my-task',
     );
     const content = await readFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('status: draft');
@@ -175,13 +175,13 @@ describe('createAssignmentCommand', () => {
 
   it('throws without --project or --one-off', async () => {
     await expect(
-      createAssignmentCommand('Test', {}),
+      newCommand('Test', {}),
     ).rejects.toThrow('Either --project');
   });
 
   it('throws with both --project and --one-off', async () => {
     await expect(
-      createAssignmentCommand('Test', {
+      newCommand('Test', {
         project: 'some-project',
         oneOff: true,
       }),
@@ -190,21 +190,21 @@ describe('createAssignmentCommand', () => {
 
   it('throws on empty title', async () => {
     await expect(
-      createAssignmentCommand('', { project: 'test' }),
+      newCommand('', { project: 'test' }),
     ).rejects.toThrow('cannot be empty');
   });
 
-  it('creates assignment with --ready as ready_for_planning', async () => {
+  it('creates ticket with --ready as ready_for_planning', async () => {
     await createProjectCommand('Test Project', { dir: testDir });
 
-    await createAssignmentCommand('Already Shaped', {
+    await newCommand('Already Shaped', {
       project: 'test-project',
       dir: testDir,
       ready: true,
     });
 
     const content = await readFile(
-      resolve(testDir, 'test-project', 'assignments', 'already-shaped', 'assignment.md'),
+      resolve(testDir, 'test-project', 'tickets', 'already-shaped', 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('status: ready_for_planning');
@@ -213,7 +213,7 @@ describe('createAssignmentCommand', () => {
 
   it('throws on invalid project slug', async () => {
     await expect(
-      createAssignmentCommand('Test', {
+      newCommand('Test', {
         project: 'INVALID SLUG!',
         dir: testDir,
       }),
@@ -223,7 +223,7 @@ describe('createAssignmentCommand', () => {
   it('throws on invalid dependency slug', async () => {
     await createProjectCommand('Test', { dir: testDir });
     await expect(
-      createAssignmentCommand('Task', {
+      newCommand('Task', {
         project: 'test',
         dir: testDir,
         dependsOn: 'valid-dep,INVALID!',

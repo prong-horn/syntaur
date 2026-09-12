@@ -14,31 +14,43 @@
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
-import type { AssignmentStatus, TransitionResult } from './types.js';
+import type { TicketStatus, TransitionResult } from './types.js';
 import type { EngineMove } from './engine-step.js';
 import {
   isStagesMigrated,
   recomputeAndWrite,
   resolveRecomputeContext,
 } from './recompute.js';
-import { parseAssignmentFrontmatter } from './frontmatter.js';
+import { parseTicketFrontmatter } from './frontmatter.js';
+
+type TicketPathInput = {
+  ticketPath?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentPath?: string;
+};
+
+function resolveTicketPath(input: TicketPathInput): string {
+  const path = input.ticketPath ?? input.assignmentPath;
+  if (!path) throw new Error('ticketPath is required');
+  return path;
+}
 
 /**
- * Whether the stage ENGINE is active for THIS assignment: the `stages-migrated`
+ * Whether the stage ENGINE is active for THIS ticket: the `stages-migrated`
  * marker is set AND the ticket resolves to a per-file StageWorkflow. Bare
  * `isStagesMigrated()` is NOT sufficient (codex review blockers 3+4) — a
- * marker-set assignment with no per-file workflow is the intended rollout-dormant
+ * marker-set ticket with no per-file workflow is the intended rollout-dormant
  * state and stays on the ladder. Used to gate the raw-PATCH mover guard and any
  * other site that must distinguish "engine owns this ticket" from "marker set".
  */
 export async function isEngineActiveForAssignment(
-  assignmentPath: string,
+  ticketPath: string,
   projectDir: string | null,
 ): Promise<boolean> {
   if (!(await isStagesMigrated())) return false;
-  if (!(await fileExists(assignmentPath))) return false;
+  if (!(await fileExists(ticketPath))) return false;
   const { workflowResolver } = await resolveRecomputeContext();
-  const fm = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
   return (await workflowResolver.stageWorkflowFor(fm, projectDir)) !== null;
 }
 
@@ -73,18 +85,18 @@ function hasFailureTerminal(workflow: StageWorkflow): boolean {
   );
 }
 
-export async function runEngineTransition(input: {
-  assignmentPath: string;
+export async function runEngineTransition(input: TicketPathInput & {
   projectDir: string | null;
   command: string;
   by: string | null;
   reason?: string;
 }): Promise<TransitionResult | null> {
+  const ticketPath = resolveTicketPath(input);
   if (!(await isStagesMigrated())) return null;
-  if (!(await fileExists(input.assignmentPath))) return null;
+  if (!(await fileExists(ticketPath))) return null;
 
   const { context, workflowResolver } = await resolveRecomputeContext();
-  const fm = parseAssignmentFrontmatter(await readFile(input.assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
   const workflow = await workflowResolver.stageWorkflowFor(fm, input.projectDir);
   if (!workflow) return null; // no per-file workflow → ladder
   // The ticket's stored status must be a stage in this workflow, else the engine
@@ -100,7 +112,7 @@ export async function runEngineTransition(input: {
   if (input.command === 'fail' && !hasFailureTerminal(workflow)) {
     return {
       success: false,
-      message: `Workflow "${workflow.id}" declares no failure terminal (terminal_failure) — cannot fail this assignment.`,
+      message: `Workflow "${workflow.id}" declares no failure terminal (terminal_failure) — cannot fail this ticket.`,
       fromStatus: fm.status,
     };
   }
@@ -109,7 +121,7 @@ export async function runEngineTransition(input: {
   if (!move) return null; // not an engine command → ladder
 
   const fromStatus = fm.status;
-  const result = await recomputeAndWrite(input.assignmentPath, {
+  const result = await recomputeAndWrite(ticketPath, {
     cause: input.command,
     by: input.by,
     projectDir: input.projectDir,
@@ -134,7 +146,7 @@ export async function runEngineTransition(input: {
     success: true,
     message: `${fromStatus} → ${result.status}`,
     fromStatus,
-    toStatus: result.status as AssignmentStatus,
+    toStatus: result.status as TicketStatus,
   };
 }
 
@@ -152,18 +164,18 @@ export type EngineOverrideResult =
   | { ok: true; status: string }
   | { ok: false; code: number; message: string };
 
-export async function runEngineOverride(input: {
-  assignmentPath: string;
+export async function runEngineOverride(input: TicketPathInput & {
   projectDir: string | null;
   status: string | null; // null ⇒ clear/unpin
   by: string | null;
   reason?: string;
 }): Promise<EngineOverrideResult | null> {
+  const ticketPath = resolveTicketPath(input);
   if (!(await isStagesMigrated())) return null;
-  if (!(await fileExists(input.assignmentPath))) return null;
+  if (!(await fileExists(ticketPath))) return null;
 
   const { context, workflowResolver } = await resolveRecomputeContext();
-  const fm = parseAssignmentFrontmatter(await readFile(input.assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
   const workflow = await workflowResolver.stageWorkflowFor(fm, input.projectDir);
   if (!workflow) return null; // no per-file workflow → ladder pin
   // Current status must be a stage here, else the engine step no-ops through the
@@ -190,7 +202,7 @@ export async function runEngineOverride(input: {
     };
   }
 
-  const result = await recomputeAndWrite(input.assignmentPath, {
+  const result = await recomputeAndWrite(ticketPath, {
     cause: 'pin',
     by: input.by,
     projectDir: input.projectDir,

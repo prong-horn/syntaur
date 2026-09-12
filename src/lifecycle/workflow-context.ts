@@ -5,7 +5,7 @@
  *
  * Every global-config derive/transition/terminal/label read site (CLI recompute,
  * dashboard projection, available-transitions, doctor, re-bind/delete scoping)
- * routes through {@link resolveAssignmentWorkflowContext} so per-workflow
+ * routes through {@link resolveTicketWorkflowContext} so per-workflow
  * behavior can never diverge across those surfaces. It composes the pure pieces:
  * `readProjectBinding` (project.md) + first-hit-wins `resolveWorkflowId` +
  * `getWorkflowBundle` + the shared `buildDeriveContext` + `buildTransitionTable`.
@@ -34,8 +34,8 @@ export interface WorkflowConfigView {
   defaultWorkflow?: string | null;
 }
 
-/** The binding-relevant subset of an assignment's frontmatter. */
-export interface AssignmentBindingFields {
+/** The binding-relevant subset of a ticket's frontmatter. */
+export interface TicketBindingFields {
   workflow?: string | null;
   type?: string | null;
 }
@@ -59,7 +59,7 @@ export interface WorkflowContext {
    * STAGE library (`loadWorkflowLibrary`) — NOT the legacy library — so a valid
    * per-file id doesn't fall to `default`. `null` when no per-file workflow
    * resolves (the dormant/legacy state, until WS-3 seeds workflows). Only
-   * `forAssignment` populates it; `buildWorkflowContext` leaves it `null`. */
+   * `forTicket` populates it; `buildWorkflowContext` leaves it `null`. */
   stageWorkflow: StageWorkflow | null;
 }
 
@@ -84,7 +84,7 @@ export function buildWorkflowContext(
     terminalStatuses: deriveContext.terminalStatuses,
     knownStatusIds: deriveContext.knownStatusIds,
     statusLabel: (id) => labels.get(id) ?? toTitleCase(id),
-    stageWorkflow: null, // legacy/id-cached path — the resolver's forAssignment attaches the real one
+    stageWorkflow: null, // legacy/id-cached path — the resolver's forTicket attaches the real one
   };
 }
 
@@ -95,18 +95,18 @@ const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowB
  * precedence over the available workflow library. Shared by the async helper,
  * the sweep resolver, doctor, and re-bind scoping.
  */
-export function resolveAssignmentWorkflowId(
+export function resolveTicketWorkflowId(
   config: WorkflowConfigView,
   binding: ProjectWorkflowBinding,
-  assignment: AssignmentBindingFields,
+  ticket: TicketBindingFields,
   /** Override the available-id set. Defaults to the LEGACY library (the ladder
    * resolution). WS-2 passes the STAGE library's keys so a valid per-file id
    * doesn't fall through to `default` (codex r4 finding 4). */
   available: ReadonlySet<string> = new Set(Object.keys(getWorkflowLibrary(config))),
 ): string {
   return resolveWorkflowId({
-    assignmentWorkflow: assignment.workflow ?? null,
-    assignmentType: assignment.type ?? null,
+    ticketWorkflow: ticket.workflow ?? null,
+    ticketType: ticket.type ?? null,
     projectDefaultWorkflow: binding.defaultWorkflow,
     projectWorkflowByType: binding.workflowByType,
     globalDefaultWorkflow: config.defaultWorkflow ?? null,
@@ -114,9 +114,9 @@ export function resolveAssignmentWorkflowId(
   });
 }
 
-export interface ResolveAssignmentWorkflowContextInput {
-  /** The assignment's binding-relevant frontmatter (a full frontmatter is fine). */
-  assignment: AssignmentBindingFields;
+export interface ResolveTicketWorkflowContextInput {
+  /** The ticket's binding-relevant frontmatter (a full frontmatter is fine). */
+  ticket: TicketBindingFields;
   /** Project dir to read the binding from (async). Ignored when `projectBinding` given. */
   projectDir?: string | null;
   /** Pre-read project binding — pass to skip the project.md read. */
@@ -125,18 +125,18 @@ export interface ResolveAssignmentWorkflowContextInput {
 }
 
 /**
- * Resolve the full {@link WorkflowContext} for one assignment. Reads
+ * Resolve the full {@link WorkflowContext} for one ticket. Reads
  * `<projectDir>/project.md` for the binding when a pre-read `projectBinding` is
- * not supplied; standalone assignments (no project) resolve via the global/
+ * not supplied; standalone tickets (no project) resolve via the global/
  * built-in default.
  */
-export async function resolveAssignmentWorkflowContext(
-  input: ResolveAssignmentWorkflowContextInput,
+export async function resolveTicketWorkflowContext(
+  input: ResolveTicketWorkflowContextInput,
 ): Promise<WorkflowContext> {
   const binding =
     input.projectBinding ??
     (input.projectDir ? await readProjectBinding(input.projectDir) : EMPTY_BINDING);
-  const workflowId = resolveAssignmentWorkflowId(input.config, binding, input.assignment);
+  const workflowId = resolveTicketWorkflowId(input.config, binding, input.ticket);
   return buildWorkflowContext(input.config, workflowId);
 }
 
@@ -173,13 +173,13 @@ export function makeWorkflowContextResolver(config: WorkflowConfigView) {
   /** Resolve the ticket's per-file StageWorkflow against the STAGE library's ids
    * (preserving `workflow:`/`type:` precedence), or null when none resolves. */
   const stageWorkflowFor = (
-    assignment: AssignmentBindingFields,
+    ticket: TicketBindingFields,
     binding: ProjectWorkflowBinding,
   ): StageWorkflow | null => {
     const lib = stageLibrary();
     const ids = Object.keys(lib);
     if (ids.length === 0) return null;
-    const id = resolveAssignmentWorkflowId(config, binding, assignment, new Set(ids));
+    const id = resolveTicketWorkflowId(config, binding, ticket, new Set(ids));
     return lib[id] ?? null;
   };
 
@@ -196,27 +196,30 @@ export function makeWorkflowContextResolver(config: WorkflowConfigView) {
   return {
     context,
     bindingFor,
-    /** Resolve the memoized context for an assignment in a given project. The
+    /** Resolve the memoized context for a ticket in a given project. The
      * returned object spreads the id-cached legacy context and attaches THIS
      * ticket's `stageWorkflow` (resolved per-assignment against the stage
      * library) — so the shared cache is never polluted with a per-ticket field. */
-    async forAssignment(
-      assignment: AssignmentBindingFields,
+    async forTicket(
+      ticket: TicketBindingFields,
       projectDir: string | null,
     ): Promise<WorkflowContext> {
       const binding = await bindingFor(projectDir);
-      const base = context(resolveAssignmentWorkflowId(config, binding, assignment));
-      const stageWorkflow = stageWorkflowFor(assignment, binding);
+      const base = context(resolveTicketWorkflowId(config, binding, ticket));
+      const stageWorkflow = stageWorkflowFor(ticket, binding);
       return stageWorkflow === base.stageWorkflow ? base : { ...base, stageWorkflow };
     },
-    /** Resolve just the per-file {@link StageWorkflow} for an assignment (WS-2
+    /** Resolve just the per-file {@link StageWorkflow} for a ticket (WS-2
      * dependency-terminal-set resolution) — reads the project binding, resolves
      * against the stage library. `null` when no per-file workflow resolves. */
     async stageWorkflowFor(
-      assignment: AssignmentBindingFields,
+      ticket: TicketBindingFields,
       projectDir: string | null,
     ): Promise<StageWorkflow | null> {
-      return stageWorkflowFor(assignment, await bindingFor(projectDir));
+      return stageWorkflowFor(ticket, await bindingFor(projectDir));
     },
   };
 }
+
+/** @deprecated migrate-workflows compat */
+export const resolveAssignmentWorkflowId = resolveTicketWorkflowId;

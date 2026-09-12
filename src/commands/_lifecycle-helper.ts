@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig, type SyntaurConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
@@ -11,15 +11,15 @@ import {
   executeAssignByDir,
   executeUnassign,
   executeUnassignByDir,
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   unambiguousCommandTarget,
   type TransitionCommand,
   type TransitionOptions,
   type TransitionResult,
 } from '../lifecycle/index.js';
-import { resolveAssignmentWorkflowContext } from '../lifecycle/workflow-context.js';
+import { resolveTicketWorkflowContext } from '../lifecycle/workflow-context.js';
 import { runEngineTransition } from '../lifecycle/engine-transition.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 
 type WorkflowTransitionOptions = Pick<
   TransitionOptions,
@@ -27,7 +27,7 @@ type WorkflowTransitionOptions = Pick<
 >;
 
 /**
- * Resolve the assignment's OWN workflow and derive the transition context to
+ * Resolve the ticket's OWN workflow and derive the transition context to
  * hand `executeTransition*` (Fix 1): its `from:command` table, terminal set,
  * and a guard-free single-command target. Without this the CLI terminal verbs
  * (`complete`/`fail`/`reopen`) ignore custom workflows entirely.
@@ -40,22 +40,22 @@ type WorkflowTransitionOptions = Pick<
  * transitions needed to reach it.
  */
 async function resolveWorkflowTransitionOptions(
-  assignmentPath: string,
+  ticketPath: string,
   projectDir: string | null,
   command: string,
   config: SyntaurConfig,
 ): Promise<WorkflowTransitionOptions> {
   let content: string;
   try {
-    content = await readFile(assignmentPath, 'utf-8');
+    content = await readFile(ticketPath, 'utf-8');
   } catch (err) {
     // Missing file → let executeTransition* surface its canonical
-    // "Assignment file not found" error; any other read error propagates.
+    // "Ticket file not found" error; any other read error propagates.
     if ((err as NodeJS.ErrnoException)?.code === 'ENOENT') return {};
     throw err;
   }
-  const fm = parseAssignmentFrontmatter(content);
-  const ctx = await resolveAssignmentWorkflowContext({ assignment: fm, projectDir, config });
+  const fm = parseTicketFrontmatter(content);
+  const ctx = await resolveTicketWorkflowContext({ ticket: fm, projectDir, config });
   if (ctx.bundle.transitions.length === 0) return {};
   const target = unambiguousCommandTarget(ctx.bundle.transitions, command);
   return {
@@ -73,7 +73,7 @@ export interface LifecycleOptions {
 }
 
 export async function runTransition(
-  assignment: string,
+  ticket: string,
   command: Exclude<TransitionCommand, 'assign'>,
   options: LifecycleOptions = {},
 ): Promise<TransitionResult> {
@@ -84,20 +84,20 @@ export async function runTransition(
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
-    if (!isValidSlug(assignment)) {
-      throw new Error(`Invalid assignment slug "${assignment}".`);
+    if (!isValidSlug(ticket)) {
+      throw new Error(`Invalid ticket slug "${ticket}".`);
     }
     const projectDir = resolve(baseDir, options.project);
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
     }
-    const assignmentPath = resolve(projectDir, 'assignments', assignment, 'assignment.md');
+    const ticketPath = resolve(projectDir, 'tickets', ticket, 'ticket.md');
     // WS-2 (Decision 1): on the MIGRATED path a terminal command is realized as
     // an ENGINE move through the locked recompute. `null` ⇒ not migrated / no
     // per-file workflow / not an engine command → fall through to the ladder.
     const engineResult = await runEngineTransition({
-      assignmentPath,
+      ticketPath,
       projectDir,
       command,
       by: options.agent ?? null,
@@ -105,28 +105,28 @@ export async function runTransition(
     });
     if (engineResult) return engineResult;
     const workflowOpts = await resolveWorkflowTransitionOptions(
-      assignmentPath,
+      ticketPath,
       projectDir,
       command,
       config,
     );
-    return executeTransition(projectDir, assignment, command, {
+    return executeTransition(projectDir, ticket, command, {
       reason: options.reason,
       agent: options.agent,
       ...workflowOpts,
     });
   }
 
-  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
   if (!resolved) {
     throw new Error(
-      `Assignment "${assignment}" not found. Provide --project <slug> or a valid standalone UUID.`,
+      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
     );
   }
-  const projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
-  const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
+  const projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+  const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
   const engineResult = await runEngineTransition({
-    assignmentPath,
+    ticketPath,
     projectDir,
     command,
     by: options.agent ?? null,
@@ -134,12 +134,12 @@ export async function runTransition(
   });
   if (engineResult) return engineResult;
   const workflowOpts = await resolveWorkflowTransitionOptions(
-    assignmentPath,
+    ticketPath,
     projectDir,
     command,
     config,
   );
-  return executeTransitionByDir(resolved.assignmentDir, command, {
+  return executeTransitionByDir(resolved.ticketDir, command, {
     reason: options.reason,
     agent: options.agent,
     standalone: resolved.standalone,
@@ -148,7 +148,7 @@ export async function runTransition(
 }
 
 export async function runAssign(
-  assignment: string,
+  ticket: string,
   agent: string,
   options: LifecycleOptions = {},
 ): Promise<TransitionResult> {
@@ -159,28 +159,28 @@ export async function runAssign(
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
-    if (!isValidSlug(assignment)) {
-      throw new Error(`Invalid assignment slug "${assignment}".`);
+    if (!isValidSlug(ticket)) {
+      throw new Error(`Invalid ticket slug "${ticket}".`);
     }
     const projectDir = resolve(baseDir, options.project);
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
     }
-    return executeAssign(projectDir, assignment, agent);
+    return executeAssign(projectDir, ticket, agent);
   }
 
-  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
   if (!resolved) {
     throw new Error(
-      `Assignment "${assignment}" not found. Provide --project <slug> or a valid standalone UUID.`,
+      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
     );
   }
-  return executeAssignByDir(resolved.assignmentDir, agent);
+  return executeAssignByDir(resolved.ticketDir, agent);
 }
 
 export async function runUnassign(
-  assignment: string,
+  ticket: string,
   options: LifecycleOptions = {},
 ): Promise<TransitionResult> {
   const config = await readConfig();
@@ -190,24 +190,24 @@ export async function runUnassign(
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
-    if (!isValidSlug(assignment)) {
-      throw new Error(`Invalid assignment slug "${assignment}".`);
+    if (!isValidSlug(ticket)) {
+      throw new Error(`Invalid ticket slug "${ticket}".`);
     }
     const projectDir = resolve(baseDir, options.project);
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
     }
-    return executeUnassign(projectDir, assignment);
+    return executeUnassign(projectDir, ticket);
   }
 
-  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
   if (!resolved) {
     throw new Error(
-      `Assignment "${assignment}" not found. Provide --project <slug> or a valid standalone UUID.`,
+      `Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`,
     );
   }
-  return executeUnassignByDir(resolved.assignmentDir);
+  return executeUnassignByDir(resolved.ticketDir);
 }
 
 export function reportResult(result: TransitionResult): void {

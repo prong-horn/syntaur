@@ -6,6 +6,6 @@ export interface ImplementOptions extends DeriveVerbOptions {
 
 /** Derived model: `implement` asserts implementationStarted; in_progress
  * follows from derivation when the plan is approved. */
-export async function implementCommand(assignment: string, options: ImplementOptions): Promise<void> {
-  await implementStartedCommand(assignment, options);
+export async function implementCommand(ticket: string, options: ImplementOptions): Promise<void> {
+  await implementStartedCommand(ticket, options);
 }

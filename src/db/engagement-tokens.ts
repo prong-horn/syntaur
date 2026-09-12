@@ -1,7 +1,7 @@
 /**
  * Token-snapshot seam for engagement cost-per-stage.
  *
- * Per-stage cost (a FUTURE assignment) = tokens_at_close − tokens_at_open for an
+ * Per-stage cost (a FUTURE ticket) = tokens_at_close − tokens_at_open for an
  * engagement. This module only handles **capture**: it produces a `TokenSnapshot`
  * — a per-model cumulative map plus provenance — that callers snapshot ONCE at a
  * stage/assignment transition and store verbatim in `engagement.tokens_at_open`/

@@ -23,10 +23,10 @@ describe('areDependenciesSatisfied', () => {
   });
 
   async function writeDep(slug: string, statusLine: string): Promise<void> {
-    const dir = join(projectDir, 'assignments', slug);
+    const dir = join(projectDir, 'tickets', slug);
     await mkdir(dir, { recursive: true });
     const content = `---\nid: ${slug}\nslug: ${slug}\nstatus: ${statusLine}\n---\n\n# ${slug}\n`;
-    await writeFile(join(dir, 'assignment.md'), content, 'utf-8');
+    await writeFile(join(dir, 'ticket.md'), content, 'utf-8');
   }
 
   it('treats a QUOTED terminal status as satisfied (bug #1)', async () => {
@@ -49,12 +49,12 @@ describe('areDependenciesSatisfied', () => {
   });
 
   it('returns false (fail-closed) when the dependency file has no frontmatter', async () => {
-    // parseAssignmentFrontmatter throws when the `---` delimiters are absent;
+    // parseTicketFrontmatter throws when the `---` delimiters are absent;
     // the surrounding try/catch must keep that fail-closed (exercises the
     // parser-throw path, not just the missing-file path).
-    const dir = join(projectDir, 'assignments', 'dep-garbage');
+    const dir = join(projectDir, 'tickets', 'dep-garbage');
     await mkdir(dir, { recursive: true });
-    await writeFile(join(dir, 'assignment.md'), 'no frontmatter here\njust body text\n', 'utf-8');
+    await writeFile(join(dir, 'ticket.md'), 'no frontmatter here\njust body text\n', 'utf-8');
     expect(await areDependenciesSatisfied(projectDir, ['dep-garbage'], terminal)).toBe(false);
   });
 

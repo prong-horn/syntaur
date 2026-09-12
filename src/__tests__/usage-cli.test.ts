@@ -78,7 +78,7 @@ describe('runUsage (skip-collect renderer)', () => {
       totalCost: 1.23,
       cwd: '/proj',
       projectSlug: 'myproj',
-      assignmentSlug: 'myasgn',
+      ticketSlug: 'myasgn',
       rawJson: null,
     });
 
@@ -115,7 +115,7 @@ describe('runUsage (skip-collect renderer)', () => {
       totalCost: 0.05,
       cwd: null,
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       rawJson: null,
     });
 
@@ -131,7 +131,7 @@ describe('runUsage (skip-collect renderer)', () => {
     expect(parsed).toHaveProperty('daily');
     expect(parsed).toHaveProperty('summary');
     expect(parsed.summary.length).toBeGreaterThan(0);
-    expect(parsed.summary[0]).toMatchObject({ projectSlug: 'p', assignmentSlug: 'a' });
+    expect(parsed.summary[0]).toMatchObject({ projectSlug: 'p', ticketSlug: 'a' });
   });
 
   it('full ingest path: stubbed ccusage + cwd walkers → DB persists + last_run advances', async () => {
@@ -292,7 +292,7 @@ exit 0
       totalCost: 0,
       cwd: null,
       projectSlug: 'p1',
-      assignmentSlug: 'a1',
+      ticketSlug: 'a1',
       rawJson: null,
     });
     upsertEvent({
@@ -308,7 +308,7 @@ exit 0
       totalCost: 0,
       cwd: null,
       projectSlug: 'p2',
-      assignmentSlug: 'a2',
+      ticketSlug: 'a2',
       rawJson: null,
     });
 

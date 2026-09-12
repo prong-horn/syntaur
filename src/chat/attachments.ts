@@ -1,5 +1,5 @@
 /**
- * Chat image attachments — stored under `<assignment>/chat/attachments/`.
+ * Chat image attachments — stored under `<ticket>/chat/attachments/`.
  * Upload is raw bytes (see `POST …/chat/attachments`); the validated
  * `x-attachment-mime` header decides the on-disk extension.
  */
@@ -73,12 +73,12 @@ export interface ResolvedChatAttachment {
   name: string;
 }
 
-export function chatAttachmentsDir(assignmentDir: string): string {
-  return resolve(chatDir(assignmentDir), 'attachments');
+export function chatAttachmentsDir(ticketDir: string): string {
+  return resolve(chatDir(ticketDir), 'attachments');
 }
 
 export async function writeChatAttachment(
-  assignmentDir: string,
+  ticketDir: string,
   input: { name: string; mime: string; bytes: Buffer },
 ): Promise<ChatAttachmentRecord> {
   if (!CHAT_IMAGE_MIMES.has(input.mime)) {
@@ -92,7 +92,7 @@ export async function writeChatAttachment(
     throw new ChatAttachmentError(400, 'Empty upload body');
   }
 
-  const dir = chatAttachmentsDir(assignmentDir);
+  const dir = chatAttachmentsDir(ticketDir);
   await mkdir(dir, { recursive: true });
   const id = randomUUID();
   const name = sanitizeAttachmentName(input.name);
@@ -105,11 +105,11 @@ export async function writeChatAttachment(
 }
 
 export async function resolveChatAttachment(
-  assignmentDir: string,
+  ticketDir: string,
   id: string,
 ): Promise<ResolvedChatAttachment | null> {
   if (!ATTACHMENT_ID_RE.test(id)) return null;
-  const dir = chatAttachmentsDir(assignmentDir);
+  const dir = chatAttachmentsDir(ticketDir);
   let names: string[];
   try {
     names = await readdir(dir);
@@ -134,10 +134,10 @@ export async function resolveChatAttachment(
 }
 
 export async function readChatAttachmentBase64(
-  assignmentDir: string,
+  ticketDir: string,
   id: string,
 ): Promise<{ data: string; mimeType: string; name: string } | null> {
-  const resolved = await resolveChatAttachment(assignmentDir, id);
+  const resolved = await resolveChatAttachment(ticketDir, id);
   if (!resolved) return null;
   const data = await readFile(resolved.path);
   return { data: data.toString('base64'), mimeType: resolved.mimeType, name: resolved.name };

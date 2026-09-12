@@ -49,7 +49,7 @@ describe('claude-code statusline.sh', () => {
       }),
     );
     expect(res.status).toBe(0);
-    // No branch, no worktree, no assignment — just the full session id.
+    // No branch, no worktree, no ticket — just the full session id.
     expect(res.stdout).toBe('aaaaaaaaaaaaaaaaaaaaaaaa99887766');
   });
 
@@ -73,10 +73,10 @@ describe('claude-code statusline.sh', () => {
 
   it('renders project/assignment label with title for a project-nested context.json', async () => {
     gitInit(sandbox);
-    const assignmentDir = resolve(sandbox, 'proj', 'assignments', 'demo-assn');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo-assn');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nid: 00000000-0000-0000-0000-000000000000\nslug: demo-assn\ntitle: "Demo Assignment"\nstatus: in_progress\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
@@ -84,8 +84,8 @@ describe('claude-code statusline.sh', () => {
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
         projectSlug: 'my-proj',
-        assignmentSlug: 'demo-assn',
-        assignmentDir,
+        ticketSlug: 'demo-assn',
+        ticketDir,
       }),
     );
 
@@ -104,10 +104,10 @@ describe('claude-code statusline.sh', () => {
   it('renders a standalone UUID label with title when projectSlug is absent', async () => {
     gitInit(sandbox);
     const uuid = '12345678-9abc-def0-1234-56789abcdef0';
-    const assignmentDir = resolve(sandbox, 'standalone-dir');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(sandbox, 'standalone-dir');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       `---\nid: ${uuid}\nslug: ${uuid}\ntitle: "Solo Standalone"\nstatus: in_progress\nproject: null\n---\n`,
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
@@ -115,8 +115,8 @@ describe('claude-code statusline.sh', () => {
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
         projectSlug: null,
-        assignmentSlug: uuid,
-        assignmentDir,
+        ticketSlug: uuid,
+        ticketDir,
       }),
     );
 

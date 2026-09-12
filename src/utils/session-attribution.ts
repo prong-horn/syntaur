@@ -5,8 +5,8 @@
  * The Agent Sessions list mixes three populations that look alike in a table but
  * are not the same kind of thing:
  *
- *  - **assigned** — a session bound to a Syntaur assignment.
- *  - **unassigned** — a real, tracked session with no assignment binding. Ad-hoc
+ *  - **assigned** — a session bound to a Syntaur ticket.
+ *  - **unassigned** — a real, tracked session with no ticket binding. Ad-hoc
  *    work: it has a transcript, a path, liveness, and supports resume/fork.
  *    This is the majority of real sessions.
  *  - **usage-only** — a synthetic row for a session id that appears in
@@ -58,7 +58,7 @@ export function includesTrackedRows(attribution: SessionAttribution): boolean {
 export const ATTRIBUTION_LABELS: Record<SessionAttribution, string> = {
   tracked: 'Real sessions',
   all: 'Everything (incl. spend-only)',
-  assigned: 'Assigned to an assignment',
+  assigned: 'Assigned to a ticket',
   unassigned: 'Unassigned (ad-hoc)',
   'usage-only': 'Spend-only records',
 };

@@ -10,7 +10,7 @@ let testDir: string;
 
 function seedComments(entries: Comment[]): string {
   const timestamp = '2026-09-07T12:00:00Z';
-  let content = renderComments({ assignment: 'demo', timestamp });
+  let content = renderComments({ ticket: 'demo', timestamp });
   content = content.replace('entryCount: 0', `entryCount: ${entries.length}`);
   const body = entries.map((c) => formatCommentEntry(c).trimEnd()).join('\n\n');
   return content.replace('No comments yet.', body);

@@ -14,7 +14,7 @@
 
 import type { AssignmentFacts } from './derive.js';
 import type {
-  AssignmentFrontmatter,
+  TicketFrontmatter,
   FrozenCheck,
   GateOverride,
   Solicitation,
@@ -37,7 +37,7 @@ import {
   replaceFiredVerdicts,
   replaceGateOverrides,
   replaceSolicitations,
-  updateAssignmentFile,
+  updateTicketFile,
   writeFrozenChecks,
 } from './frontmatter.js';
 
@@ -93,7 +93,7 @@ function hopToHistory(hop: Hop, at: string, cause: string, by: string | null): S
 
 export function computeEngineStep(input: {
   content: string;
-  frontmatter: AssignmentFrontmatter;
+  frontmatter: TicketFrontmatter;
   facts: AssignmentFacts;
   workflow: StageWorkflow;
   env: AttestationEnv;
@@ -291,7 +291,7 @@ export function computeEngineStep(input: {
     };
   }
 
-  let next = updateAssignmentFile(content, {
+  let next = updateTicketFile(content, {
     status: finalStatus,
     phase: finalStatus,
     disposition,

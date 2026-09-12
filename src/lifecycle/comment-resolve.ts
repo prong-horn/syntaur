@@ -34,11 +34,11 @@ function isUnresolvedQuestion(c: ParsedComment): boolean {
 
 /** Toggle (or set) the resolved flag on one question comment. */
 export async function setCommentResolved(
-  assignmentDir: string,
+  ticketDir: string,
   commentId: string,
   resolved: boolean,
 ): Promise<SetCommentResolvedResult> {
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (!(await fileExists(commentsPath))) {
     return { changed: false, previous: null };
   }
@@ -67,10 +67,10 @@ export async function setCommentResolved(
 
 /** Resolve every unresolved question matching `predicate` in one write. */
 export async function resolveQuestionComments(
-  assignmentDir: string,
+  ticketDir: string,
   predicate: (c: ParsedComment) => boolean,
 ): Promise<string[]> {
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (!(await fileExists(commentsPath))) {
     return [];
   }

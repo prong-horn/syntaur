@@ -3,11 +3,11 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
-import { createAssignmentCommand } from '../commands/create-assignment.js';
+import { newCommand } from '../commands/new.js';
 import { completeCommand } from '../commands/complete.js';
 import { runTransition } from '../commands/_lifecycle-helper.js';
 import { executeTransition, executeTransitionByDir, executeAssign } from '../lifecycle/index.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { writeWorkflowsConfig, type WorkflowDefinition } from '../utils/config.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
 
@@ -26,12 +26,12 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-async function readAssignmentContent(
+async function readTicketContent(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
 ): Promise<string> {
   return readFile(
-    resolve(testDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md'),
+    resolve(testDir, projectSlug, 'tickets', ticketSlug, 'ticket.md'),
     'utf-8',
   );
 }
@@ -41,11 +41,11 @@ describe('lifecycle integration', () => {
 
   beforeEach(async () => {
     await createProjectCommand('Test Project', { dir: testDir });
-    await createAssignmentCommand('Task B', {
+    await newCommand('Task B', {
       project: projectSlug,
       dir: testDir,
     });
-    await createAssignmentCommand('Task A', {
+    await newCommand('Task A', {
       project: projectSlug,
       dir: testDir,
       dependsOn: 'task-b',
@@ -57,7 +57,7 @@ describe('lifecycle integration', () => {
     const result = await executeAssign(projectDir, 'task-a', 'claude-1');
     expect(result.success).toBe(true);
 
-    const content = await readAssignmentContent(projectSlug, 'task-a');
+    const content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('assignee: claude-1');
     expect(content).toContain('status: draft');
   });
@@ -68,7 +68,7 @@ describe('lifecycle integration', () => {
     expect(result.success).toBe(true);
     expect(result.toStatus).toBe('ready_for_planning');
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: ready_for_planning');
   });
 
@@ -79,7 +79,7 @@ describe('lifecycle integration', () => {
     expect(result.success).toBe(true);
     expect(result.toStatus).toBe('ready_to_implement');
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: ready_to_implement');
   });
 
@@ -91,7 +91,7 @@ describe('lifecycle integration', () => {
     expect(result.success).toBe(true);
     expect(result.toStatus).toBe('in_progress');
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: in_progress');
   });
 
@@ -99,16 +99,16 @@ describe('lifecycle integration', () => {
     const projectDir = resolve(testDir, projectSlug);
 
     await executeTransition(projectDir, 'task-b', 'shape', { agent: 'codex-shaper' });
-    let content = await readAssignmentContent(projectSlug, 'task-b');
+    let content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('assignee: codex-shaper');
 
     // Subsequent transitions do not overwrite an existing assignee.
     await executeTransition(projectDir, 'task-b', 'plan-ready', { agent: 'someone-else' });
-    content = await readAssignmentContent(projectSlug, 'task-b');
+    content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('assignee: codex-shaper');
 
     await executeTransition(projectDir, 'task-b', 'implement', { agent: 'and-someone-else' });
-    content = await readAssignmentContent(projectSlug, 'task-b');
+    content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('assignee: codex-shaper');
   });
 
@@ -121,18 +121,18 @@ describe('lifecycle integration', () => {
     expect(result.warnings).toBeDefined();
     expect(result.warnings![0]).toContain('unmet dependencies');
 
-    const content = await readAssignmentContent(projectSlug, 'task-a');
+    const content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: in_progress');
   });
 
-  it('start succeeds on assignment with no dependencies', async () => {
+  it('start succeeds on ticket with no dependencies', async () => {
     const projectDir = resolve(testDir, projectSlug);
     const result = await executeTransition(projectDir, 'task-b', 'start', {
       agent: 'claude-2',
     });
     expect(result.success).toBe(true);
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: in_progress');
     expect(content).toContain('assignee: claude-2');
   });
@@ -144,7 +144,7 @@ describe('lifecycle integration', () => {
     await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
     await executeTransition(projectDir, 'task-b', 'complete');
 
-    let content = await readAssignmentContent(projectSlug, 'task-b');
+    let content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: completed');
 
     // Now task-a's dependency is met; assign and start
@@ -152,37 +152,37 @@ describe('lifecycle integration', () => {
     const startResult = await executeTransition(projectDir, 'task-a', 'start');
     expect(startResult.success).toBe(true);
 
-    content = await readAssignmentContent(projectSlug, 'task-a');
+    content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: in_progress');
 
     // Block task-a
     await executeTransition(projectDir, 'task-a', 'block', { reason: 'Waiting for API key' });
-    content = await readAssignmentContent(projectSlug, 'task-a');
+    content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: blocked');
     expect(content).toContain('blockedReason: Waiting for API key');
 
     // Unblock task-a
     await executeTransition(projectDir, 'task-a', 'unblock');
-    content = await readAssignmentContent(projectSlug, 'task-a');
+    content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: in_progress');
     expect(content).toContain('blockedReason: null');
 
     // Review task-a
     await executeTransition(projectDir, 'task-a', 'review');
-    content = await readAssignmentContent(projectSlug, 'task-a');
+    content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: review');
 
     // Complete task-a
     await executeTransition(projectDir, 'task-a', 'complete');
-    content = await readAssignmentContent(projectSlug, 'task-a');
+    content = await readTicketContent(projectSlug, 'task-a');
     expect(content).toContain('status: completed');
   });
 
-  // AC10: completing a project assignment BY UUID without --project must still
+  // AC10: completing a project ticket BY UUID without --project must still
   // recompute its dependents (by the resolved slug, not the UUID). The bug
   // skipped the recompute entirely when --project was absent.
   it('completeCommand by UUID (no --project) recomputes dependents', async () => {
-    const fmB = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+    const fmB = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => {
@@ -194,7 +194,7 @@ describe('lifecycle integration', () => {
       console.log = origLog;
     }
     // The dependency is terminal…
-    expect(await readAssignmentContent(projectSlug, 'task-b')).toContain('status: completed');
+    expect(await readTicketContent(projectSlug, 'task-b')).toContain('status: completed');
     // …and the dependent (task-a) was re-derived by its slug.
     expect(logs.join('\n')).toMatch(/Re-derived \d+ dependent assignment/);
   });
@@ -202,12 +202,12 @@ describe('lifecycle integration', () => {
   it('allows any known command regardless of current status (guards removed)', async () => {
     const projectDir = resolve(testDir, projectSlug);
 
-    // Complete a pending assignment directly — no guard
+    // Complete a pending ticket directly — no guard
     const result1 = await executeTransition(projectDir, 'task-b', 'complete');
     expect(result1.success).toBe(true);
     expect(result1.toStatus).toBe('completed');
 
-    // Start a completed assignment — no guard
+    // Start a completed ticket — no guard
     const result2 = await executeTransition(projectDir, 'task-b', 'start');
     expect(result2.success).toBe(true);
     expect(result2.toStatus).toBe('in_progress');
@@ -228,7 +228,7 @@ describe('lifecycle integration', () => {
     const result = await executeAssign(projectDir, 'task-b', 'claude-3');
     expect(result.success).toBe(true);
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('assignee: claude-3');
   });
 
@@ -237,12 +237,12 @@ describe('lifecycle integration', () => {
     const result = await executeTransition(projectDir, 'task-b', 'start');
     expect(result.success).toBe(true);
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: in_progress');
     expect(content).toContain('assignee: null');
   });
 
-  it('reopen returns completed assignment to in_progress', async () => {
+  it('reopen returns completed ticket to in_progress', async () => {
     const projectDir = resolve(testDir, projectSlug);
     await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
     await executeTransition(projectDir, 'task-b', 'complete');
@@ -251,11 +251,11 @@ describe('lifecycle integration', () => {
     expect(result.success).toBe(true);
     expect(result.toStatus).toBe('in_progress');
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: in_progress');
   });
 
-  it('reopen returns failed assignment to in_progress', async () => {
+  it('reopen returns failed ticket to in_progress', async () => {
     const projectDir = resolve(testDir, projectSlug);
     await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
     await executeTransition(projectDir, 'task-b', 'fail');
@@ -272,7 +272,7 @@ describe('lifecycle integration', () => {
     const result = await executeTransition(projectDir, 'task-b', 'block');
     expect(result.success).toBe(true);
 
-    const content = await readAssignmentContent(projectSlug, 'task-b');
+    const content = await readTicketContent(projectSlug, 'task-b');
     expect(content).toContain('status: blocked');
     // Derived-status v3: blocked keys on blockedReason PRESENCE — block
     // without a reason records the default instead of null.
@@ -285,14 +285,14 @@ describe('lifecycle integration', () => {
     await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
     await executeTransition(projectDir, 'task-b', 'complete');
 
-    const finalContent = await readAssignmentContent(projectSlug, 'task-b');
+    const finalContent = await readTicketContent(projectSlug, 'task-b');
     expect(finalContent).toContain('## Objective');
     expect(finalContent).toContain('## Acceptance Criteria');
   });
 
   describe('statusHistory recording', () => {
     it('create seeds a statusHistory entry (command: create, to: draft)', async () => {
-      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(fm.statusHistory).toHaveLength(1);
       expect(fm.statusHistory[0]).toMatchObject({
         from: null,
@@ -305,7 +305,7 @@ describe('lifecycle integration', () => {
     it('executeTransition appends an entry with correct from/to/command/by', async () => {
       const projectDir = resolve(testDir, projectSlug);
       await executeTransition(projectDir, 'task-b', 'shape', { agent: 'claude-x' });
-      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(fm.statusHistory).toHaveLength(2);
       expect(fm.statusHistory[1]).toMatchObject({
         from: 'draft',
@@ -321,15 +321,15 @@ describe('lifecycle integration', () => {
       const projectDir = resolve(testDir, projectSlug);
       await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
       await executeTransition(projectDir, 'task-b', 'block', { reason: 'waiting on review' });
-      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       const last = fm.statusHistory[fm.statusHistory.length - 1];
       expect(last).toMatchObject({ to: 'blocked', command: 'block', reason: 'waiting on review' });
     });
 
     it('executeTransitionByDir appends an entry', async () => {
-      const assignmentDir = resolve(testDir, projectSlug, 'assignments', 'task-b');
-      await executeTransitionByDir(assignmentDir, 'shape');
-      const fm = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const ticketDir = resolve(testDir, projectSlug, 'tickets', 'task-b');
+      await executeTransitionByDir(ticketDir, 'shape');
+      const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(fm.statusHistory).toHaveLength(2);
       expect(fm.statusHistory[1]).toMatchObject({
         from: 'draft',
@@ -340,9 +340,9 @@ describe('lifecycle integration', () => {
 
     it('executeAssign does NOT append a statusHistory entry', async () => {
       const projectDir = resolve(testDir, projectSlug);
-      const before = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-a'));
+      const before = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-a'));
       await executeAssign(projectDir, 'task-a', 'claude-1');
-      const after = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-a'));
+      const after = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-a'));
       expect(after.statusHistory).toHaveLength(before.statusHistory.length);
       expect(after.assignee).toBe('claude-1');
     });
@@ -351,13 +351,13 @@ describe('lifecycle integration', () => {
       const projectDir = resolve(testDir, projectSlug);
       await executeTransition(projectDir, 'task-b', 'start', { agent: 'claude-2' });
       await executeTransition(projectDir, 'task-b', 'complete');
-      const done = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const done = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(done.status).toBe('completed');
       const len = done.statusHistory.length;
       // CLI commands are guard-free: `complete` resolves to 'completed' regardless
       // of current status. Re-running it must not append a from===to entry.
       await executeTransition(projectDir, 'task-b', 'complete');
-      const again = parseAssignmentFrontmatter(await readAssignmentContent(projectSlug, 'task-b'));
+      const again = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(again.statusHistory).toHaveLength(len);
       expect(again.statusHistory[len - 1].to).toBe('completed');
     });
@@ -371,32 +371,32 @@ describe('assignment links', () => {
     await createProjectCommand('Test Project', { dir: testDir });
   });
 
-  it('creates assignment with links in projectSlug/assignmentSlug format', async () => {
-    await createAssignmentCommand('Task With Links', {
+  it('creates ticket with links in projectSlug/ticketSlug format', async () => {
+    await newCommand('Task With Links', {
       project: projectSlug,
       dir: testDir,
       links: 'other-project/task-one,another-project/task-two',
     });
 
-    const content = await readAssignmentContent(projectSlug, 'task-with-links');
+    const content = await readTicketContent(projectSlug, 'task-with-links');
     expect(content).toContain('links:');
     expect(content).toContain('  - other-project/task-one');
     expect(content).toContain('  - another-project/task-two');
   });
 
-  it('creates assignment with empty links', async () => {
-    await createAssignmentCommand('Task No Links', {
+  it('creates ticket with empty links', async () => {
+    await newCommand('Task No Links', {
       project: projectSlug,
       dir: testDir,
     });
 
-    const content = await readAssignmentContent(projectSlug, 'task-no-links');
+    const content = await readTicketContent(projectSlug, 'task-no-links');
     expect(content).toContain('links: []');
   });
 
   it('rejects invalid link format (missing slash)', async () => {
     await expect(
-      createAssignmentCommand('Bad Links', {
+      newCommand('Bad Links', {
         project: projectSlug,
         dir: testDir,
         links: 'no-slash-here',
@@ -406,7 +406,7 @@ describe('assignment links', () => {
 
   it('rejects invalid link format (too many slashes)', async () => {
     await expect(
-      createAssignmentCommand('Bad Links', {
+      newCommand('Bad Links', {
         project: projectSlug,
         dir: testDir,
         links: 'too/many/slashes',
@@ -415,7 +415,7 @@ describe('assignment links', () => {
   });
 });
 
-// Fix 1: runTransition must resolve the assignment's OWN workflow and thread its
+// Fix 1: runTransition must resolve the ticket's OWN workflow and thread its
 // transition table / terminal set / command target into executeTransition*, so
 // custom workflows with renamed terminal statuses work from the CLI verbs.
 describe('runTransition per-workflow context (Fix 1)', () => {
@@ -479,15 +479,15 @@ describe('runTransition per-workflow context (Fix 1)', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  async function readWf(assignmentSlug: string): Promise<string> {
+  async function readWf(ticketSlug: string): Promise<string> {
     return readFile(
-      resolve(projectsDir, projectSlug, 'assignments', assignmentSlug, 'assignment.md'),
+      resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md'),
       'utf-8',
     );
   }
 
   it('(a) complete lands on the workflow-renamed terminal status with disposition terminal', async () => {
-    await createAssignmentCommand('Task Custom', {
+    await newCommand('Task Custom', {
       project: projectSlug,
       dir: projectsDir,
       workflow: 'custom',
@@ -505,7 +505,7 @@ describe('runTransition per-workflow context (Fix 1)', () => {
   });
 
   it('(b) reopen exits the custom terminal status back to a non-terminal status', async () => {
-    await createAssignmentCommand('Task Reopen', {
+    await newCommand('Task Reopen', {
       project: projectSlug,
       dir: projectsDir,
       workflow: 'custom',
@@ -523,7 +523,7 @@ describe('runTransition per-workflow context (Fix 1)', () => {
   });
 
   it('(c) a command the custom workflow does not define refuses instead of falling back to built-ins', async () => {
-    await createAssignmentCommand('Task Refuse', {
+    await newCommand('Task Refuse', {
       project: projectSlug,
       dir: projectsDir,
       workflow: 'custom',
@@ -542,7 +542,7 @@ describe('runTransition per-workflow context (Fix 1)', () => {
   });
 
   it('(d) empty-transitions workflow still completes via built-ins (guard preserves default behavior)', async () => {
-    await createAssignmentCommand('Task Empty', {
+    await newCommand('Task Empty', {
       project: projectSlug,
       dir: projectsDir,
       workflow: 'notransitions',

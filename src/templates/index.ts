@@ -7,8 +7,8 @@ export type { ManifestParams } from './manifest.js';
 export { renderProject } from './project.js';
 export type { ProjectParams } from './project.js';
 
-export { renderAssignment } from './assignment.js';
-export type { AssignmentParams } from './assignment.js';
+export { renderTicket, renderTicket as renderAssignment } from './ticket.js';
+export type { AssignmentParams } from './ticket.js';
 
 export { renderPlan } from './plan.js';
 export type { PlanParams } from './plan.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { updateAssignmentWorkspace, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { updateTicketWorkspace, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const SAMPLE = `---
 id: abc
@@ -21,15 +21,15 @@ tags: []
 Body here.
 `;
 
-describe('updateAssignmentWorkspace', () => {
+describe('updateTicketWorkspace', () => {
   it('updates all nested fields in place', () => {
-    const next = updateAssignmentWorkspace(SAMPLE, {
+    const next = updateTicketWorkspace(SAMPLE, {
       repository: '/Users/x/repo',
       worktreePath: '/Users/x/repo/.worktrees/demo',
       branch: 'feature/demo',
       parentBranch: 'main',
     });
-    const parsed = parseAssignmentFrontmatter(next);
+    const parsed = parseTicketFrontmatter(next);
     expect(parsed.workspace.repository).toBe('/Users/x/repo');
     expect(parsed.workspace.worktreePath).toBe('/Users/x/repo/.worktrees/demo');
     expect(parsed.workspace.branch).toBe('feature/demo');
@@ -37,11 +37,11 @@ describe('updateAssignmentWorkspace', () => {
   });
 
   it('preserves body and other frontmatter fields', () => {
-    const next = updateAssignmentWorkspace(SAMPLE, {
+    const next = updateTicketWorkspace(SAMPLE, {
       branch: 'feature/x',
     });
     expect(next).toContain('Body here.');
-    const parsed = parseAssignmentFrontmatter(next);
+    const parsed = parseTicketFrontmatter(next);
     expect(parsed.id).toBe('abc');
     expect(parsed.slug).toBe('demo');
     expect(parsed.tags).toEqual([]);
@@ -50,17 +50,17 @@ describe('updateAssignmentWorkspace', () => {
   });
 
   it('updates only the provided field, leaving others untouched', () => {
-    const next = updateAssignmentWorkspace(SAMPLE, {
+    const next = updateTicketWorkspace(SAMPLE, {
       worktreePath: '/tmp/wt',
     });
-    const parsed = parseAssignmentFrontmatter(next);
+    const parsed = parseTicketFrontmatter(next);
     expect(parsed.workspace.worktreePath).toBe('/tmp/wt');
     expect(parsed.workspace.branch).toBeNull();
     expect(parsed.workspace.parentBranch).toBeNull();
   });
 
   it('throws when frontmatter is missing', () => {
-    expect(() => updateAssignmentWorkspace('no frontmatter here', { branch: 'x' })).toThrow(
+    expect(() => updateTicketWorkspace('no frontmatter here', { branch: 'x' })).toThrow(
       /No frontmatter found/,
     );
   });
@@ -89,7 +89,7 @@ tags: []
 
 Body.
 `;
-    const next = updateAssignmentWorkspace(sneaky, { branch: 'feature/x' });
+    const next = updateTicketWorkspace(sneaky, { branch: 'feature/x' });
     // The bogus externalIds branch line must not have been changed.
     expect(next).toContain('branch: should-not-be-touched');
     // The real workspace.branch must have been updated.
@@ -115,7 +115,7 @@ tags: []
 ---
 Body.
 `;
-    const next = updateAssignmentWorkspace(withExtra, { branch: 'new' });
+    const next = updateTicketWorkspace(withExtra, { branch: 'new' });
     expect(next).toContain('customField: keep-me');
     expect(next).toMatch(/workspace:[\s\S]*?\n  branch: new/);
   });
@@ -142,16 +142,16 @@ tags: []
 
 Body.
 `;
-    const next = updateAssignmentWorkspace(TRICKY, { branch: 'feature/new' });
+    const next = updateTicketWorkspace(TRICKY, { branch: 'feature/new' });
     // Title scalar is untouched (not torn by a mis-offset splice).
     expect(next).toContain('title: "Refactor the workspace: module"');
-    const fm = parseAssignmentFrontmatter(next);
+    const fm = parseTicketFrontmatter(next);
     expect(fm.title).toBe('Refactor the workspace: module');
     // The REAL workspace block's branch was updated, the old value is gone.
     expect(next).toMatch(/^  branch: feature\/new$/m);
     expect(next).not.toMatch(/^  branch: old$/m);
     expect(fm.workspace.branch).toBe('feature/new');
     // Result still parses cleanly end-to-end.
-    expect(() => parseAssignmentFrontmatter(next)).not.toThrow();
+    expect(() => parseTicketFrontmatter(next)).not.toThrow();
   });
 });

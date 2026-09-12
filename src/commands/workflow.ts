@@ -11,7 +11,7 @@ import {
 import { scanWorkflowUsage } from '../utils/status-config-resolution.js';
 import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { readProjectBinding, setProjectWorkflowBinding } from '../utils/project-binding.js';
-import { defaultProjectDir, assignmentsDir } from '../utils/paths.js';
+import { defaultProjectDir, ticketsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 // Shared with the per-file storage boundary (workflow-file.ts) so the id
 // validation can't drift between the legacy CLI and the new WS-0 writers.
@@ -123,7 +123,7 @@ workflowCommand
       resolver: makeWorkflowContextResolver(config),
       isGlobalDefault: config.defaultWorkflow === id,
       projectsDir: defaultProjectDir(),
-      standaloneDir: assignmentsDir(),
+      standaloneDir: ticketsDir(),
     });
     if (!usage.deletable) {
       console.error(`cannot delete workflow "${id}":`);
@@ -149,9 +149,9 @@ workflowCommand
 
 workflowCommand
   .command('bind-type')
-  .description('Bind a project’s assignment type to a workflow (project workflowByType)')
+  .description('Bind a project’s ticket type to a workflow (project workflowByType)')
   .argument('<project>', 'Project slug')
-  .argument('<type>', 'Assignment type (e.g. bug, feature)')
+  .argument('<type>', 'Ticket type (e.g. bug, feature)')
   .argument('<workflow>', 'Workflow id to bind the type to')
   .action(async (project: string, type: string, workflow: string) => {
     const config = await readConfig();

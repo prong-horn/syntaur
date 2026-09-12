@@ -54,7 +54,7 @@ describe('runSessionRegister', () => {
     expect(row).not.toBeNull();
     expect(row!.status).toBe('active');
     expect(row!.projectSlug).toBeNull();
-    expect(row!.assignmentSlug).toBeNull();
+    expect(row!.ticketSlug).toBeNull();
     expect(row!.agent).toBe('claude');
     expect(row!.path).toBe(cwd);
     expect(row!.transcriptPath).toBe('/tmp/transcripts/real-session-1.jsonl');
@@ -68,17 +68,17 @@ describe('runSessionRegister', () => {
   });
 
 
-  it('registers an UNATTRIBUTED row even when context.json carries assignment scalars, but still merges session fields into context.json', async () => {
-    // The SessionStart hook no longer auto-binds the assignment from the cwd
+  it('registers an UNATTRIBUTED row even when context.json carries ticket scalars, but still merges session fields into context.json', async () => {
+    // The SessionStart hook no longer auto-binds the ticket from the cwd
     // context.json scalar (that cwd-scalar auto-bind is the
     // multi-assignment-in-one-worktree clobber being eliminated). The row binds
-    // its assignment via the explicit grab flow / engagement edge, NOT here.
+    // its ticket via the explicit grab flow / engagement edge, NOT here.
     await mkdir(join(cwd, '.syntaur'), { recursive: true });
     await writeFile(
       join(cwd, '.syntaur', 'context.json'),
       JSON.stringify({
         projectSlug: 'proj-1',
-        assignmentSlug: 'assn-1',
+        ticketSlug: 'assn-1',
         branch: 'feat/x',
         sessionId: 'previous-session',
         transcriptPath: '/tmp/stale.jsonl',
@@ -92,7 +92,7 @@ describe('runSessionRegister', () => {
     const row = getSessionById('real-session-1');
     // UNATTRIBUTED despite the context.json scalars.
     expect(row!.projectSlug).toBeNull();
-    expect(row!.assignmentSlug).toBeNull();
+    expect(row!.ticketSlug).toBeNull();
 
     // The context.json field-merge (sessionId/transcriptPath) still runs and
     // still preserves the other marker fields.

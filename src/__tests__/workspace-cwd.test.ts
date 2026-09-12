@@ -60,7 +60,7 @@ describe('resolveWorkspaceCwd', () => {
         worktreePath: worktree,
         repository: repo,
         branch: 'main',
-        assignmentSlug: 'a',
+        ticketSlug: 'a',
       }),
     ).toEqual({ cwd: worktree, fallbackWarning: null, invalidReason: null });
   });
@@ -70,7 +70,7 @@ describe('resolveWorkspaceCwd', () => {
       worktreePath: null,
       repository: repo,
       branch: 'main',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
     });
     expect(r.cwd).toBe(repo);
     expect(r.fallbackWarning).toMatch(/worktreePath/);
@@ -83,7 +83,7 @@ describe('resolveWorkspaceCwd', () => {
       worktreePath: bogus,
       repository: repo,
       branch: 'main',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
     });
     expect(r.cwd).toBe(repo);
     expect(r.fallbackWarning).toContain('is not an existing directory');
@@ -96,7 +96,7 @@ describe('resolveWorkspaceCwd', () => {
       worktreePath: resolve(base, 'x'),
       repository: resolve(base, 'y'),
       branch: null,
-      assignmentSlug: 'demo',
+      ticketSlug: 'demo',
     });
     expect(r.cwd).toBeNull();
     expect(r.fallbackWarning).toBeNull();

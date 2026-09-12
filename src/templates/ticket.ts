@@ -16,7 +16,7 @@ export interface AssignmentParams {
   acceptanceCriteria?: string[];
 }
 
-export function renderAssignment(params: AssignmentParams): string {
+export function renderTicket(params: AssignmentParams): string {
   const safeTitle = escapeYamlString(params.title);
   const dependsOnYaml =
     params.dependsOn.length === 0

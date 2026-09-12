@@ -54,10 +54,13 @@ let frames: Array<{ type: string; payload: unknown }>;
 const ASSIGNMENT_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
 
 const assignment = (): ResolvedAssignment => ({
+  ticketDir: assignmentDir,
   assignmentDir,
   projectSlug: 'syntaur-meta',
   assignmentSlug: 'chat-demo',
+  ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
+  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 

@@ -66,16 +66,16 @@ export interface InboxAction {
 }
 
 /**
- * One assignment item awaiting human action. `since`/`ageMs` live on every item
+ * One ticket item awaiting human action. `since`/`ageMs` live on every item
  * so the field set stays reusable by a later staleness watchdog.
  */
 export interface InboxItem {
-  /** Owning project slug; `null` for standalone assignments. */
+  /** Owning project slug; `null` for standalone tickets. */
   project: string | null;
-  /** Assignment slug; for standalone, the UUID folder name. */
-  assignmentSlug: string;
+  /** Ticket slug; for standalone, the UUID folder name. */
+  ticketSlug: string;
   /** Assignment id (UUID from frontmatter). */
-  assignmentId: string;
+  ticketId: string;
   title: string;
   category: InboxCategory;
   /** RFC 3339 timestamp — when the item entered its awaiting-human state. */

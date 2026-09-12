@@ -586,6 +586,8 @@ export interface WsMessage {
   type: WsMessageType;
   projectSlug?: string | null;
   assignmentSlug?: string;
+  /** Task 1 compat — broker broadcasts use `ticketSlug` until Task 2. */
+  ticketSlug?: string;
   timestamp: string;
   /**
    * Frame body. Every other message type is a refetch HINT — the client
@@ -626,6 +628,10 @@ export interface AgentSession {
    * repair the id. Null/absent when unresolved (slug-only binding).
    */
   assignmentId?: string | null;
+  /** Task 1 test/core compat — mirrors `assignmentSlug`. */
+  ticketSlug?: string | null;
+  /** Task 1 test/core compat — mirrors `assignmentId`. */
+  ticketId?: string | null;
   agent: string;
   sessionId: string;
   started: string;

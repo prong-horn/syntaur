@@ -101,7 +101,7 @@ describe('recordEvent + listEventsByAssignment', () => {
 
   it('round-trips a live event (null source_key, defaulted at)', () => {
     recordEvent({
-      assignmentId: 'asn-1',
+      ticketId: 'asn-1',
       projectSlug: 'proj',
       type: 'status-change',
       details: { from: 'pending', to: 'in_progress' },
@@ -121,7 +121,7 @@ describe('recordEvent + listEventsByAssignment', () => {
   });
 
   it('round-trips a standalone event (null project_slug)', () => {
-    recordEvent({ assignmentId: 'asn-s', type: 'archived', actor: 'human' });
+    recordEvent({ ticketId: 'asn-s', type: 'archived', actor: 'human' });
     const rows = listEventsByAssignment('asn-s');
     expect(rows).toHaveLength(1);
     expect(rows[0].project_slug).toBeNull();
@@ -130,7 +130,7 @@ describe('recordEvent + listEventsByAssignment', () => {
 
   it('passes a pre-stringified details string through unchanged', () => {
     recordEvent({
-      assignmentId: 'asn-str',
+      ticketId: 'asn-str',
       type: 'fact-set',
       actor: 'human',
       details: '{"name":"x"}',
@@ -141,7 +141,7 @@ describe('recordEvent + listEventsByAssignment', () => {
 
   it('honors an explicit backfill at + actor', () => {
     recordEvent({
-      assignmentId: 'asn-bf',
+      ticketId: 'asn-bf',
       type: 'status-change',
       actor: 'system',
       at: '2020-01-01T00:00:00.000Z',
@@ -154,8 +154,8 @@ describe('recordEvent + listEventsByAssignment', () => {
   });
 
   it('isolates events by assignment_id', () => {
-    recordEvent({ assignmentId: 'x', type: 'archived', actor: 'human' });
-    recordEvent({ assignmentId: 'y', type: 'archived', actor: 'human' });
+    recordEvent({ ticketId: 'x', type: 'archived', actor: 'human' });
+    recordEvent({ ticketId: 'y', type: 'archived', actor: 'human' });
     expect(listEventsByAssignment('x')).toHaveLength(1);
     expect(listEventsByAssignment('y')).toHaveLength(1);
   });
@@ -166,14 +166,14 @@ describe('source_key idempotency (INSERT OR IGNORE)', () => {
 
   it('two recordEvent calls with the same non-null source_key produce ONE row', () => {
     recordEvent({
-      assignmentId: 'asn-1',
+      ticketId: 'asn-1',
       type: 'status-change',
       actor: 'system',
       at: '2020-01-01T00:00:00.000Z',
       sourceKey: 'backfill:asn-1:status:0',
     });
     recordEvent({
-      assignmentId: 'asn-1',
+      ticketId: 'asn-1',
       type: 'status-change',
       actor: 'system',
       at: '2021-06-06T00:00:00.000Z',
@@ -183,14 +183,14 @@ describe('source_key idempotency (INSERT OR IGNORE)', () => {
   });
 
   it('two recordEvent calls with source_key null produce TWO rows', () => {
-    recordEvent({ assignmentId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
-    recordEvent({ assignmentId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
+    recordEvent({ ticketId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
+    recordEvent({ ticketId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
     expect(listEventsByAssignment('asn-2')).toHaveLength(2);
   });
 
   it('omitting source_key behaves like null (always inserts)', () => {
-    recordEvent({ assignmentId: 'asn-3', type: 'comment-added', actor: 'human' });
-    recordEvent({ assignmentId: 'asn-3', type: 'comment-added', actor: 'human' });
+    recordEvent({ ticketId: 'asn-3', type: 'comment-added', actor: 'human' });
+    recordEvent({ ticketId: 'asn-3', type: 'comment-added', actor: 'human' });
     expect(listEventsByAssignment('asn-3')).toHaveLength(2);
   });
 });
@@ -199,9 +199,9 @@ describe('listEventsByAssignment filters + ordering', () => {
   beforeEach(() => {
     initEventsDb(dbPath);
     // Explicit, sortable timestamps so ordering/filtering is deterministic.
-    recordEvent({ assignmentId: 'x', type: 'status-change', actor: 'system', at: '2020-01-01T00:00:00.000Z' });
-    recordEvent({ assignmentId: 'x', type: 'comment-added', actor: 'human', at: '2021-01-01T00:00:00.000Z' });
-    recordEvent({ assignmentId: 'x', type: 'status-change', actor: 'system', at: '2022-01-01T00:00:00.000Z' });
+    recordEvent({ ticketId: 'x', type: 'status-change', actor: 'system', at: '2020-01-01T00:00:00.000Z' });
+    recordEvent({ ticketId: 'x', type: 'comment-added', actor: 'human', at: '2021-01-01T00:00:00.000Z' });
+    recordEvent({ ticketId: 'x', type: 'status-change', actor: 'system', at: '2022-01-01T00:00:00.000Z' });
   });
 
   it('orders newest-first (at DESC)', () => {
@@ -258,7 +258,7 @@ describe('hasEventsForAssignment', () => {
   });
 
   it('returns true once an event is recorded', () => {
-    recordEvent({ assignmentId: 'has', type: 'archived', actor: 'human' });
+    recordEvent({ ticketId: 'has', type: 'archived', actor: 'human' });
     expect(hasEventsForAssignment('has')).toBe(true);
   });
 });
@@ -271,7 +271,7 @@ describe('best-effort: recordEvent never throws', () => {
     // lazy re-init will reopen the same file, so this insert actually succeeds
     // — but it must not throw regardless.
     expect(() =>
-      recordEvent({ assignmentId: 'asn-closed', type: 'archived', actor: 'human' }),
+      recordEvent({ ticketId: 'asn-closed', type: 'archived', actor: 'human' }),
     ).not.toThrow();
   });
 
@@ -282,7 +282,7 @@ describe('best-effort: recordEvent never throws', () => {
     // internally — recordEvent must catch, warn, and return.
     db.close();
     expect(() =>
-      recordEvent({ assignmentId: 'asn-broken', type: 'archived', actor: 'human' }),
+      recordEvent({ ticketId: 'asn-broken', type: 'archived', actor: 'human' }),
     ).not.toThrow();
     // Reset so afterEach's closeEventsDb() doesn't double-close the handle.
     resetEventsDb();

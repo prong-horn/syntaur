@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   renderManifest,
   renderProject,
-  renderAssignment,
+  renderTicket,
   renderPlan,
   renderScratchpad,
   renderHandoff,
@@ -24,7 +24,7 @@ describe('renderManifest', () => {
 
   it('includes all index links', () => {
     const out = renderManifest({ slug: 'test', timestamp: TIMESTAMP });
-    expect(out).toContain('(./_index-assignments.md)');
+    expect(out).toContain('(./_index-tickets.md)');
     expect(out).toContain('(./_index-plans.md)');
     expect(out).toContain('(./_index-decisions.md)');
     expect(out).toContain('(./_status.md)');
@@ -67,9 +67,9 @@ describe('renderProject', () => {
   });
 });
 
-describe('renderAssignment', () => {
+describe('renderTicket', () => {
   it('produces correct frontmatter for new assignment', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'uuid-1',
       slug: 'test-assignment',
       title: 'Test Assignment',
@@ -94,7 +94,7 @@ describe('renderAssignment', () => {
   });
 
   it('renders empty links as inline YAML', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -107,7 +107,7 @@ describe('renderAssignment', () => {
   });
 
   it('renders non-empty links as YAML list', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -123,7 +123,7 @@ describe('renderAssignment', () => {
   });
 
   it('renders non-empty dependsOn as YAML list', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -139,7 +139,7 @@ describe('renderAssignment', () => {
   });
 
   it('has correct body sections', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -163,7 +163,7 @@ describe('renderAssignment', () => {
   });
 
   it('omits ## Todos by default', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -176,7 +176,7 @@ describe('renderAssignment', () => {
   });
 
   it('uses status override when provided', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -191,7 +191,7 @@ describe('renderAssignment', () => {
   });
 
   it('renders acceptanceCriteria as checkbox items when provided', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -209,7 +209,7 @@ describe('renderAssignment', () => {
   });
 
   it('keeps the 3 placeholders when acceptanceCriteria is missing or empty', () => {
-    const without = renderAssignment({
+    const without = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -222,7 +222,7 @@ describe('renderAssignment', () => {
     expect(without).toContain('<!-- criterion 2 -->');
     expect(without).toContain('<!-- criterion 3 -->');
 
-    const empty = renderAssignment({
+    const empty = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -236,7 +236,7 @@ describe('renderAssignment', () => {
   });
 
   it('flattens newlines in acceptanceCriteria entries to spaces (single-line checkbox)', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id',
       slug: 's',
       title: 'T',
@@ -254,7 +254,7 @@ describe('renderAssignment', () => {
 describe('renderPlan', () => {
   it('starts with status draft', () => {
     const out = renderPlan({
-      assignmentSlug: 'test',
+      ticketSlug: 'test',
       title: 'Test',
       timestamp: TIMESTAMP,
     });
@@ -270,7 +270,7 @@ describe('renderPlan', () => {
 describe('renderScratchpad', () => {
   it('has correct structure', () => {
     const out = renderScratchpad({
-      assignmentSlug: 'test',
+      ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
     expect(out).toContain('assignment: test');
@@ -283,7 +283,7 @@ describe('renderScratchpad', () => {
 describe('renderHandoff', () => {
   it('has handoffCount 0', () => {
     const out = renderHandoff({
-      assignmentSlug: 'test',
+      ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
     expect(out).toContain('handoffCount: 0');
@@ -295,7 +295,7 @@ describe('renderHandoff', () => {
 describe('renderDecisionRecord', () => {
   it('has decisionCount 0', () => {
     const out = renderDecisionRecord({
-      assignmentSlug: 'test',
+      ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
     expect(out).toContain('decisionCount: 0');

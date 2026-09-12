@@ -56,7 +56,7 @@ async function seed(
   }
   await appendSession('', {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: 'claude',
     sessionId,
     started: '2026-07-01T10:00:00.000Z',

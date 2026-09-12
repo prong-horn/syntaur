@@ -38,44 +38,44 @@ updated: "2026-01-01T00:00:00Z"
 
 describe('syntaur plan create', () => {
   let home: string;
-  let assignmentDir: string;
+  let ticketDir: string;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-plan-'));
     await writeFile(resolve(home, 'config.md'), `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`, 'utf-8');
-    assignmentDir = resolve(home, 'projects', 'p', 'assignments', 'a');
-    await mkdir(assignmentDir, { recursive: true });
+    ticketDir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
-    await writeFile(resolve(assignmentDir, 'assignment.md'), ASSIGNMENT, 'utf-8');
+    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT, 'utf-8');
   });
 
   afterEach(async () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('writes an initial plan.md without changing assignment.md ## Todos', async () => {
-    const before = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
-    const r = await runCli(['plan', 'create', '--assignment', 'a', '--project', 'p'], home);
+  it('writes an initial plan.md without changing ticket.md ## Todos', async () => {
+    const before = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    const r = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
 
-    const plan = await readFile(resolve(assignmentDir, 'plan.md'), 'utf-8');
+    const plan = await readFile(resolve(ticketDir, 'plan.md'), 'utf-8');
     expect(plan).toContain('# a — Implementation Plan');
     expect(plan).not.toContain('Supersedes');
     expect(plan).not.toContain('Implementation Plan v');
     expect(plan).toContain('status: draft');
 
-    const assignment = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    const ticket = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     expect(assignment.replace(/^---[\s\S]*?---\n?/, '')).toBe(
       before.replace(/^---[\s\S]*?---\n?/, ''),
     );
   });
 
   it('refuses to overwrite an existing plan.md without --force', async () => {
-    await runCli(['plan', 'create', '--assignment', 'a', '--project', 'p'], home);
-    const again = await runCli(['plan', 'create', '--assignment', 'a', '--project', 'p'], home);
+    await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
+    const again = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p'], home);
     expect(again.code).toBe(1);
     expect(again.stderr).toContain('already exists');
-    const forced = await runCli(['plan', 'create', '--assignment', 'a', '--project', 'p', '--force'], home);
+    const forced = await runCli(['plan', 'create', '--ticket', 'a', '--project', 'p', '--force'], home);
     expect(forced.code, forced.stderr).toBe(0);
   });
 });

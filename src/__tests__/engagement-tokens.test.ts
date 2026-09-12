@@ -76,7 +76,7 @@ describe('production cumulative source', () => {
       eventTs: '2026-03-26T07:00:00.000Z',
       cwd: null,
       projectSlug: '',
-      assignmentSlug: '',
+      ticketSlug: '',
       rawJson: null,
     };
     upsertEvent({

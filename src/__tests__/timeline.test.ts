@@ -24,7 +24,7 @@ const T1 = '2026-01-01T00:00:00Z';
 const T2 = '2026-02-01T00:00:00Z';
 const T3 = '2026-03-01T00:00:00Z';
 
-function assignmentMd(slug: string, id: string): string {
+function ticketMd(slug: string, id: string): string {
   return `---
 id: ${id}
 slug: ${slug}
@@ -51,10 +51,10 @@ tags: []
 }
 
 async function seedProject(project: string, slug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, project, 'assignments', slug);
+  const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), assignmentMd(slug, id), 'utf-8');
-  // project.md is required by resolveAssignmentTarget's --project path.
+  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(slug, id), 'utf-8');
+  // project.md is required by resolveTicketTarget's --project path.
   await writeFile(
     resolve(projectsDir, project, 'project.md'),
     `---\nslug: ${project}\ntitle: "${project}"\n---\n`,
@@ -65,7 +65,7 @@ async function seedProject(project: string, slug: string, id: string): Promise<v
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-timeline-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'assignments');
+  standaloneDir = resolve(home, 'tickets');
   dbPath = resolve(home, 'syntaur.db');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
@@ -92,9 +92,9 @@ afterEach(async () => {
 describe('runTimeline', () => {
   it('returns events newest-first with parsed details', async () => {
     await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
 
     const events = await runTimeline(SLUG, { project: PROJECT });
     expect(events.map((e) => e.at)).toEqual([T3, T2, T1]);
@@ -106,7 +106,7 @@ describe('runTimeline', () => {
 
   it('--json shape: each event has parsed details + the core columns', async () => {
     await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
 
     const events = await runTimeline(SLUG, { project: PROJECT });
     expect(events).toHaveLength(1);
@@ -123,9 +123,9 @@ describe('runTimeline', () => {
 
   it('--since filters out events strictly before the bound', async () => {
     await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, since: T2 });
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
@@ -133,9 +133,9 @@ describe('runTimeline', () => {
 
   it('--type filters to the requested event types', async () => {
     await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'fact-set', actor: 'human', at: T2 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'human', at: T3 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'fact-set', actor: 'human', at: T2 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, type: ['fact-set', 'plan-approval'] });
     expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set']);
@@ -143,21 +143,21 @@ describe('runTimeline', () => {
 
   it('--limit caps the number of events returned', async () => {
     await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ assignmentId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
+    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, limit: 2 });
     // newest-first, so the two newest survive
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });
 
-  it('resolves a standalone assignment by UUID and returns its events', async () => {
+  it('resolves a standalone ticket by UUID and returns its events', async () => {
     const uuid = '11111111-2222-3333-4444-555555555555';
     const dir = resolve(standaloneDir, uuid);
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'assignment.md'), assignmentMd(uuid, uuid), 'utf-8');
-    recordEvent({ assignmentId: uuid, type: 'status-change', actor: 'human', at: T1 });
+    await writeFile(resolve(dir, 'ticket.md'), assignmentMd(uuid, uuid), 'utf-8');
+    recordEvent({ ticketId: uuid, type: 'status-change', actor: 'human', at: T1 });
 
     const events = await runTimeline(uuid, {});
     expect(events).toHaveLength(1);

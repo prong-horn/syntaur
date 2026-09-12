@@ -15,9 +15,9 @@ import type { RendererKey } from '../targets/types.js';
 
 const PARAMS = {
   projectSlug: 'p',
-  assignmentSlug: 'a',
+  ticketSlug: 'a',
   projectDir: '/tmp/p',
-  assignmentDir: '/tmp/p/assignments/a',
+  ticketDir: '/tmp/p/tickets/a',
 };
 
 describe('target registry', () => {

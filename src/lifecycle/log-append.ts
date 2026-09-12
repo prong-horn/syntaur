@@ -76,8 +76,8 @@ export function appendLogEntry(
 }
 
 export interface AppendDecisionEntryInput {
-  assignmentDir: string;
-  assignmentRef: string;
+  ticketDir: string;
+  ticketRef: string;
   title: string;
   body: string;
 }
@@ -86,12 +86,12 @@ export interface AppendDecisionEntryInput {
 export async function appendDecisionEntry(
   input: AppendDecisionEntryInput,
 ): Promise<{ number: number; title: string }> {
-  const path = resolve(input.assignmentDir, 'decision-record.md');
+  const path = resolve(input.ticketDir, 'decision-record.md');
   const timestamp = nowTimestamp();
 
   const content = (await fileExists(path))
     ? await readFile(path, 'utf-8')
-    : renderDecisionRecord({ assignmentSlug: input.assignmentRef, timestamp });
+    : renderDecisionRecord({ ticketSlug: input.ticketRef, timestamp });
 
   const parsed = parseDecisionRecord(content);
   const nextNumber = parsed.decisionCount + 1;

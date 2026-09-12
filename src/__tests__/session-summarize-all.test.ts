@@ -35,7 +35,7 @@ async function seedN(n: number): Promise<void> {
     await writeFile(tp, JSON.stringify({ type: 'user', message: { content: 'hi' } }) + '\n');
     await appendSession('', {
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: 'claude',
       sessionId: `s${String(i).padStart(3, '0')}`,
       started: `2026-07-${String((i % 27) + 1).padStart(2, '0')}T10:00:00.000Z`,
@@ -74,7 +74,7 @@ describe('summarizeAllWithTranscripts (--all)', () => {
   it('skips sessions with no transcript', async () => {
     await appendSession('', {
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: 'claude',
       sessionId: 'no-transcript',
       started: '2026-07-01T10:00:00.000Z',

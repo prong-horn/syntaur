@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { initSessionDb, resetSessionDb, closeSessionDb } from '../dashboard/session-db.js';
 import { openEngagement, getOpenEngagement } from '../db/engagement-db.js';
@@ -10,8 +10,8 @@ import { openEngagement, getOpenEngagement } from '../db/engagement-db.js';
 /**
  * The headline regression for the engagement-attribution rewiring: two sessions
  * working two different assignments from ONE shared worktree/cwd must each
- * resolve their OWN assignment. Pre-rewiring, a single cwd-scoped context.json
- * scalar made the second grab clobber the first. Now the active assignment is
+ * resolve their OWN ticket. Pre-rewiring, a single cwd-scoped context.json
+ * scalar made the second grab clobber the first. Now the active ticket is
  * keyed on the session's open engagement, so the shared cwd is irrelevant.
  */
 
@@ -38,11 +38,11 @@ async function writeProject(slug: string): Promise<void> {
   );
 }
 
-async function writeAssignment(slug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, PROJECT, 'assignments', slug);
+async function writeTicket(slug: string, id: string): Promise<void> {
+  const dir = resolve(projectsDir, PROJECT, 'tickets', slug);
   await mkdir(dir, { recursive: true });
   await writeFile(
-    resolve(dir, 'assignment.md'),
+    resolve(dir, 'ticket.md'),
     [
       '---',
       `id: ${id}`,
@@ -61,10 +61,10 @@ async function writeAssignment(slug: string, id: string): Promise<void> {
   );
 }
 
-/** Resolve the active assignment AS a specific session sharing the one cwd. */
+/** Resolve the active ticket AS a specific session sharing the one cwd. */
 async function resolveAsSession(sessionId: string) {
   process.env.CLAUDE_CODE_SESSION_ID = sessionId; // STRONG provenance, per-process
-  return resolveAssignmentTarget(undefined, {
+  return resolveTicketTarget(undefined, {
     cwd: sharedWorktree,
     dir: projectsDir,
     resolveEngagement: () => resolveEngagementBinding(sharedWorktree),
@@ -84,19 +84,19 @@ beforeEach(async () => {
   delete process.env.CLAUDE_CODE_SESSION_ID;
 
   await writeProject(PROJECT);
-  await writeAssignment(A_SLUG, A_ID);
-  await writeAssignment(B_SLUG, B_ID);
+  await writeTicket(A_SLUG, A_ID);
+  await writeTicket(B_SLUG, B_ID);
 
   // A STALE, clobbering context.json in the shared worktree carrying the OLD
-  // authoritative assignment scalars pointing at B. Pre-rewiring this is exactly
+  // authoritative ticket scalars pointing at B. Pre-rewiring this is exactly
   // what made session A resolve B (the clobber). It must now be ignored entirely.
   await mkdir(resolve(sharedWorktree, '.syntaur'), { recursive: true });
   await writeFile(
     resolve(sharedWorktree, '.syntaur', 'context.json'),
     JSON.stringify({
       projectSlug: PROJECT,
-      assignmentSlug: B_SLUG,
-      assignmentDir: resolve(projectsDir, PROJECT, 'assignments', B_SLUG),
+      ticketSlug: B_SLUG,
+      ticketDir: resolve(projectsDir, PROJECT, 'tickets', B_SLUG),
       repository: '/repo',
       workspaceRoot: sharedWorktree,
     }),
@@ -107,17 +107,17 @@ beforeEach(async () => {
   // Two sessions, two assignments, ONE shared worktree/cwd.
   openEngagement({
     sessionId: SESSION_A,
-    assignmentId: A_ID,
+    ticketId: A_ID,
     projectSlug: PROJECT,
-    assignmentSlug: A_SLUG,
+    ticketSlug: A_SLUG,
     stage: 'implement',
     startedAt: '2026-06-20T01:00:00Z',
   });
   openEngagement({
     sessionId: SESSION_B,
-    assignmentId: B_ID,
+    ticketId: B_ID,
     projectSlug: PROJECT,
-    assignmentSlug: B_SLUG,
+    ticketSlug: B_SLUG,
     stage: 'plan',
     startedAt: '2026-06-20T02:00:00Z',
   });
@@ -133,25 +133,25 @@ afterEach(async () => {
 });
 
 describe('two sessions, one worktree: engagement-keyed attribution', () => {
-  it('each session resolves its OWN assignment from the shared cwd (no clobber)', async () => {
+  it('each session resolves its OWN ticket from the shared cwd (no clobber)', async () => {
     const asA = await resolveAsSession(SESSION_A);
-    expect(asA.assignmentSlug).toBe(A_SLUG);
+    expect(asA.ticketSlug).toBe(A_SLUG);
     expect(asA.id).toBe(A_ID);
     expect(asA.stage).toBe('implement');
 
     const asB = await resolveAsSession(SESSION_B);
-    expect(asB.assignmentSlug).toBe(B_SLUG);
+    expect(asB.ticketSlug).toBe(B_SLUG);
     expect(asB.id).toBe(B_ID);
     expect(asB.stage).toBe('plan');
 
     // The shared cwd did not make one session's target leak into the other.
-    expect(asA.assignmentSlug).not.toBe(asB.assignmentSlug);
+    expect(asA.ticketSlug).not.toBe(asB.ticketSlug);
   });
 
   it('a session with no open engagement fails-with-selector, even in a worktree another session owns', async () => {
     process.env.CLAUDE_CODE_SESSION_ID = 'session-with-no-engagement';
     await expect(
-      resolveAssignmentTarget(undefined, {
+      resolveTicketTarget(undefined, {
         cwd: sharedWorktree,
         dir: projectsDir,
         resolveEngagement: () => resolveEngagementBinding(sharedWorktree),
@@ -160,19 +160,19 @@ describe('two sessions, one worktree: engagement-keyed attribution', () => {
   });
 
   it('targeted resolution (--project + slug) files against B without switching A’s open engagement', async () => {
-    // Ambient is session A (engagement on assignment A).
+    // Ambient is session A (engagement on ticket A).
     process.env.CLAUDE_CODE_SESSION_ID = SESSION_A;
     const before = getOpenEngagement(SESSION_A);
     expect(before?.assignment_slug).toBe(A_SLUG);
 
     // Explicitly target B — Cases 1/2 win, the engagement seam is not consulted.
-    const targeted = await resolveAssignmentTarget(B_SLUG, {
+    const targeted = await resolveTicketTarget(B_SLUG, {
       project: PROJECT,
       dir: projectsDir,
       cwd: sharedWorktree,
       resolveEngagement: () => resolveEngagementBinding(sharedWorktree),
     });
-    expect(targeted.assignmentSlug).toBe(B_SLUG);
+    expect(targeted.ticketSlug).toBe(B_SLUG);
 
     // Session A's open engagement is untouched — still on A (no silent switch).
     const after = getOpenEngagement(SESSION_A);

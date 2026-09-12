@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { resolveEngagementBinding } from '../utils/engagement-binding.js';
 import { initEventsDb, listEventsByAssignment, type EventRow } from '../db/events-db.js';
 
@@ -24,18 +24,18 @@ export interface TimelineEvent extends Omit<EventRow, 'details'> {
 }
 
 /**
- * Resolve the assignment (`--project <slug> + <slug>`, or a bare standalone
+ * Resolve the ticket (`--project <slug> + <slug>`, or a bare standalone
  * UUID), open the events DB, and return its events newest-first with the
  * requested filters applied. `details` is parsed from its stored JSON string
  * into an object per event (best-effort — malformed JSON falls back to the raw
  * string).
  */
 export async function runTimeline(
-  assignment: string,
+  ticket: string,
   options: TimelineOptions = {},
 ): Promise<TimelineEvent[]> {
   const cwd = options.cwd ?? process.cwd();
-  const resolved = await resolveAssignmentTarget(assignment, {
+  const resolved = await resolveTicketTarget(ticket, {
     project: options.project,
     cwd,
     resolveEngagement: () => resolveEngagementBinding(cwd),
@@ -123,10 +123,10 @@ function renderTable(events: TimelineEvent[]): string {
 
 export const timelineCommand = new Command('timeline')
   .description(
-    'Show the chronological event log (who changed what, when, from→to) for one assignment, newest-first.',
+    'Show the chronological event log (who changed what, when, from→to) for one ticket, newest-first.',
   )
-  .argument('<assignment>', 'Assignment slug (with --project) or standalone UUID')
-  .option('--project <slug>', 'Project slug the assignment belongs to')
+  .argument('<ticket>', 'Ticket slug (with --project) or standalone UUID')
+  .option('--project <slug>', 'Project slug the ticket belongs to')
   .option('--since <date>', 'Only events at or after this UTC ISO timestamp (at >= since)')
   .option(
     '--type <list>',
@@ -135,9 +135,9 @@ export const timelineCommand = new Command('timeline')
   )
   .option('--limit <n>', 'Maximum number of events to show (default 50)', parseLimit)
   .option('--json', 'Emit JSON instead of a table')
-  .action(async (assignment: string, options: TimelineOptions) => {
+  .action(async (ticket: string, options: TimelineOptions) => {
     try {
-      const events = await runTimeline(assignment, options);
+      const events = await runTimeline(ticket, options);
       if (options.json) {
         console.log(JSON.stringify(events, null, 2));
       } else {

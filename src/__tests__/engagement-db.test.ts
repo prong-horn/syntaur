@@ -87,9 +87,9 @@ describe('engagement open / get / close', () => {
   it('opens an active engagement and reads it back as the open one', () => {
     const row = openEngagement({
       sessionId: 's1',
-      assignmentId: 'a-uuid',
+      ticketId: 'a-uuid',
       projectSlug: 'proj',
-      assignmentSlug: 'asg',
+      ticketSlug: 'asg',
       stage: 'plan',
       startedAt: '2026-03-26T10:00:00.000Z',
       tokensAtOpen: snap(100),
@@ -148,13 +148,13 @@ describe('ensureOpenEngagement (idempotent)', () => {
   it('opens when none exists, then no-ops when one already exists', () => {
     const a = ensureOpenEngagement({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       startedAt: '2026-03-26T10:00:00.000Z',
     });
     expect(a).not.toBeNull();
     const b = ensureOpenEngagement({
       sessionId: 's1',
-      assignmentId: 'a2',
+      ticketId: 'a2',
       startedAt: '2026-03-26T11:00:00.000Z',
     });
     // no switch — the original open engagement is preserved
@@ -174,7 +174,7 @@ describe('switchEngagement', () => {
   it('closes the current open and opens a new one in one transaction with a single snapshot', () => {
     openEngagement({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       stage: 'plan',
       startedAt: '2026-03-26T10:00:00.000Z',
       tokensAtOpen: snap(100),
@@ -182,7 +182,7 @@ describe('switchEngagement', () => {
     const boundary = snap(500, '2026-03-26T12:00:00.000Z');
     const next = switchEngagement({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       stage: 'implement',
       startedAt: '2026-03-26T12:00:00.000Z',
       tokensSnapshot: boundary,
@@ -214,7 +214,7 @@ describe('switchEngagement', () => {
   it('opens a first engagement when the session has none open', () => {
     const row = switchEngagement({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       stage: 'plan',
       startedAt: '2026-03-26T10:00:00.000Z',
       tokensSnapshot: snap(0),

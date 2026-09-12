@@ -1,6 +1,6 @@
 /**
  * The file-append core of `syntaur comment`, factored out so non-CLI callers
- * (the WS-2 engine's dissent-note copy) can add a comment to an assignment's
+ * (the WS-2 engine's dissent-note copy) can add a comment to a ticket's
  * `comments.md` without going through the command layer. `commentCommand`
  * delegates here for the write; it keeps its own resolution + audit emit.
  */
@@ -18,20 +18,20 @@ function setTopLevelField(content: string, key: string, value: string | number):
 }
 
 export interface AppendCommentInput {
-  /** The assignment folder holding `comments.md`. */
-  assignmentDir: string;
+  /** The ticket folder holding `comments.md`. */
+  ticketDir: string;
   /** Display ref used when scaffolding a fresh comments.md (slug or uuid). */
-  assignmentRef: string;
+  ticketRef: string;
   author: string;
   type: CommentType;
   body: string;
   replyTo?: string;
 }
 
-/** Append one comment to `<assignmentDir>/comments.md` (scaffolding the file if
+/** Append one comment to `<ticketDir>/comments.md` (scaffolding the file if
  * absent), bumping `entryCount`/`updated`. Returns the new comment id. */
 export async function appendComment(input: AppendCommentInput): Promise<string> {
-  const commentsPath = resolve(input.assignmentDir, 'comments.md');
+  const commentsPath = resolve(input.ticketDir, 'comments.md');
   const timestamp = nowTimestamp();
 
   let currentContent: string;
@@ -41,7 +41,7 @@ export async function appendComment(input: AppendCommentInput): Promise<string> 
     const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
     if (countMatch) currentCount = parseInt(countMatch[1], 10);
   } else {
-    currentContent = renderComments({ assignment: input.assignmentRef, timestamp });
+    currentContent = renderComments({ ticket: input.ticketRef, timestamp });
   }
 
   const comment: Comment = {

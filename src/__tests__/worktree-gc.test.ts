@@ -28,7 +28,7 @@ function git(cwd: string, args: string[]): void {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
 }
 
-function assignmentMd(opts: {
+function ticketMd(opts: {
   slug: string;
   status: string;
   repo: string;
@@ -59,10 +59,10 @@ describe('syntaur worktree gc', () => {
   let home: string;
   let repo: string;
 
-  async function writeAssignment(opts: { slug: string; status: string; worktreePath: string; branch: string; archived?: boolean }): Promise<void> {
-    const dir = resolve(home, 'projects', 'p', 'assignments', opts.slug);
+  async function writeTicket(opts: { slug: string; status: string; worktreePath: string; branch: string; archived?: boolean }): Promise<void> {
+    const dir = resolve(home, 'projects', 'p', 'tickets', opts.slug);
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'assignment.md'), assignmentMd({ ...opts, repo }), 'utf-8');
+    await writeFile(resolve(dir, 'ticket.md'), assignmentMd({ ...opts, repo }), 'utf-8');
   }
 
   function addWorktree(branch: string, extraCommit: boolean): string {
@@ -93,7 +93,7 @@ describe('syntaur worktree gc', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
       'utf-8',
     );
-    await mkdir(resolve(home, 'projects', 'p', 'assignments'), { recursive: true });
+    await mkdir(resolve(home, 'projects', 'p', 'tickets'), { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
   });
 
@@ -103,7 +103,7 @@ describe('syntaur worktree gc', () => {
 
   it('dry-run (default) classifies a merged+completed worktree as removable and removes nothing', async () => {
     const wt = addWorktree('feat-done', false);
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--json'], home);
     expect(r.code, r.stderr).toBe(0);
@@ -116,15 +116,15 @@ describe('syntaur worktree gc', () => {
 
   it('--apply removes a removable worktree but PRESERVES workspace.* (recoverable)', async () => {
     const wt = addWorktree('feat-done', false);
-    const slugDir = resolve(home, 'projects', 'p', 'assignments', 'a');
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
+    const slugDir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(await fileExists(wt)).toBe(false); // worktree dir removed
 
-    // The assignment's workspace.* fields must survive so `open --recreate` works.
-    const fm = await readFile(resolve(slugDir, 'assignment.md'), 'utf-8');
+    // The ticket's workspace.* fields must survive so `open --recreate` works.
+    const fm = await readFile(resolve(slugDir, 'ticket.md'), 'utf-8');
     expect(fm).toContain(`worktreePath: ${wt}`);
     expect(fm).toContain('branch: feat-done');
 
@@ -139,10 +139,10 @@ describe('syntaur worktree gc', () => {
     const unmerged = addWorktree('feat-wip', true);
     const inprog = addWorktree('feat-active', false);
     const orphan = addWorktree('feat-orphan', false);
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: merged, branch: 'feat-done' });
-    await writeAssignment({ slug: 'b', status: 'completed', worktreePath: unmerged, branch: 'feat-wip' });
-    await writeAssignment({ slug: 'c', status: 'in_progress', worktreePath: inprog, branch: 'feat-active' });
-    // no assignment for feat-orphan
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: merged, branch: 'feat-done' });
+    await writeTicket({ slug: 'b', status: 'completed', worktreePath: unmerged, branch: 'feat-wip' });
+    await writeTicket({ slug: 'c', status: 'in_progress', worktreePath: inprog, branch: 'feat-active' });
+    // no ticket for feat-orphan
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--json'], home);
     expect(r.code, r.stderr).toBe(0);
@@ -159,12 +159,12 @@ describe('syntaur worktree gc', () => {
     expect(await fileExists(orphan)).toBe(true);
   });
 
-  it('protects a worktree claimed by BOTH a completed and an active assignment', async () => {
+  it('protects a worktree claimed by BOTH a completed and an active ticket', async () => {
     const wt = addWorktree('feat-shared', false);
     // Two records point at the same worktree: one completed, one active. The
     // active one must protect it — never removable.
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-shared' });
-    await writeAssignment({ slug: 'b', status: 'in_progress', worktreePath: wt, branch: 'feat-shared' });
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-shared' });
+    await writeTicket({ slug: 'b', status: 'in_progress', worktreePath: wt, branch: 'feat-shared' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--json'], home);
     expect(r.code, r.stderr).toBe(0);
@@ -188,7 +188,7 @@ describe('syntaur worktree gc', () => {
 
   it('counts recorded agent sessions per worktree (read-only) without creating the DB if absent', async () => {
     const wt = addWorktree('feat-done', false);
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
 
     // No DB yet -> count 0, and gc must NOT create syntaur.db.
     const dbPath = resolve(home, 'syntaur.db');
@@ -210,7 +210,7 @@ describe('syntaur worktree gc', () => {
 
   it('--apply --force off a TTY requires --yes', async () => {
     const wt = addWorktree('feat-wip', true);
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-wip' });
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-wip' });
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--force'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('--yes');
@@ -219,7 +219,7 @@ describe('syntaur worktree gc', () => {
 
   it('--apply --force --yes removes an unmerged linked+terminal worktree', async () => {
     const wt = addWorktree('feat-wip', true);
-    await writeAssignment({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-wip' });
+    await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-wip' });
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--force', '--yes'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(await fileExists(wt)).toBe(false);

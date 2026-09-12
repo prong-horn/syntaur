@@ -8,7 +8,7 @@
  * dependency. Decision 8.
  *
  * Both tables are a MATERIALISED INDEX, never a source of truth:
- * `<assignmentDir>/chat/events.jsonl` is (Decision 2), and `rebuildChatIndex`
+ * `<ticketDir>/chat/events.jsonl` is (Decision 2), and `rebuildChatIndex`
  * replays it through a fresh normalizer to reproduce `chat_items` exactly.
  *
  * `chat_items.json` holds the serialised `ChatItem`; the columns beside it exist

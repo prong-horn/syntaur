@@ -60,11 +60,11 @@ async function seedAssignment(
   slug: string,
   workflow: string | null,
 ): Promise<void> {
-  const dir = resolve(projectsDir, projectSlug, 'assignments', slug);
+  const dir = resolve(projectsDir, projectSlug, 'tickets', slug);
   await mkdir(dir, { recursive: true });
   const wf = workflow ? `\nworkflow: ${workflow}` : '';
   await writeFile(
-    resolve(dir, 'assignment.md'),
+    resolve(dir, 'ticket.md'),
     `---\nid: 22222222-2222-2222-2222-${slug.padEnd(12, '0').slice(0, 12)}\nslug: ${slug}\ntitle: ${slug}\nproject: ${projectSlug}\nstatus: in_progress\npriority: medium${wf}\n---\n# ${slug}\n\n## Objective\n\nDo it.\n`,
     'utf-8',
   );
@@ -73,7 +73,7 @@ async function seedAssignment(
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'doc-wf-home-'));
   process.env.SYNTAUR_HOME = home;
-  await mkdir(join(home, '.syntaur', 'assignments'), { recursive: true }); // empty standalone tree
+  await mkdir(join(home, '.syntaur', 'tickets'), { recursive: true }); // empty standalone tree
   projectsDir = await mkdtemp(join(tmpdir(), 'doc-wf-proj-'));
 });
 
@@ -107,7 +107,7 @@ describe('doctor: workflows.references-resolve', () => {
     expect(r.detail).toContain('nope');
   });
 
-  it('errors when an assignment workflow override references a missing workflow', async () => {
+  it('errors when a ticket workflow override references a missing workflow', async () => {
     await seedProject('p', '');
     await seedAssignment('p', 'a1', 'phantom');
     const r = await run(configWith({}));

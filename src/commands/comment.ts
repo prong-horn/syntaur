@@ -1,11 +1,11 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { type CommentType } from '../templates/index.js';
@@ -35,35 +35,35 @@ export async function commentCommand(
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
-  let assignmentDir: string;
-  let assignmentRef: string;
+  let ticketDir: string;
+  let ticketRef: string;
   let projectSlug: string | null = null;
   if (options.project) {
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
     if (!isValidSlug(target)) {
-      throw new Error(`Invalid assignment slug "${target}".`);
+      throw new Error(`Invalid ticket slug "${target}".`);
     }
-    assignmentDir = resolve(baseDir, options.project, 'assignments', target);
-    assignmentRef = target;
+    ticketDir = resolve(baseDir, options.project, 'tickets', target);
+    ticketRef = target;
     projectSlug = options.project;
   } else {
-    const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), target);
+    const resolved = await resolveTicketById(baseDir, ticketsDirFn(), target);
     if (!resolved) {
-      throw new Error(`Assignment "${target}" not found. Provide --project <slug> or a valid standalone UUID.`);
+      throw new Error(`Ticket "${target}" not found. Provide --project <slug> or a valid standalone UUID.`);
     }
-    assignmentDir = resolved.assignmentDir;
-    assignmentRef = resolved.standalone ? resolved.id : resolved.assignmentSlug;
+    ticketDir = resolved.ticketDir;
+    ticketRef = resolved.standalone ? resolved.id : resolved.ticketSlug;
     projectSlug = resolved.projectSlug;
   }
 
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+  const commentsPath = resolve(ticketDir, 'comments.md');
   const author = options.author ?? process.env.USER ?? 'unknown';
 
   const commentId = await appendComment({
-    assignmentDir,
-    assignmentRef,
+    ticketDir,
+    ticketRef,
     author,
     type,
     body: text,
@@ -73,11 +73,11 @@ export async function commentCommand(
   // Audit event (best-effort): comment-added. Details carry author + a short
   // excerpt/length ONLY — never the full body (no sensitive data in the log).
   try {
-    const assignmentMd = resolve(assignmentDir, 'assignment.md');
+    const assignmentMd = resolve(ticketDir, 'ticket.md');
     if (await fileExists(assignmentMd)) {
-      const fm = parseAssignmentFrontmatter(await readFile(assignmentMd, 'utf-8'));
+      const fm = parseTicketFrontmatter(await readFile(assignmentMd, 'utf-8'));
       emitEvent({
-        assignmentId: fm.id,
+        ticketId: fm.id,
         projectSlug,
         type: 'comment-added',
         actor: author,
@@ -94,7 +94,7 @@ export async function commentCommand(
     /* best-effort: a failed audit emit must never break the comment */
   }
 
-  console.log(`Added ${type} comment ${commentId} to ${assignmentRef} (${commentsPath})`);
+  console.log(`Added ${type} comment ${commentId} to ${ticketRef} (${commentsPath})`);
   if (options.replyTo) {
     console.log(`  In reply to: ${options.replyTo}`);
   }

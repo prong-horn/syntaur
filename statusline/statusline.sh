@@ -5,15 +5,15 @@
 # user-configurable single line composed of the segments listed in
 #   $HOME/.syntaur/statusline.config.json
 # with shape:
-#   { "segments": ["wrap","git","assignment","model","ctx","session"],
+#   { "segments": ["wrap","git","ticket","model","ctx","session"],
 #     "separator": " · ",
 #     "wrap": "/optional/path/to/inner-statusline.sh" }
 #
 # Available segments:
 #   wrap       stdout of an external script (composes another statusline)
 #   git        repo:branch (+ dirty marker + ahead/behind counts)
-#   assignment active syntaur assignment (project/slug or standalone/uuid — title)
-#   external   external tracker IDs declared by the assignment (Jira, Linear, ...)
+#   ticket active syntaur ticket (project/slug or standalone/uuid — title)
+#   external   external tracker IDs declared by the ticket (Jira, Linear, ...)
 #   session    Claude session id (full)
 #   model      Claude model display name
 #   ctx        context window fill bar, e.g. "ctx:[####------] 42%"
@@ -130,18 +130,18 @@ if [ -d "$CWD" ]; then
   fi
 fi
 
-# assignment — project/slug — title  (or standalone/uuid-prefix — title)
-# external   — comma-joined external tracker IDs declared by the assignment
+# ticket — project/slug — title  (or standalone/uuid-prefix — title)
+# external   — comma-joined external tracker IDs declared by the ticket
 ASSIGNMENT_SEG=""
 EXTERNAL_SEG=""
 CONTEXT_FILE="$CWD/.syntaur/context.json"
 if [ -f "$CONTEXT_FILE" ]; then
   PROJECT_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-  ASSIGNMENT_SLUG=$(jq -r '.assignmentSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-  ASSIGNMENT_DIR=$(jq -r '.assignmentDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+  ASSIGNMENT_SLUG=$(jq -r '.ticketSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
+  ASSIGNMENT_DIR=$(jq -r '.ticketDir // empty' "$CONTEXT_FILE" 2>/dev/null)
   TITLE=""
-  if [ -n "$ASSIGNMENT_DIR" ] && [ -f "$ASSIGNMENT_DIR/assignment.md" ]; then
-    TITLE=$(awk '/^title:/{sub(/^title:[[:space:]]*"?/,""); sub(/"?[[:space:]]*$/,""); print; exit}' "$ASSIGNMENT_DIR/assignment.md" 2>/dev/null)
+  if [ -n "$ASSIGNMENT_DIR" ] && [ -f "$ASSIGNMENT_DIR/ticket.md" ]; then
+    TITLE=$(awk '/^title:/{sub(/^title:[[:space:]]*"?/,""); sub(/"?[[:space:]]*$/,""); print; exit}' "$ASSIGNMENT_DIR/ticket.md" 2>/dev/null)
     # externalIds parser: walks the YAML block under `externalIds:`, pairs each
     # `- system: X` with its following `id: Y`, and prints a comma-joined list
     # of the ids (most terminals don't have width for system prefixes; users
@@ -166,7 +166,7 @@ if [ -f "$CONTEXT_FILE" ]; then
         }
       }
       END { print out }
-    ' "$ASSIGNMENT_DIR/assignment.md" 2>/dev/null)
+    ' "$ASSIGNMENT_DIR/ticket.md" 2>/dev/null)
   fi
   LABEL=""
   if [ -n "$PROJECT_SLUG" ] && [ -n "$ASSIGNMENT_SLUG" ]; then
@@ -223,7 +223,7 @@ for name in $SEGMENTS_RAW; do
   case "$name" in
     wrap)       value="$WRAP_SEG" ;;
     git)        value="$GIT_SEG" ;;
-    assignment) value="$ASSIGNMENT_SEG" ;;
+    ticket) value="$ASSIGNMENT_SEG" ;;
     external)   value="$EXTERNAL_SEG" ;;
     session)    value="$SESSION_SEG" ;;
     model)      value="$MODEL_SEG" ;;

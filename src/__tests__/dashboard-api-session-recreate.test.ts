@@ -19,7 +19,7 @@ const originalSyntaurHome = process.env.SYNTAUR_HOME;
 
 let tmpHome: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 
@@ -31,26 +31,26 @@ function git(cwd: string, args: string[]): string {
 
 async function writeProjectAssignment(opts: {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   id: string;
   repository: string;
   worktreePath: string;
   branch: string;
 }): Promise<void> {
   const projectDir = resolve(projectsDir, opts.projectSlug);
-  const assignmentDir = resolve(projectDir, 'assignments', opts.assignmentSlug);
-  await mkdir(assignmentDir, { recursive: true });
+  const ticketDir = resolve(projectDir, 'tickets', opts.ticketSlug);
+  await mkdir(ticketDir, { recursive: true });
   await writeFile(
     resolve(projectDir, 'project.md'),
     `---\nslug: ${opts.projectSlug}\ntitle: ${opts.projectSlug}\nstatus: in_progress\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n# ${opts.projectSlug}\n`,
   );
   await writeFile(
-    resolve(assignmentDir, 'assignment.md'),
+    resolve(ticketDir, 'ticket.md'),
     [
       '---',
       `id: ${opts.id}`,
-      `slug: ${opts.assignmentSlug}`,
-      `title: "${opts.assignmentSlug}"`,
+      `slug: ${opts.ticketSlug}`,
+      `title: "${opts.ticketSlug}"`,
       `project: ${opts.projectSlug}`,
       'type: feature',
       'status: in_progress',
@@ -70,7 +70,7 @@ async function writeProjectAssignment(opts: {
       'tags: []',
       '---',
       '',
-      `# ${opts.assignmentSlug}`,
+      `# ${opts.ticketSlug}`,
     ].join('\n'),
   );
 }
@@ -81,9 +81,9 @@ beforeEach(async () => {
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
   projectsDir = resolve(tmpHome, 'projects');
-  assignmentsDir = resolve(tmpHome, 'assignments');
+  ticketsDir = resolve(tmpHome, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
 
   resetSessionDb();
   initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
@@ -92,7 +92,7 @@ beforeEach(async () => {
   app.use(express.json());
   app.use(
     '/api/agent-sessions',
-    createAgentSessionsRouter(projectsDir, undefined, assignmentsDir),
+    createAgentSessionsRouter(projectsDir, undefined, ticketsDir),
   );
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());
@@ -126,7 +126,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
 
     await writeProjectAssignment({
       projectSlug: 'demo',
-      assignmentSlug: 'task-recreate',
+      ticketSlug: 'task-recreate',
       id: 'aaaa1111-bbbb-2222-cccc-333344445555',
       repository: repo,
       worktreePath: wtPath,
@@ -134,7 +134,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     });
     await appendSession('', {
       projectSlug: 'demo',
-      assignmentSlug: 'task-recreate',
+      ticketSlug: 'task-recreate',
       agent: 'claude',
       sessionId: 'sess-recreate-1',
       started: '2026-06-01T00:00:00Z',
@@ -172,13 +172,13 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     const wtPath = resolve(tmpHome, 'standalone-session-wt');
     git(repo, ['worktree', 'add', '-b', 'feat/solo', wtPath, 'main']);
 
-    // Standalone assignment lives under assignmentsDir/<uuid>/assignment.md and
+    // Standalone ticket lives under ticketsDir/<uuid>/ticket.md and
     // is resolved by id (the session's assignment_slug holds that UUID).
     const id = 'bbbb2222-cccc-3333-dddd-444455556666';
-    const soloDir = resolve(assignmentsDir, id);
+    const soloDir = resolve(ticketsDir, id);
     await mkdir(soloDir, { recursive: true });
     await writeFile(
-      resolve(soloDir, 'assignment.md'),
+      resolve(soloDir, 'ticket.md'),
       [
         '---',
         `id: ${id}`,
@@ -209,7 +209,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
 
     await appendSession('', {
       projectSlug: null,
-      assignmentSlug: id, // standalone: assignment_slug holds the UUID
+      ticketSlug: id, // standalone: assignment_slug holds the UUID
       agent: 'claude',
       sessionId: 'sess-standalone-1',
       started: '2026-06-01T00:00:00Z',

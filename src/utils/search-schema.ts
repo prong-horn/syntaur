@@ -11,9 +11,10 @@
  */
 
 /** The searchable entity kinds an alias prefix can target. */
-export type EntityKind = 'assignment' | 'project' | 'playbook';
+export type EntityKind = 'ticket' | 'assignment' | 'project' | 'playbook';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
+  'ticket',
   'assignment',
   'project',
   'playbook',
@@ -33,7 +34,7 @@ export interface SearchConfig {
 
 export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   defaultScope: 'all',
-  aliases: { a: 'assignment', p: 'project', pb: 'playbook' },
+  aliases: { a: 'ticket', p: 'project', pb: 'playbook' },
   externalIds: true,
 };
 

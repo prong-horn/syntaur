@@ -1,7 +1,7 @@
 /**
  * Needs-attention / staleness classifier (read-only).
  *
- * The ONE place that decides whether an assignment's status has gone stale —
+ * The ONE place that decides whether a ticket's status has gone stale —
  * i.e. where the status CONTRADICTS reality — and why. Pure and side-effect
  * free: it never reads files, never writes status, never mutates anything. The
  * dashboard overview, the decision inbox, the CLI, and (later) a read-only
@@ -93,7 +93,7 @@ export interface NeedsAttentionInput {
   statusAgeMs: number | null;
   /** ms since the most recent REAL activity (max-recency of progress.md mtime,
    * workspace files, session liveness). null → unknown → activity reasons never
-   * fire (fail safe). NEVER assignment `updated` (recompute bumps that). */
+   * fire (fail safe). NEVER ticket `updated` (recompute bumps that). */
   lastActivityMs: number | null;
 }
 
@@ -103,7 +103,7 @@ const IN_PROGRESS_PHASE = 'in_progress';
 const REVIEW_PHASE = 'review';
 
 /**
- * Classify why (if at all) an assignment needs attention. Returns [] when the
+ * Classify why (if at all) a ticket needs attention. Returns [] when the
  * status is consistent with reality (or terminal, or inputs are unknown).
  */
 export function classifyNeedsAttention(

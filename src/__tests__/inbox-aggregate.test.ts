@@ -52,12 +52,12 @@ interface SeedOpts {
   comments?: Comment[];
 }
 
-/** Create a real on-disk assignment fixture (assignment.md + optional plan/comments). */
+/** Create a real on-disk ticket fixture (ticket.md + optional plan/comments). */
 async function seed(o: SeedOpts): Promise<string> {
   const standalone = o.project === undefined || o.project === null;
   const dir = standalone
     ? join(standaloneDir, o.slug)
-    : join(projectsDir, o.project as string, 'assignments', o.slug);
+    : join(projectsDir, o.project as string, 'tickets', o.slug);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
@@ -85,7 +85,7 @@ async function seed(o: SeedOpts): Promise<string> {
   }
   if (o.extraFrontmatter) fm.push(...o.extraFrontmatter);
 
-  await writeFile(join(dir, 'assignment.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
+  await writeFile(join(dir, 'ticket.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
 
   if (o.planFiles) {
     for (const [name, content] of Object.entries(o.planFiles)) {
@@ -117,7 +117,7 @@ afterEach(async () => {
 async function run(opts?: Partial<Parameters<typeof computeInbox>[0]>) {
   return computeInbox({
     projectsDir,
-    assignmentsDir: standaloneDir,
+    ticketsDir: standaloneDir,
     statusConfig: statusConfig(),
     now: NOW,
     ...opts,
@@ -145,8 +145,8 @@ describe('computeInbox — shape', () => {
     const item = result.items[0];
     expect(item).toMatchObject({
       project: 'p1',
-      assignmentSlug: 'rev',
-      assignmentId: 'u1',
+      ticketSlug: 'rev',
+      ticketId: 'u1',
       title: 'rev',
       category: 'review',
       since: expect.any(String),
@@ -307,7 +307,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a parked-disposition assignment even with status review', async () => {
+  it('excludes a parked-disposition ticket even with status review', async () => {
     // Malformed pairing: disposition:parked but status:review. The up-front
     // disposition guard drops it (a parked item is not awaiting a decision).
     await seed({
@@ -321,7 +321,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a parked-disposition assignment even with an open question', async () => {
+  it('excludes a parked-disposition ticket even with an open question', async () => {
     await seed({
       id: 'pkq',
       slug: 'parked-q',
@@ -337,7 +337,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a terminal-disposition assignment even with status review', async () => {
+  it('excludes a terminal-disposition ticket even with status review', async () => {
     await seed({
       id: 'tm',
       slug: 'terminal-rev',
@@ -349,7 +349,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a TERMINAL-status assignment with NULL disposition and an open question', async () => {
+  it('excludes a TERMINAL-status ticket with NULL disposition and an open question', async () => {
     // Legacy/null-disposition: status is `completed` (∈ terminalStatuses) with
     // no `disposition` field, plus an unresolved question. The terminal-STATUS
     // guard must drop it BEFORE the status-agnostic question loop — otherwise
@@ -368,7 +368,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('keeps a blocked-disposition assignment excluded (blocked category removed)', async () => {
+  it('keeps a blocked-disposition ticket excluded (blocked category removed)', async () => {
     await seed({
       id: 'bd',
       slug: 'blocked-d',
@@ -428,7 +428,7 @@ describe('computeInbox — since, age, ordering', () => {
       statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
     });
     const r = await run();
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['plan-row', 'old-rev', 'new-rev']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['plan-row', 'old-rev', 'new-rev']);
   });
 
   it('orders most-urgent (largest ageMs) first within a category', async () => {
@@ -454,7 +454,7 @@ describe('computeInbox — since, age, ordering', () => {
       statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: review', '  command: review'],
     });
     const r = await run();
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['old', 'mid', 'new']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['old', 'mid', 'new']);
   });
 });
 
@@ -462,12 +462,12 @@ describe('computeInbox — since, age, ordering', () => {
 
 function permissionItem(
   itemId: string,
-  assignmentId: string,
+  ticketId: string,
   extra?: Partial<PermissionRequestItem>,
 ): PermissionRequestItem {
   return {
     itemId,
-    assignmentId,
+    ticketId,
     turnId: 'turn-1',
     agentId: 'cursor',
     type: 'permission.request',
@@ -524,7 +524,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
       [permItemId, permissionItem(permItemId, 'a-perm')],
     ]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['perm-row', 'reply-row']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['perm-row', 'reply-row']);
     expect(r.items[0].card?.settled).toBe(false);
   });
 
@@ -569,7 +569,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
       [permItemId, permissionItem(permItemId, 'a-perm2', { answer: 'allow-once', sealed: true })],
     ]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['reply-older-row', 'perm-settled-row']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['reply-older-row', 'perm-settled-row']);
     expect(r.items[1].card?.settled).toBe(true);
   });
 
@@ -643,7 +643,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
     });
     const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 't-card')]]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual([
+    expect(r.items.map((i) => i.ticketSlug)).toEqual([
       'tier-card',
       'tier-reply',
       'tier-plain',
@@ -694,7 +694,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
       [permB, permissionItem(permB, 'card-old')],
     ]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['card-older', 'card-newer']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['card-older', 'card-newer']);
   });
 
   it('without lookup a permission row has no card key and is still tier 0', async () => {
@@ -724,7 +724,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
       statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
     const r = await run();
-    expect(r.items[0].assignmentSlug).toBe('no-lookup-row');
+    expect(r.items[0].ticketSlug).toBe('no-lookup-row');
     expect(r.items[0]).not.toHaveProperty('card');
   });
 
@@ -752,7 +752,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
         throw new Error('db closed');
       },
     });
-    expect(r.items[0].assignmentSlug).toBe('throw-row');
+    expect(r.items[0].ticketSlug).toBe('throw-row');
     expect(r.items[0].card).toBeNull();
   });
 
@@ -785,7 +785,7 @@ describe('computeInbox — tiered ordering with lookup', () => {
     const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'a-limit-card')]]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null, limit: 1 });
     expect(r.items).toHaveLength(1);
-    expect(r.items[0].assignmentSlug).toBe('limit-card');
+    expect(r.items[0].ticketSlug).toBe('limit-card');
     expect(r.total).toBe(2);
     expect(r.counts).toEqual({ question: 1, review: 1, 'plan-approval': 0 });
   });
@@ -833,7 +833,7 @@ describe('computeInbox — filters', () => {
   it('combined project + types filter', async () => {
     const r = await run({ project: 'p1', types: ['review'] as InboxCategory[] });
     expect(r.total).toBe(1);
-    expect(r.items[0].assignmentSlug).toBe('r1');
+    expect(r.items[0].ticketSlug).toBe('r1');
   });
 });
 
@@ -888,7 +888,7 @@ describe('computeInbox — chat questions', () => {
     expect(q.body).toBe('Which name?');
     expect(q.action).toEqual({
       verb: 'Open chat',
-      command: 'http://localhost:4888/projects/demo/assignments/chat-q?tab=chat#item-9',
+      command: 'http://localhost:4888/projects/demo/tickets/chat-q?tab=chat#item-9',
     });
   });
 
@@ -915,7 +915,7 @@ describe('computeInbox — chat questions', () => {
     expect(q.action.verb).toBe('Answer');
   });
 
-  it('builds standalone chat URLs from assignment id', async () => {
+  it('builds standalone chat URLs from ticket id', async () => {
     await seed({
       id: 'uuid-standalone',
       slug: 'uuid-standalone',
@@ -935,7 +935,7 @@ describe('computeInbox — chat questions', () => {
     const r = await run({ dashboardUrl: 'http://test.local:4800' });
     const q = r.items.find((i) => i.category === 'question')!;
     expect(q.action.command).toBe(
-      'http://test.local:4800/assignments/uuid-standalone?tab=chat#perm-1',
+      'http://test.local:4800/tickets/uuid-standalone?tab=chat#perm-1',
     );
   });
 
@@ -1010,7 +1010,7 @@ describe('computeInbox — maxAgeMs', () => {
       statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
     });
     const r = await run({ maxAgeMs: 7 * 86_400_000 });
-    expect(r.items.map((i) => i.assignmentSlug)).toEqual(['new-rev']);
+    expect(r.items.map((i) => i.ticketSlug)).toEqual(['new-rev']);
     expect(r.total).toBe(1);
     expect(r.counts.review).toBe(1);
   });
@@ -1040,7 +1040,7 @@ describe('computeInbox — maxAgeMs', () => {
       lookupChatItem: (id) => lookup.get(id) ?? null,
     });
     expect(r.items).toHaveLength(1);
-    expect(r.items[0].assignmentSlug).toBe('old-card');
+    expect(r.items[0].ticketSlug).toBe('old-card');
     expect(r.total).toBe(1);
   });
 });
@@ -1058,12 +1058,12 @@ describe('computeInbox — snoozes', () => {
       updated: '2026-06-01T00:00:00Z',
     });
     const r = await run();
-    return r.items.find((i) => i.assignmentSlug === slug)!;
+    return r.items.find((i) => i.ticketSlug === slug)!;
   }
 
   it('hides a snoozed review from items/counts/total', async () => {
     await reviewRow('snoozed-rev', 'sn-r', '2026-06-01T00:00:00Z');
-    const item = (await run()).items.find((i) => i.assignmentSlug === 'snoozed-rev')!;
+    const item = (await run()).items.find((i) => i.ticketSlug === 'snoozed-rev')!;
     const key = inboxRowKey(item);
     const until = new Date(NOW + 7 * 86_400_000).toISOString();
     const snoozes: SnoozeMap = {
@@ -1158,7 +1158,7 @@ describe('computeInbox — snoozes', () => {
 });
 
 describe('inboxRowKey and rowFingerprint', () => {
-  it('uses commentId, chat itemId, or category:assignmentId', async () => {
+  it('uses commentId, chat itemId, or category:ticketId', async () => {
     await seed({
       id: 'q-id',
       slug: 'q-slug',
@@ -1198,13 +1198,13 @@ describe('inboxRowKey and rowFingerprint', () => {
     });
     const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'chat-id')]]);
     const chat = (await run({ lookupChatItem: (id) => lookup.get(id) ?? null })).items.find(
-      (i) => i.assignmentSlug === 'chat-slug',
+      (i) => i.ticketSlug === 'chat-slug',
     )!;
     expect(inboxRowKey(chat)).toBe('c-chat');
     expect(rowFingerprint(chat)).toContain(permId);
 
     await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });
-    const review = (await run()).items.find((i) => i.assignmentSlug === 'rev-slug')!;
+    const review = (await run()).items.find((i) => i.ticketSlug === 'rev-slug')!;
     expect(inboxRowKey(review)).toBe('review:rev-id');
     expect(rowFingerprint(review)).toBe(`${review.since}|${review.assignmentUpdated}|`);
   });

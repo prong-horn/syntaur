@@ -7,7 +7,7 @@ import { setupAdapterCommand } from '../commands/setup-adapter.js';
 describe('setup-adapter command', () => {
   let tempDir: string;
   let projectDir: string;
-  let assignmentDir: string;
+  let ticketDir: string;
   let originalCwd: string;
   let cwdDir: string;
   let prevHome: string | undefined;
@@ -16,10 +16,10 @@ describe('setup-adapter command', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
     projectDir = join(tempDir, 'projects', 'test-project');
-    assignmentDir = join(projectDir, 'assignments', 'test-assignment');
-    await mkdir(assignmentDir, { recursive: true });
+    ticketDir = join(projectDir, 'tickets', 'test-assignment');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(join(projectDir, 'project.md'), '---\ntitle: Test\n---\n');
-    await writeFile(join(assignmentDir, 'assignment.md'), '---\nstatus: pending\n---\n');
+    await writeFile(join(ticketDir, 'ticket.md'), '---\nstatus: pending\n---\n');
 
     cwdDir = join(tempDir, 'workspace');
     await mkdir(cwdDir, { recursive: true });
@@ -46,20 +46,20 @@ describe('setup-adapter command', () => {
 
   const baseOptions = (dir: string) => ({
     project: 'test-project',
-    assignment: 'test-assignment',
+    ticket: 'test-assignment',
     dir: join(dir, 'projects'),
   });
 
   it('generates Cursor adapter files', async () => {
     await setupAdapterCommand('cursor', baseOptions(tempDir));
     const protocolPath = resolve(cwdDir, '.cursor', 'rules', 'syntaur-protocol.mdc');
-    const assignmentPath = resolve(cwdDir, '.cursor', 'rules', 'syntaur-assignment.mdc');
+    const ticketPath = resolve(cwdDir, '.cursor', 'rules', 'syntaur-ticket.mdc');
     const protocol = await readFile(protocolPath, 'utf-8');
-    const assignment = await readFile(assignmentPath, 'utf-8');
+    const ticket = await readFile(ticketPath, 'utf-8');
     expect(protocol).toContain('alwaysApply: true');
     expect(protocol).toContain('Syntaur Protocol');
-    expect(assignment).toContain('test-project');
-    expect(assignment).toContain('test-assignment');
+    expect(ticket).toContain('test-project');
+    expect(ticket).toContain('test-assignment');
   });
 
   it('generates Codex adapter files', async () => {
@@ -166,7 +166,7 @@ describe('setup-adapter command', () => {
     await expect(
       setupAdapterCommand('codex', {
         ...baseOptions(tempDir),
-        assignment: 'nonexistent',
+        ticket: 'nonexistent',
       }),
     ).rejects.toThrow('not found');
   });

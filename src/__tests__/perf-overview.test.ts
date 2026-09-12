@@ -19,9 +19,9 @@ import { homedir } from 'node:os';
 import {
   getOverview,
   listProjects,
-  listAssignmentsBoard,
+  listTicketsBoard,
 } from '../dashboard/api.js';
-import { assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
+import { ticketsDir as getTicketsDir } from '../utils/paths.js';
 
 const ENABLED = process.env.SYNTAUR_PERF_BENCH === '1';
 
@@ -47,7 +47,7 @@ tags: []
 # ${slug}`;
 }
 
-function assignmentMd(slug: string, status: string, dependsOn: string[] = []): string {
+function ticketMd(slug: string, status: string, dependsOn: string[] = []): string {
   return `---
 id: ${slug}-id
 slug: ${slug}
@@ -72,7 +72,7 @@ tags: []
 }
 
 const COMMENTS_OPEN_QUESTION = `---
-assignment: a
+ticket: a
 entryCount: 1
 generated: "2026-04-07T10:00:00Z"
 updated: "2026-04-07T10:00:00Z"
@@ -118,10 +118,10 @@ async function seedSyntheticWorkspace(
       const status = statuses[a % statuses.length]!;
       const dependsOn =
         a > 0 && a % 5 === 0 ? [`asg-${(a - 1).toString().padStart(3, '0')}`] : [];
-      const aDir = resolve(projectPath, 'assignments', slug);
+      const aDir = resolve(projectPath, 'tickets', slug);
       await mkdir(aDir, { recursive: true });
       await writeFile(
-        resolve(aDir, 'assignment.md'),
+        resolve(aDir, 'ticket.md'),
         assignmentMd(slug, status, dependsOn),
         'utf-8',
       );
@@ -146,10 +146,10 @@ async function runOnce(label: string, projectsDir: string): Promise<number> {
 async function runFullOverview(
   label: string,
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
 ): Promise<number> {
   const start = performance.now();
-  const overview = await getOverview(projectsDir, assignmentsDir);
+  const overview = await getOverview(projectsDir, ticketsDir);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console
   console.log(
@@ -161,13 +161,13 @@ async function runFullOverview(
 async function runStartupSet(
   label: string,
   projectsDir: string,
-  assignmentsDir: string,
+  ticketsDir: string,
 ): Promise<number> {
   const start = performance.now();
   await Promise.all([
-    getOverview(projectsDir, assignmentsDir),
+    getOverview(projectsDir, ticketsDir),
     listProjects(projectsDir),
-    listAssignmentsBoard(projectsDir, assignmentsDir),
+    listTicketsBoard(projectsDir, ticketsDir),
   ]);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console
@@ -209,13 +209,13 @@ describe.skipIf(!ENABLED || !process.env.SYNTAUR_PERF_BENCH_REAL)('perf-overview
 
   it('full startup path against ~/.syntaur', async () => {
     const projectsDir = resolve(homedir(), '.syntaur', 'projects');
-    const assignmentsDir = getAssignmentsDir();
+    const ticketsDir = getTicketsDir();
 
-    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir, assignmentsDir);
-    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir, assignmentsDir);
+    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir, ticketsDir);
+    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir, ticketsDir);
 
-    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir, assignmentsDir);
-    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir, assignmentsDir);
+    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir, ticketsDir);
+    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir, ticketsDir);
 
     // eslint-disable-next-line no-console
     console.log(

@@ -1,14 +1,14 @@
 import { resolve } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
-import { parseAssignmentFull } from '../../../dashboard/parser.js';
+import { parseTicketFull } from '../../../dashboard/parser.js';
 import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
-import { assignmentsDir as getStandaloneDir } from '../../paths.js';
-import { listAssignmentsByProject, type AssignmentEntry } from '../../assignment-walk.js';
+import { ticketsDir as getStandaloneDir } from '../../paths.js';
+import { listTicketsByProject, type AssignmentEntry } from '../../ticket-walk.js';
 import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
-const CATEGORY = 'assignment';
+const CATEGORY = 'ticket';
 
 const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'completed']);
 
@@ -42,11 +42,11 @@ function objectiveBodyIsEmpty(content: string): boolean {
   return OBJECTIVE_PLACEHOLDER_PATTERNS.some((p) => p.test(body));
 }
 
-async function listAssignments(ctx: CheckContext): Promise<{
+async function listTickets(ctx: CheckContext): Promise<{
   withAssignmentMd: AssignmentEntry[];
   orphanFolders: AssignmentEntry[];
 }> {
-  return listAssignmentsByProject(ctx.config.defaultProjectDir, getStandaloneDir());
+  return listTicketsByProject(ctx.config.defaultProjectDir, getStandaloneDir());
 }
 
 function configuredStatuses(ctx: CheckContext): Set<string> {
@@ -55,49 +55,49 @@ function configuredStatuses(ctx: CheckContext): Set<string> {
   return new Set(DEFAULT_STATUSES);
 }
 
-/** projectDir for a walked assignment entry — its project root for a nested
- * assignment (`<projectDir>/assignments/<slug>`), null for standalone. */
+/** projectDir for a walked ticket entry — its project root for a nested
+ * ticket (`<projectDir>/tickets/<slug>`), null for standalone. */
 function projectDirFor(a: AssignmentEntry): string | null {
-  return a.projectSlug ? resolve(a.assignmentDir, '..', '..') : null;
+  return a.projectSlug ? resolve(a.ticketDir, '..', '..') : null;
 }
 
 const requiredFiles: Check = {
   id: 'assignment.required-files',
   category: CATEGORY,
-  title: 'Each assignment folder has an assignment.md',
+  title: 'Each ticket folder has an ticket.md',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     if (withAssignmentMd.length === 0) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'skipped',
-        detail: 'no assignments found',
+        detail: 'no tickets found',
         autoFixable: false,
       } satisfies CheckResult;
     }
-    return pass(this, `${withAssignmentMd.length} assignment.md files present`);
+    return pass(this, `${withAssignmentMd.length} ticket.md files present`);
   },
 };
 
 const orphanedFolder: Check = {
   id: 'assignment.orphaned-folder',
   category: CATEGORY,
-  title: 'No assignment folders without assignment.md',
+  title: 'No ticket folders without ticket.md',
   async run(ctx) {
-    const { orphanFolders } = await listAssignments(ctx);
+    const { orphanFolders } = await listTickets(ctx);
     if (orphanFolders.length === 0) return pass(this);
     return orphanFolders.map((o) => ({
       id: this.id,
       category: this.category,
       title: this.title,
       status: 'error' as const,
-      detail: `folder ${o.assignmentDir} has no assignment.md`,
-      affected: [o.assignmentDir],
+      detail: `folder ${o.ticketDir} has no ticket.md`,
+      affected: [o.ticketDir],
       remediation: {
         kind: 'manual' as const,
-        suggestion: 'Either create an assignment.md inside the folder or delete it',
+        suggestion: 'Either create an ticket.md inside the folder or delete it',
         command: null,
       },
       autoFixable: false,
@@ -108,18 +108,18 @@ const orphanedFolder: Check = {
 const invalidStatus: Check = {
   id: 'assignment.invalid-status',
   category: CATEGORY,
-  title: 'Assignment statuses are valid',
+  title: 'Ticket statuses are valid',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     // Each assignment's status is validated against ITS OWN workflow's defined
     // statuses (resolved via the ticket's binding), not one global set.
     const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      const wctx = await resolver.forAssignment(parsed, projectDirFor(a));
+      const wctx = await resolver.forTicket(parsed, projectDirFor(a));
       const allowed = wctx.knownStatusIds;
       if (!allowed.has(parsed.status)) {
         results.push({
@@ -127,11 +127,11 @@ const invalidStatus: Check = {
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.assignmentSlug}: status "${parsed.status}" is not in workflow "${wctx.workflowId}" statuses (${[...allowed].join(', ')})`,
+          detail: `${a.projectSlug}/${a.ticketSlug}: status "${parsed.status}" is not in workflow "${wctx.workflowId}" statuses (${[...allowed].join(', ')})`,
           affected: [path],
           remediation: {
             kind: 'manual',
-            suggestion: 'Update the assignment status to a valid value',
+            suggestion: 'Update the ticket status to a valid value',
             command: null,
           },
           autoFixable: false,
@@ -148,16 +148,16 @@ const workspaceMissing: Check = {
   category: CATEGORY,
   title: 'Non-terminal assignments have workspace fields set',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     // Terminality is judged per the ticket's OWN workflow (a custom terminal
     // status must exempt the ticket from the workspace requirement).
     const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      const wctx = await resolver.forAssignment(parsed, projectDirFor(a));
+      const wctx = await resolver.forTicket(parsed, projectDirFor(a));
       if (wctx.terminalStatuses.has(parsed.status)) continue;
       if (PRE_WORKSPACE_STATUSES.has(parsed.status)) continue; // workspace not yet expected
       const { repository, worktreePath } = parsed.workspace;
@@ -167,11 +167,11 @@ const workspaceMissing: Check = {
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.assignmentSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktreePath set — the PreToolUse hook will block implementation work`,
+          detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktreePath set — the PreToolUse hook will block implementation work`,
           affected: [path],
           remediation: {
             kind: 'manual',
-            suggestion: 'Set workspace.repository and workspace.worktreePath in the assignment frontmatter before continuing implementation',
+            suggestion: 'Set workspace.repository and workspace.worktreePath in the ticket frontmatter before continuing implementation',
             command: null,
           },
           autoFixable: false,
@@ -186,7 +186,7 @@ const workspaceMissing: Check = {
 const requiredFilesByStatus: Check = {
   id: 'assignment.required-files-by-status',
   category: CATEGORY,
-  title: 'Handoff file matches assignment status',
+  title: 'Handoff file matches ticket status',
   async run(ctx) {
     const allowed = configuredStatuses(ctx);
     const defaultsCovered = Array.from(DEFAULT_STATUSES).every((s) => allowed.has(s));
@@ -200,15 +200,15 @@ const requiredFilesByStatus: Check = {
         autoFixable: false,
       } satisfies CheckResult;
     }
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const assignmentPath = resolve(a.assignmentDir, 'assignment.md');
-      const parsed = await parseSafe(assignmentPath);
+      const ticketPath = resolve(a.ticketDir, 'ticket.md');
+      const parsed = await parseSafe(ticketPath);
       if (!parsed) continue;
       const missing: string[] = [];
       if (STATUSES_REQUIRING_HANDOFF.has(parsed.status)) {
-        const handoffPath = resolve(a.assignmentDir, 'handoff.md');
+        const handoffPath = resolve(a.ticketDir, 'handoff.md');
         if (!(await fileExists(handoffPath))) missing.push('handoff.md');
       }
       if (missing.length === 0) continue;
@@ -217,8 +217,8 @@ const requiredFilesByStatus: Check = {
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `${a.projectSlug}/${a.assignmentSlug} (status: ${parsed.status}) is missing ${missing.join(', ')}`,
-        affected: missing.map((m) => resolve(a.assignmentDir, m)),
+        detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) is missing ${missing.join(', ')}`,
+        affected: missing.map((m) => resolve(a.ticketDir, m)),
         remediation: {
           kind: 'manual',
           suggestion: `Create the missing ${missing.join(' and ')} files for this assignment`,
@@ -237,24 +237,24 @@ const companionFilesScaffolded: Check = {
   category: CATEGORY,
   title: 'progress.md and comments.md scaffolded (v2.0)',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
       const missing: string[] = [];
       for (const filename of ['progress.md', 'comments.md']) {
-        if (!(await fileExists(resolve(a.assignmentDir, filename)))) {
+        if (!(await fileExists(resolve(a.ticketDir, filename)))) {
           missing.push(filename);
         }
       }
       if (missing.length === 0) continue;
-      const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+      const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
       results.push({
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `${label} is missing ${missing.join(' and ')} (pre-v2.0 assignment — not required, but scaffolding them keeps the dashboard and CLIs consistent)`,
-        affected: missing.map((m) => resolve(a.assignmentDir, m)),
+        detail: `${label} is missing ${missing.join(' and ')} (pre-v2.0 ticket — not required, but scaffolding them keeps the dashboard and CLIs consistent)`,
+        affected: missing.map((m) => resolve(a.ticketDir, m)),
         remediation: {
           kind: 'manual',
           suggestion: `Create ${missing.join(' and ')} with the renderProgress/renderComments templates, or re-scaffold via the CLI`,
@@ -285,15 +285,15 @@ const typeDefinition: Check = {
       } satisfies CheckResult;
     }
     const allowed = new Set(typesConfig.definitions.map((d) => d.id));
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
       if (!parsed.type) continue; // optional field
       if (!allowed.has(parsed.type)) {
-        const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+        const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
         results.push({
           id: this.id,
           category: this.category,
@@ -303,7 +303,7 @@ const typeDefinition: Check = {
           affected: [path],
           remediation: {
             kind: 'manual',
-            suggestion: `Either add "${parsed.type}" to config.types.definitions or change the assignment's type to one of the configured values`,
+            suggestion: `Either add "${parsed.type}" to config.types.definitions or change the ticket's type to one of the configured values`,
             command: null,
           },
           autoFixable: false,
@@ -320,10 +320,10 @@ const projectFrontmatterMatchesContainer: Check = {
   category: CATEGORY,
   title: '`project` frontmatter matches containing project slug (or null for standalone)',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
       if (a.standalone) {
@@ -333,7 +333,7 @@ const projectFrontmatterMatchesContainer: Check = {
             category: this.category,
             title: this.title,
             status: 'error',
-            detail: `standalone/${a.assignmentSlug}: frontmatter declares project "${parsed.project}" but the folder is under ~/.syntaur/assignments/ (project must be null)`,
+            detail: `standalone/${a.ticketSlug}: frontmatter declares project "${parsed.project}" but the folder is under ~/.syntaur/tickets/ (project must be null)`,
             affected: [path],
             remediation: {
               kind: 'manual',
@@ -350,7 +350,7 @@ const projectFrontmatterMatchesContainer: Check = {
             category: this.category,
             title: this.title,
             status: 'error',
-            detail: `${a.projectSlug}/${a.assignmentSlug}: frontmatter declares project "${parsed.project ?? 'null'}" but the folder is inside project "${a.projectSlug}"`,
+            detail: `${a.projectSlug}/${a.ticketSlug}: frontmatter declares project "${parsed.project ?? 'null'}" but the folder is inside project "${a.projectSlug}"`,
             affected: [path],
             remediation: {
               kind: 'manual',
@@ -372,10 +372,10 @@ const draftMissingObjective: Check = {
   category: CATEGORY,
   title: 'Draft assignments have a non-empty Objective',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
       if (parsed.status !== 'draft') continue;
@@ -386,7 +386,7 @@ const draftMissingObjective: Check = {
         continue;
       }
       if (!objectiveBodyIsEmpty(raw)) continue;
-      const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+      const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
       results.push({
         id: this.id,
         category: this.category,
@@ -396,7 +396,7 @@ const draftMissingObjective: Check = {
         affected: [path],
         remediation: {
           kind: 'manual',
-          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.assignmentSlug}' to transition to ready_for_planning`,
+          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.ticketSlug}' to transition to ready_for_planning`,
           command: null,
         },
         autoFixable: false,
@@ -412,19 +412,19 @@ const readyToImplementMissingPlan: Check = {
   category: CATEGORY,
   title: 'ready_to_implement assignments have a plan.md (or plan-v<N>.md)',
   async run(ctx) {
-    const { withAssignmentMd } = await listAssignments(ctx);
+    const { withAssignmentMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withAssignmentMd) {
-      const path = resolve(a.assignmentDir, 'assignment.md');
+      const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
       if (parsed.status !== 'ready_to_implement') continue;
-      const entries = await readdir(a.assignmentDir).catch(() => [] as string[]);
+      const entries = await readdir(a.ticketDir).catch(() => [] as string[]);
       const planFiles = entries.filter((f) => /^plan(?:-v\d+)?\.md$/i.test(f));
       let hasPlanContent = false;
       for (const f of planFiles) {
         try {
-          const c = await readFile(resolve(a.assignmentDir, f), 'utf-8');
+          const c = await readFile(resolve(a.ticketDir, f), 'utf-8');
           if (c.trim().length > 0) {
             hasPlanContent = true;
             break;
@@ -434,14 +434,14 @@ const readyToImplementMissingPlan: Check = {
         }
       }
       if (hasPlanContent) continue;
-      const label = a.standalone ? `standalone/${a.assignmentSlug}` : `${a.projectSlug}/${a.assignmentSlug}`;
+      const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
       results.push({
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'warn',
         detail: `${label} (status: ready_to_implement) has no plan.md or plan-v<N>.md`,
-        affected: [resolve(a.assignmentDir, 'plan.md')],
+        affected: [resolve(a.ticketDir, 'plan.md')],
         remediation: {
           kind: 'manual',
           suggestion: `Write a plan with '/plan-assignment' (or 'syntaur plan'), then re-mark ready_to_implement`,
@@ -468,10 +468,10 @@ export const assignmentChecks: Check[] = [
   readyToImplementMissingPlan,
 ];
 
-async function parseSafe(path: string): Promise<ReturnType<typeof parseAssignmentFull> | null> {
+async function parseSafe(path: string): Promise<ReturnType<typeof parseTicketFull> | null> {
   try {
     const content = await readFile(path, 'utf-8');
-    return parseAssignmentFull(content);
+    return parseTicketFull(content);
   } catch {
     return null;
   }

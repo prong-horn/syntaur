@@ -23,7 +23,9 @@ export interface MaintenanceLoopOptions {
 
 export interface MaintenanceTickOptions {
   projectsDir: string;
-  assignmentsDir: string;
+  assignmentsDir?: string;
+  /** Core rename alias */
+  ticketsDir?: string;
   summarizeAfterScan?: SummarizeAfterScan;
   onAgentSessionsChanged?: () => void;
 }
@@ -86,7 +88,9 @@ async function runMaintenanceTickInner(opts: MaintenanceTickOptions): Promise<vo
 
   try {
     const { runSessionMaintenance } = await import('./agent-sessions.js');
-    const result = await runSessionMaintenance(opts.projectsDir, opts.assignmentsDir);
+    const standaloneDir = opts.assignmentsDir ?? opts.ticketsDir;
+    if (!standaloneDir) throw new Error('MaintenanceTickOptions requires assignmentsDir or ticketsDir');
+    const result = await runSessionMaintenance(opts.projectsDir, standaloneDir);
     if (result.reconciled > 0 || result.swept.length > 0) opts.onAgentSessionsChanged?.();
   } catch (err) {
     console.error('[maintenance-loop] session maintenance failed:', err);

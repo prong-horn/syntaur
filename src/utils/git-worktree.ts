@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
-import { updateAssignmentWorkspace } from '../lifecycle/frontmatter.js';
+import { updateTicketWorkspace } from '../lifecycle/frontmatter.js';
 import { writeFileForce } from './fs.js';
 import { isExistingDir } from './workspace-cwd.js';
 
@@ -405,32 +405,36 @@ export async function recreateWorktree(
 }
 
 export interface CreateWorktreeAndRecordOptions extends CreateWorktreeOptions {
-  assignmentPath: string;
+  ticketPath?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentPath?: string;
 }
 
 /**
  * Transactional helper:
  * 1. `git worktree add` — on failure throws, nothing else touched.
- * 2. Read assignment.md, update `workspace.*` fields, write back via writeFileForce.
+ * 2. Read ticket.md, update `workspace.*` fields, write back via writeFileForce.
  * 3. If (2) fails, `git worktree remove --force` to undo step 1. If cleanup fails,
  *    throw an error naming both the file-write error AND the orphan worktree path.
  */
 export async function createWorktreeAndRecord(
   opts: CreateWorktreeAndRecordOptions,
 ): Promise<void> {
-  const { assignmentPath, repository, branch, worktreePath, parentBranch } = opts;
+  const ticketPath = opts.ticketPath ?? opts.assignmentPath;
+  if (!ticketPath) throw new Error('createWorktreeAndRecord requires ticketPath');
+  const { repository, branch, worktreePath, parentBranch } = opts;
 
   await createWorktree({ repository, branch, worktreePath, parentBranch });
 
   try {
-    const content = await readFile(assignmentPath, 'utf-8');
-    const updated = updateAssignmentWorkspace(content, {
+    const content = await readFile(ticketPath, 'utf-8');
+    const updated = updateTicketWorkspace(content, {
       repository,
       worktreePath,
       branch,
       parentBranch,
     });
-    await writeFileForce(assignmentPath, updated);
+    await writeFileForce(ticketPath, updated);
   } catch (writeErr) {
     const cleanup = await removeWorktree(repository, worktreePath, { force: true });
     // Always try to delete the branch created by -b, even if worktree removal already failed.

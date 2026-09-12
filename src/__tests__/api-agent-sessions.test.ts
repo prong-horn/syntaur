@@ -18,20 +18,20 @@ const originalSyntaurHome = process.env.SYNTAUR_HOME;
 
 let tmpHome: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 
-async function writeAssignment(projectSlug: string, assignmentSlug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, projectSlug, 'assignments', assignmentSlug);
+async function writeTicket(projectSlug: string, ticketSlug: string, id: string): Promise<void> {
+  const dir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
   await mkdir(dir, { recursive: true });
   await writeFile(
     resolve(projectsDir, projectSlug, 'project.md'),
     `---\nslug: ${projectSlug}\ntitle: ${projectSlug}\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# ${projectSlug}\n`,
   );
   await writeFile(
-    resolve(dir, 'assignment.md'),
-    `---\nid: ${id}\nslug: ${assignmentSlug}\ntitle: "${assignmentSlug}"\nproject: ${projectSlug}\nstatus: in_progress\n---\n# ${assignmentSlug}\n`,
+    resolve(dir, 'ticket.md'),
+    `---\nid: ${id}\nslug: ${ticketSlug}\ntitle: "${ticketSlug}"\nproject: ${projectSlug}\nstatus: in_progress\n---\n# ${ticketSlug}\n`,
   );
 }
 
@@ -49,16 +49,16 @@ beforeEach(async () => {
   process.env.HOME = tmpHome;
   process.env.SYNTAUR_HOME = join(tmpHome, '.syntaur');
   projectsDir = resolve(tmpHome, 'projects');
-  assignmentsDir = resolve(tmpHome, 'assignments');
+  ticketsDir = resolve(tmpHome, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
 
   resetSessionDb();
   initSessionDb(resolve(tmpHome, '.syntaur', 'sessions.db'));
 
   const app = express();
   app.use(express.json());
-  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, assignmentsDir));
+  app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, ticketsDir));
   await new Promise<void>((ready) => {
     server = app.listen(0, () => ready());
   });
@@ -82,25 +82,25 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
     expect(hasAnyEngagement('bad id!')).toBe(false);
   });
 
-  it('(b) returns 404 for a binding to a non-existent assignment and opens no engagement', async () => {
-    await writeAssignment('proj', 'real', 'id-real');
+  it('(b) returns 404 for a binding to a non-existent ticket and opens no engagement', async () => {
+    await writeTicket('proj', 'real', 'id-real');
     const res = await post({
       agent: 'claude',
       sessionId: 'sess-ghost',
       projectSlug: 'proj',
-      assignmentSlug: 'ghost', // does not exist
+      ticketSlug: 'ghost', // does not exist
     });
     expect(res.status).toBe(404);
     expect(hasAnyEngagement('sess-ghost')).toBe(false);
   });
 
-  it('(c) registers a valid assignment binding (201) and stores the resolved assignment_id (M1)', async () => {
-    await writeAssignment('proj', 'real', 'id-real');
+  it('(c) registers a valid ticket binding (201) and stores the resolved assignment_id (M1)', async () => {
+    await writeTicket('proj', 'real', 'id-real');
     const res = await post({
       agent: 'claude',
       sessionId: 'sess-ok',
       projectSlug: 'proj',
-      assignmentSlug: 'real',
+      ticketSlug: 'real',
     });
     expect(res.status).toBe(201);
     const open = getOpenEngagement('sess-ok');
@@ -110,16 +110,16 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
     expect(open!.assignment_slug).toBe('real');
   });
 
-  it('(d) allows a registration-only POST (no assignmentSlug) with a valid sessionId', async () => {
+  it('(d) allows a registration-only POST (no ticketSlug) with a valid sessionId', async () => {
     const res = await post({ agent: 'claude', sessionId: 'sess-bare' });
     expect(res.status).toBe(201);
   });
 
-  it('(e) a project-only POST (no assignmentSlug) registers UNBOUND — opens no project-bound engagement', async () => {
-    await writeAssignment('proj', 'real', 'id-real'); // project exists
+  it('(e) a project-only POST (no ticketSlug) registers UNBOUND — opens no project-bound engagement', async () => {
+    await writeTicket('proj', 'real', 'id-real'); // project exists
     const res = await post({ agent: 'claude', sessionId: 'sess-proj-only', projectSlug: 'proj' });
     expect(res.status).toBe(201);
-    // Binding requires an assignment selector — a bare/project-only POST is
+    // Binding requires a ticket selector — a bare/project-only POST is
     // registration-only and must NOT open a project-bound engagement.
     expect(hasAnyEngagement('sess-proj-only')).toBe(false);
   });
@@ -132,7 +132,7 @@ describe('GET /by-id/:sessionId', () => {
   beforeEach(async () => {
     const app = express();
     app.use(express.json());
-    app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, assignmentsDir));
+    app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined, ticketsDir));
     await new Promise<void>((ready) => {
       dServer = app.listen(0, () => ready());
     });
@@ -176,7 +176,7 @@ describe('GET /by-id/:sessionId', () => {
   });
 
   it('does not shadow the existing GET /:projectSlug project listing', async () => {
-    await writeAssignment('proj', 'real', 'id-real');
+    await writeTicket('proj', 'real', 'id-real');
     const res = await fetch(`${dBase}/proj`);
     expect(res.status).toBe(200);
     const body = await res.json();

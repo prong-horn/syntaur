@@ -42,7 +42,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
-import type { ResolvedAssignment } from '../utils/assignment-resolver.js';
+import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
@@ -210,7 +210,7 @@ export interface BrokerBroadcast {
   (message: {
     type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents';
     projectSlug?: string | null;
-    assignmentSlug?: string;
+    ticketSlug?: string;
     timestamp: string;
     payload: unknown;
   }): void;
@@ -218,7 +218,9 @@ export interface BrokerBroadcast {
 
 export interface CreateChatBrokerOptions {
   projectsDir: string;
-  assignmentsDir: string;
+  assignmentsDir?: string;
+  /** Core rename alias — `assignmentsDir` kept for dashboard compat until Task 2. */
+  ticketsDir?: string;
   broadcast: BrokerBroadcast;
   /** Injected by tests to wire an in-process fake agent instead of a subprocess. */
   clientFactory?: ClientFactory;
@@ -229,7 +231,7 @@ export interface CreateChatBrokerOptions {
   authProber?: (spec: HarnessSpec) => string;
   clock?: { now(): number };
   timeouts?: Partial<BrokerTimeouts>;
-  /** Routing knobs; `participants.json` overrides `hopBudget` per assignment. */
+  /** Routing knobs; `participants.json` overrides `hopBudget` per ticket. */
   routing?: { hopBudget?: number };
   /** Injected by tests; defaults to `loadAgentDefinitions`. */
   loadDefinitions?: (root: string) => Promise<LoadAgentDefinitionsResult>;
@@ -248,28 +250,30 @@ export class ChatSendError extends Error {
 
 export interface ChatBroker {
   send(input: {
-    assignment: ResolvedAssignment;
+    ticket?: ResolvedTicket;
+    /** @deprecated Dashboard compat until Task 2 */
+    assignment?: ResolvedTicket;
     agentId?: string | null;
     text: string;
     attachments?: ChatAttachment[];
   }): Promise<{
     messageId: string;
   }>;
-  withdraw(assignment: ResolvedAssignment, messageId: string): Promise<boolean>;
-  cancel(assignment: ResolvedAssignment, agentId?: string | null): Promise<boolean>;
+  withdraw(ticket: ResolvedTicket, messageId: string): Promise<boolean>;
+  cancel(ticket: ResolvedTicket, agentId?: string | null): Promise<boolean>;
   answerPermission(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     requestId: string,
     optionId: string,
     opts?: { allowAllSession?: boolean },
   ): Promise<boolean>;
   answerQuestion(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     requestId: string,
     answer: { optionId?: string; text?: string },
   ): Promise<boolean>;
   getSession(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     agentId?: string | null,
   ): Promise<ChatSessionSummary | null>;
   listAgents(): Promise<{ definitions: AgentDefinition[]; errors: string[] }>;
@@ -281,20 +285,20 @@ export interface ChatBroker {
   agentSummaries(): Promise<ChatAgentSummary[]>;
   /** The assignment's attached agents, default and hop budget (Decision 1). */
   getParticipants(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
   ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
   /** Validate, persist and broadcast a new participant set. */
   setParticipants(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     next: Participants,
   ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
-  items(assignment: ResolvedAssignment, opts: { beforeSeq?: number; limit?: number }): ChatItem[];
+  items(ticket: ResolvedTicket, opts: { beforeSeq?: number; limit?: number }): ChatItem[];
   fileRecord(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     itemId: string,
     record: FileChatRecordInput,
   ): Promise<FiledChatRecord>;
-  reindex(assignment: ResolvedAssignment): Promise<{ events: number; items: number }>;
+  reindex(ticket: ResolvedTicket): Promise<{ events: number; items: number }>;
   stopAll(): Promise<void>;
 }
 
@@ -353,7 +357,7 @@ interface PendingQuestion {
 
 interface Session {
   key: string;
-  assignment: ResolvedAssignment;
+  ticket: ResolvedTicket;
   agentId: string;
   definition: AgentDefinition;
   harness: HarnessSpec;
@@ -438,12 +442,15 @@ const EMPTY_TOKENS: ModelTokens = {
  * get a session key of their own — one the SPA never asks about and
  * `rebuildChatIndex` treats like any other.
  */
-export function assignmentScopeKey(assignmentId: string): string {
-  return `${assignmentId}:@assignment`;
+export function ticketScopeKey(ticketId: string): string {
+  return `${ticketId}:@assignment`;
 }
 
+/** @deprecated test compat — renamed to `ticketScopeKey` in Task 1 */
+export const assignmentScopeKey = ticketScopeKey;
+
 /** The assignment scope's live normalizer, plus what the broker reads back. */
-interface AssignmentScope {
+interface TicketScope {
   key: string;
   log: ChatLog;
   normalizer: ChatNormalizer;
@@ -481,7 +488,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   const logs = new Map<string, Promise<ChatLog>>();
   /** One assignment scope per assignment directory (Decision 3). */
-  const assignmentScopes = new Map<string, Promise<AssignmentScope>>();
+  const ticketScopes = new Map<string, Promise<TicketScope>>();
   /** Serialize record writes per assignment directory (Decision 3). */
   const recordChains = new Map<string, Promise<void>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
@@ -499,12 +506,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const syntaurHome = () => options.syntaurHome ?? syntaurRoot();
   const loadDefs = (): Promise<LoadAgentDefinitionsResult> => loadDefinitions(syntaurHome());
 
-  function withRecordLock<T>(assignmentDir: string, fn: () => Promise<T>): Promise<T> {
-    const prev = recordChains.get(assignmentDir) ?? Promise.resolve();
+  function withRecordLock<T>(ticketDir: string, fn: () => Promise<T>): Promise<T> {
+    const prev = recordChains.get(ticketDir) ?? Promise.resolve();
     const next = prev
       .catch(() => {})
       .then(fn);
-    recordChains.set(assignmentDir, next.then(() => {}, () => {}));
+    recordChains.set(ticketDir, next.then(() => {}, () => {}));
     return next;
   }
 
@@ -514,7 +521,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     durationMs: number,
   ): Promise<void> {
     try {
-      const items = listChatItemsByTurn(session.assignment.id, turn.turnId);
+      const items = listChatItemsByTurn(session.ticket.id, turn.turnId);
       const text = buildTurnProgressEntry({
         agentId: session.agentId,
         durationMs,
@@ -523,10 +530,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         turnId: turn.turnId,
       });
       if (!text) return;
-      await withRecordLock(session.assignment.assignmentDir, () =>
+      await withRecordLock(session.ticket.ticketDir, () =>
         appendProgressLog({
-          assignmentDir: session.assignment.assignmentDir,
-          assignmentRef: session.assignment.assignmentSlug,
+          ticketDir: session.ticket.ticketDir,
+          ticketRef: session.ticket.ticketSlug,
           text,
         }),
       );
@@ -573,10 +580,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     text: string,
   ): Promise<string | null> {
     try {
-      return await withRecordLock(session.assignment.assignmentDir, () =>
+      return await withRecordLock(session.ticket.ticketDir, () =>
         appendComment({
-          assignmentDir: session.assignment.assignmentDir,
-          assignmentRef: session.assignment.assignmentSlug,
+          ticketDir: session.ticket.ticketDir,
+          ticketRef: session.ticket.ticketSlug,
           author: session.agentId,
           type: 'question',
           body: `${text}\n\n${formatChatQuestionMarker(ref)}`,
@@ -597,13 +604,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function resolveChatQuestions(
-    target: Session | ResolvedAssignment,
+    target: Session | ResolvedTicket,
     predicate: (c: ParsedComment) => boolean,
   ): Promise<void> {
-    const assignmentDir = 'assignment' in target ? target.assignment.assignmentDir : target.assignmentDir;
-    const session = 'assignment' in target ? target : null;
+    const ticketDir = 'ticket' in target ? target.ticket.ticketDir : target.ticketDir;
+    const session = 'ticket' in target ? target : null;
     try {
-      await withRecordLock(assignmentDir, () => resolveQuestionComments(assignmentDir, predicate));
+      await withRecordLock(ticketDir, () => resolveQuestionComments(ticketDir, predicate));
     } catch (err) {
       if (session) {
         try {
@@ -647,7 +654,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           session.pendingQuestions.get(requestId) === pending;
         if (!stillPending) return;
         await pending.recorded;
-        const item = findChatItemByRequestId(session.assignment.id, requestId);
+        const item = findChatItemByRequestId(session.ticket.id, requestId);
         const ref: ChatQuestionRef = { kind, itemId: item?.itemId ?? requestId };
         const commentId = await fileChatQuestion(
           session,
@@ -719,15 +726,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const assignmentsToInvalidate = new Set<string>();
     for (const session of sessions.values()) {
       const { participants } = await readParticipantsDetailed(
-        session.assignment.assignmentDir,
+        session.ticket.ticketDir,
         definitions,
       );
       if (participants.agents.includes(agentId)) {
-        assignmentsToInvalidate.add(session.assignment.id);
+        assignmentsToInvalidate.add(session.ticket.id);
       }
     }
     for (const session of sessions.values()) {
-      if (assignmentsToInvalidate.has(session.assignment.id)) {
+      if (assignmentsToInvalidate.has(session.ticket.id)) {
         invalidateStanding(session);
       }
     }
@@ -747,16 +754,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function repairDroppedParticipants(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     dropped: string[],
     participants: Participants,
     definitions: readonly AgentDefinition[],
   ): Promise<Participants> {
     if (dropped.length === 0) return participants;
-    const repaired = await writeParticipants(assignment.assignmentDir, participants, definitions);
+    const repaired = await writeParticipants(ticket.ticketDir, participants, definitions);
     for (const id of dropped) {
-      await recordAssignment(
-        assignment,
+      await recordTicket(ticket,
         'system',
         {
           level: 'info',
@@ -767,11 +773,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     options.broadcast({
       type: 'chat-participants',
-      projectSlug: assignment.projectSlug,
-      assignmentSlug: assignment.assignmentSlug,
-      timestamp: iso(),
-      payload: {
-        assignmentId: assignment.id,
+      projectSlug: ticket.projectSlug,
+      ticketSlug: ticket.ticketSlug,
+          timestamp: iso(),
+          payload: {
+            ticketId: ticket.id,
         participants: repaired,
         agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
       },
@@ -821,8 +827,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function tearDownForHarnessChange(session: Session): Promise<void> {
     const dropped = session.queue.splice(0, session.queue.length);
     for (const entry of dropped) {
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'route.notice',
         {
           level: 'warn',
@@ -856,10 +862,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         .map(([, promise]) => promise),
     );
 
-    const touchedAssignments = new Map<string, ResolvedAssignment>();
+    const touchedTickets = new Map<string, ResolvedTicket>();
     for (const session of [...sessions.values()]) {
       if (session.agentId !== id) continue;
-      touchedAssignments.set(session.assignment.id, session.assignment);
+      touchedTickets.set(session.ticket.id, session.ticket);
       const prevPrompt = session.definition.systemPrompt;
       const harnessChanged = session.harness.id !== newDef.harness;
       session.definition = newDef;
@@ -901,15 +907,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     if (opts.restoredBuiltin) {
       const { definitions } = await loadDefs();
-      for (const assignment of touchedAssignments.values()) {
-        const participants = await readParticipants(assignment.assignmentDir, definitions);
+      for (const ticket of touchedTickets.values()) {
+        const participants = await readParticipants(ticket.ticketDir, definitions);
         options.broadcast({
           type: 'chat-participants',
-          projectSlug: assignment.projectSlug,
-          assignmentSlug: assignment.assignmentSlug,
+          projectSlug: ticket.projectSlug,
+          ticketSlug: ticket.ticketSlug,
           timestamp: iso(),
           payload: {
-            assignmentId: assignment.id,
+            ticketId: ticket.id,
             participants,
             agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
           },
@@ -918,11 +924,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
   }
 
-  function sharedLog(assignmentDir: string): Promise<ChatLog> {
-    let log = logs.get(assignmentDir);
+  function sharedLog(ticketDir: string): Promise<ChatLog> {
+    let log = logs.get(ticketDir);
     if (!log) {
-      log = openChatLog(assignmentDir);
-      logs.set(assignmentDir, log);
+      log = openChatLog(ticketDir);
+      logs.set(ticketDir, log);
     }
     return log;
   }
@@ -933,17 +939,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * item ids stable, so two instances would hand out colliding ids. The cached
    * value is the PROMISE, so two concurrent callers share one replay.
    */
-  function assignmentScope(assignment: ResolvedAssignment): Promise<AssignmentScope> {
-    let pending = assignmentScopes.get(assignment.assignmentDir);
+  function ticketScope(ticket: ResolvedTicket): Promise<TicketScope> {
+    let pending = ticketScopes.get(ticket.ticketDir);
     if (!pending) {
       pending = (async () => {
-        const log = await sharedLog(assignment.assignmentDir);
-        const key = assignmentScopeKey(assignment.id);
-        const scope: AssignmentScope = {
+        const log = await sharedLog(ticket.ticketDir);
+        const key = ticketScopeKey(ticket.id);
+        const scope: TicketScope = {
           key,
           log,
           normalizer: new ChatNormalizer({
-            assignmentId: assignment.id,
+            ticketId: ticket.id,
             agentId: SYSTEM_AGENT_ID,
             sessionKey: key,
           }),
@@ -958,13 +964,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
         return scope;
       })();
-      assignmentScopes.set(assignment.assignmentDir, pending);
+      ticketScopes.set(ticket.ticketDir, pending);
     }
     return pending;
   }
 
   /** Keep the routed user messages to hand — `withdraw` needs `deliveredTo`. */
-  function noteScopeItem(scope: AssignmentScope, patch: ItemPatch): void {
+  function noteScopeItem(scope: TicketScope, patch: ItemPatch): void {
     if (patch.op !== 'upsert') return;
     if (patch.item.type === 'user.message') scope.messages.set(patch.item.messageId, patch.item);
     else if (patch.item.type === 'handoff') scope.handoffs.set(patch.item.handoffId, patch.item);
@@ -975,15 +981,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * session owns these rows, so there is no per-session flush window: each patch
    * is broadcast immediately.
    */
-  async function recordAssignment(
-    assignment: ResolvedAssignment,
+  async function recordTicket(
+    ticket: ResolvedTicket,
     kind: ChatEventKind,
     payload: unknown,
     opts: { agentId: string; turnId?: string | null },
   ): Promise<ChatEvent> {
-    const scope = await assignmentScope(assignment);
+    const scope = await ticketScope(ticket);
     const event = await scope.log.append({
-      assignmentId: assignment.id,
+      ticketId: ticket.id,
       agentId: opts.agentId,
       sessionKey: scope.key,
       turnId: opts.turnId ?? null,
@@ -996,24 +1002,25 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       applyChatPatch(scope.key, patch);
       options.broadcast({
         type: 'chat-item',
-        projectSlug: assignment.projectSlug,
-        assignmentSlug: assignment.assignmentSlug,
-        timestamp: iso(),
-        payload: { assignmentId: assignment.id, patch },
+        projectSlug: ticket.projectSlug,
+        ticketSlug: ticket.ticketSlug,
+          timestamp: iso(),
+          payload: {
+            ticketId: ticket.id, patch },
       });
     }
     return event;
   }
 
   /** Definitions and the participant set, read together on every routing pass. */
-  async function routingContext(assignment: ResolvedAssignment) {
+  async function routingContext(ticket: ResolvedTicket) {
     const { definitions } = await loadDefs();
     const { participants: raw, dropped } = await readParticipantsDetailed(
-      assignment.assignmentDir,
+      ticket.ticketDir,
       definitions,
     );
     const participants = await repairDroppedParticipants(
-      assignment,
+      ticket,
       dropped,
       raw,
       definitions,
@@ -1031,7 +1038,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     turnId: string | null = session.inFlight?.turnId ?? null,
   ): Promise<void> {
     const event = await session.log.append({
-      assignmentId: session.assignment.id,
+      ticketId: session.ticket.id,
       agentId: session.agentId,
       sessionKey: session.key,
       turnId,
@@ -1074,10 +1081,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   function emitPatch(session: Session, patch: ItemPatch): void {
     options.broadcast({
       type: 'chat-item',
-      projectSlug: session.assignment.projectSlug,
-      assignmentSlug: session.assignment.assignmentSlug,
+      projectSlug: session.ticket.projectSlug,
+      ticketSlug: session.ticket.ticketSlug,
       timestamp: iso(),
-      payload: { assignmentId: session.assignment.id, patch },
+      payload: { ticketId: session.ticket.id, patch },
     });
   }
 
@@ -1091,11 +1098,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   function emitSession(session: Session): void {
     options.broadcast({
       type: 'chat-session',
-      projectSlug: session.assignment.projectSlug,
-      assignmentSlug: session.assignment.assignmentSlug,
+      projectSlug: session.ticket.projectSlug,
+      ticketSlug: session.ticket.ticketSlug,
       timestamp: iso(),
       payload: {
-        assignmentId: session.assignment.id,
+        ticketId: session.ticket.id,
         agentId: session.agentId,
         session: summarize(session),
       },
@@ -1104,7 +1111,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   function summarize(session: Session): ChatSessionSummary {
     return {
-      assignmentId: session.assignment.id,
+      ticketId: session.ticket.id,
       agentId: session.agentId,
       harness: session.harness.id,
       acpSessionId: session.acpSessionId,
@@ -1148,9 +1155,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   function persistSession(session: Session): void {
     upsertChatSession({
       sessionKey: session.key,
-      assignmentId: session.assignment.id,
-      projectSlug: session.assignment.projectSlug,
-      assignmentSlug: session.assignment.assignmentSlug,
+      ticketId: session.ticket.id,
+      projectSlug: session.ticket.projectSlug,
+      ticketSlug: session.ticket.ticketSlug,
       agentId: session.agentId,
       harness: session.harness.id,
       acpSessionId: session.acpSessionId,
@@ -1181,7 +1188,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   // --- session lookup ------------------------------------------------------
 
   async function ensureSession(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     agentId?: string | null,
   ): Promise<Session> {
     const builtAtRev = definitionsRev;
@@ -1196,10 +1203,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
     }
 
-    const key = `${assignment.id}:${definition.id}`;
+    const key = `${ticket.id}:${definition.id}`;
     const existing = sessions.get(key);
     if (existing) {
-      existing.assignment = assignment;
+      existing.ticket = ticket;
       return existing;
     }
     // A construction already under way owns the repair; join it rather than
@@ -1208,12 +1215,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (pending) return pending;
 
     const { participants: participantsAtBuild } = await readParticipantsDetailed(
-      assignment.assignmentDir,
+      ticket.ticketDir,
       definitions,
     );
     const attachedAtBuild = participantsAtBuild.agents.includes(definition.id);
 
-    const build = buildSession(assignment, definition, key, builtAtRev, attachedAtBuild).finally(() => {
+    const build = buildSession(ticket, definition, key, builtAtRev, attachedAtBuild).finally(() => {
       constructing.delete(key);
     });
     constructing.set(key, build);
@@ -1221,7 +1228,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function buildSession(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     definition: AgentDefinition,
     key: string,
     builtAtRev: number,
@@ -1232,8 +1239,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     const initialHarnessId = definition.harness;
     const harness = HARNESSES[initialHarnessId as Harness];
-    const log = await sharedLog(assignment.assignmentDir);
-    let row = getChatSession(assignment.id, definition.id);
+    const log = await sharedLog(ticket.ticketDir);
+    let row = getChatSession(ticket.id, definition.id);
     let harnessRotated = false;
     if (row && row.harness !== harness.id) {
       deleteChatSession(key);
@@ -1245,7 +1252,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const definitionStaleFromRow = Boolean(row && row.profile_json !== expectedProfileJson);
     const { definitions: defsForStanding } = await loadDefs();
     const { participants: participantsForStanding } = await readParticipantsDetailed(
-      assignment.assignmentDir,
+      ticket.ticketDir,
       defsForStanding,
     );
     const currentStandingFingerprint = standingFingerprint(
@@ -1262,14 +1269,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const commandState = sessionCommandsFromRow(harness, row);
     const session: Session = {
       key,
-      assignment,
+      ticket,
       agentId: definition.id,
       definition,
       harness,
       profile,
       log,
       normalizer: new ChatNormalizer({
-        assignmentId: assignment.id,
+        ticketId: ticket.id,
         agentId: definition.id,
         sessionKey: key,
       }),
@@ -1401,7 +1408,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const { definitions: defsForPublish } = await loadDefs();
     const { participants: participantsForPublish } = await readParticipantsDetailed(
-      assignment.assignmentDir,
+      ticket.ticketDir,
       defsForPublish,
     );
     if (!participantsForPublish.agents.includes(definition.id)) {
@@ -1472,8 +1479,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function detachSession(session: Session): Promise<void> {
     const dropped = session.queue.splice(0, session.queue.length);
     for (const entry of dropped) {
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'route.notice',
         {
           level: 'warn',
@@ -1493,8 +1500,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         waitFor(() => session.inFlight === null, timeouts.shutdownGraceMs),
         sleep(timeouts.shutdownGraceMs),
       ]);
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'route.notice',
         {
           level: 'warn',
@@ -1538,7 +1545,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     events: ChatEvent[],
     allEvents: ChatEvent[],
   ): Promise<void> {
-    const scopeKey = assignmentScopeKey(session.assignment.id);
+    const scopeKey = ticketScopeKey(session.ticket.id);
     const openTurns = new Set<string>();
     /**
      * Every trigger a `turn.start` of THIS session ever carried, keyed the way
@@ -1667,7 +1674,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // discard recovered work.
     if (pending.size > 0) {
       try {
-        const { participants } = await routingContext(session.assignment);
+        const { participants } = await routingContext(session.ticket);
         if (!participants.agents.includes(session.agentId)) pending.clear();
       } catch {
         // Definitions or participants unreadable — recover everything.
@@ -1688,17 +1695,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const cardItemIds: Array<{ kind: ChatQuestionKind; ids: string[] }> = [];
     for (const [requestId] of openPermissions) {
-      const item = findChatItemByRequestId(session.assignment.id, requestId);
+      const item = findChatItemByRequestId(session.ticket.id, requestId);
       cardItemIds.push({ kind: 'permission', ids: [item?.itemId ?? requestId, requestId] });
     }
     for (const [requestId] of openAsks) {
-      const item = findChatItemByRequestId(session.assignment.id, requestId);
+      const item = findChatItemByRequestId(session.ticket.id, requestId);
       cardItemIds.push({ kind: 'ask', ids: [item?.itemId ?? requestId, requestId] });
     }
     if (cardItemIds.length > 0) {
       try {
-        await withRecordLock(session.assignment.assignmentDir, () =>
-          resolveQuestionComments(session.assignment.assignmentDir, (c) =>
+        await withRecordLock(session.ticket.ticketDir, () =>
+          resolveQuestionComments(session.ticket.ticketDir, (c) =>
             cardItemIds.some((entry) => byKindAndItemIds(entry.kind, entry.ids)(c)),
           ),
         );
@@ -1782,38 +1789,38 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * `cancel` and `answerPermission` see the rehydrated queue and permission
    * state after a restart instead of an empty in-memory map (finding 8).
    */
-  async function ensureAssignmentSessions(assignment: ResolvedAssignment): Promise<Session[]> {
-    const agentIds = new Set(listChatSessions(assignment.id).map((row) => row.agent_id));
+  async function ensureTicketSessions(ticket: ResolvedTicket): Promise<Session[]> {
+    const agentIds = new Set(listChatSessions(ticket.id).map((row) => row.agent_id));
     // Attached agents count even before they have a row: `withdraw`, `cancel`
     // and the SPA's initial load must all see the same set (round 1, finding
     // 12), and an agent attached in the picker has no row until it first runs.
     try {
-      const { participants } = await routingContext(assignment);
+      const { participants } = await routingContext(ticket);
       for (const agentId of participants.agents) agentIds.add(agentId);
     } catch {
       // Unreadable definitions must not hide the sessions that DO have rows.
     }
     for (const agentId of agentIds) {
-      const key = `${assignment.id}:${agentId}`;
+      const key = `${ticket.id}:${agentId}`;
       if (constructing.has(key)) continue;
       try {
-        await ensureSession(assignment, agentId);
+        await ensureSession(ticket, agentId);
       } catch {
         // A definition that has since been deleted or broken must not stop the
         // others from being reachable.
       }
     }
-    if (agentIds.size === 0) await ensureSession(assignment, null).catch(() => undefined);
-    return [...sessions.values()].filter((s) => s.assignment.id === assignment.id);
+    if (agentIds.size === 0) await ensureSession(ticket, null).catch(() => undefined);
+    return [...sessions.values()].filter((s) => s.ticket.id === ticket.id);
   }
 
   /**
-   * Read `workspace.*` from assignment.md and resolve the adapter's cwd.
+   * Read `workspace.*` from ticket.md and resolve the adapter's cwd.
    * Uses the chat-specific resolver that adds project-repository and home
    * fallback tiers — a chat is never refused for a missing worktree.
    */
   async function resolveCwd(session: Session): Promise<string> {
-    const path = resolve(session.assignment.assignmentDir, 'assignment.md');
+    const path = resolve(session.ticket.ticketDir, 'ticket.md');
     let frontmatter = '';
     try {
       [frontmatter] = extractFrontmatter(await readFile(path, 'utf-8'));
@@ -1826,11 +1833,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     // Read project.md repositories for the project-tier fallback.
     let projectRepositories: string[] = [];
-    if (session.assignment.projectSlug) {
+    if (session.ticket.projectSlug) {
       try {
         const projectPath = resolve(
           options.projectsDir,
-          session.assignment.projectSlug,
+          session.ticket.projectSlug,
           'project.md',
         );
         const [projectFm] = extractFrontmatter(await readFile(projectPath, 'utf-8'));
@@ -1844,7 +1851,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       worktreePath,
       repository,
       branch,
-      assignmentSlug: session.assignment.assignmentSlug,
+      ticketSlug: session.ticket.ticketSlug,
       projectRepositories,
     });
     session.branch = branch;
@@ -2121,9 +2128,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       '',
       {
         sessionId: session.acpSessionId,
-        projectSlug: session.assignment.projectSlug,
-        assignmentSlug: session.assignment.assignmentSlug,
-        assignmentId: session.assignment.id,
+        projectSlug: session.ticket.projectSlug,
+        assignmentSlug: session.ticket.ticketSlug,
+        assignmentId: session.ticket.id,
         agent: session.harness.id,
         started: iso(),
         status: 'active',
@@ -2453,19 +2460,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         if (!builtin) throw new ChatSendError(`No agent definition ${JSON.stringify(id)}`, 404);
         await applyDefinitionToSessions(id, builtin, { restoredBuiltin: true });
       } else {
-        const touched = new Map<string, ResolvedAssignment>();
+        const touched = new Map<string, ResolvedTicket>();
         for (const session of [...sessions.values()]) {
           if (session.agentId !== id) continue;
-          touched.set(session.assignment.id, session.assignment);
+          touched.set(session.ticket.id, session.ticket);
           await detachSession(session);
           deleteChatSession(session.key);
           sessions.delete(session.key);
         }
         deleteChatSessionsForAgent(id);
         const { definitions } = await loadDefs();
-        for (const assignment of touched.values()) {
+        for (const ticket of touched.values()) {
           const { participants: current } = await readParticipantsDetailed(
-            assignment.assignmentDir,
+            ticket.ticketDir,
             definitions,
           );
           const next = {
@@ -2476,9 +2483,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
                 ? current.agents.find((agentId) => agentId !== id) ?? null
                 : current.defaultAgent,
           };
-          const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
-          await recordAssignment(
-            assignment,
+          const participants = await writeParticipants(ticket.ticketDir, next, definitions);
+          await recordTicket(ticket,
             'system',
             {
               level: 'info',
@@ -2488,11 +2494,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           );
           options.broadcast({
             type: 'chat-participants',
-            projectSlug: assignment.projectSlug,
-            assignmentSlug: assignment.assignmentSlug,
-            timestamp: iso(),
-            payload: {
-              assignmentId: assignment.id,
+            projectSlug: ticket.projectSlug,
+            ticketSlug: ticket.ticketSlug,
+          timestamp: iso(),
+          payload: {
+            ticketId: ticket.id,
               participants,
               agents: definitions.map((d) => toAgentSummary(d, commandResolver)),
             },
@@ -2662,8 +2668,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // unresolved comments.md questions, so that is the door (Decision 9).
     try {
       await appendComment({
-        assignmentDir: session.assignment.assignmentDir,
-        assignmentRef: session.assignment.assignmentSlug,
+        ticketDir: session.ticket.ticketDir,
+        ticketRef: session.ticket.ticketSlug,
         author: session.agentId,
         type: 'question',
         body:
@@ -2794,17 +2800,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     session: Session,
   ): Promise<{ blocks: ContentBlock[]; fingerprint: string; gen: number }> {
     const gen = session.standingGen;
-    const { definitions, participants } = await routingContext(session.assignment);
+    const { definitions, participants } = await routingContext(session.ticket);
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
       .filter((d): d is AgentDefinition => d !== undefined);
     const blocks = await buildStandingContext({
       definition: session.definition,
       harness: session.harness,
-      assignmentDir: session.assignment.assignmentDir,
+      ticketDir: session.ticket.ticketDir,
       context: {
-        projectSlug: session.assignment.projectSlug,
-        assignmentSlug: session.assignment.assignmentSlug,
+        projectSlug: session.ticket.projectSlug,
+        ticketSlug: session.ticket.ticketSlug,
         worktreePath: session.cwd,
         branch: session.branch,
         cwdTier: session.cwdTier,
@@ -2824,7 +2830,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * it is appended as the last `<chat-event>` and must not be quoted twice.
    */
   async function buildHistory(session: Session, trigger: TurnTrigger) {
-    const scope = await assignmentScope(session.assignment);
+    const scope = await ticketScope(session.ticket);
     const excludeItemIds = new Set<string>();
     const excludeTurnIds = new Set<string>();
 
@@ -2843,7 +2849,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     const selection = selectChatHistory({
-      items: listChatItemsSince(session.assignment.id, session.lastDeliveredSeq),
+      items: listChatItemsSince(session.ticket.id, session.lastDeliveredSeq),
       agentId: session.agentId,
       sinceSeq: session.lastDeliveredSeq,
       excludeItemIds,
@@ -2868,9 +2874,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const tokensAtOpen = snapshotOf(session);
     const engagement = openEngagement({
       sessionId: session.acpSessionId!,
-      assignmentId: session.assignment.id,
-      projectSlug: session.assignment.projectSlug,
-      assignmentSlug: session.assignment.assignmentSlug,
+      ticketId: session.ticket.id,
+      projectSlug: session.ticket.projectSlug,
+      ticketSlug: session.ticket.ticketSlug,
       stage: 'chat',
       startedAt,
       tokensAtOpen,
@@ -2927,7 +2933,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     if (session.queue[0] !== next) return; // withdrawn while the adapter came up
 
-    const { participants } = await routingContext(session.assignment);
+    const { participants } = await routingContext(session.ticket);
     const humanCommand =
       next.trigger.kind === 'human' ? detectCommand(next.text, participants.agents) : null;
 
@@ -2941,9 +2947,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const tokensAtOpen = snapshotOf(session);
     const engagement = openEngagement({
       sessionId: session.acpSessionId!,
-      assignmentId: session.assignment.id,
-      projectSlug: session.assignment.projectSlug,
-      assignmentSlug: session.assignment.assignmentSlug,
+      ticketId: session.ticket.id,
+      projectSlug: session.ticket.projectSlug,
+      ticketSlug: session.ticket.ticketSlug,
       stage: 'chat',
       startedAt,
       tokensAtOpen,
@@ -2975,8 +2981,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // queued → partial → sent (Decision 3). The per-agent normalizer never
     // touches that row.
     if (next.trigger.kind === 'human') {
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'user.message.delivered',
         { messageId: next.trigger.messageId, agentId: session.agentId, turnId },
         { agentId: HUMAN_AGENT_ID, turnId },
@@ -3003,7 +3009,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const images: Array<{ data: string; mimeType: string }> = [];
     if (next.attachments?.length) {
       for (const att of next.attachments) {
-        const file = await readChatAttachmentBase64(session.assignment.assignmentDir, att.id);
+        const file = await readChatAttachmentBase64(session.ticket.ticketDir, att.id);
         if (!file) {
           await record(
             session,
@@ -3195,7 +3201,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     if (!failure && stopReason === 'end_turn' && turn.trigger.kind === 'human' && !hopped) {
       try {
-        const turnItems = listChatItemsByTurn(session.assignment.id, turn.turnId);
+        const turnItems = listChatItemsByTurn(session.ticket.id, turn.turnId);
         const replies = turnItems.filter(
           (item): item is AgentMessageItem => item.type === 'agent.message' && item.sealed,
         );
@@ -3235,10 +3241,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * produced, folds and retractions included.
    */
   async function routeReply(session: Session, turn: InFlightTurn): Promise<{ hopped: boolean }> {
-    const { definitions, participants } = await routingContext(session.assignment);
+    const { definitions, participants } = await routingContext(session.ticket);
     session.hopBudget = participants.hopBudget ?? DEFAULT_HOP_BUDGET;
 
-    const turnItems = listChatItemsByTurn(session.assignment.id, turn.turnId);
+    const turnItems = listChatItemsByTurn(session.ticket.id, turn.turnId);
     const replies = turnItems.filter(
       (item): item is AgentMessageItem => item.type === 'agent.message' && item.sealed,
     );
@@ -3257,8 +3263,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     });
 
     for (const notice of result.notices) {
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'route.notice',
         { level: 'warn', text: notice },
         { agentId: SYSTEM_AGENT_ID },
@@ -3269,7 +3275,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const activeHops: Array<{ hop: (typeof result.hops)[number]; target: Session }> = [];
     for (const hop of result.hops) {
       try {
-        activeHops.push({ hop, target: await ensureSession(session.assignment, hop.toAgentId) });
+        activeHops.push({ hop, target: await ensureSession(session.ticket, hop.toAgentId) });
       } catch (err) {
         if (err instanceof ChatSendError && err.status === 409) {
           routingNotices.push(`@${hop.toAgentId} was detached while the hand-off was being routed`);
@@ -3281,7 +3287,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const { definitions: defsAfter } = await loadDefs();
     const { participants: participantsNow } = await readParticipantsDetailed(
-      session.assignment.assignmentDir,
+      session.ticket.ticketDir,
       defsAfter,
     );
 
@@ -3292,8 +3298,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         continue;
       }
       const handoffId = randomUUID();
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'handoff',
         {
           handoffId,
@@ -3315,8 +3321,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     for (const notice of routingNotices) {
-      await recordAssignment(
-        session.assignment,
+      await recordTicket(
+        session.ticket,
         'route.notice',
         { level: 'warn', text: notice },
         { agentId: SYSTEM_AGENT_ID },
@@ -3478,8 +3484,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         totalTokens: totals.total,
         totalCost: totals.cost,
         cwd: session.cwd,
-        projectSlug: session.assignment.projectSlug ?? '',
-        assignmentSlug: session.assignment.assignmentSlug,
+        projectSlug: session.ticket.projectSlug ?? '',
+        ticketSlug: session.ticket.ticketSlug,
         rawJson: null,
       });
     } catch {
@@ -3516,12 +3522,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   // --- public surface ------------------------------------------------------
 
   async function fileRecord(
-    assignment: ResolvedAssignment,
+    ticket: ResolvedTicket,
     itemId: string,
     record: FileChatRecordInput,
   ): Promise<FiledChatRecord> {
     const item = getChatItem(itemId);
-    if (!item || item.assignmentId !== assignment.id) {
+    if (!item || item.ticketId !== ticket.id) {
       throw new ChatSendError('No such message', 404);
     }
 
@@ -3535,10 +3541,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       throw new ChatSendError('Only a sent message or a sealed reply can be filed', 400);
     }
 
-    const filed = await withRecordLock(assignment.assignmentDir, () =>
+    const filed = await withRecordLock(ticket.ticketDir, () =>
       fileChatRecord({
-        assignmentDir: assignment.assignmentDir,
-        assignmentRef: assignment.assignmentSlug,
+        ticketDir: ticket.ticketDir,
+        ticketRef: ticket.ticketSlug,
         record,
         source: { agentId: item.agentId, ts: item.ts },
       }),
@@ -3548,7 +3554,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       item.agentId === HUMAN_AGENT_ID ? 'your message' : `@${item.agentId}'s reply`;
     const text = `Filed ${source} as ${filed.label}`;
     try {
-      await recordAssignment(assignment, 'system', { level: 'info', text }, {
+      await recordTicket(ticket, 'system', { level: 'info', text }, {
         agentId: SYSTEM_AGENT_ID,
       });
     } catch (err) {
@@ -3559,9 +3565,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   return {
-    async send({ assignment, agentId, text, attachments }) {
+    async send({ ticket: ticketArg, assignment, agentId, text, attachments }) {
+      const ticket = ticketArg ?? assignment;
+      if (!ticket) throw new ChatSendError('No ticket target', 400);
       if (!text.trim() && !attachments?.length) throw new ChatSendError('Message is empty', 400);
-      const { definitions, participants } = await routingContext(assignment);
+      const { definitions, participants } = await routingContext(ticket);
       if (definitions.length === 0) throw new ChatSendError('No agent definitions are available', 404);
       if (attachments?.length && detectCommand(text, participants.agents)) {
         throw new ChatSendError('A /command cannot carry attachments', 400);
@@ -3590,7 +3598,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const routingNotices = [...notices];
       for (const target of targets) {
         try {
-          targetSessions.push(await ensureSession(assignment, target));
+          targetSessions.push(await ensureSession(ticket, target));
         } catch (err) {
           if (err instanceof ChatSendError && err.status === 409) {
             routingNotices.push(`@${target} was detached while the message was being routed`);
@@ -3603,7 +3611,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
       const { definitions: defsAfter } = await loadDefs();
       const { participants: participantsNow } = await readParticipantsDetailed(
-        assignment.assignmentDir,
+        ticket.ticketDir,
         defsAfter,
       );
       const activeSessions: Session[] = [];
@@ -3617,8 +3625,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
       const messageId = randomUUID();
       const deliveredTargets = activeSessions.map((s) => s.agentId);
-      await recordAssignment(
-        assignment,
+      await recordTicket(ticket,
         'user.message',
         {
           messageId,
@@ -3632,21 +3639,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         { agentId: HUMAN_AGENT_ID },
       );
       for (const notice of routingNotices) {
-        await recordAssignment(
-          assignment,
+        await recordTicket(ticket,
           'route.notice',
           { level: 'warn', text: notice },
           { agentId: SYSTEM_AGENT_ID },
         );
       }
       if (deliveredTargets.length > 0) {
-        void resolveChatQuestions(assignment, (c) =>
+        void resolveChatQuestions(ticket, (c) =>
           deliveredTargets.some((agentId) => byAgentAndKind(agentId, ['reply'])(c)),
         );
       }
       if (targets.length === 0) {
-        await recordAssignment(
-          assignment,
+        await recordTicket(ticket,
           'route.notice',
           {
             level: 'warn',
@@ -3667,12 +3672,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return { messageId };
     },
 
-    async withdraw(assignment, messageId) {
+    async withdraw(ticket, messageId) {
       // A fan-out message sits in EVERY target's queue, so all of them are
       // searched — and after a restart none of them are in memory until they
       // are materialised (round 1, finding 4).
-      const all = await ensureAssignmentSessions(assignment);
-      const scope = await assignmentScope(assignment);
+      const all = await ensureTicketSessions(ticket);
+      const scope = await ticketScope(ticket);
       const item = scope.messages.get(messageId);
       // Once any target has started, the message has reached an agent and
       // cannot be unsent.
@@ -3690,8 +3695,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
       }
       if (removed === 0) return false;
-      await recordAssignment(
-        assignment,
+      await recordTicket(ticket,
         'user.message',
         { messageId, text: '', state: 'withdrawn' },
         { agentId: HUMAN_AGENT_ID },
@@ -3699,10 +3703,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return true;
     },
 
-    async cancel(assignment, agentId) {
+    async cancel(ticket, agentId) {
       // With an id, cancel that agent; without one, cancel every agent that is
       // mid-turn — a fan-out or a hop chain can have several running at once.
-      const running = (await ensureAssignmentSessions(assignment)).filter(
+      const running = (await ensureTicketSessions(ticket)).filter(
         (s) => s.inFlight !== null && (!agentId || s.agentId === agentId),
       );
       if (running.length === 0) return false;
@@ -3710,8 +3714,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return results.some(Boolean);
     },
 
-    async answerPermission(assignment, requestId, optionId, opts) {
-      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
+    async answerPermission(ticket, requestId, optionId, opts) {
+      const session = (await ensureTicketSessions(ticket)).find((s) =>
         s.pendingPermissions.has(requestId),
       );
       const pending = session?.pendingPermissions.get(requestId);
@@ -3745,8 +3749,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return true;
     },
 
-    async answerQuestion(assignment, requestId, answer) {
-      const session = (await ensureAssignmentSessions(assignment)).find((s) =>
+    async answerQuestion(ticket, requestId, answer) {
+      const session = (await ensureTicketSessions(ticket)).find((s) =>
         s.pendingQuestions.has(requestId),
       );
       const pending = session?.pendingQuestions.get(requestId);
@@ -3777,9 +3781,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return true;
     },
 
-    async getSession(assignment, agentId) {
+    async getSession(ticket, agentId) {
       try {
-        const session = await ensureSession(assignment, agentId ?? null);
+        const session = await ensureSession(ticket, agentId ?? null);
         return summarize(session);
       } catch (err) {
         if (err instanceof ChatSendError && (err.status === 404 || err.status === 409)) return null;
@@ -3801,14 +3805,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     agentSummaries,
 
-    async getParticipants(assignment) {
+    async getParticipants(ticket) {
       const { definitions } = await loadDefs();
       const { participants: raw, dropped } = await readParticipantsDetailed(
-        assignment.assignmentDir,
+        ticket.ticketDir,
         definitions,
       );
       const participants = await repairDroppedParticipants(
-        assignment,
+      ticket,
         dropped,
         raw,
         definitions,
@@ -3819,14 +3823,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       };
     },
 
-    async setParticipants(assignment, next) {
+    async setParticipants(ticket, next) {
       const { definitions } = await loadDefs();
       // Materialise every session the CURRENT set knows about before the write,
       // so an agent about to be detached is reachable even if nothing has
       // touched it since the dashboard started.
-      const before = await ensureAssignmentSessions(assignment);
-      const previous = await readParticipants(assignment.assignmentDir, definitions);
-      const participants = await writeParticipants(assignment.assignmentDir, next, definitions);
+      const before = await ensureTicketSessions(ticket);
+      const previous = await readParticipants(ticket.ticketDir, definitions);
+      const participants = await writeParticipants(ticket.ticketDir, next, definitions);
       if (participantAgentsChanged(previous.agents, participants.agents)) {
         for (const session of before) invalidateStanding(session);
       }
@@ -3838,23 +3842,24 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const agents = definitions.map((d) => toAgentSummary(d, commandResolver));
       options.broadcast({
         type: 'chat-participants',
-        projectSlug: assignment.projectSlug,
-        assignmentSlug: assignment.assignmentSlug,
-        timestamp: iso(),
-        payload: { assignmentId: assignment.id, participants, agents },
+        projectSlug: ticket.projectSlug,
+        ticketSlug: ticket.ticketSlug,
+          timestamp: iso(),
+          payload: {
+            ticketId: ticket.id, participants, agents },
       });
       return { participants, agents };
     },
 
-    items: (assignment, opts) => listChatItems(assignment.id, opts),
+    items: (ticket, opts) => listChatItems(ticket.id, opts),
 
     fileRecord,
 
-    async reindex(assignment) {
+    async reindex(ticket) {
       // Imported here rather than at the top: the store imports the normalizer,
       // and the broker only needs the rebuild on this one path.
       const { rebuildChatIndex } = await import('./store.js');
-      const result = await rebuildChatIndex(assignment.assignmentDir, assignment.id);
+      const result = await rebuildChatIndex(ticket.ticketDir, ticket.id);
       return { events: result.events, items: result.items };
     },
 

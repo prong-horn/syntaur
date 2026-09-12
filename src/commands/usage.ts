@@ -12,7 +12,7 @@ interface UsageCommandOptions {
   since?: string;
   until?: string;
   project?: string;
-  assignment?: string;
+  ticket?: string;
   json?: boolean;
   /** Test override: skip ccusage entirely, render from existing DB only. */
   skipCollect?: boolean;
@@ -23,7 +23,7 @@ export const usageCommand = new Command('usage')
   .option('--since <iso>', 'restrict report to events on or after this ISO date')
   .option('--until <iso>', 'restrict report to events on or before this ISO date')
   .option('--project <slug>', 'restrict to one project slug')
-  .option('--assignment <slug>', 'restrict to one assignment slug')
+  .option('--ticket <slug>', 'restrict to one ticket slug')
   .option('--json', 'emit JSON instead of a human-readable table')
   // Internal: skip ccusage ingest. Hidden from --help.
   .addOption(
@@ -58,7 +58,7 @@ export async function runUsage(options: UsageCommandOptions): Promise<void> {
   if (options.since) filter.since = options.since.slice(0, 10);
   if (options.until) filter.until = options.until.slice(0, 10);
   if (options.project !== undefined) filter.projectSlug = options.project;
-  if (options.assignment !== undefined) filter.assignmentSlug = options.assignment;
+  if (options.ticket !== undefined) filter.ticketSlug = options.ticket;
 
   const rows = listDaily(filter);
   const grouped = groupByProjectAssignment(rows);
@@ -79,7 +79,7 @@ export async function runUsage(options: UsageCommandOptions): Promise<void> {
 
 interface GroupedRow {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
@@ -99,7 +99,7 @@ function groupByProjectAssignment(
     } else {
       map.set(key, {
         projectSlug: r.project_slug,
-        assignmentSlug: r.assignment_slug,
+        ticketSlug: r.assignment_slug,
         totalTokens: r.total_tokens,
         totalCost: r.total_cost,
         lastEventDay: r.day,
@@ -118,7 +118,7 @@ function renderTable(rows: GroupedRow[]): void {
   const headers = ['Project', 'Assignment', 'Tokens', 'Cost (USD)', 'Last event'];
   const data = rows.map((r) => [
     r.projectSlug || '(unattributed)',
-    r.assignmentSlug || '(unattributed)',
+    r.ticketSlug || '(unattributed)',
     r.totalTokens.toLocaleString('en-US'),
     `$${r.totalCost.toFixed(4)}`,
     r.lastEventDay,

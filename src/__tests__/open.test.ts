@@ -31,11 +31,11 @@ describe('syntaur open', () => {
   let home: string;
   let repo: string;
 
-  async function writeAssignment(slug: string, worktreePath: string | null, branch: string | null): Promise<void> {
-    const dir = resolve(home, 'projects', 'p', 'assignments', slug);
+  async function writeTicket(slug: string, worktreePath: string | null, branch: string | null): Promise<void> {
+    const dir = resolve(home, 'projects', 'p', 'tickets', slug);
     await mkdir(dir, { recursive: true });
     await writeFile(
-      resolve(dir, 'assignment.md'),
+      resolve(dir, 'ticket.md'),
       `---
 id: id-${slug}
 slug: ${slug}
@@ -72,7 +72,7 @@ workspace:
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
       'utf-8',
     );
-    await mkdir(resolve(home, 'projects', 'p', 'assignments'), { recursive: true });
+    await mkdir(resolve(home, 'projects', 'p', 'tickets'), { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
   });
 
@@ -83,7 +83,7 @@ workspace:
   it('prints the worktree path for an existing worktree', async () => {
     const wt = resolve(repo, '.worktrees', 'feat-x');
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
-    await writeAssignment('a', wt, 'feat-x');
+    await writeTicket('a', wt, 'feat-x');
 
     const r = await runCli(['open', 'a', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
@@ -93,14 +93,14 @@ workspace:
   it('resolves by --id and ignores --project', async () => {
     const wt = resolve(repo, '.worktrees', 'feat-x');
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
-    await writeAssignment('a', wt, 'feat-x'); // frontmatter id: id-a
+    await writeTicket('a', wt, 'feat-x'); // frontmatter id: id-a
     const r = await runCli(['open', '--id', 'id-a', '--project', 'nonexistent'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain(wt);
   });
 
   it('errors when no worktree is recorded', async () => {
-    await writeAssignment('a', null, null);
+    await writeTicket('a', null, null);
     const r = await runCli(['open', 'a', '--project', 'p'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr.toLowerCase()).toContain('no worktree');
@@ -109,7 +109,7 @@ workspace:
   it('errors with a recreate hint when the dir is missing and --recreate is not passed (non-TTY)', async () => {
     const wt = resolve(repo, '.worktrees', 'feat-x');
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
-    await writeAssignment('a', wt, 'feat-x');
+    await writeTicket('a', wt, 'feat-x');
     // Simulate a gc'd worktree: remove the dir but keep the branch + the record.
     git(repo, ['worktree', 'remove', wt]);
     expect(await fileExists(wt)).toBe(false);
@@ -122,7 +122,7 @@ workspace:
   it('--recreate rebuilds a missing worktree at the recorded path', async () => {
     const wt = resolve(repo, '.worktrees', 'feat-x');
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
-    await writeAssignment('a', wt, 'feat-x');
+    await writeTicket('a', wt, 'feat-x');
     git(repo, ['worktree', 'remove', wt]);
     expect(await fileExists(wt)).toBe(false);
 

@@ -94,7 +94,7 @@ export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
  * before {@link validateDeriveConfig} runs. validateDeriveConfig assumes every
  * rung/rule/field already has its declared type, so a malformed payload (a null
  * rung, a numeric `when`, …) would otherwise throw a 500 — and worse, slip
- * through to serialization after assignment files were already mutated. This
+ * through to serialization after ticket files were already mutated. This
  * returns human-readable problems (empty = structurally sound) so the API can
  * reject with `invalid-derive` 400 before touching disk.
  */

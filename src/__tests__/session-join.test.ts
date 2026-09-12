@@ -21,13 +21,13 @@ afterEach(async () => {
 
 // v6: the binding lives on the engagement edge. Seed a session row (no slugs)
 // plus one engagement spanning the session window [started, ended) that carries
-// the project/assignment slugs — attribution is now interval-aware.
+// the project/ticket slugs — attribution is now interval-aware.
 function seedSession(
   db: ReturnType<typeof initSessionDb>,
   row: {
     sessionId: string;
     projectSlug?: string | null;
-    assignmentSlug?: string | null;
+    ticketSlug?: string | null;
     started: string;
     ended?: string | null;
     path?: string | null;
@@ -43,15 +43,15 @@ function seedSession(
     ended: row.ended ?? null,
     path: row.path ?? null,
   });
-  if (row.projectSlug != null || row.assignmentSlug != null) {
+  if (row.projectSlug != null || row.ticketSlug != null) {
     db.prepare(
       `INSERT INTO engagement
          (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
-       VALUES (@sessionId, @projectSlug, @assignmentSlug, 'implement', @started, @ended)`,
+       VALUES (@sessionId, @projectSlug, @ticketSlug, 'implement', @started, @ended)`,
     ).run({
       sessionId: row.sessionId,
       projectSlug: row.projectSlug ?? null,
-      assignmentSlug: row.assignmentSlug ?? null,
+      ticketSlug: row.ticketSlug ?? null,
       started: row.started,
       ended: row.ended ?? null,
     });
@@ -64,7 +64,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'sess-1',
       projectSlug: 'myproj',
-      assignmentSlug: 'myasgn',
+      ticketSlug: 'myasgn',
       started: '2026-05-21T12:00:00.000Z',
       path: '/Users/dev/proj',
     });
@@ -73,7 +73,7 @@ describe('resolveAttribution', () => {
       cwd: null,
       eventTs: '2026-05-21T13:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'myproj', assignmentSlug: 'myasgn' });
+    expect(result).toEqual({ projectSlug: 'myproj', ticketSlug: 'myasgn' });
   });
 
   it('fuzzy match by path + time window when PK misses', () => {
@@ -81,7 +81,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'sess-tracked',
       projectSlug: 'myproj',
-      assignmentSlug: 'myasgn',
+      ticketSlug: 'myasgn',
       started: '2026-05-21T11:00:00.000Z',
       ended: '2026-05-21 14:00:00', // SQLite datetime('now') format
       path: '/Users/dev/proj',
@@ -91,7 +91,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T12:30:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'myproj', assignmentSlug: 'myasgn' });
+    expect(result).toEqual({ projectSlug: 'myproj', ticketSlug: 'myasgn' });
   });
 
   it('fuzzy match handles open-ended (ended IS NULL) sessions', () => {
@@ -99,7 +99,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'still-running',
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       started: '2026-05-21T11:00:00.000Z',
       ended: null,
       path: '/Users/dev/proj',
@@ -109,7 +109,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T13:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'p', assignmentSlug: 'a' });
+    expect(result).toEqual({ projectSlug: 'p', ticketSlug: 'a' });
   });
 
   it('julianday() handles ISO/SQLite-datetime mixed format correctly', () => {
@@ -118,7 +118,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'mixed-format',
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       started: '2026-05-21T11:00:00.000Z',
       ended: '2026-05-21 14:00:00',
       path: '/Users/dev/proj',
@@ -144,7 +144,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'older',
       projectSlug: 'old-project',
-      assignmentSlug: 'old-asgn',
+      ticketSlug: 'old-asgn',
       started: '2026-05-21T10:00:00.000Z',
       ended: null,
       path: '/Users/dev/proj',
@@ -152,7 +152,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'newer',
       projectSlug: 'new-project',
-      assignmentSlug: 'new-asgn',
+      ticketSlug: 'new-asgn',
       started: '2026-05-21T11:00:00.000Z',
       ended: null,
       path: '/Users/dev/proj',
@@ -172,7 +172,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/elsewhere',
       eventTs: '2026-05-21T12:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: null });
   });
 
   it('returns nulls when cwd is null and PK does not match', () => {
@@ -182,7 +182,7 @@ describe('resolveAttribution', () => {
       cwd: null,
       eventTs: '2026-05-21T12:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: null });
   });
 
   // Pi-agent sessions are not registered by their own session id, so stage-1
@@ -193,7 +193,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'tracked-other-id',
       projectSlug: 'pi-proj',
-      assignmentSlug: 'pi-asgn',
+      ticketSlug: 'pi-asgn',
       started: '2026-06-05T11:00:00.000Z',
       ended: '2026-06-05 14:00:00', // SQLite datetime format
       path: '/Users/test/proj',
@@ -204,7 +204,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/test/proj',
       eventTs: '2026-06-05T12:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'pi-proj', assignmentSlug: 'pi-asgn' });
+    expect(result).toEqual({ projectSlug: 'pi-proj', ticketSlug: 'pi-asgn' });
   });
 
   it('stage-2 fuzzy join returns nulls when cwd does not match', () => {
@@ -212,7 +212,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'tracked-other-id',
       projectSlug: 'pi-proj',
-      assignmentSlug: 'pi-asgn',
+      ticketSlug: 'pi-asgn',
       started: '2026-06-05T11:00:00.000Z',
       ended: '2026-06-05 14:00:00',
       path: '/Users/test/proj',
@@ -222,7 +222,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/different/path',
       eventTs: '2026-06-05T12:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: null });
   });
 
   // AC1 regression: Claude's date-only `lastActivity` is snapped to UTC midnight,
@@ -233,7 +233,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'tracked-other-id',
       projectSlug: 'claude-proj',
-      assignmentSlug: 'claude-asgn',
+      ticketSlug: 'claude-asgn',
       started: '2026-06-10T09:00:00.000Z',
       ended: '2026-06-10 17:00:00',
       path: '/Users/dev/proj',
@@ -243,7 +243,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-06-10T00:00:00.000Z', // date-only snap
     });
-    expect(result).toEqual({ projectSlug: 'claude-proj', assignmentSlug: 'claude-asgn' });
+    expect(result).toEqual({ projectSlug: 'claude-proj', ticketSlug: 'claude-asgn' });
   });
 
   // AC1 ambiguity guard: two same-cwd same-day sessions for DIFFERENT projects →
@@ -253,7 +253,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'a',
       projectSlug: 'proj-a',
-      assignmentSlug: 'asgn-a',
+      ticketSlug: 'asgn-a',
       started: '2026-06-10T08:00:00.000Z',
       ended: '2026-06-10 11:00:00',
       path: '/Users/dev/proj',
@@ -261,7 +261,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'b',
       projectSlug: 'proj-b',
-      assignmentSlug: 'asgn-b',
+      ticketSlug: 'asgn-b',
       started: '2026-06-10T13:00:00.000Z',
       ended: '2026-06-10 17:00:00',
       path: '/Users/dev/proj',
@@ -271,7 +271,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-06-10T00:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: null });
   });
 
   // AC1: 2b must NOT fire for a non-midnight full-ISO event genuinely outside the
@@ -281,7 +281,7 @@ describe('resolveAttribution', () => {
     seedSession(db, {
       sessionId: 'tracked-other-id',
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       started: '2026-06-10T09:00:00.000Z',
       ended: '2026-06-10 17:00:00',
       path: '/Users/dev/proj',
@@ -291,7 +291,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-06-10T23:00:00.000Z', // full ISO, outside window, not a midnight snap
     });
-    expect(result).toEqual({ projectSlug: null, assignmentSlug: null });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: null });
   });
 
   // Engagement intervals are HALF-OPEN [started_at, ended_at): an event exactly
@@ -303,7 +303,7 @@ describe('resolveAttribution', () => {
       `INSERT INTO sessions (session_id, agent, started, ended, status, path)
        VALUES ('tracked', 'claude', '2026-05-21T10:00:00.000Z', NULL, 'active', '/w/p')`,
     ).run();
-    // assignment switched at exactly 12:00 — old closes, new opens at the same instant
+    // ticket switched at exactly 12:00 — old closes, new opens at the same instant
     db.prepare(
       `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
        VALUES ('tracked', 'proj', 'old-asg', 'plan', '2026-05-21T10:00:00.000Z', '2026-05-21T12:00:00.000Z')`,
@@ -316,13 +316,13 @@ describe('resolveAttribution', () => {
     // Stage-1 PK path: boundary event → new engagement.
     expect(
       resolveAttribution({ sessionId: 'tracked', cwd: null, eventTs: '2026-05-21T12:00:00.000Z' })
-        .assignmentSlug,
+        .ticketSlug,
     ).toBe('new-asg');
 
     // Stage-2a cwd fallback (different session id): boundary event → new engagement.
     expect(
       resolveAttribution({ sessionId: 'other', cwd: '/w/p', eventTs: '2026-05-21T12:00:00.000Z' })
-        .assignmentSlug,
+        .ticketSlug,
     ).toBe('new-asg');
   });
 });

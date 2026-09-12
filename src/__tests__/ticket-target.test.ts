@@ -2,21 +2,21 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { resolveAssignmentTarget, AssignmentTargetError } from '../utils/assignment-target.js';
+import { resolveTicketTarget, AssignmentTargetError } from '../utils/ticket-target.js';
 
 let originalHome: string | undefined;
 let tmpRoot: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let cwdRoot: string;
 
 beforeEach(async () => {
-  tmpRoot = await mkdtemp(join(tmpdir(), 'syntaur-assignment-target-'));
+  tmpRoot = await mkdtemp(join(tmpdir(), 'syntaur-ticket-target-'));
   projectsDir = resolve(tmpRoot, 'projects');
-  assignmentsDir = resolve(tmpRoot, 'assignments');
+  ticketsDir = resolve(tmpRoot, 'tickets');
   cwdRoot = resolve(tmpRoot, 'cwd');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
   await mkdir(cwdRoot, { recursive: true });
 
   originalHome = process.env.SYNTAUR_HOME;
@@ -47,7 +47,7 @@ async function writeProject(slug: string): Promise<void> {
   );
 }
 
-async function writeAssignment(
+async function writeTicket(
   dir: string,
   id: string,
   extras: Record<string, string> = {},
@@ -68,7 +68,7 @@ async function writeAssignment(
     '# Example',
     '',
   ];
-  await writeFile(resolve(dir, 'assignment.md'), lines.join('\n'));
+  await writeFile(resolve(dir, 'ticket.md'), lines.join('\n'));
 }
 
 async function writeContextJson(cwd: string, payload: Record<string, unknown>): Promise<void> {
@@ -77,33 +77,33 @@ async function writeContextJson(cwd: string, payload: Record<string, unknown>): 
   await writeFile(resolve(dir, 'context.json'), JSON.stringify(payload, null, 2));
 }
 
-describe('resolveAssignmentTarget', () => {
-  it('resolves --project + assignment slug', async () => {
+describe('resolveTicketTarget', () => {
+  it('resolves --project + ticket slug', async () => {
     const projectSlug = 'my-proj';
     const aslug = 'do-thing';
     const id = '11111111-2222-3333-4444-555555555555';
     await writeProject(projectSlug);
-    await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
+    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
       slug: aslug,
       project: projectSlug,
     });
 
-    const resolved = await resolveAssignmentTarget(aslug, { project: projectSlug, dir: tmpRoot + '/projects' });
+    const resolved = await resolveTicketTarget(aslug, { project: projectSlug, dir: tmpRoot + '/projects' });
 
     expect(resolved.projectSlug).toBe(projectSlug);
-    expect(resolved.assignmentSlug).toBe(aslug);
+    expect(resolved.ticketSlug).toBe(aslug);
     expect(resolved.standalone).toBe(false);
     expect(resolved.id).toBe(id);
   });
 
   it('resolves a bare standalone UUID', async () => {
     const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    await writeAssignment(resolve(assignmentsDir, id), id, { project: 'null' });
+    await writeTicket(resolve(ticketsDir, id), id, { project: 'null' });
 
-    const resolved = await resolveAssignmentTarget(id, { dir: projectsDir });
+    const resolved = await resolveTicketTarget(id, { dir: projectsDir });
 
     expect(resolved.standalone).toBe(true);
-    expect(resolved.assignmentSlug).toBe(id);
+    expect(resolved.ticketSlug).toBe(id);
     expect(resolved.id).toBe(id);
   });
 
@@ -112,15 +112,15 @@ describe('resolveAssignmentTarget', () => {
     const projectSlug = 'scan-proj';
     const aslug = 'scan-task';
     await writeProject(projectSlug);
-    await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
+    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
       slug: aslug,
       project: projectSlug,
     });
 
-    const resolved = await resolveAssignmentTarget(id, { dir: projectsDir });
+    const resolved = await resolveTicketTarget(id, { dir: projectsDir });
 
     expect(resolved.projectSlug).toBe(projectSlug);
-    expect(resolved.assignmentSlug).toBe(aslug);
+    expect(resolved.ticketSlug).toBe(aslug);
     expect(resolved.standalone).toBe(false);
   });
 
@@ -129,24 +129,24 @@ describe('resolveAssignmentTarget', () => {
     const aslug = 'eng-task';
     const id = '33333333-4444-5555-6666-777777777777';
     await writeProject(projectSlug);
-    await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
+    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
       slug: aslug,
       project: projectSlug,
     });
 
-    const resolved = await resolveAssignmentTarget(undefined, {
+    const resolved = await resolveTicketTarget(undefined, {
       cwd: cwdRoot,
       dir: projectsDir,
       resolveEngagement: async () => ({
-        assignmentId: id,
+        ticketId: id,
         projectSlug,
-        assignmentSlug: aslug,
+        ticketSlug: aslug,
         stage: 'plan',
       }),
     });
 
     expect(resolved.projectSlug).toBe(projectSlug);
-    expect(resolved.assignmentSlug).toBe(aslug);
+    expect(resolved.ticketSlug).toBe(aslug);
     expect(resolved.standalone).toBe(false);
     expect(resolved.id).toBe(id);
     expect(resolved.stage).toBe('plan');
@@ -154,21 +154,21 @@ describe('resolveAssignmentTarget', () => {
 
   it('resolves from the open engagement (standalone, by id)', async () => {
     const id = 'dddddddd-eeee-ffff-0000-111111111111';
-    await writeAssignment(resolve(assignmentsDir, id), id, { project: 'null' });
+    await writeTicket(resolve(ticketsDir, id), id, { project: 'null' });
 
-    const resolved = await resolveAssignmentTarget(undefined, {
+    const resolved = await resolveTicketTarget(undefined, {
       cwd: cwdRoot,
       dir: projectsDir,
       resolveEngagement: async () => ({
-        assignmentId: id,
+        ticketId: id,
         projectSlug: null,
-        assignmentSlug: id,
+        ticketSlug: id,
         stage: 'implement',
       }),
     });
 
     expect(resolved.standalone).toBe(true);
-    expect(resolved.assignmentSlug).toBe(id);
+    expect(resolved.ticketSlug).toBe(id);
     expect(resolved.id).toBe(id);
     expect(resolved.stage).toBe('implement');
   });
@@ -178,28 +178,28 @@ describe('resolveAssignmentTarget', () => {
     const aslug = 'explicit-task';
     const id = '44444444-5555-6666-7777-888888888888';
     await writeProject(projectSlug);
-    await writeAssignment(resolve(projectsDir, projectSlug, 'assignments', aslug), id, {
+    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
       slug: aslug,
       project: projectSlug,
     });
 
     let called = false;
-    const resolved = await resolveAssignmentTarget(aslug, {
+    const resolved = await resolveTicketTarget(aslug, {
       project: projectSlug,
       dir: projectsDir,
       resolveEngagement: async () => {
         called = true;
-        return { assignmentId: 'x', projectSlug: 'other', assignmentSlug: 'other', stage: 'plan' };
+        return { ticketId: 'x', projectSlug: 'other', ticketSlug: 'other', stage: 'plan' };
       },
     });
 
-    expect(resolved.assignmentSlug).toBe(aslug);
+    expect(resolved.ticketSlug).toBe(aslug);
     expect(called).toBe(false);
   });
 
   it('throws the selector error when there is no positional and no open engagement', async () => {
     await expect(
-      resolveAssignmentTarget(undefined, {
+      resolveTicketTarget(undefined, {
         cwd: cwdRoot,
         dir: projectsDir,
         resolveEngagement: async () => null,
@@ -209,50 +209,50 @@ describe('resolveAssignmentTarget', () => {
 
   it('throws when no resolveEngagement seam is provided', async () => {
     await expect(
-      resolveAssignmentTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
+      resolveTicketTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
     ).rejects.toThrow(AssignmentTargetError);
   });
 
   it('throws on invalid project slug', async () => {
     await expect(
-      resolveAssignmentTarget('foo', { project: 'BAD slug!', dir: projectsDir }),
+      resolveTicketTarget('foo', { project: 'BAD slug!', dir: projectsDir }),
     ).rejects.toThrow(/Invalid project slug/);
   });
 
   it('throws when --project is given without a positional slug', async () => {
     await expect(
-      resolveAssignmentTarget(undefined, { project: 'some-proj', dir: projectsDir }),
+      resolveTicketTarget(undefined, { project: 'some-proj', dir: projectsDir }),
     ).rejects.toThrow(/--project requires/);
   });
 
   it('throws on missing project', async () => {
     await expect(
-      resolveAssignmentTarget('some-task', { project: 'no-such-project', dir: projectsDir }),
+      resolveTicketTarget('some-task', { project: 'no-such-project', dir: projectsDir }),
     ).rejects.toThrow(/not found/);
   });
 
   it('throws on unknown bare UUID', async () => {
     await expect(
-      resolveAssignmentTarget('not-a-real-id-xxxx', { dir: projectsDir }),
+      resolveTicketTarget('not-a-real-id-xxxx', { dir: projectsDir }),
     ).rejects.toThrow(/not found/);
   });
 
   it('throws when the open engagement points to a missing assignment', async () => {
     await expect(
-      resolveAssignmentTarget(undefined, {
+      resolveTicketTarget(undefined, {
         cwd: cwdRoot,
         dir: projectsDir,
         resolveEngagement: async () => ({
-          assignmentId: 'x',
+          ticketId: 'x',
           projectSlug: 'ghost-proj',
-          assignmentSlug: 'ghost-task',
+          ticketSlug: 'ghost-task',
           stage: 'plan',
         }),
       }),
     ).rejects.toThrow(/missing assignment/);
   });
 
-  it('does not let a workspace-marker-only context.json resolve an assignment', async () => {
+  it('does not let a workspace-marker-only context.json resolve a ticket', async () => {
     // context.json with only workspace markers (the demoted shape) must NOT
     // resolve a target — only the open engagement can.
     await writeContextJson(cwdRoot, {
@@ -263,7 +263,7 @@ describe('resolveAssignmentTarget', () => {
     });
 
     await expect(
-      resolveAssignmentTarget(undefined, {
+      resolveTicketTarget(undefined, {
         cwd: cwdRoot,
         dir: projectsDir,
         resolveEngagement: async () => null,

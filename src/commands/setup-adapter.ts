@@ -9,7 +9,7 @@ import type { ProtocolContext } from '../targets/types.js';
 
 export interface SetupAdapterOptions {
   project: string;
-  assignment: string;
+  ticket: string;
   force?: boolean;
   dir?: string;
 }
@@ -40,17 +40,17 @@ export async function setupAdapterCommand(
   if (!options.project) {
     throw new Error('--project <slug> is required.');
   }
-  if (!options.assignment) {
-    throw new Error('--assignment <slug> is required.');
+  if (!options.ticket) {
+    throw new Error('--ticket <slug> is required.');
   }
   if (!isValidSlug(options.project)) {
     throw new Error(
       `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
-  if (!isValidSlug(options.assignment)) {
+  if (!isValidSlug(options.ticket)) {
     throw new Error(
-      `Invalid assignment slug "${options.assignment}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid ticket slug "${options.ticket}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
 
@@ -60,7 +60,7 @@ export async function setupAdapterCommand(
     ? expandHome(options.dir)
     : config.defaultProjectDir;
   const projectDir = resolve(baseDir, options.project);
-  const assignmentDir = resolve(projectDir, 'assignments', options.assignment);
+  const ticketDir = resolve(projectDir, 'tickets', options.ticket);
 
   // Verify project exists
   const projectMdPath = resolve(projectDir, 'project.md');
@@ -68,23 +68,23 @@ export async function setupAdapterCommand(
     throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
   }
 
-  // Verify assignment exists
-  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  // Verify ticket exists
+  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
   if (
-    !(await fileExists(assignmentDir)) ||
+    !(await fileExists(ticketDir)) ||
     !(await fileExists(assignmentMdPath))
   ) {
     throw new Error(
-      `Assignment "${options.assignment}" not found at ${assignmentDir}.`,
+      `Ticket "${options.ticket}" not found at ${ticketDir}.`,
     );
   }
 
   const cwd = process.cwd();
   const rendererParams: ProtocolContext = {
     projectSlug: options.project,
-    assignmentSlug: options.assignment,
+    ticketSlug: options.ticket,
     projectDir,
-    assignmentDir,
+    ticketDir,
   };
 
   const writtenFiles: string[] = [];

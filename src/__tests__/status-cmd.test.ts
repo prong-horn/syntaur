@@ -48,10 +48,10 @@ describe('syntaur status', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  async function writeAssignment(slug: string, status: string): Promise<string> {
-    const dir = resolve(home, 'projects', 'p', 'assignments', slug);
+  async function writeTicket(slug: string, status: string): Promise<string> {
+    const dir = resolve(home, 'projects', 'p', 'tickets', slug);
     await mkdir(dir, { recursive: true });
-    const path = resolve(dir, 'assignment.md');
+    const path = resolve(dir, 'ticket.md');
     await writeFile(
       path,
       `---\nid: 1111-${slug}\nslug: ${slug}\nstatus: ${status}\nproject: p\nupdated: "2026-01-01T00:00:00Z"\n---\n# ${slug}\n`,
@@ -144,20 +144,20 @@ describe('syntaur status', () => {
     expect(r.stderr).toContain('permutation');
   });
 
-  it('remove without --force fails and lists the offending assignment; the file is untouched', async () => {
+  it('remove without --force fails and lists the offending ticket; the file is untouched', async () => {
     await runCli(['status', 'init'], home);
-    const path = await writeAssignment('a', 'in_progress');
+    const path = await writeTicket('a', 'in_progress');
     const r = await runCli(['status', 'remove', 'in_progress'], home);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('p/a');
-    // status still present in config + assignment unchanged.
+    // status still present in config + ticket unchanged.
     expect((await list()).statuses.some((s) => s.id === 'in_progress')).toBe(true);
     expect(await readFile(path, 'utf-8')).toContain('status: in_progress');
   });
 
   it('remove --force edits config only and never deletes the affected assignment', async () => {
     await runCli(['status', 'init'], home);
-    const path = await writeAssignment('a', 'in_progress');
+    const path = await writeTicket('a', 'in_progress');
     const r = await runCli(['status', 'remove', 'in_progress', '--force'], home);
     expect(r.code, r.stderr).toBe(0);
     const after = await list();
@@ -165,16 +165,16 @@ describe('syntaur status', () => {
     expect(after.order).not.toContain('in_progress');
     // The transitions referencing in_progress are pruned.
     expect(after.transitions.every((t) => t.from !== 'in_progress' && t.to !== 'in_progress')).toBe(true);
-    // CRITICAL: the assignment.md is left on disk with its now-invalid status.
+    // CRITICAL: the ticket.md is left on disk with its now-invalid status.
     const content = await readFile(path, 'utf-8');
     expect(content).toContain('status: in_progress');
   });
 
-  it('rename rewrites config.md AND every affected assignment.md atomically', async () => {
+  it('rename rewrites config.md AND every affected ticket.md atomically', async () => {
     await runCli(['status', 'init'], home);
-    const a = await writeAssignment('a', 'in_progress');
-    const b = await writeAssignment('b', 'in_progress');
-    const c = await writeAssignment('c', 'review'); // unaffected
+    const a = await writeTicket('a', 'in_progress');
+    const b = await writeTicket('b', 'in_progress');
+    const c = await writeTicket('c', 'review'); // unaffected
     const r = await runCli(['status', 'rename', 'in_progress', '--to', 'working'], home);
     expect(r.code, r.stderr).toBe(0);
 
@@ -185,17 +185,17 @@ describe('syntaur status', () => {
 
     expect(await readFile(a, 'utf-8')).toContain('status: working');
     expect(await readFile(b, 'utf-8')).toContain('status: working');
-    // unaffected assignment keeps its status
+    // unaffected ticket keeps its status
     expect(await readFile(c, 'utf-8')).toContain('status: review');
   });
 
   it('rename relabels statusHistory in place (no new entry, at preserved)', async () => {
     await runCli(['status', 'init'], home);
-    // Seed an assignment that already has a statusHistory entry referencing the
+    // Seed a ticket that already has a statusHistory entry referencing the
     // status being renamed.
-    const dir = resolve(home, 'projects', 'p', 'assignments', 'hist');
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'hist');
     await mkdir(dir, { recursive: true });
-    const path = resolve(dir, 'assignment.md');
+    const path = resolve(dir, 'ticket.md');
     await writeFile(
       path,
       `---\nid: 1111-hist\nslug: hist\nstatus: in_progress\nproject: p\nupdated: "2026-01-01T00:00:00Z"\nstatusHistory:\n  - at: "2026-01-01T00:00:00Z"\n    from: null\n    to: in_progress\n    command: create\n    by: null\n---\n# hist\n`,
@@ -218,7 +218,7 @@ describe('syntaur status', () => {
 
   it('rename --dry-run shows the per-file diff and writes nothing', async () => {
     await runCli(['status', 'init'], home);
-    const a = await writeAssignment('a', 'in_progress');
+    const a = await writeTicket('a', 'in_progress');
     const r = await runCli(['status', 'rename', 'in_progress', '--to', 'working', '--dry-run'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain('working');
@@ -383,11 +383,11 @@ describe('syntaur status', () => {
         },
         'default',
       );
-      // One assignment bound to `default` (via project default), one to `other`.
-      const defaultPath = await writeAssignment('on-default', 'in_progress');
-      const otherDir = resolve(home, 'projects', 'p', 'assignments', 'on-other');
+      // One ticket bound to `default` (via project default), one to `other`.
+      const defaultPath = await writeTicket('on-default', 'in_progress');
+      const otherDir = resolve(home, 'projects', 'p', 'tickets', 'on-other');
       await mkdir(otherDir, { recursive: true });
-      const otherPath = resolve(otherDir, 'assignment.md');
+      const otherPath = resolve(otherDir, 'ticket.md');
       await writeFile(
         otherPath,
         `---\nid: 1111-on-other\nslug: on-other\nstatus: in_progress\nworkflow: other\nproject: p\nupdated: "2026-01-01T00:00:00Z"\n---\n# on-other\n`,
@@ -399,7 +399,7 @@ describe('syntaur status', () => {
         home,
       );
       expect(rename.code, rename.stderr).toBe(0);
-      // The default-bound assignment was rewritten; the other-workflow one was not.
+      // The default-bound ticket was rewritten; the other-workflow one was not.
       expect(await readFile(defaultPath, 'utf-8')).toContain('status: building');
       expect(await readFile(otherPath, 'utf-8')).toContain('status: in_progress');
     });

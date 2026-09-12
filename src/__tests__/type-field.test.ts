@@ -2,10 +2,10 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { renderAssignment } from '../templates/index.js';
+import { renderTicket } from '../templates/index.js';
 import { createProjectCommand } from '../commands/create-project.js';
-import { createAssignmentCommand } from '../commands/create-assignment.js';
-import { getAssignmentTypes, readConfig, DEFAULT_ASSIGNMENT_TYPES } from '../utils/config.js';
+import { newCommand } from '../commands/new.js';
+import { getTicketTypes, readConfig, DEFAULT_ASSIGNMENT_TYPES } from '../utils/config.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
 
 let testDir: string;
@@ -25,7 +25,7 @@ afterEach(async () => {
 
 describe('assignment template `type` field', () => {
   it('renders an explicit type into the frontmatter', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id-1',
       slug: 'fix-thing',
       title: 'Fix thing',
@@ -41,7 +41,7 @@ describe('assignment template `type` field', () => {
   });
 
   it('defaults to "feature" when no type is supplied', () => {
-    const out = renderAssignment({
+    const out = renderTicket({
       id: 'id-2',
       slug: 'x',
       title: 'X',
@@ -55,17 +55,17 @@ describe('assignment template `type` field', () => {
   });
 });
 
-describe('create-assignment CLI --type', () => {
+describe('new CLI --type', () => {
   it('round-trips a custom type through the CLI, file, and parser', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('Fix a bug', {
+    await newCommand('Fix a bug', {
       project: 'p',
       type: 'bug',
       dir: testDir,
     });
 
     const assignmentMd = await readFile(
-      resolve(testDir, 'p', 'assignments', 'fix-a-bug', 'assignment.md'),
+      resolve(testDir, 'p', 'tickets', 'fix-a-bug', 'ticket.md'),
       'utf-8',
     );
     expect(assignmentMd).toContain('type: bug');
@@ -76,13 +76,13 @@ describe('create-assignment CLI --type', () => {
 
   it('falls back to "feature" when --type is omitted', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('Do thing', {
+    await newCommand('Do thing', {
       project: 'p',
       dir: testDir,
     });
 
     const assignmentMd = await readFile(
-      resolve(testDir, 'p', 'assignments', 'do-thing', 'assignment.md'),
+      resolve(testDir, 'p', 'tickets', 'do-thing', 'ticket.md'),
       'utf-8',
     );
     const [fm] = extractFrontmatter(assignmentMd);
@@ -90,11 +90,11 @@ describe('create-assignment CLI --type', () => {
   });
 });
 
-describe('getAssignmentTypes', () => {
+describe('getTicketTypes', () => {
   it('returns the built-in defaults when config has no types override', async () => {
     // readConfig reads from SYNTAUR_HOME/config.md which does not exist here.
     const cfg = await readConfig();
-    const types = getAssignmentTypes(cfg);
+    const types = getTicketTypes(cfg);
     expect(types).toBe(DEFAULT_ASSIGNMENT_TYPES);
     expect(types.default).toBe('feature');
     expect(types.definitions.map((d) => d.id)).toEqual([
@@ -129,7 +129,7 @@ describe('getAssignmentTypes', () => {
     );
 
     const cfg = await readConfig();
-    const types = getAssignmentTypes(cfg);
+    const types = getTicketTypes(cfg);
     // The config parser may or may not implement types parsing yet — if not,
     // the default is returned, which is also acceptable behavior. Assert on
     // the invariant: types is a TypesConfig with at least the default present.

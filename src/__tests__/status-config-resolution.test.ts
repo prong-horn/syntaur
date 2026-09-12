@@ -10,7 +10,7 @@ import {
   StatusResolutionError,
   type StatusResolution,
 } from '../utils/status-config-resolution.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import {
   makeWorkflowContextResolver,
   type WorkflowContextResolver,
@@ -58,7 +58,7 @@ tags: []
 
 # ${slug}
 `;
-  const p = join(dir, 'assignment.md');
+  const p = join(dir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -94,9 +94,9 @@ afterEach(async () => {
 
 describe('scanAssignmentsByStatus', () => {
   it('groups by status across project + standalone trees', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
-    await seed(join(projectsDir, 'p1', 'assignments', 'a3'), 'a3', 'in_progress');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'in_progress');
     await seed(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending');
 
     const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending', 'in_progress']);
@@ -108,7 +108,7 @@ describe('scanAssignmentsByStatus', () => {
   });
 
   it('returns an empty array for queried ids that have zero matches', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending', 'nonexistent']);
 
@@ -117,19 +117,19 @@ describe('scanAssignmentsByStatus', () => {
   });
 
   it('treats standaloneDir=null as skip-standalone', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending');
 
     const result = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     expect(result.get('pending')).toHaveLength(1);
-    expect(result.get('pending')![0].assignmentSlug).toBe('a1');
+    expect(result.get('pending')![0].ticketSlug).toBe('a1');
   });
 });
 
 describe('applyStatusResolutions', () => {
   it('remap-only: rewrites status + updated, leaves other fields intact', async () => {
-    const path = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     const before = await readFile(path, 'utf-8');
@@ -150,7 +150,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('remap appends a statusHistory entry (command: remap, correct from/to)', async () => {
-    const path = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     await applyStatusResolutions(
@@ -159,7 +159,7 @@ describe('applyStatusResolutions', () => {
       new Set(['draft', 'in_progress']),
     );
 
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({
       from: 'pending',
@@ -171,9 +171,9 @@ describe('applyStatusResolutions', () => {
     expect(fm.statusHistory[0].at).toBe(fm.updated);
   });
 
-  it('delete-only: removes assignment directories', async () => {
-    const p1 = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    const p2 = await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+  it('delete-only: removes ticket directories', async () => {
+    const p1 = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    const p2 = await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     const result = await applyStatusResolutions(
@@ -190,8 +190,8 @@ describe('applyStatusResolutions', () => {
   });
 
   it('mixed remap + delete across different status ids', async () => {
-    const r1 = await seed(join(projectsDir, 'p1', 'assignments', 'r1'), 'r1', 'pending');
-    const d1 = await seed(join(projectsDir, 'p1', 'assignments', 'd1'), 'd1', 'review');
+    const r1 = await seed(join(projectsDir, 'p1', 'tickets', 'r1'), 'r1', 'pending');
+    const d1 = await seed(join(projectsDir, 'p1', 'tickets', 'd1'), 'd1', 'review');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending', 'review']);
 
     const result = await applyStatusResolutions(
@@ -221,7 +221,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('throws duplicate-id when two resolutions share the same id', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     await expect(
@@ -237,7 +237,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('throws stale-resolution when id was not scanned', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     await expect(
@@ -250,7 +250,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('throws invalid-target when target is not in validTargets', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     await expect(
@@ -263,7 +263,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('throws invalid-target when target equals source id', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     await expect(
@@ -276,8 +276,8 @@ describe('applyStatusResolutions', () => {
   });
 
   it('TOCTOU: skips a remap whose status drifted between scan and apply', async () => {
-    const path = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     // Mutate the file under us — simulate a concurrent CLI write.
@@ -295,8 +295,8 @@ describe('applyStatusResolutions', () => {
   });
 
   it('TOCTOU: skips a delete whose status drifted between scan and apply', async () => {
-    const driftedPath = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    const stablePath = await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    const driftedPath = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    const stablePath = await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
 
     const drifted = (await readFile(driftedPath, 'utf-8')).replace('status: pending', 'status: in_progress');
@@ -315,15 +315,15 @@ describe('applyStatusResolutions', () => {
 
   it('rolls back remap writes on phase failure (proves write happened then restored from buffer via mtime check)', async () => {
     // Iterate the walker order (apply does NOT sort), so the FIRST entry
-    // gets written and succeeds; the SECOND has assignment.md chmod 0o444
+    // gets written and succeeds; the SECOND has ticket.md chmod 0o444
     // and writeFile throws EACCES. Buffer rollback must restore the first
     // file byte-for-byte. We additionally check that the first file's
     // mtime advanced — proving an actual write happened, not just that the
     // implementation skipped the loop without doing anything.
     const { stat, chmod, utimes } = await import('node:fs/promises');
 
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
     const list = affected.get('pending')!;
     expect(list).toHaveLength(2);
@@ -358,7 +358,7 @@ describe('applyStatusResolutions', () => {
 
   it('throws scan-failed on a non-ENOENT read error (e.g. permission denied)', async () => {
     const { chmod } = await import('node:fs/promises');
-    const a1 = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    const a1 = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     // Strip ALL read perms so readFile throws EACCES.
     await chmod(a1, 0o000);
     try {
@@ -372,17 +372,17 @@ describe('applyStatusResolutions', () => {
 });
 
 describe('verifyNoDriftedOrphans', () => {
-  it('no-op when no assignment still references a dropped id', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'in_progress');
+  it('no-op when no ticket still references a dropped id', async () => {
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'in_progress');
     // Nothing references 'pending'.
     await expect(
       verifyNoDriftedOrphans(projectsDir, null, ['pending']),
     ).resolves.toBeUndefined();
   });
 
-  it('throws drift-detected when an assignment references a dropped id', async () => {
-    await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'in_progress');
-    await seed(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+  it('throws drift-detected when a ticket references a dropped id', async () => {
+    await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'in_progress');
+    await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     await expect(
       verifyNoDriftedOrphans(projectsDir, null, ['pending']),
     ).rejects.toMatchObject({ code: 'drift-detected' });
@@ -390,7 +390,7 @@ describe('verifyNoDriftedOrphans', () => {
 
   it('catches cross-id drift (assignment moved A→B while both are being dropped)', async () => {
     // Seed under "review" (we'll claim we scanned this as "pending").
-    const driftedPath = await seed(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'review');
+    const driftedPath = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'review');
     // applyStatusResolutions for [pending, review] would skip a1 for pending (status drifted)
     // and not even include it in 'review' (scan was for pending only).
     // verifyNoDriftedOrphans with both ids catches it.
@@ -422,7 +422,7 @@ priority: medium${wfLine}
 
 # ${slug}
 `;
-  const p = join(dir, 'assignment.md');
+  const p = join(dir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -444,7 +444,7 @@ function wfResolver(ids: string[], defaultWorkflow: string | null = null): Workf
 
 describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
   it('records the resolved workflow on each affected assignment', async () => {
-    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending', 'alpha');
     const resolver = wfResolver(['default', 'alpha', 'beta']);
     const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
@@ -454,15 +454,15 @@ describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
   });
 
   it('a workflow-scoped scan touches only tickets resolving to that workflow', async () => {
-    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
-    await seedWf(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending', 'beta');
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending', 'alpha');
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending', 'beta');
     const resolver = wfResolver(['default', 'alpha', 'beta']);
 
     const scoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
       workflowId: 'alpha',
     });
-    expect(scoped.get('pending')!.map((a) => a.assignmentSlug)).toEqual(['a1']);
+    expect(scoped.get('pending')!.map((a) => a.ticketSlug)).toEqual(['a1']);
 
     const unscoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
@@ -482,9 +482,9 @@ describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
 
   it('re-bind remap: a scoped status change leaves other workflows’ tickets untouched', async () => {
     // Two tickets share status "shared" but resolve to different workflows.
-    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'shared', 'alpha');
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'shared', 'alpha');
     const betaPath = await seedWf(
-      join(projectsDir, 'p1', 'assignments', 'a2'),
+      join(projectsDir, 'p1', 'tickets', 'a2'),
       'a2',
       'shared',
       'beta',
@@ -521,14 +521,14 @@ describe('scanWorkflowUsage — delete-in-use guard (Task 8)', () => {
   });
 
   it('blocks deletion while tickets resolve to the workflow', async () => {
-    await seedWf(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending', 'alpha');
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending', 'alpha');
     const usage = await scanWorkflowUsage('alpha', {
       ...base(),
       resolver: wfResolver(['default', 'alpha']),
       isGlobalDefault: false,
     });
     expect(usage.deletable).toBe(false);
-    expect(usage.assignments.map((a) => a.assignmentSlug)).toEqual(['a1']);
+    expect(usage.assignments.map((a) => a.ticketSlug)).toEqual(['a1']);
     expect(usage.blockers.join(' ')).toContain('reassign');
   });
 

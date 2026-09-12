@@ -1,8 +1,8 @@
 /**
  * Pure aggregation core for the "Needs me" decision inbox.
  *
- * `computeInbox` does ONE O(n) directory scan via `listAssignmentsByProject`,
- * then for each entry does ONE read+parse of `assignment.md` (via the full
+ * `computeInbox` does ONE O(n) directory scan via `listTicketsByProject`,
+ * then for each entry does ONE read+parse of `ticket.md` (via the full
  * parser) and — only when `comments.md` exists — ONE read → `parseComments`.
  * Every predicate, the `since` fallback chain, the accept-verb derivation, and
  * ordering are PURE EXPORTED functions so they unit-test without a server. The
@@ -17,9 +17,9 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
-import { listAssignmentsByProject } from '../utils/assignment-walk.js';
+import { listTicketsByProject } from '../utils/ticket-walk.js';
 import {
-  parseAssignmentFull,
+  parseTicketFull,
   parseComments,
   type ParsedAssignmentFull,
   type ParsedComment,
@@ -89,8 +89,10 @@ export interface InboxStatusConfig {
 
 export interface ComputeInboxOptions {
   projectsDir: string;
-  /** Standalone assignments dir; `null` to skip standalone. */
-  assignmentsDir: string | null;
+  /** Standalone tickets dir; `null` to skip standalone. */
+  ticketsDir?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentsDir?: string | null;
   /** Restrict to one project slug (matches `InboxItem.project`). */
   project?: string;
   /** Restrict to a subset of categories. */
@@ -140,12 +142,12 @@ export function unresolvedQuestions(comments: ParsedComment[]): ParsedComment[] 
  */
 export async function isPlanAwaitingApproval(
   a: ParsedAssignmentFull,
-  assignmentDir: string,
+  ticketDir: string,
 ): Promise<boolean> {
   if (a.status !== 'ready_for_planning') return false;
-  const latest = await latestPlanFile(assignmentDir);
+  const latest = await latestPlanFile(ticketDir);
   if (latest === null) return false;
-  const approved = await isPlanApproved(assignmentDir, { planApproval: a.planApproval });
+  const approved = await isPlanApproved(ticketDir, { planApproval: a.planApproval });
   return !approved;
 }
 
@@ -346,18 +348,18 @@ export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
 /** `--project <p>` for project assignments; omitted (target is the UUID) for standalone. */
 function targetAndProject(item: {
   project: string | null;
-  assignmentSlug: string;
-  assignmentId: string;
+  ticketSlug: string;
+  ticketId: string;
 }): { target: string; projectFlag: string } {
   if (item.project === null) {
-    return { target: item.assignmentId, projectFlag: '' };
+    return { target: item.ticketId, projectFlag: '' };
   }
-  return { target: item.assignmentSlug, projectFlag: ` --project ${item.project}` };
+  return { target: item.ticketSlug, projectFlag: ` --project ${item.project}` };
 }
 
 export function buildAction(
   category: InboxCategory,
-  item: { project: string | null; assignmentSlug: string; assignmentId: string },
+  item: { project: string | null; ticketSlug: string; ticketId: string },
   ctx: {
     acceptCommand?: string | null;
     reopenCommand?: string | null;
@@ -465,10 +467,10 @@ export function orderByUrgency(items: InboxItem[]): InboxItem[] {
 
 /**
  * Stable row key — must stay in lockstep with `rowKey` in `dashboard/src/lib/inbox.ts`.
- * `commentId ?? chat.itemId ?? category:assignmentId`
+ * `commentId ?? chat.itemId ?? category:ticketId`
  */
 export function inboxRowKey(item: InboxItem): string {
-  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`;
+  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.ticketId}`;
 }
 
 /** Fingerprint for "until it changes" snoozes. */
@@ -499,15 +501,21 @@ function summarizeQuestion(c: ParsedComment): string {
 /** Dashboard path to a chat item anchor for an inbox row. */
 export function chatItemPath(item: {
   project: string | null;
-  assignmentSlug: string;
-  assignmentId: string;
+  ticketSlug: string;
+  ticketId: string;
   chat: InboxChatRef;
 }): string {
-  const assignmentPath =
+  const ticketPath =
     item.project === null
-      ? `/assignments/${item.assignmentId}`
-      : `/projects/${item.project}/assignments/${item.assignmentSlug}`;
-  return `${assignmentPath}?tab=chat#${item.chat.itemId}`;
+      ? `/tickets/${item.ticketId}`
+      : `/projects/${item.project}/tickets/${item.ticketSlug}`;
+  return `${ticketPath}?tab=chat#${item.chat.itemId}`;
+}
+
+function resolveStandaloneTicketsDir(opts: ComputeInboxOptions): string | null {
+  if (opts.ticketsDir !== undefined) return opts.ticketsDir;
+  if (opts.assignmentsDir !== undefined) return opts.assignmentsDir;
+  return null;
 }
 
 export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResult> {
@@ -515,8 +523,9 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
   const dashboardUrl = opts.dashboardUrl ?? 'http://localhost:4800';
   const typeFilter = opts.types && opts.types.length > 0 ? new Set(opts.types) : null;
   const reviewVerbs = deriveReviewVerbs(opts.statusConfig);
+  const standaloneDir = resolveStandaloneTicketsDir(opts);
 
-  const walk = await listAssignmentsByProject(opts.projectsDir, opts.assignmentsDir);
+  const walk = await listTicketsByProject(opts.projectsDir, standaloneDir);
 
   const matched: InboxItem[] = [];
 
@@ -526,16 +535,16 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
 
     let parsed: ParsedAssignmentFull;
     try {
-      const content = await readFile(resolve(entry.assignmentDir, 'assignment.md'), 'utf-8');
-      parsed = parseAssignmentFull(content);
+      const content = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
+      parsed = parseTicketFull(content);
     } catch {
-      continue; // unreadable/unparseable assignment.md → skip (not awaiting action)
+      continue; // unreadable/unparseable ticket.md → skip (not awaiting action)
     }
 
     // Skip archived up front — an archived item is not awaiting action.
     if (parsed.archived) continue;
 
-    // Skip parked/terminal-disposition assignments up front — they are not
+    // Skip parked/terminal-disposition tickets up front — they are not
     // awaiting a human decision (matches the plan's exclusions, and guards a
     // malformed `disposition:parked, status:review`). Blocked + active flow on.
     if (parsed.disposition === 'parked' || parsed.disposition === 'terminal') continue;
@@ -549,10 +558,10 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
     if (opts.statusConfig.terminalStatuses.has(parsed.status)) continue;
 
     const project = entry.projectSlug;
-    const assignmentSlug = entry.assignmentSlug;
-    const assignmentId = parsed.id;
+    const ticketSlug = entry.ticketSlug;
+    const ticketId = parsed.id;
     const title = parsed.title;
-    const baseItem = { project, assignmentSlug, assignmentId };
+    const baseItem = { project, ticketSlug, ticketId };
 
     // ── review ──────────────────────────────────────────────────────────────
     if ((!typeFilter || typeFilter.has('review')) && isReview(parsed)) {
@@ -582,7 +591,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
 
     // ── question ────────────────────────────────────────────────────────────
     if (!typeFilter || typeFilter.has('question')) {
-      const commentsPath = resolve(entry.assignmentDir, 'comments.md');
+      const commentsPath = resolve(entry.ticketDir, 'comments.md');
       if (await fileExists(commentsPath)) {
         try {
           const content = await readFile(commentsPath, 'utf-8');
@@ -625,14 +634,14 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
             });
           }
         } catch {
-          // unreadable comments.md → no question items for this assignment
+          // unreadable comments.md → no question items for this ticket
         }
       }
     }
 
     // ── plan-approval ─────────────────────────────────────────────────────────
     if (!typeFilter || typeFilter.has('plan-approval')) {
-      if (await isPlanAwaitingApproval(parsed, entry.assignmentDir)) {
+      if (await isPlanAwaitingApproval(parsed, entry.ticketDir)) {
         const since = resolveSince('plan-approval', parsed, now);
         matched.push({
           ...baseItem,

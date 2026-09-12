@@ -294,7 +294,7 @@ export function buildDeriveRegistry(accepted: FactDeclaration[]): FieldRegistry 
 }
 
 /**
- * Build the QUERY registry (full assignment vocabulary) from the ACCEPTED list —
+ * Build the QUERY registry (full ticket vocabulary) from the ACCEPTED list —
  * custom entries merged over `ASSIGNMENT_FIELDS` for ls/dashboard query paths.
  * Same accepted input, same entries as {@link buildDeriveRegistry}.
  */

@@ -45,16 +45,16 @@ async function runCli(
   });
 }
 
-/** Seed an OPEN engagement for `sessionId` bound to project `p` / assignment `demo`. */
+/** Seed an OPEN engagement for `sessionId` bound to project `p` / ticket `demo`. */
 function seedOpenEngagement(home: string, sessionId: string): void {
   resetSessionDb();
   initSessionDb(resolve(home, 'syntaur.db'));
   try {
     openEngagement({
       sessionId,
-      assignmentId: 'x',
+      ticketId: 'x',
       projectSlug: 'p',
-      assignmentSlug: 'demo',
+      ticketSlug: 'demo',
       startedAt: '2026-01-01T00:00:00Z',
     });
   } finally {
@@ -62,16 +62,16 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   }
 }
 
-/** Seed an OPEN engagement for a STANDALONE assignment (no project slug). */
-function seedStandaloneEngagement(home: string, sessionId: string, assignmentId: string): void {
+/** Seed an OPEN engagement for a STANDALONE ticket (no project slug). */
+function seedStandaloneEngagement(home: string, sessionId: string, ticketId: string): void {
   resetSessionDb();
   initSessionDb(resolve(home, 'syntaur.db'));
   try {
     openEngagement({
       sessionId,
-      assignmentId,
+      ticketId,
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       startedAt: '2026-01-01T00:00:00Z',
     });
   } finally {
@@ -82,7 +82,7 @@ function seedStandaloneEngagement(home: string, sessionId: string, assignmentId:
 describe('syntaur session boundary', () => {
   let syntaurHome: string;
   let workspaceRoot: string;
-  let assignmentDir: string;
+  let ticketDir: string;
   const SID = 'boundary-session-1';
 
   beforeEach(async () => {
@@ -92,10 +92,10 @@ describe('syntaur session boundary', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-boundary-wkspc-'));
-    assignmentDir = resolve(syntaurHome, 'projects', 'p', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nid: x\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n',
     );
   });
@@ -105,7 +105,7 @@ describe('syntaur session boundary', () => {
     await rm(workspaceRoot, { recursive: true, force: true });
   });
 
-  it('resolves assignmentDir + projectDir from the open engagement (+ workspace marker)', async () => {
+  it('resolves ticketDir + projectDir from the open engagement (+ workspace marker)', async () => {
     seedOpenEngagement(syntaurHome, SID);
     await mkdir(resolve(workspaceRoot, '.syntaur'), { recursive: true });
     await writeFile(
@@ -117,8 +117,8 @@ describe('syntaur session boundary', () => {
     });
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.assignmentDir).toBe(assignmentDir);
-    // projectDir = parent of `assignments/demo` → the project root.
+    expect(data.ticketDir).toBe(ticketDir);
+    // projectDir = parent of `tickets/demo` → the project root.
     expect(data.projectDir).toBe(resolve(syntaurHome, 'projects', 'p'));
     expect(data.workspaceRoot).toBe(workspaceRoot);
   });
@@ -134,7 +134,7 @@ describe('syntaur session boundary', () => {
     );
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.assignmentDir).toBe(assignmentDir);
+    expect(data.ticketDir).toBe(ticketDir);
     expect(data.projectDir).toBe(resolve(syntaurHome, 'projects', 'p'));
   });
 
@@ -150,7 +150,7 @@ describe('syntaur session boundary', () => {
     });
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.assignmentDir).toBeNull();
+    expect(data.ticketDir).toBeNull();
     expect(data.projectDir).toBeNull();
     // The workspace marker is still surfaced so the hook enforces workspace-only.
     expect(data.workspaceRoot).toBe(workspaceRoot);
@@ -161,7 +161,7 @@ describe('syntaur session boundary', () => {
     const result = await runCli(['session', 'boundary', '--json'], workspaceRoot, syntaurHome);
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.assignmentDir).toBeNull();
+    expect(data.ticketDir).toBeNull();
     expect(data.projectDir).toBeNull();
     // No context.json → no workspace marker either.
     expect(data.workspaceRoot).toBeNull();
@@ -169,10 +169,10 @@ describe('syntaur session boundary', () => {
 
   it('returns null projectDir for a STANDALONE engagement (no project nesting)', async () => {
     const standaloneId = '22222222-2222-2222-2222-222222222222';
-    const standaloneDir = resolve(syntaurHome, 'assignments', standaloneId);
+    const standaloneDir = resolve(syntaurHome, 'tickets', standaloneId);
     await mkdir(standaloneDir, { recursive: true });
     await writeFile(
-      resolve(standaloneDir, 'assignment.md'),
+      resolve(standaloneDir, 'ticket.md'),
       `---\nid: ${standaloneId}\ntitle: Solo\nstatus: in_progress\n---\n# Solo\n`,
     );
     seedStandaloneEngagement(syntaurHome, SID, standaloneId);
@@ -181,7 +181,7 @@ describe('syntaur session boundary', () => {
     });
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.assignmentDir).toBe(standaloneDir);
+    expect(data.ticketDir).toBe(standaloneDir);
     expect(data.projectDir).toBeNull(); // standalone → no project resources dir
   });
 });

@@ -3,9 +3,9 @@ import { runUnassign, reportResult, type LifecycleOptions } from './_lifecycle-h
 export type UnassignOptions = LifecycleOptions;
 
 export async function unassignCommand(
-  assignment: string,
+  ticket: string,
   options: UnassignOptions,
 ): Promise<void> {
-  const result = await runUnassign(assignment, options);
+  const result = await runUnassign(ticket, options);
   reportResult(result);
 }

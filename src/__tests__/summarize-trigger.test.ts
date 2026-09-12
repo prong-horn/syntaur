@@ -23,17 +23,17 @@ import type { AgentSession } from '../dashboard/types.js';
 
 let sandbox: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-sum-trigger-'));
   projectsDir = resolve(sandbox, 'projects');
-  assignmentsDir = resolve(sandbox, 'assignments');
+  ticketsDir = resolve(sandbox, 'tickets');
   dbPath = resolve(sandbox, 'syntaur.db');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = resolve(sandbox, 'home');
   await mkdir(resolve(sandbox, 'home'), { recursive: true });
@@ -61,7 +61,7 @@ describe('maintenance tick wiring', () => {
     });
     await runMaintenanceTick({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       summarizeAfterScan: async (opts) => {
         calls.push(opts);
         signalCalled();
@@ -83,7 +83,7 @@ describe('maintenance tick wiring', () => {
     let passEntered = false;
     await runMaintenanceTick({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       summarizeAfterScan: async () => {
         passEntered = true;
         await gate;
@@ -100,7 +100,7 @@ describe('maintenance tick wiring', () => {
     await expect(
       runMaintenanceTick({
         projectsDir,
-        assignmentsDir,
+        ticketsDir,
         summarizeAfterScan: async () => {
           throw new Error('backend exploded');
         },
@@ -120,7 +120,7 @@ describe('maintenance tick wiring', () => {
 
     await runMaintenanceTick({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       summarizeAfterScan: async ({ signal }) => {
         firstEntered = true;
         await new Promise<void>((res) => {
@@ -135,7 +135,7 @@ describe('maintenance tick wiring', () => {
 
     await runMaintenanceTick({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       summarizeAfterScan: async () => {
         secondEntered = true;
         return [];
@@ -159,7 +159,7 @@ describe('maintenance tick wiring', () => {
     let passFinished = false;
     await runMaintenanceTick({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       summarizeAfterScan: async () => {
         await gate;
         passFinished = true;
@@ -243,7 +243,7 @@ describe('persistent retry pacing across processes', () => {
     await writeFile(transcriptPath, JSON.stringify({ type: 'user', message: { content: 'hi' } }) + '\n');
     await appendSession('', {
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: 'claude',
       sessionId,
       started: '2026-07-01T10:00:00.000Z',

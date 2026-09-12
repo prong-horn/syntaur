@@ -60,7 +60,7 @@ export function resolveActor(by: string | null | undefined): string {
 }
 
 export interface RecordStatusEventInput {
-  assignmentId: string;
+  ticketId: string;
   projectSlug?: string | null;
   /** UTC ISO 8601; defaults to now inside recordEvent when omitted. */
   at?: string;
@@ -83,7 +83,7 @@ export function recordStatusEvent(input: RecordStatusEventInput): void {
   if (suppressEvents) return;
   if (input.from === input.to) return;
   recordEvent({
-    assignmentId: input.assignmentId,
+    ticketId: input.ticketId,
     projectSlug: input.projectSlug ?? null,
     type: 'status-change',
     actor: input.actor,

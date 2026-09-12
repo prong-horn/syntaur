@@ -855,3 +855,6 @@ export function extractMermaidGraph(body: string): string | null {
   const match = body.match(/```mermaid\n([\s\S]*?)```/);
   return match ? match[1].trim() : null;
 }
+
+/** Core rename alias — dashboard keeps `parseAssignmentFull` through Task 2. */
+export const parseTicketFull = parseAssignmentFull;

@@ -29,7 +29,7 @@ afterEach(async () => {
 function baseItem(overrides: Partial<ChatItem> & { type: ChatItem['type'] }): ChatItem {
   return {
     itemId: 'item-1',
-    assignmentId: 'a1',
+    ticketId: 'a1',
     turnId: 'turn-1',
     agentId: 'claude',
     ts: '2026-09-07T12:00:00Z',
@@ -112,8 +112,8 @@ describe('buildTurnProgressEntry', () => {
     expect(entry).toBe(expected);
 
     await fileChatRecord({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       record: { kind: 'progress', body: entry! },
       source: { agentId: 'claude', ts: '2026-09-07T12:00:00Z' },
     });
@@ -274,8 +274,8 @@ describe('fileChatRecord', () => {
 
   it('files decision, progress and comment records with provenance', async () => {
     const decision = await fileChatRecord({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       record: { kind: 'decision', title: 'Use X', body: 'Because it is simpler.' },
       source,
     });
@@ -286,8 +286,8 @@ describe('fileChatRecord', () => {
     expect(decisionMd.trimEnd().endsWith(provenanceLine(source))).toBe(true);
 
     const progress = await fileChatRecord({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       record: { kind: 'progress', body: 'Shipped the feature.' },
       source,
     });
@@ -297,8 +297,8 @@ describe('fileChatRecord', () => {
     expect(progressMd).toContain(provenanceLine(source));
 
     const comment = await fileChatRecord({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       record: { kind: 'comment', body: 'Looks good.', commentType: 'question' },
       source: { agentId: HUMAN_AGENT_ID, ts: '2026-09-07T13:30:00Z' },
     });
@@ -313,8 +313,8 @@ describe('fileChatRecord', () => {
 
   it('escapes progress headings so parseProgress sees one entry', async () => {
     await fileChatRecord({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       record: { kind: 'progress', body: '## Sub\nStill one entry.' },
       source,
     });

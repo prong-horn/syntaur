@@ -29,13 +29,13 @@ async function withFakeSyntaur(binDir: string, boundaryJson: string): Promise<st
 // A fully-resolved boundary (assignment + project + workspace), as the CLI's
 // `session boundary` would emit for an open project-nested engagement.
 const BOUNDARY = {
-  assignmentDir: '/work/assign',
+  ticketDir: '/work/assign',
   projectDir: '/proj',
   workspaceRoot: '/ws',
 };
 
 describe('pi extension — isWriteAllowed (mirrors the bash boundary hook)', () => {
-  it('allows writes under the assignment dir', () => {
+  it('allows writes under the ticket dir', () => {
     expect(isWriteAllowed('/work/assign/plan.md', BOUNDARY).allowed).toBe(true);
   });
   it('blocks writes outside every boundary', () => {
@@ -62,22 +62,22 @@ describe('pi extension — isWriteAllowed (mirrors the bash boundary hook)', () 
     ).toBe(true);
   });
 
-  // The regression this rewrite fixes: NO fail-open. With no assignment/project
+  // The regression this rewrite fixes: NO fail-open. With no ticket/project
   // resolved (no open engagement) the boundary degrades to WORKSPACE-ONLY — it
   // must still BLOCK writes outside the workspace, not allow everything.
-  it('enforces WORKSPACE-ONLY when no assignment/project resolves (no fail-open)', () => {
+  it('enforces WORKSPACE-ONLY when no ticket/project resolves (no fail-open)', () => {
     const wsOnly = { workspaceRoot: '/ws' };
     expect(isWriteAllowed('/ws/src/app.ts', wsOnly).allowed).toBe(true);
     const blocked = isWriteAllowed('/etc/passwd', wsOnly);
     expect(blocked.allowed).toBe(false);
-    expect(blocked.reason).toMatch(/No active assignment/);
+    expect(blocked.reason).toMatch(/No active ticket/);
   });
   it('blocks everything (except the context file) when the boundary is entirely empty', () => {
-    // No assignment, no project, no workspace → nothing matches but the context
+    // No ticket, no project, no workspace → nothing matches but the context
     // file gate. An EMPTY dir must NOT glob to "/" and allow the filesystem.
     expect(isWriteAllowed('/anywhere', {}).allowed).toBe(false);
-    expect(isWriteAllowed('/anywhere', { assignmentDir: '/work/assign' }).allowed).toBe(false);
-    expect(isWriteAllowed('/work/assign/x', { assignmentDir: '/work/assign' }).allowed).toBe(true);
+    expect(isWriteAllowed('/anywhere', { ticketDir: '/work/assign' }).allowed).toBe(false);
+    expect(isWriteAllowed('/work/assign/x', { ticketDir: '/work/assign' }).allowed).toBe(true);
     // The context file is still always writable even with an empty boundary.
     expect(
       isWriteAllowed('/cwd/.syntaur/context.json', {}, '/cwd/.syntaur/context.json').allowed,
@@ -143,15 +143,15 @@ describe('pi extension — loadContext + activate registration', () => {
       await mkdir(join(tmp, '.syntaur'), { recursive: true });
       await writeFile(
         join(tmp, '.syntaur', 'context.json'),
-        // assignmentDir is a demoted scalar — loadContext must NOT surface it.
-        JSON.stringify({ assignmentDir: '/a', workspaceRoot: '/ws', sessionId: 's1', projectSlug: 'p' }),
+        // ticketDir is a demoted scalar — loadContext must NOT surface it.
+        JSON.stringify({ ticketDir: '/a', workspaceRoot: '/ws', sessionId: 's1', projectSlug: 'p' }),
       );
       const ctx = loadContext(tmp);
       expect(ctx?.sessionId).toBe('s1');
       expect(ctx?.workspaceRoot).toBe('/ws');
       expect(ctx?.projectSlug).toBe('p');
-      // The demoted assignment scalar is no longer part of SyntaurContext.
-      expect((ctx as Record<string, unknown>).assignmentDir).toBeUndefined();
+      // The demoted ticket scalar is no longer part of SyntaurContext.
+      expect((ctx as Record<string, unknown>).ticketDir).toBeUndefined();
     } finally {
       await rm(tmp, { recursive: true, force: true });
     }
@@ -171,13 +171,13 @@ describe('pi extension — loadContext + activate registration', () => {
     expect(typeof handlers.tool_call).toBe('function');
     expect(typeof handlers.session_shutdown).toBe('function');
     expect(commands).toContain('doctor-syntaur');
-    expect(commands).toContain('grab-assignment');
+    expect(commands).toContain('grab-ticket');
 
     const tmp = await mkdtemp(join(tmpdir(), 'pi-act-'));
-    const assignmentDir = join(tmp, 'assign');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = join(tmp, 'assign');
+    await mkdir(ticketDir, { recursive: true });
     await mkdir(join(tmp, '.syntaur'), { recursive: true });
-    // context.json is the workspace MARKER only; the assignment boundary is
+    // context.json is the workspace MARKER only; the ticket boundary is
     // resolved from the engagement via the (faked) `syntaur session boundary`.
     await writeFile(
       join(tmp, '.syntaur', 'context.json'),
@@ -186,7 +186,7 @@ describe('pi extension — loadContext + activate registration', () => {
     const binDir = await mkdtemp(join(tmpdir(), 'pi-bin-'));
     const prevPath = await withFakeSyntaur(
       binDir,
-      JSON.stringify({ assignmentDir, projectDir: join(tmp, 'proj'), workspaceRoot: tmp }),
+      JSON.stringify({ ticketDir, projectDir: join(tmp, 'proj'), workspaceRoot: tmp }),
     );
     const prevCwd = process.cwd();
     process.chdir(tmp);
@@ -195,7 +195,7 @@ describe('pi extension — loadContext + activate registration', () => {
       expect(blocked).toMatchObject({ block: true });
       const allowed = await handlers.tool_call({
         toolName: 'edit',
-        input: { file_path: join(assignmentDir, 'x.md') },
+        input: { file_path: join(ticketDir, 'x.md') },
       });
       expect(allowed).toBeUndefined();
       const nonwrite = await handlers.tool_call({ toolName: 'read', input: { file_path: '/etc/passwd' } });
@@ -208,7 +208,7 @@ describe('pi extension — loadContext + activate registration', () => {
     }
   });
 
-  it('tool_call enforces WORKSPACE-ONLY (no fail-open) when the CLI resolves no assignment', async () => {
+  it('tool_call enforces WORKSPACE-ONLY (no fail-open) when the CLI resolves no ticket', async () => {
     const handlers: Record<string, (e: unknown, c?: unknown) => unknown> = {};
     activate({ on: (e, h) => (handlers[e] = h), registerCommand: () => {} });
 
@@ -247,11 +247,11 @@ describe('pi extension — resolveBoundary (shells out to `syntaur session bound
     const binDir = await mkdtemp(join(tmpdir(), 'pi-rb-'));
     const prevPath = await withFakeSyntaur(
       binDir,
-      JSON.stringify({ assignmentDir: '/a', projectDir: '/p', workspaceRoot: '/w' }),
+      JSON.stringify({ ticketDir: '/a', projectDir: '/p', workspaceRoot: '/w' }),
     );
     try {
       const b = resolveBoundary(process.cwd());
-      expect(b).toEqual({ assignmentDir: '/a', projectDir: '/p', workspaceRoot: '/w' });
+      expect(b).toEqual({ ticketDir: '/a', projectDir: '/p', workspaceRoot: '/w' });
     } finally {
       process.env.PATH = prevPath;
       await rm(binDir, { recursive: true, force: true });
@@ -266,7 +266,7 @@ describe('pi extension — resolveBoundary (shells out to `syntaur session bound
     process.env.PATH = binDir;
     try {
       expect(resolveBoundary(process.cwd())).toEqual({
-        assignmentDir: undefined,
+        ticketDir: undefined,
         projectDir: undefined,
         workspaceRoot: undefined,
       });

@@ -101,24 +101,24 @@ const ghostSessions: Check = {
         continue;
       }
       if (row.assignment_slug) {
-        const assignmentPath = resolve(
+        const ticketPath = resolve(
           projectsDir,
           row.project_slug,
-          'assignments',
+          'tickets',
           row.assignment_slug,
-          'assignment.md',
+          'ticket.md',
         );
-        if (!(await fileExists(assignmentPath))) {
+        if (!(await fileExists(ticketPath))) {
           results.push({
             id: this.id,
             category: this.category,
             title: this.title,
             status: 'warn',
-            detail: `session ${row.session_id} references missing assignment "${row.project_slug}/${row.assignment_slug}"`,
-            affected: [assignmentPath],
+            detail: `session ${row.session_id} references missing ticket "${row.project_slug}/${row.assignment_slug}"`,
+            affected: [ticketPath],
             remediation: {
               kind: 'manual',
-              suggestion: 'Remove the session row or restore the assignment folder',
+              suggestion: 'Remove the session row or restore the ticket folder',
               command: null,
             },
             autoFixable: false,

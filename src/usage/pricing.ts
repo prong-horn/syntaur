@@ -21,7 +21,7 @@
  *
  * This table lists models whose usage reaches Syntaur UNPRICED. Historically
  * that meant only pi's Synthetic-hosted models; since phase 4 it also means the
- * OpenAI models the assignment chat's `codex-acp` adapter reports, because that
+ * OpenAI models the ticket chat's `codex-acp` adapter reports, because that
  * usage never passes through ccusage at all — the broker prices it here itself
  * (Decision 10). Anthropic models are still absent: ccusage prices every claude
  * row, and the broker takes claude's own cumulative `usage_update.cost`.
@@ -90,7 +90,7 @@ export const MODEL_PRICING: Record<string, ModelRate> = {
   //         retrieved 2026-07-21): input $0.30, output $1.20, cache read $0.03,
   //         cache write $0.375 per 1M tokens.
   'minimaxai/minimax-m2.5': { input: 0.3, output: 1.2, cacheRead: 0.03, cacheWrite: 0.375 },
-  // --- OpenAI GPT-5.x, for the assignment chat's `codex-acp` sessions -------
+  // --- OpenAI GPT-5.x, for the ticket chat's `codex-acp` sessions -------
   //
   // The adapter reports a bare model id on the session's `model` config option
   // (`gpt-5.6-sol` / `gpt-5.6-terra` in the captured fixtures) and no cost of

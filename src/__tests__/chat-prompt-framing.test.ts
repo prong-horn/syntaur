@@ -37,7 +37,7 @@ function def(id: string, overrides: Partial<AgentDefinition> = {}): AgentDefinit
 
 const context = {
   projectSlug: 'syntaur-meta',
-  assignmentSlug: 'chat-demo',
+  ticketSlug: 'chat-demo',
   worktreePath: '/tmp/worktree',
   branch: 'feat/chat-demo',
 };
@@ -47,7 +47,7 @@ function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'type'>): ChatItem {
   seq += 1;
   return {
     itemId: `i${seq}`,
-    assignmentId: 'a1',
+    ticketId: 'a1',
     turnId: null,
     agentId: 'planner',
     ts: '2026-09-02T12:00:00.000Z',
@@ -87,7 +87,7 @@ describe('buildContextSection', () => {
     expect(section).toContain('Participants:');
     expect(section).toContain('@planner — Planner, claude, claude-opus-5, Plans, never edits');
     expect(section).toContain('@implementer — Implementer, codex');
-    expect(section).toContain('Human: the assignment owner');
+    expect(section).toContain('Human: the ticket owner');
   });
 
   it('falls back to the first line of the system prompt when there is no description', () => {
@@ -125,7 +125,7 @@ describe('buildContextSection', () => {
     expect(section).toContain(
       'Syntaur records each turn that edits files or runs commands in progress.md; do not log progress yourself.',
     );
-    expect(section).toContain('The assignment owner files decisions and comments from the chat.');
+    expect(section).toContain('The ticket owner files decisions and comments from the chat.');
     expect(section).not.toContain('syntaur` CLI');
   });
 });

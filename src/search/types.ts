@@ -14,7 +14,7 @@
 
 /** The markdown content kinds indexed for full-text body search. */
 export type FileKind =
-  | 'assignment'
+  | 'ticket'
   | 'plan'
   | 'progress'
   | 'comments'
@@ -23,7 +23,7 @@ export type FileKind =
   | 'scratchpad';
 
 export const FILE_KINDS: readonly FileKind[] = [
-  'assignment',
+  'ticket',
   'plan',
   'progress',
   'comments',
@@ -34,7 +34,7 @@ export const FILE_KINDS: readonly FileKind[] = [
 
 /**
  * One indexed markdown document. Carries the body to search plus the
- * filter+route identity propagated from the owning assignment / project
+ * filter+route identity propagated from the owning ticket / project
  * frontmatter so the provider can pre-filter (`type`/`status`/`project`/`in`)
  * and the route builder can produce a deep-link without re-reading anything.
  */
@@ -52,19 +52,19 @@ export interface SearchDoc {
   section?: string;
 
   // ── filter + route identity (carried from frontmatter) ──────────────────
-  /** Owning project slug; `null` for standalone assignments. */
+  /** Owning project slug; `null` for standalone tickets. */
   projectSlug: string | null;
-  /** Owning assignment slug. */
-  assignmentSlug: string | null;
-  /** Owning assignment id (uuid). */
-  assignmentId: string | null;
-  /** True when the owning assignment is standalone (no containing project). */
+  /** Owning ticket slug. */
+  ticketSlug: string | null;
+  /** Owning ticket id (uuid). */
+  ticketId: string | null;
+  /** True when the owning ticket is standalone (no containing project). */
   standalone: boolean;
-  /** Owning assignment `type` (for `--type` filtering). */
+  /** Owning ticket `type` (for `--type` filtering). */
   type?: string;
-  /** Owning assignment `status` (for `--status` filtering). */
+  /** Owning ticket `status` (for `--status` filtering). */
   status?: string;
-  /** Archived flag (from assignment or project frontmatter). */
+  /** Archived flag (from ticket or project frontmatter). */
   archived: boolean;
 }
 
@@ -82,8 +82,8 @@ export interface MatchRange {
 export interface SearchHit {
   path: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
-  assignmentId: string | null;
+  ticketSlug: string | null;
+  ticketId: string | null;
   standalone: boolean;
   fileKind: FileKind;
   title: string;
@@ -122,8 +122,8 @@ export interface SearchProvider {
  * `plan`).
  */
 export const FILE_KIND_ALIASES: Record<string, FileKind> = {
-  assignment: 'assignment',
-  assignments: 'assignment',
+  ticket: 'ticket',
+  assignments: 'ticket',
   plan: 'plan',
   plans: 'plan',
   progress: 'progress',

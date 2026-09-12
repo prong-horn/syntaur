@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { initSessionDb, closeSessionDb, resetSessionDb } from '../dashboard/session-db.js';
 import { openEngagement } from '../db/engagement-db.js';
 
@@ -11,7 +11,7 @@ const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
 // The spawned CLI resolves its own session id; injecting this env var (layer 2)
 // gives it a STRONG-provenance id that matches the seeded open engagement, so
-// the no-positional recompute resolves the active assignment from the
+// the no-positional recompute resolves the active ticket from the
 // engagement edge (and passes the mutate gate).
 const SESSION_ID = 'rcctx-session';
 
@@ -40,20 +40,20 @@ async function runCli(
 /**
  * Seed an OPEN engagement (the session↔assignment edge) into the same
  * `syntaur.db` the spawned CLI reads via SYNTAUR_HOME, so a no-positional
- * `recompute` resolves the active assignment from the engagement rather than
+ * `recompute` resolves the active ticket from the engagement rather than
  * the demoted context.json scalar.
  */
 function seedOpenEngagement(
   home: string,
-  binding: { projectSlug: string; assignmentSlug: string; assignmentId: string },
+  binding: { projectSlug: string; ticketSlug: string; ticketId: string },
 ): void {
   resetSessionDb();
   initSessionDb(resolve(home, 'syntaur.db'));
   openEngagement({
     sessionId: SESSION_ID,
-    assignmentId: binding.assignmentId,
+    ticketId: binding.ticketId,
     projectSlug: binding.projectSlug,
-    assignmentSlug: binding.assignmentSlug,
+    ticketSlug: binding.ticketSlug,
     startedAt: '2026-06-09T10:00:00Z',
   });
   closeSessionDb();
@@ -92,7 +92,7 @@ A real objective.
 - [ ] Criterion one
 `;
 
-describe("syntaur recompute resolves the assignment from the session's open engagement", () => {
+describe("syntaur recompute resolves the ticket from the session's open engagement", () => {
   let home: string;
   let workspace: string;
   let aPath: string;
@@ -103,26 +103,26 @@ describe("syntaur recompute resolves the assignment from the session's open enga
       join(home, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
     );
-    const aDir = join(home, 'projects', 'p1', 'assignments', 'ctx-test');
+    const aDir = join(home, 'projects', 'p1', 'tickets', 'ctx-test');
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-    aPath = join(aDir, 'assignment.md');
+    aPath = join(aDir, 'ticket.md');
     await writeFile(aPath, ASSIGNMENT);
 
     // A separate "workspace" cwd. context.json is now only a workspace marker
-    // (its assignment scalar is no longer a resolution source); the active
-    // assignment is resolved from the session's OPEN engagement, seeded below.
+    // (its ticket scalar is no longer a resolution source); the active
+    // ticket is resolved from the session's OPEN engagement, seeded below.
     workspace = await mkdtemp(join(tmpdir(), 'syntaur-ws-'));
     await mkdir(join(workspace, '.syntaur'), { recursive: true });
     await writeFile(
       join(workspace, '.syntaur', 'context.json'),
-      JSON.stringify({ projectSlug: 'p1', assignmentSlug: 'ctx-test', assignmentDir: aDir }),
+      JSON.stringify({ projectSlug: 'p1', ticketSlug: 'ctx-test', ticketDir: aDir }),
     );
 
     seedOpenEngagement(home, {
       projectSlug: 'p1',
-      assignmentSlug: 'ctx-test',
-      assignmentId: 'ctx-test-id',
+      ticketSlug: 'ctx-test',
+      ticketId: 'ctx-test-id',
     });
   });
 
@@ -132,7 +132,7 @@ describe("syntaur recompute resolves the assignment from the session's open enga
   });
 
   async function status(): Promise<string> {
-    return parseAssignmentFrontmatter(await readFile(aPath, 'utf-8')).status;
+    return parseTicketFrontmatter(await readFile(aPath, 'utf-8')).status;
   }
 
   it('recompute with no positional arg resolves from the open engagement and recomputes', async () => {

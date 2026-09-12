@@ -32,10 +32,13 @@ const ASSIGNMENT_ID = 'c0ffee00-0000-4000-8000-00000000cafe';
 const SCOPE_KEY = assignmentScopeKey(ASSIGNMENT_ID);
 
 const assignment = (): ResolvedAssignment => ({
+  ticketDir: assignmentDir,
   assignmentDir,
   projectSlug: 'syntaur-meta',
   assignmentSlug: 'chat-demo',
+  ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
+  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 

@@ -2,28 +2,28 @@ import { Command } from 'commander';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir } from '../utils/paths.js';
+import { ticketsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { recomputeAssignmentDir } from '../lifecycle/recompute.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
 
 async function resolveAssignmentDir(opts: {
-  assignment?: string;
+  ticket?: string;
   project?: string;
   cwd?: string;
 }): Promise<string> {
   const cwd = opts.cwd ?? process.cwd();
-  if (opts.assignment) {
+  if (opts.ticket) {
     if (opts.project) {
-      return resolve((await readConfig()).defaultProjectDir, opts.project, 'assignments', opts.assignment);
+      return resolve((await readConfig()).defaultProjectDir, opts.project, 'tickets', opts.ticket);
     }
-    // Standalone (assignment is UUID under ~/.syntaur/assignments/)
-    return resolve(assignmentsDir(), opts.assignment);
+    // Standalone (assignment is UUID under ~/.syntaur/tickets/)
+    return resolve(ticketsDir(), opts.ticket);
   }
   // No explicit target → resolve from the session's OPEN engagement and gate
-  // the mutation. context.json's assignment scalar is no longer a resolution
+  // the mutation. context.json's ticket scalar is no longer a resolution
   // source (it is a workspace marker only).
   const { initSessionDb } = await import('../dashboard/session-db.js');
   initSessionDb(); // idempotent; no-op if already open
@@ -31,12 +31,12 @@ async function resolveAssignmentDir(opts: {
   if (se) {
     assertMayMutate(se.session, { hasSelector: false });
   }
-  const target = await resolveAssignmentTarget(undefined, {
+  const target = await resolveTicketTarget(undefined, {
     project: opts.project,
     cwd,
     resolveEngagement: async () => se?.open ?? null,
   });
-  return target.assignmentDir;
+  return target.ticketDir;
 }
 
 const PLAN_PATTERN = /^plan(?:-v(\d+))?\.md$/;
@@ -46,9 +46,9 @@ interface PlanFileEntry {
   version: number; // plan.md = 1
 }
 
-async function listPlanFiles(assignmentDir: string): Promise<PlanFileEntry[]> {
-  if (!(await fileExists(assignmentDir))) return [];
-  const entries = await readdir(assignmentDir, { withFileTypes: true });
+async function listPlanFiles(ticketDir: string): Promise<PlanFileEntry[]> {
+  if (!(await fileExists(ticketDir))) return [];
+  const entries = await readdir(ticketDir, { withFileTypes: true });
   const out: PlanFileEntry[] = [];
   for (const e of entries) {
     if (!e.isFile()) continue;
@@ -93,7 +93,7 @@ function isoNow(): string {
 }
 
 function buildNewPlanStub(opts: {
-  assignmentSlug: string;
+  ticketSlug: string;
   newVersion: number;
   oldVersion: number;
   uncheckedTodos: string[];
@@ -106,13 +106,13 @@ function buildNewPlanStub(opts: {
       : opts.uncheckedTodos.join('\n');
 
   return `---
-assignment: ${opts.assignmentSlug}
+ticket: ${opts.ticketSlug}
 status: draft
 created: "${created}"
 updated: "${created}"
 ---
 
-# ${opts.assignmentSlug} — Implementation Plan v${opts.newVersion}
+# ${opts.ticketSlug} — Implementation Plan v${opts.newVersion}
 
 **Date:** ${created.slice(0, 10)}
 **Supersedes:** [${oldLabel}](./${planFileName(opts.oldVersion)})
@@ -135,16 +135,16 @@ ${carriedSection}
 `;
 }
 
-function buildInitialPlanStub(assignmentSlug: string): string {
+function buildInitialPlanStub(ticketSlug: string): string {
   const created = isoNow();
   return `---
-assignment: ${assignmentSlug}
+ticket: ${ticketSlug}
 status: draft
 created: "${created}"
 updated: "${created}"
 ---
 
-# ${assignmentSlug} — Implementation Plan
+# ${ticketSlug} — Implementation Plan
 
 **Date:** ${created.slice(0, 10)}
 
@@ -163,22 +163,22 @@ updated: "${created}"
 }
 
 interface PlanCreateOptions {
-  assignment?: string;
+  ticket?: string;
   project?: string;
   force?: boolean;
 }
 
 async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
-  const assignmentDir = await resolveAssignmentDir(options);
-  if (!(await fileExists(assignmentDir))) {
-    throw new Error(`Assignment directory does not exist: ${assignmentDir}`);
+  const ticketDir = await resolveAssignmentDir(options);
+  if (!(await fileExists(ticketDir))) {
+    throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
-  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(assignmentMdPath))) {
-    throw new Error(`Missing assignment.md at: ${assignmentMdPath}`);
+    throw new Error(`Missing ticket.md at: ${assignmentMdPath}`);
   }
 
-  const planPath = resolve(assignmentDir, 'plan.md');
+  const planPath = resolve(ticketDir, 'plan.md');
   if ((await fileExists(planPath)) && !options.force) {
     throw new Error(
       'plan.md already exists. Use --force to overwrite, or `syntaur plan version` to create the next version.',
@@ -187,7 +187,7 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
 
   const assignmentMd = await readFile(assignmentMdPath, 'utf-8');
   const slugMatch = assignmentMd.match(/^slug:\s*(.+?)\s*$/m);
-  const slug = slugMatch ? slugMatch[1].trim() : assignmentDir.split('/').pop() ?? '';
+  const slug = slugMatch ? slugMatch[1].trim() : ticketDir.split('/').pop() ?? '';
 
   await writeFileForce(planPath, buildInitialPlanStub(slug));
 
@@ -196,55 +196,55 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   // Keep derived status current: writing a plan flips planExists (and a new
   // plan can invalidate a stale approval). Explicit verb → recompute regardless
   // of the migration gate; best-effort, never blocks the create.
-  await recomputeAssignmentDir(assignmentDir, 'plan-create', null);
+  await recomputeAssignmentDir(ticketDir, 'plan-create', null);
 }
 
 interface PlanVersionOptions {
-  assignment?: string;
+  ticket?: string;
   project?: string;
   force?: boolean;
 }
 
 async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
-  const assignmentDir = await resolveAssignmentDir(options);
-  if (!(await fileExists(assignmentDir))) {
-    throw new Error(`Assignment directory does not exist: ${assignmentDir}`);
+  const ticketDir = await resolveAssignmentDir(options);
+  if (!(await fileExists(ticketDir))) {
+    throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
 
-  const assignmentMdPath = resolve(assignmentDir, 'assignment.md');
+  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(assignmentMdPath))) {
-    throw new Error(`Missing assignment.md at: ${assignmentMdPath}`);
+    throw new Error(`Missing ticket.md at: ${assignmentMdPath}`);
   }
 
-  const planFiles = await listPlanFiles(assignmentDir);
+  const planFiles = await listPlanFiles(ticketDir);
   if (planFiles.length === 0) {
     throw new Error(
-      `No plan.md (or plan-v<N>.md) found in ${assignmentDir}. Run /plan-assignment to create plan.md first.`,
+      `No plan.md (or plan-v<N>.md) found in ${ticketDir}. Run /plan-assignment to create plan.md first.`,
     );
   }
 
   const current = planFiles[planFiles.length - 1];
   const next = nextPlanFileName(current.version);
-  const newPath = resolve(assignmentDir, next.fileName);
+  const newPath = resolve(ticketDir, next.fileName);
 
   if ((await fileExists(newPath)) && !options.force) {
     throw new Error(`${next.fileName} already exists. Use --force to overwrite.`);
   }
 
-  // Parse the assignment slug from frontmatter (kebab from path as fallback).
+  // Parse the ticket slug from frontmatter (kebab from path as fallback).
   const assignmentMd = await readFile(assignmentMdPath, 'utf-8');
   const slugMatch = assignmentMd.match(/^slug:\s*(.+?)\s*$/m);
-  const slug = slugMatch ? slugMatch[1].trim() : assignmentDir.split('/').pop() ?? '';
+  const slug = slugMatch ? slugMatch[1].trim() : ticketDir.split('/').pop() ?? '';
 
   // Read prior plan body to scrape unchecked todos.
-  const oldPlanPath = resolve(assignmentDir, current.fileName);
+  const oldPlanPath = resolve(ticketDir, current.fileName);
   const oldPlanContent = await readFile(oldPlanPath, 'utf-8');
   const oldBody = oldPlanContent.replace(/^---[\s\S]*?\n---\n?/, '');
   const carriedTodos = extractUncheckedTodos(oldBody);
 
   // Build the new plan stub.
   const stub = buildNewPlanStub({
-    assignmentSlug: slug,
+    ticketSlug: slug,
     newVersion: next.version,
     oldVersion: current.version,
     uncheckedTodos: carriedTodos,
@@ -259,17 +259,17 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   // A new plan version invalidates any prior plan approval (digest no longer
   // matches the latest plan file). Recompute so the derived status reflects
   // that immediately. Explicit verb → runs regardless of the migration gate.
-  await recomputeAssignmentDir(assignmentDir, 'plan-version', null);
+  await recomputeAssignmentDir(ticketDir, 'plan-version', null);
 }
 
 export const planCommand = new Command('plan')
-  .description('Manage plan files for the active assignment');
+  .description('Manage plan files for the active ticket');
 
 planCommand
   .command('create')
-  .description('Create the initial plan.md for the assignment')
-  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
-  .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
+  .description('Create the initial plan.md for the ticket')
+  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--force', 'Overwrite an existing plan.md')
   .action(async (options: PlanCreateOptions) => {
     try {
@@ -285,8 +285,8 @@ planCommand
   .description(
     'Create the next plan-v<N>.md and carry forward unchecked tasks from the prior plan',
   )
-  .option('--assignment <slug>', "Assignment slug (UUID for standalone). Defaults to the session's open engagement")
-  .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
+  .option('--ticket <slug>', "Ticket slug (UUID for standalone). Defaults to the session's open engagement")
+  .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--force', 'Overwrite if the next plan-v<N>.md already exists')
   .action(async (options: PlanVersionOptions) => {
     try {
@@ -314,13 +314,13 @@ import { planApproveCommand, planUnapproveCommand } from './derive-verbs.js';
 planCommand
   .command('approve')
   .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id (default: bound session, else human)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
+  .action(async (ticket, options) => {
     try {
-      await planApproveCommand(assignment, options);
+      await planApproveCommand(ticket, options);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -330,13 +330,13 @@ planCommand
 planCommand
   .command('unapprove')
   .description('Clear plan approval; the phase regresses to planning-level facts')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, options) => {
+  .action(async (ticket, options) => {
     try {
-      await planUnapproveCommand(assignment, options);
+      await planUnapproveCommand(ticket, options);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

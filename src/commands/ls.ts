@@ -2,9 +2,9 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { listAssignmentsBoard } from '../dashboard/api.js';
-import { defaultProjectDir, assignmentsDir as standaloneAssignmentsDir } from '../utils/paths.js';
+import { defaultProjectDir, ticketsDir as standaloneTicketsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
 import { buildQueryRegistry } from '../lifecycle/derive.js';
 import { resolveDeriveContext } from '../lifecycle/recompute.js';
@@ -45,25 +45,25 @@ function parseAgeToCutoff(age: string): Date {
   return new Date(Date.now() - ms);
 }
 
-function assignmentMdPath(item: AssignmentBoardItem): string {
+function ticketMdPath(item: AssignmentBoardItem): string {
   if (item.projectSlug) {
     return resolve(
       defaultProjectDir(),
       item.projectSlug,
-      'assignments',
+      'tickets',
       item.slug,
-      'assignment.md',
+      'ticket.md',
     );
   }
-  return resolve(standaloneAssignmentsDir(), item.id, 'assignment.md');
+  return resolve(standaloneTicketsDir(), item.id, 'ticket.md');
 }
 
 async function loadTags(item: AssignmentBoardItem): Promise<string[]> {
-  const path = assignmentMdPath(item);
+  const path = ticketMdPath(item);
   if (!(await fileExists(path))) return [];
   try {
     const content = await readFile(path, 'utf-8');
-    return parseAssignmentFrontmatter(content).tags;
+    return parseTicketFrontmatter(content).tags;
   } catch {
     return [];
   }
@@ -74,7 +74,7 @@ export async function runLs(
 ): Promise<{ items: AssignmentBoardItem[] }> {
   const board = await listAssignmentsBoard(
     defaultProjectDir(),
-    standaloneAssignmentsDir(),
+    standaloneTicketsDir(),
     { archived: options.archived ? 'only' : 'exclude' },
   );
   let items = board.assignments;
@@ -155,15 +155,15 @@ async function loadQueryItem(
   declarations: FactDeclaration[],
   stagesMigrated: boolean,
 ): Promise<QueryItem | null> {
-  const path = assignmentMdPath(item);
+  const path = ticketMdPath(item);
   if (!(await fileExists(path))) return null;
   try {
     const content = await readFile(path, 'utf-8');
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     const body = content.replace(/^---\n[\s\S]*?\n---/, '');
-    const assignmentDir = dirname(path);
+    const ticketDir = dirname(path);
     const projectDir = item.projectSlug ? resolve(defaultProjectDir(), item.projectSlug) : null;
-    const facts = await computeFacts({ assignmentDir, frontmatter: fm, body, projectDir, terminalStatuses, declarations });
+    const facts = await computeFacts({ ticketDir, frontmatter: fm, body, projectDir, terminalStatuses, declarations });
 
     // history virtuals: completedAt (currently-terminal only) + statusAge
     // (time since last HEADLINE change — dimension-only entries don't reset it)
@@ -213,7 +213,7 @@ function pad(value: string, width: number): string {
 }
 
 function renderTable(items: AssignmentBoardItem[]): string {
-  if (items.length === 0) return 'No assignments matched.';
+  if (items.length === 0) return 'No tickets matched.';
   const rows: string[][] = items.map((a) => [
     a.projectSlug ?? '(standalone)',
     a.slug,

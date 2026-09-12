@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { migrateStatusHistoryCommand } from '../commands/migrate-status-history.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 let home: string;
 let projectsDir: string;
@@ -13,7 +13,7 @@ let prevHome: string | undefined;
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-migrate-sh-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'assignments');
+  standaloneDir = resolve(home, 'tickets');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
 });
@@ -24,14 +24,14 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-function assignmentMd(
+function ticketMd(
   slug: string,
   status: string,
   created: string,
   updated: string,
   opts: { withHistory?: boolean; malformed?: boolean } = {},
 ): string {
-  if (opts.malformed) return `not a valid assignment file\nno frontmatter\n`;
+  if (opts.malformed) return `not a valid ticket file\nno frontmatter\n`;
   const history = opts.withHistory
     ? `statusHistory:\n  - at: "${created}"\n    from: null\n    to: ${status}\n    command: create\n    by: null\n`
     : '';
@@ -68,9 +68,9 @@ async function seedProject(
   updated: string,
   opts: { withHistory?: boolean; malformed?: boolean } = {},
 ): Promise<string> {
-  const dir = resolve(projectsDir, project, 'assignments', slug);
+  const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'assignment.md');
+  const path = resolve(dir, 'ticket.md');
   await writeFile(path, assignmentMd(slug, status, created, updated, opts), 'utf-8');
   return path;
 }
@@ -84,7 +84,7 @@ async function seedStandalone(
 ): Promise<string> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'assignment.md');
+  const path = resolve(dir, 'ticket.md');
   await writeFile(path, assignmentMd(uuid, status, created, updated, opts), 'utf-8');
   return path;
 }
@@ -96,13 +96,13 @@ describe('migrateStatusHistoryCommand', () => {
   it('dry-run (default) does not write', async () => {
     const path = await seedProject('p1', 'a1', 'in_progress', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir });
-    expect(parseAssignmentFrontmatter(await readFile(path, 'utf-8')).statusHistory).toEqual([]);
+    expect(parseTicketFrontmatter(await readFile(path, 'utf-8')).statusHistory).toEqual([]);
   });
 
-  it('seeds a non-terminal assignment with at = created', async () => {
+  it('seeds a non-terminal ticket with at = created', async () => {
     const path = await seedProject('p1', 'a1', 'in_progress', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toEqual({
       at: C,
@@ -113,10 +113,10 @@ describe('migrateStatusHistoryCommand', () => {
     });
   });
 
-  it('seeds a terminal assignment with at = updated', async () => {
+  it('seeds a terminal ticket with at = updated', async () => {
     const path = await seedProject('p1', 'done', 'completed', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({ at: U, to: 'completed', command: 'seed' });
   });
@@ -125,7 +125,7 @@ describe('migrateStatusHistoryCommand', () => {
     const path = await seedProject('p1', 'a1', 'in_progress', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
-    expect(parseAssignmentFrontmatter(await readFile(path, 'utf-8')).statusHistory).toHaveLength(1);
+    expect(parseTicketFrontmatter(await readFile(path, 'utf-8')).statusHistory).toHaveLength(1);
   });
 
   it('skips assignments that already have statusHistory', async () => {
@@ -135,12 +135,12 @@ describe('migrateStatusHistoryCommand', () => {
     expect(await readFile(path, 'utf-8')).toBe(before);
   });
 
-  it('does not throw on a malformed assignment file (skips it)', async () => {
+  it('does not throw on a malformed ticket file (skips it)', async () => {
     const good = await seedProject('p1', 'a1', 'in_progress', C, U);
     await seedProject('p1', 'bad', 'in_progress', C, U, { malformed: true });
     await expect(migrateStatusHistoryCommand({ dir: projectsDir, apply: true })).resolves.toBeUndefined();
     // the good one still got seeded
-    expect(parseAssignmentFrontmatter(await readFile(good, 'utf-8')).statusHistory).toHaveLength(1);
+    expect(parseTicketFrontmatter(await readFile(good, 'utf-8')).statusHistory).toHaveLength(1);
   });
 
   it('honors a CUSTOM configured terminal status (terminal → updated anchor)', async () => {
@@ -156,23 +156,23 @@ describe('migrateStatusHistoryCommand', () => {
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
 
     // `done` is configured terminal → anchor is `updated` (U).
-    expect(parseAssignmentFrontmatter(await readFile(donePath, 'utf-8')).statusHistory[0]).toMatchObject({
+    expect(parseTicketFrontmatter(await readFile(donePath, 'utf-8')).statusHistory[0]).toMatchObject({
       at: U,
       to: 'done',
       command: 'seed',
     });
     // `in_progress` is non-terminal → anchor is `created` (C).
-    expect(parseAssignmentFrontmatter(await readFile(wipPath, 'utf-8')).statusHistory[0]).toMatchObject({
+    expect(parseTicketFrontmatter(await readFile(wipPath, 'utf-8')).statusHistory[0]).toMatchObject({
       at: C,
       to: 'in_progress',
       command: 'seed',
     });
   });
 
-  it('seeds a standalone assignment (uuid dir under the standalone base)', async () => {
+  it('seeds a standalone ticket (uuid dir under the standalone base)', async () => {
     const path = await seedStandalone('11111111-2222-3333-4444-555555555555', 'review', C, U);
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({ to: 'review', command: 'seed', at: C });
   });

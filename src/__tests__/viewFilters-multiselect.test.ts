@@ -6,7 +6,7 @@ import {
 } from '../utils/view-prefs-schema.js';
 import { isViewFilters } from '../utils/view-prefs-schema.js';
 // Predicate lives in the dashboard lib (loads under node via the @shared alias).
-import { filterAssignment } from '../../dashboard/src/lib/assignmentFilter';
+import { filterAssignment } from '../../dashboard/src/lib/ticketFilter';
 
 describe('toFilterValues', () => {
   it('treats undefined / "all" / "" / [] / ["all"] as no constraint', () => {

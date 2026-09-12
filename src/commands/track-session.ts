@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
-import { resolveAssignmentBySlug } from '../utils/assignment-resolver.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { resolveTicketBySlug } from '../utils/ticket-resolver.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
@@ -15,7 +15,7 @@ import type { AgentSessionStatus } from '../dashboard/types.js';
 
 export interface TrackSessionOptions {
   project?: string;
-  assignment?: string;
+  ticket?: string;
   agent: string;
   sessionId?: string;
   path?: string;
@@ -53,9 +53,9 @@ export async function trackSessionCommand(
     let legacyHint: string | undefined;
     try {
       // Read ONLY the legacy sessionId hint from context.json — NOT the demoted
-      // assignment scalars (projectSlug/assignmentSlug/assignmentDir). This is
-      // the bootstrap path: the assignment binding comes from the explicit
-      // --project/--assignment CLI args (see appendSession below), never from
+      // ticket scalars (projectSlug/ticketSlug/ticketDir). This is
+      // the bootstrap path: the ticket binding comes from the explicit
+      // --project/--ticket CLI args (see appendSession below), never from
       // context.json. context.json's sessionId is a last-resort identity hint only.
       const raw = await readFile(resolve(cwd, '.syntaur', 'context.json'), 'utf-8');
       const parsed = JSON.parse(raw) as { sessionId?: string };
@@ -74,11 +74,11 @@ export async function trackSessionCommand(
 
   // Gate BEFORE any side effect (DB init, git/ps probes, the appendSession
   // write): a WEAK id (transcript scan or legacy context.json hint) may not
-  // mutate state unless an explicit --assignment selector is present.
-  assertMayMutate(resolved, { hasSelector: Boolean(options.assignment) });
+  // mutate state unless an explicit --ticket selector is present.
+  assertMayMutate(resolved, { hasSelector: Boolean(options.ticket) });
 
-  let assignmentId: string | null = null;
-  if (options.project || options.assignment) {
+  let ticketId: string | null = null;
+  if (options.project || options.ticket) {
     const config = await readConfig();
     const baseDir = options.dir
       ? expandHome(options.dir)
@@ -93,16 +93,16 @@ export async function trackSessionCommand(
       }
     }
 
-    // M1: resolve the assignment's frontmatter id from its slugs so the opened
+    // M1: resolve the ticket's frontmatter id from its slugs so the opened
     // engagement carries `assignment_id` up front — a later `implement` stage
     // assertion then won't split the interval merely to repair the id.
-    if (options.assignment) {
-      assignmentId = (
-        await resolveAssignmentBySlug(
+    if (options.ticket) {
+      ticketId = (
+        await resolveTicketBySlug(
           baseDir,
-          assignmentsDirFn(),
+          ticketsDirFn(),
           options.project || null,
-          options.assignment,
+          options.ticket,
         )
       ).id;
     }
@@ -125,12 +125,12 @@ export async function trackSessionCommand(
     : null;
 
   // Bootstrap binding: the session→assignment engagement edge is opened from the
-  // EXPLICIT --project/--assignment CLI args (appendSession opens an engagement
-  // from these). Never sourced from the demoted context.json assignment scalar.
+  // EXPLICIT --project/--ticket CLI args (appendSession opens an engagement
+  // from these). Never sourced from the demoted context.json ticket scalar.
   await appendSession('', {
     projectSlug: options.project || null,
-    assignmentSlug: options.assignment || null,
-    assignmentId,
+    assignmentSlug: options.ticket || null,
+    assignmentId: ticketId,
     agent: options.agent,
     sessionId,
     started: new Date().toISOString(),
@@ -141,9 +141,9 @@ export async function trackSessionCommand(
     originalHeadSha,
   });
 
-  if (options.project && options.assignment) {
+  if (options.project && options.ticket) {
     console.log(
-      `Registered agent session ${sessionId} for ${options.assignment} in ${options.project}.`,
+      `Registered agent session ${sessionId} for ${options.ticket} in ${options.project}.`,
     );
   } else {
     console.log(`Registered standalone agent session ${sessionId}.`);

@@ -1,5 +1,5 @@
 /**
- * Resolve `(sessionId, cwd, eventTs) → (projectSlug, assignmentSlug)`.
+ * Resolve `(sessionId, cwd, eventTs) → (projectSlug, ticketSlug)`.
  *
  * v6: the scalar binding moved off `sessions` onto the append-only `engagement`
  * edge, so this BINDING resolution is **interval-aware** — it returns the binding
@@ -24,7 +24,7 @@
  *       UTC-midnight snap (Claude's date-only `lastActivity`), and only when the
  *       day's same-cwd engagements resolve to exactly one project/assignment.
  *
- * Returns `{projectSlug: null, assignmentSlug: null}` when no stage matches —
+ * Returns `{projectSlug: null, ticketSlug: null}` when no stage matches —
  * the caller stores `''` (the schema NOT-NULL default) so the unattributed
  * bucket is queryable.
  */
@@ -40,7 +40,7 @@ export interface AttributionInput {
 
 export interface AttributionResult {
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
 }
 
 interface AttributionRow {
@@ -77,7 +77,7 @@ export function resolveAttribution(
   if (direct) {
     return {
       projectSlug: direct.project_slug,
-      assignmentSlug: direct.assignment_slug,
+      ticketSlug: direct.assignment_slug,
     };
   }
 
@@ -106,7 +106,7 @@ export function resolveAttribution(
         input.eventTs,
       ) as AttributionRow | undefined;
     if (exact) {
-      return { projectSlug: exact.project_slug, assignmentSlug: exact.assignment_slug };
+      return { projectSlug: exact.project_slug, ticketSlug: exact.assignment_slug };
     }
 
     // Stage 2b: day-granularity fallback, ONLY for date-only events that
@@ -138,11 +138,11 @@ export function resolveAttribution(
       if (sameDay.length === 1) {
         return {
           projectSlug: sameDay[0].project_slug,
-          assignmentSlug: sameDay[0].assignment_slug,
+          ticketSlug: sameDay[0].assignment_slug,
         };
       }
     }
   }
 
-  return { projectSlug: null, assignmentSlug: null };
+  return { projectSlug: null, ticketSlug: null };
 }

@@ -58,7 +58,7 @@ describe('syntaur worktree create', () => {
   let syntaurHome: string;
   let scratch: string;
   let repo: string;
-  let assignmentDir: string;
+  let ticketDir: string;
 
   beforeEach(async () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-wtc-home-'));
@@ -66,9 +66,9 @@ describe('syntaur worktree create', () => {
       resolve(syntaurHome, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
-    assignmentDir = resolve(syntaurHome, 'projects', 'p', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
-    await writeFile(resolve(assignmentDir, 'assignment.md'), ASSIGNMENT_MD);
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT_MD);
 
     scratch = await mkdtemp(join(tmpdir(), 'syntaur-wtc-repo-'));
     repo = resolve(scratch, 'repo');
@@ -86,7 +86,7 @@ describe('syntaur worktree create', () => {
     await rm(scratch, { recursive: true, force: true });
   });
 
-  it('creates a worktree at <repo>/.worktrees/<branch> and updates assignment workspace', async () => {
+  it('creates a worktree at <repo>/.worktrees/<branch> and updates ticket workspace', async () => {
     const result = await runCli(
       [
         'worktree',
@@ -97,7 +97,7 @@ describe('syntaur worktree create', () => {
         'feat/x',
         '--parent-branch',
         'main',
-        '--assignment',
+        '--ticket',
         'demo',
         '--project',
         'p',
@@ -109,7 +109,7 @@ describe('syntaur worktree create', () => {
     const expectedPath = resolve(repo, '.worktrees', 'feat/x');
     const st = await stat(expectedPath);
     expect(st.isDirectory()).toBe(true);
-    const updated = await readFile(resolve(assignmentDir, 'assignment.md'), 'utf-8');
+    const updated = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     expect(updated).toContain('repository: ');
     expect(updated).toContain(`worktreePath: ${expectedPath}`);
     expect(updated).toContain('branch: feat/x');
@@ -128,7 +128,7 @@ describe('syntaur worktree create', () => {
         'feat/already-here',
         '--parent-branch',
         'main',
-        '--assignment',
+        '--ticket',
         'demo',
         '--project',
         'p',

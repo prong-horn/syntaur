@@ -56,8 +56,8 @@ export class FuseProvider implements SearchProvider {
       const hit: SearchHit = {
         path: doc.path,
         projectSlug: doc.projectSlug,
-        assignmentSlug: doc.assignmentSlug,
-        assignmentId: doc.assignmentId,
+        ticketSlug: doc.ticketSlug,
+        ticketId: doc.ticketId,
         standalone: doc.standalone,
         fileKind: doc.fileKind,
         title: doc.title,

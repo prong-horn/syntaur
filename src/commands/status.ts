@@ -15,25 +15,25 @@ import {
 import { writeWorkflowBundle } from '../utils/workflow-write.js';
 import { DEFAULT_WORKFLOW_ID } from '../utils/workflow-resolve.js';
 import { makeWorkflowContextResolver } from '../lifecycle/workflow-context.js';
-import { syntaurRoot, assignmentsDir } from '../utils/paths.js';
+import { syntaurRoot, ticketsDir } from '../utils/paths.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   renameStatusInHistory,
-  updateAssignmentFile,
+  updateTicketFile,
   updateOverride,
 } from '../lifecycle/frontmatter.js';
 
-/** Relabel every reference to a status id in one assignment file: headline
+/** Relabel every reference to a status id in one ticket file: headline
  * `status` and cached `phase` (only when they match), plus all history keys
  * via renameStatusInHistory. No history entry is appended (relabel ≠ transition). */
-function renameAssignmentStatusRefs(content: string, id: string, newId: string, now: string): string {
-  const fm = parseAssignmentFrontmatter(content);
-  const updates: Parameters<typeof updateAssignmentFile>[1] = { updated: now };
+function renameTicketStatusRefs(content: string, id: string, newId: string, now: string): string {
+  const fm = parseTicketFrontmatter(content);
+  const updates: Parameters<typeof updateTicketFile>[1] = { updated: now };
   if (fm.status === id) updates.status = newId;
   if (fm.phase === id) updates.phase = newId;
-  let next = updateAssignmentFile(content, updates);
+  let next = updateTicketFile(content, updates);
   // A pin targeting the renamed id must follow it, or the override silently
   // dissolves on the next recompute (codex r2 finding 4).
   if (fm.override?.status === id) {
@@ -49,13 +49,13 @@ import {
 
 /**
  * The project + standalone dirs the dashboard's status router scans
- * (`config.defaultProjectDir` + the standalone assignments dir). Using the
+ * (`config.defaultProjectDir` + the standalone tickets dir). Using the
  * *configured* project dir — not the fixed paths.defaultProjectDir() — keeps the
  * CLI's remove/rename scans in sync with the dashboard for custom project roots.
  */
 async function scanDirs(): Promise<{ projectsDir: string; standaloneDir: string }> {
   const config = await readConfig();
-  return { projectsDir: config.defaultProjectDir, standaloneDir: assignmentsDir() };
+  return { projectsDir: config.defaultProjectDir, standaloneDir: ticketsDir() };
 }
 
 function fail(error: unknown): never {
@@ -527,7 +527,7 @@ export async function runStatusRemove(
 
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
-  // headline — a blocked/pinned assignment can reference the id only there.
+  // headline — a blocked/pinned ticket can reference the id only there.
   const affected = await scanAssignmentsReferencingStatus(
     projectsDir,
     standaloneDir,
@@ -543,7 +543,7 @@ export async function runStatusRemove(
     );
   }
 
-  // --force (or no affected): edit config only. Affected assignment.md files are
+  // --force (or no affected): edit config only. Affected ticket.md files are
   // intentionally left untouched so doctor can flag them — DO NOT delete them.
   const after: StatusConfig = {
     statuses: before.statuses.filter((s) => s.id !== id),
@@ -567,7 +567,7 @@ export async function runStatusRemove(
   await persistBundle(bundle, after);
 }
 
-// ----- rename (atomic across config.md + every affected assignment.md) -------
+// ----- rename (atomic across config.md + every affected ticket.md) -------
 
 export async function runStatusRename(
   id: string,
@@ -618,7 +618,7 @@ export async function runStatusRename(
 
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
-  // headline — a blocked/pinned assignment can reference the id only there.
+  // headline — a blocked/pinned ticket can reference the id only there.
   const affected = await scanAssignmentsReferencingStatus(
     projectsDir,
     standaloneDir,
@@ -631,15 +631,15 @@ export async function runStatusRename(
     const now = nowTimestamp();
     for (const a of affected) {
       const original = await readFile(a.path, 'utf-8');
-      const rewritten = renameAssignmentStatusRefs(original, id, newId, now);
-      console.log(`\n--- ${a.display}/assignment.md`);
-      console.log(`+++ ${a.display}/assignment.md`);
+      const rewritten = renameTicketStatusRefs(original, id, newId, now);
+      console.log(`\n--- ${a.display}/ticket.md`);
+      console.log(`+++ ${a.display}/ticket.md`);
       console.log(lineDiff(original, rewritten));
     }
     return;
   }
 
-  // Atomic transaction: buffer config.md + every affected assignment.md, write all
+  // Atomic transaction: buffer config.md + every affected ticket.md, write all
   // (atomically, via writeFileForce), restore every buffered original on any failure.
   const cfgPath = configPath();
   const buffers = new Map<string, string>();
@@ -658,7 +658,7 @@ export async function runStatusRename(
       // relabel the id in-place across existing history entries (preserving each
       // `at`), so derived `completedAt` stays correct after renaming a terminal
       // status. See the status-history audit in the Query Language Piece 1 plan.
-      const rewritten = renameAssignmentStatusRefs(original, id, newId, now);
+      const rewritten = renameTicketStatusRefs(original, id, newId, now);
       await writeFileForce(a.path, rewritten);
     }
   } catch (err) {
@@ -775,7 +775,7 @@ function printList(result: StatusListResult): void {
 }
 
 export const statusCommand = new Command('status').description(
-  'Manage assignment statuses + transitions (the statuses: block in ~/.syntaur/config.md)',
+  'Manage ticket statuses + transitions (the statuses: block in ~/.syntaur/config.md)',
 );
 
 statusCommand
@@ -894,7 +894,7 @@ statusCommand
 
 statusCommand
   .command('rename')
-  .description('Rename a status id atomically across config.md + every affected assignment.md')
+  .description('Rename a status id atomically across config.md + every affected ticket.md')
   .argument('<id>', 'Existing status id')
   .requiredOption('--to <new-id>', 'New status id')
   .option('--label <label>', 'New label (default: keep the original)')
@@ -950,16 +950,16 @@ import { statusPinCommand, statusUnpinCommand } from './derive-verbs.js';
 
 statusCommand
   .command('pin')
-  .description('Pin (override) an assignment to a status — sticky until unpinned; non-terminal only')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .description('Pin (override) a ticket to a status — sticky until unpinned; non-terminal only')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .argument('<status>', 'Status id to pin to (terminal statuses refused)')
   .option('--project <slug>', 'Target project slug')
   .option('--reason <text>', 'Why the pin is needed (recorded in history)')
   .option('--agent <name>', 'Acting agent id (default: bound session, else human)')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, status, opts) => {
+  .action(async (ticket, status, opts) => {
     try {
-      await statusPinCommand(assignment, status, opts);
+      await statusPinCommand(ticket, status, opts);
     } catch (error) {
       fail(error);
     }
@@ -968,13 +968,13 @@ statusCommand
 statusCommand
   .command('unpin')
   .description('Clear a status pin — status re-derives from facts')
-  .argument('<assignment>', 'Assignment slug or standalone UUID')
+  .argument('<ticket>', 'Ticket slug or standalone UUID')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
   .option('--dir <path>', 'Override default project directory')
-  .action(async (assignment, opts) => {
+  .action(async (ticket, opts) => {
     try {
-      await statusUnpinCommand(assignment, opts);
+      await statusUnpinCommand(ticket, opts);
     } catch (error) {
       fail(error);
     }

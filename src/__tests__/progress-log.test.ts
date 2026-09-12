@@ -33,9 +33,9 @@ async function runCli(
 
 /**
  * Seed an OPEN engagement in `$SYNTAUR_HOME/syntaur.db` bound to project `p` /
- * assignment `a`, so a spawned CLI process whose session resolves to `sessionId`
- * (STRONG via injected CLAUDE_CODE_SESSION_ID) targets that assignment with no
- * explicit --assignment flag. Mirrors the production session-db path.
+ * ticket `a`, so a spawned CLI process whose session resolves to `sessionId`
+ * (STRONG via injected CLAUDE_CODE_SESSION_ID) targets that ticket with no
+ * explicit --ticket flag. Mirrors the production session-db path.
  */
 function seedOpenEngagement(home: string, sessionId: string): void {
   resetSessionDb();
@@ -43,9 +43,9 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   try {
     openEngagement({
       sessionId,
-      assignmentId: 'x',
+      ticketId: 'x',
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       startedAt: '2026-01-01T00:00:00Z',
     });
   } finally {
@@ -54,7 +54,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
 }
 
 const PROGRESS = `---
-assignment: a
+ticket: a
 entryCount: 0
 generated: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -71,9 +71,9 @@ describe('syntaur progress log', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-prog-'));
-    const dir = resolve(home, 'projects', 'p', 'assignments', 'a');
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'assignment.md'), '---\nid: x\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
+    await writeFile(resolve(dir, 'ticket.md'), '---\nid: x\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
     progressPath = resolve(dir, 'progress.md');
     await writeFile(progressPath, PROGRESS, 'utf-8');
   });
@@ -83,7 +83,7 @@ describe('syntaur progress log', () => {
   });
 
   it('replaces the placeholder, increments entryCount, preserves assignment/generated', async () => {
-    const r = await runCli(['progress', 'log', 'First entry', '--assignment', 'a', '--project', 'p'], home);
+    const r = await runCli(['progress', 'log', 'First entry', '--ticket', 'a', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).not.toContain('No progress yet.');
@@ -95,8 +95,8 @@ describe('syntaur progress log', () => {
   });
 
   it('keeps entries reverse-chronological (newest right after the H1)', async () => {
-    await runCli(['progress', 'log', 'OLDER', '--assignment', 'a', '--project', 'p'], home);
-    await runCli(['progress', 'log', 'NEWER', '--assignment', 'a', '--project', 'p'], home);
+    await runCli(['progress', 'log', 'OLDER', '--ticket', 'a', '--project', 'p'], home);
+    await runCli(['progress', 'log', 'NEWER', '--ticket', 'a', '--project', 'p'], home);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).toContain('entryCount: 2');
     const h1 = content.indexOf('# Progress');
@@ -104,7 +104,7 @@ describe('syntaur progress log', () => {
     expect(content.indexOf('NEWER')).toBeLessThan(content.indexOf('OLDER'));
   });
 
-  it('resolves the assignment from the session OPEN engagement when no --assignment is given', async () => {
+  it('resolves the ticket from the session OPEN engagement when no --ticket is given', async () => {
     const sessionId = 'sess-engagement-1';
     seedOpenEngagement(home, sessionId);
     const r = await runCli(['progress', 'log', 'From engagement'], home, {

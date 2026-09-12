@@ -1,4 +1,4 @@
-import type { AssignmentStatus, TransitionCommand } from './types.js';
+import type { TicketStatus, TransitionCommand } from './types.js';
 import { TERMINAL_STATUSES } from './types.js';
 
 /**
@@ -85,10 +85,10 @@ export function unambiguousCommandTarget(
 }
 
 export function getTargetStatus(
-  _from: AssignmentStatus,
+  _from: TicketStatus,
   command: TransitionCommand,
   table?: Map<string, string>,
-): AssignmentStatus | null {
+): TicketStatus | null {
   // No table provided (e.g. the CLI transition path): commands are guard-free —
   // workflow enforcement happens via agent prompting, not code — so a command
   // resolves to its canonical target regardless of the current status.
@@ -109,7 +109,7 @@ export function getTargetStatus(
 
 /** @deprecated Guards removed — always returns true for known commands */
 export function canTransition(
-  _from: AssignmentStatus,
+  _from: TicketStatus,
   command: TransitionCommand,
   table?: Map<string, string>,
 ): boolean {
@@ -117,7 +117,7 @@ export function canTransition(
 }
 
 export function isTerminalStatus(
-  status: AssignmentStatus,
+  status: TicketStatus,
   terminalSet?: ReadonlySet<string>,
 ): boolean {
   return (terminalSet ?? TERMINAL_STATUSES).has(status);

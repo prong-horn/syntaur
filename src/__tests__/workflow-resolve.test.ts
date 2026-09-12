@@ -7,8 +7,8 @@ const available = new Set(['default', 'feature', 'bugfix', 'research']);
 
 function base() {
   return {
-    assignmentWorkflow: null as string | null,
-    assignmentType: null as string | null,
+    ticketWorkflow: null as string | null,
+    ticketType: null as string | null,
     projectDefaultWorkflow: null as string | null,
     projectWorkflowByType: null as Record<string, string> | null,
     globalDefaultWorkflow: null as string | null,
@@ -17,12 +17,12 @@ function base() {
 }
 
 describe('resolveWorkflowId — first-hit-wins binding', () => {
-  it('an explicit assignment workflow always wins', () => {
+  it('an explicit ticket workflow always wins', () => {
     expect(
       resolveWorkflowId({
         ...base(),
-        assignmentWorkflow: 'feature',
-        assignmentType: 'bug',
+        ticketWorkflow: 'feature',
+        ticketType: 'bug',
         projectWorkflowByType: { bug: 'bugfix' },
         projectDefaultWorkflow: 'research',
         globalDefaultWorkflow: 'research',
@@ -30,11 +30,11 @@ describe('resolveWorkflowId — first-hit-wins binding', () => {
     ).toBe('feature');
   });
 
-  it('falls to the type map when there is no assignment override', () => {
+  it('falls to the type map when there is no ticket override', () => {
     expect(
       resolveWorkflowId({
         ...base(),
-        assignmentType: 'bug',
+        ticketType: 'bug',
         projectWorkflowByType: { bug: 'bugfix' },
         projectDefaultWorkflow: 'research',
       }),
@@ -45,7 +45,7 @@ describe('resolveWorkflowId — first-hit-wins binding', () => {
     expect(
       resolveWorkflowId({
         ...base(),
-        assignmentType: 'chore',
+        ticketType: 'chore',
         projectWorkflowByType: { bug: 'bugfix' },
         projectDefaultWorkflow: 'research',
         globalDefaultWorkflow: 'feature',
@@ -65,8 +65,8 @@ describe('resolveWorkflowId — first-hit-wins binding', () => {
     expect(
       resolveWorkflowId({
         ...base(),
-        assignmentWorkflow: 'ghost', // deleted workflow
-        assignmentType: 'bug',
+        ticketWorkflow: 'ghost', // deleted workflow
+        ticketType: 'bug',
         projectWorkflowByType: { bug: 'gone' }, // also deleted
         projectDefaultWorkflow: 'research', // resolvable
       }),
@@ -77,7 +77,7 @@ describe('resolveWorkflowId — first-hit-wins binding', () => {
     expect(
       resolveWorkflowId({
         ...base(),
-        assignmentWorkflow: 'ghost',
+        ticketWorkflow: 'ghost',
         globalDefaultWorkflow: 'also-gone',
       }),
     ).toBe('default');

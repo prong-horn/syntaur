@@ -1,12 +1,12 @@
 export interface PlanParams {
-  assignmentSlug: string;
+  ticketSlug: string;
   title: string;
   timestamp: string;
 }
 
 export function renderPlan(params: PlanParams): string {
   return `---
-assignment: ${params.assignmentSlug}
+ticket: ${params.ticketSlug}
 status: draft
 created: "${params.timestamp}"
 updated: "${params.timestamp}"

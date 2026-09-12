@@ -53,8 +53,8 @@ export function appendProgressEntry(content: string, entry: string, now: string)
 }
 
 export interface AppendProgressLogInput {
-  assignmentDir: string;
-  assignmentRef: string;
+  ticketDir: string;
+  ticketRef: string;
   text: string;
 }
 
@@ -62,12 +62,12 @@ export interface AppendProgressLogInput {
 export async function appendProgressLog(
   input: AppendProgressLogInput,
 ): Promise<{ path: string; timestamp: string }> {
-  const path = resolve(input.assignmentDir, 'progress.md');
+  const path = resolve(input.ticketDir, 'progress.md');
   const now = nowTimestamp();
 
   const content = (await fileExists(path))
     ? await readFile(path, 'utf-8')
-    : renderProgress({ assignment: input.assignmentRef, timestamp: now });
+    : renderProgress({ ticket: input.ticketRef, timestamp: now });
 
   const next = appendProgressEntry(content, input.text, now);
   await writeFileForce(path, next);

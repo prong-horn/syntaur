@@ -51,10 +51,10 @@ export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
   // ProjectDetail page
   'a',
   'e',
-  // AssignmentsPage board
+  // TicketsPage board
   '/',
   'r',
-  // AssignmentDetail page
+  // TicketDetail page
   'p',
   'h',
   'd',

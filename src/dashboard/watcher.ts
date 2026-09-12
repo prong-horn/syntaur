@@ -42,6 +42,8 @@ export function ignoreDotSegmentsBelow(
 export interface WatcherOptions {
   projectsDir: string;
   assignmentsDir?: string;
+  /** Core rename alias */
+  ticketsDir?: string;
   playbooksDir?: string;
   /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
    * workflows invalidate the workflow-library cache and fire `onConfigChanged`
@@ -70,9 +72,9 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
+  const assignmentsDir = options.assignmentsDir ?? options.ticketsDir;
   const {
     projectsDir,
-    assignmentsDir,
     playbooksDir,
     workflowsDir,
     dbPath,

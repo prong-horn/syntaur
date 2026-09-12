@@ -5,7 +5,7 @@ import { parseComments } from '../dashboard/parser.js';
 describe('renderComments', () => {
   it('produces valid frontmatter with zero entries', () => {
     const out = renderComments({
-      assignment: 'do-thing',
+      ticket: 'do-thing',
       timestamp: '2026-04-20T12:00:00Z',
     });
     expect(out).toContain('assignment: do-thing');
@@ -65,7 +65,7 @@ describe('formatCommentEntry', () => {
 describe('parseComments round-trip', () => {
   it('empty template parses to zero entries', () => {
     const template = renderComments({
-      assignment: 'ex',
+      ticket: 'ex',
       timestamp: '2026-04-20T10:00:00Z',
     });
     const parsed = parseComments(template);

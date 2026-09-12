@@ -30,7 +30,7 @@ import { formatChatQuestionMarker } from '../chat/questions.js';
 
 let sandbox: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let server: Server;
 let baseUrl: string;
 let origSyntaurHome: string | undefined;
@@ -49,8 +49,8 @@ interface SeedOpts {
 async function seed(o: SeedOpts): Promise<void> {
   const standalone = o.project === undefined || o.project === null;
   const dir = standalone
-    ? join(assignmentsDir, o.slug)
-    : join(projectsDir, o.project as string, 'assignments', o.slug);
+    ? join(ticketsDir, o.slug)
+    : join(projectsDir, o.project as string, 'tickets', o.slug);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
@@ -67,7 +67,7 @@ async function seed(o: SeedOpts): Promise<void> {
     fm.push(...o.statusHistory.map((l) => `  ${l}`));
   }
   await writeFile(
-    join(dir, 'assignment.md'),
+    join(dir, 'ticket.md'),
     `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`,
   );
   if (o.planFiles) {
@@ -80,7 +80,7 @@ async function seed(o: SeedOpts): Promise<void> {
 async function seedQuestionComment(
   project: string,
   slug: string,
-  _assignmentId: string,
+  _ticketId: string,
   comment: {
     id: string;
     author: string;
@@ -89,7 +89,7 @@ async function seedQuestionComment(
   },
 ): Promise<void> {
   const ts = comment.timestamp ?? '2026-06-16T00:00:00Z';
-  const dir = join(projectsDir, project, 'assignments', slug);
+  const dir = join(projectsDir, project, 'tickets', slug);
   await writeFile(
     join(dir, 'comments.md'),
     `---\nassignment: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
@@ -106,9 +106,9 @@ async function seedQuestionComment(
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-inbox-'));
   projectsDir = join(sandbox, 'projects');
-  assignmentsDir = join(sandbox, 'assignments');
+  ticketsDir = join(sandbox, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
 
   // A minimal config.md so getStatusConfig() resolves the default status config.
   await writeFile(
@@ -125,7 +125,7 @@ beforeEach(async () => {
 
   const app = express();
   app.use(express.json());
-  app.use('/api', createInboxRouter(projectsDir, assignmentsDir));
+  app.use('/api', createInboxRouter(projectsDir, ticketsDir));
 
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res()) as Server;
@@ -175,7 +175,7 @@ describe('GET /api/inbox', () => {
 
     const reviewItem = body.items.find((i) => i.category === 'review');
     expect(reviewItem).toBeDefined();
-    expect(reviewItem!.assignmentSlug).toBe('rev-a');
+    expect(reviewItem!.ticketSlug).toBe('rev-a');
     expect(reviewItem!.action.verb).toBe('Accept');
     expect(reviewItem!.action.command).toContain('syntaur complete rev-a');
   });
@@ -228,10 +228,10 @@ describe('GET /api/inbox', () => {
       join(projectsDir, 'p1', 'project.md'),
       `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
     );
-    const dir = join(projectsDir, 'p1', 'assignments', 'chat-row');
+    const dir = join(projectsDir, 'p1', 'tickets', 'chat-row');
     await mkdir(dir, { recursive: true });
     await writeFile(
-      join(dir, 'assignment.md'),
+      join(dir, 'ticket.md'),
       `---\nid: q-chat\nslug: chat-row\ntitle: Chat row\nstatus: in_progress\nproject: p1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# Chat row\n`,
     );
     const marker = formatChatQuestionMarker({
@@ -264,7 +264,7 @@ describe('GET /api/inbox', () => {
     });
     expect(item.action.verb).toBe('Open chat');
     expect(item.action.command).toBe(
-      `${baseUrl}/projects/p1/assignments/chat-row?tab=chat#turn-1:1`,
+      `${baseUrl}/projects/p1/tickets/chat-row?tab=chat#turn-1:1`,
     );
     expect(item.card).toBeUndefined();
   });
@@ -318,7 +318,7 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -360,7 +360,7 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -390,7 +390,7 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       turnId: 'turn-2',
       agentId: 'cursor',
       type: 'question',
@@ -460,7 +460,7 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId: permItemId,
-      assignmentId: 'perm-assn',
+      ticketId: 'perm-assn',
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -504,7 +504,7 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId: permItemId,
-      assignmentId: 'perm-assn2',
+      ticketId: 'perm-assn2',
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -574,7 +574,7 @@ describe('GET /api/inbox — maxAgeDays', () => {
     const res = await fetch(`${baseUrl}/api/inbox?maxAgeDays=1`);
     expect(res.status).toBe(200);
     const body = (await res.json()) as InboxResult;
-    expect(body.items.map((i) => i.assignmentSlug)).toEqual(['new-review']);
+    expect(body.items.map((i) => i.ticketSlug)).toEqual(['new-review']);
     expect(body.total).toBe(1);
   });
 
@@ -597,7 +597,7 @@ describe('GET /api/inbox — maxAgeDays', () => {
     });
     upsertChatItem('perm-a:cursor', {
       itemId: permItemId,
-      assignmentId: 'perm-a',
+      ticketId: 'perm-a',
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -636,7 +636,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
       planFiles: { 'plan.md': '# plan\n' },
     });
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
-    const row = inbox.items.find((i) => i.assignmentSlug === 'plan-check')!;
+    const row = inbox.items.find((i) => i.ticketSlug === 'plan-check')!;
     const key = inboxRowKey(row);
     expect(key).toBe('plan-approval:plan:uuid');
 
@@ -652,12 +652,12 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
 
     const getRes = await fetch(`${baseUrl}/api/inbox`);
     const getBody = (await getRes.json()) as InboxResult;
-    expect(getBody.items.find((i) => i.assignmentSlug === 'plan-check')).toBeUndefined();
+    expect(getBody.items.find((i) => i.ticketSlug === 'plan-check')).toBeUndefined();
     expect(getBody.snoozedCount).toBe(1);
 
     const showRes = await fetch(`${baseUrl}/api/inbox?includeSnoozed=1`);
     const showBody = (await showRes.json()) as InboxResult;
-    const flagged = showBody.items.find((i) => i.assignmentSlug === 'plan-check');
+    const flagged = showBody.items.find((i) => i.ticketSlug === 'plan-check');
     expect(flagged?.snoozed?.until).toBe(putBody.until);
 
     const delRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
@@ -666,7 +666,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     expect((await delRes.json()).removed).toBe(true);
 
     const back = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
-    expect(back.items.find((i) => i.assignmentSlug === 'plan-check')).toBeDefined();
+    expect(back.items.find((i) => i.ticketSlug === 'plan-check')).toBeDefined();
 
     const del2 = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
       method: 'DELETE',
@@ -685,7 +685,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     });
     upsertChatItem('perm-a:cursor', {
       itemId: permItemId,
-      assignmentId: 'perm-a',
+      ticketId: 'perm-a',
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -750,7 +750,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     expect(res.status).toBe(404);
   });
 
-  it('lifts an until-change snooze when assignment updated changes', async () => {
+  it('lifts an until-change snooze when ticket updated changes', async () => {
     await seed({
       id: 'old-r',
       slug: 'old-review',
@@ -760,7 +760,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
       statusHistory: ['- at: "2025-01-01T00:00:00Z"', '  to: review', '  command: review'],
     });
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
-    const row = inbox.items.find((i) => i.assignmentSlug === 'old-review')!;
+    const row = inbox.items.find((i) => i.ticketSlug === 'old-review')!;
     const key = inboxRowKey(row);
 
     const putRes = await fetch(`${baseUrl}/api/inbox/snoozes/${encodeURIComponent(key)}`, {
@@ -771,17 +771,17 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     expect(putRes.status).toBe(200);
 
     let getBody = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
-    expect(getBody.items.find((i) => i.assignmentSlug === 'old-review')).toBeUndefined();
+    expect(getBody.items.find((i) => i.ticketSlug === 'old-review')).toBeUndefined();
 
-    const dir = join(projectsDir, 'p1', 'assignments', 'old-review');
-    const md = await readFile(join(dir, 'assignment.md'), 'utf-8');
+    const dir = join(projectsDir, 'p1', 'tickets', 'old-review');
+    const md = await readFile(join(dir, 'ticket.md'), 'utf-8');
     await writeFile(
-      join(dir, 'assignment.md'),
+      join(dir, 'ticket.md'),
       md.replace('updated: "2025-01-01T00:00:00Z"', 'updated: "2026-06-16T12:00:00Z"'),
     );
 
     getBody = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
-    expect(getBody.items.find((i) => i.assignmentSlug === 'old-review')).toBeDefined();
+    expect(getBody.items.find((i) => i.ticketSlug === 'old-review')).toBeDefined();
 
     const store = JSON.parse(await readFile(join(sandbox, 'inbox-snoozes.json'), 'utf-8'));
     expect(store[key]).toBeUndefined();

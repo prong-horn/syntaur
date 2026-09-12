@@ -5,7 +5,7 @@ import { parseProgress } from '../dashboard/parser.js';
 describe('renderProgress', () => {
   it('produces valid frontmatter with zero entries', () => {
     const out = renderProgress({
-      assignment: 'do-thing',
+      ticket: 'do-thing',
       timestamp: '2026-04-20T12:00:00Z',
     });
     expect(out).toContain('assignment: do-thing');
@@ -27,7 +27,7 @@ describe('formatProgressEntry', () => {
 describe('parseProgress round-trip', () => {
   it('empty template parses to zero entries', () => {
     const template = renderProgress({
-      assignment: 'a-slug',
+      ticket: 'a-slug',
       timestamp: '2026-04-20T10:00:00Z',
     });
     const parsed = parseProgress(template);

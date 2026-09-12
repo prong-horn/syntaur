@@ -49,7 +49,7 @@ export async function createProjectCommand(
   const timestamp = nowTimestamp();
   const id = generateId();
 
-  await ensureDir(resolve(projectDir, 'assignments'));
+  await ensureDir(resolve(projectDir, 'tickets'));
 
   const files: Array<[string, string]> = [
     [
@@ -61,7 +61,7 @@ export async function createProjectCommand(
       renderProject({ id, slug, title, timestamp }),
     ],
     [
-      resolve(projectDir, '_index-assignments.md'),
+      resolve(projectDir, '_index-tickets.md'),
       renderIndexAssignments({ slug, title, timestamp }),
     ],
     [
@@ -87,7 +87,7 @@ export async function createProjectCommand(
   console.log(`  Files created:`);
   console.log(`    manifest.md`);
   console.log(`    project.md`);
-  console.log(`    _index-assignments.md`);
+  console.log(`    _index-tickets.md`);
   console.log(`    _index-plans.md`);
   console.log(`    _index-decisions.md`);
   console.log(`    _status.md`);

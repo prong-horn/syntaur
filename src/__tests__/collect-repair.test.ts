@@ -33,7 +33,7 @@ function makeEvent(overrides: Partial<UsageEventInput> = {}): UsageEventInput {
     totalCost: 0,
     cwd: '/Users/dev/proj',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     rawJson: null,
     ...overrides,
   };
@@ -107,7 +107,7 @@ describe('reattributeOrphanEvents', () => {
   it('attributes an orphaned row once its session is registered', async () => {
     await appendSession('', {
       projectSlug: 'proj-x',
-      assignmentSlug: 'assn-y',
+      ticketSlug: 'assn-y',
       agent: 'pi',
       sessionId: 'pi-sess-1',
       started: '2026-06-11T08:00:00.000Z',
@@ -134,17 +134,17 @@ describe('reattributeOrphanEvents', () => {
   it('never re-touches an already-attributed row (guard: only empty-attribution rows)', async () => {
     // Even though the session resolves to proj-x/assn-y, a row already carrying
     // an attribution must not be overwritten — the SELECT filter and the UPDATE
-    // guard both require empty project AND empty assignment.
+    // guard both require empty project AND empty ticket.
     await appendSession('', {
       projectSlug: 'proj-x',
-      assignmentSlug: 'assn-y',
+      ticketSlug: 'assn-y',
       agent: 'pi',
       sessionId: 'pi-sess-1',
       started: '2026-06-11T08:00:00.000Z',
       status: 'active',
       path: '/Users/dev/proj',
     });
-    upsertEvent(makeEvent({ projectSlug: 'proj-z', assignmentSlug: 'assn-z' }));
+    upsertEvent(makeEvent({ projectSlug: 'proj-z', ticketSlug: 'assn-z' }));
 
     expect(reattributeOrphanEvents()).toBe(0);
     const row = rowFor('pi-sess-1', PI_MODEL);

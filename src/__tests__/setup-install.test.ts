@@ -395,6 +395,6 @@ describe('setup and install flows', () => {
     // (and skills.sh's `npx skills add prong-horn/syntaur`) can install
     // them into ~/.claude/skills / ~/.codex/skills.
     expect(files).toContain('skills/syntaur-protocol/SKILL.md');
-    expect(files).toContain('skills/grab-assignment/SKILL.md');
+    expect(files).toContain('skills/grab-ticket/SKILL.md');
   });
 });

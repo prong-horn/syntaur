@@ -69,10 +69,10 @@ async function invokeRoute(
   return response;
 }
 
-async function createAssignmentFixture(): Promise<void> {
+async function createTicketFixture(): Promise<void> {
   const projectDir = resolve(testDir, 'test-project');
-  const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-  await mkdir(assignmentDir, { recursive: true });
+  const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+  await mkdir(ticketDir, { recursive: true });
 
   await writeFile(resolve(projectDir, 'project.md'), `---
 id: project-1
@@ -86,7 +86,7 @@ tags: []
 
 # Test Project`, 'utf-8');
 
-  await writeFile(resolve(assignmentDir, 'assignment.md'), `---
+  await writeFile(resolve(ticketDir, 'ticket.md'), `---
 id: assignment-1
 slug: test-assignment
 title: Test Assignment
@@ -111,13 +111,13 @@ tags: []
 
 describe('B5 — comment write produces a single YAML-quoted updated timestamp', () => {
   it('writes updated: "<iso>" — not a double-encoded updated: "\\"<iso>\\""', async () => {
-    await createAssignmentFixture();
+    await createTicketFixture();
     const router = createWriteRouter(testDir);
 
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/assignments/:aslug/comments',
+      '/api/projects/:slug/tickets/:aslug/comments',
       { slug: 'test-project', aslug: 'test-assignment' },
       { body: 'first comment', author: 'human', type: 'note' },
     );
@@ -126,7 +126,7 @@ describe('B5 — comment write produces a single YAML-quoted updated timestamp',
     const commentsPath = resolve(
       testDir,
       'test-project',
-      'assignments',
+      'tickets',
       'test-assignment',
       'comments.md',
     );

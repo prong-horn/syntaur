@@ -242,10 +242,13 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     const assignDir = join(sandbox, 'assignments', 'probe');
     await mkdir(assignDir, { recursive: true });
     const resolved: ResolvedAssignment = {
+      ticketDir: assignDir,
       assignmentDir: assignDir,
       projectSlug: 'test',
+      ticketSlug: 'probe',
       assignmentSlug: 'probe',
       id: assignId,
+      assignmentId: assignId,
       standalone: false,
     };
     makeBroker({ availableCommands: probeCommands });
@@ -331,10 +334,13 @@ let spawnHarnesses: Harness[];
 let resolvedHarnesses: Harness[];
 
 const assignment = (): ResolvedAssignment => ({
+  ticketDir: assignmentDir,
   assignmentDir,
   projectSlug: 'syntaur-meta',
   assignmentSlug: 'chat-demo',
+  ticketSlug: 'chat-demo',
   id: ASSIGNMENT_ID,
+  assignmentId: ASSIGNMENT_ID,
   standalone: false,
 });
 

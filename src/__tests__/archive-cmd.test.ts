@@ -3,13 +3,13 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { runArchive, runRestore } from '../commands/_archive-helper.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 let home: string;
 let projectsDir: string;
 let prevHome: string | undefined;
 
-function assignmentMd(id: string, slug: string, status: string): string {
+function ticketMd(id: string, slug: string, status: string): string {
   return `---\nid: ${id}\nslug: ${slug}\ntitle: "${slug}"\nproject: p\nstatus: ${status}\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-04-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\nBody.\n`;
 }
 
@@ -19,16 +19,16 @@ beforeEach(async () => {
   process.env.SYNTAUR_HOME = home;
   projectsDir = resolve(home, 'projects');
 
-  // Project 'p' with a project-scoped assignment 'a1'.
+  // Project 'p' with a project-scoped ticket 'a1'.
   const pDir = resolve(projectsDir, 'p');
-  await mkdir(resolve(pDir, 'assignments', 'a1'), { recursive: true });
+  await mkdir(resolve(pDir, 'tickets', 'a1'), { recursive: true });
   await writeFile(resolve(pDir, 'project.md'), '---\nid: pid\nslug: p\ntitle: "P"\narchived: false\narchivedAt: null\narchivedReason: null\n---\n');
-  await writeFile(resolve(pDir, 'assignments', 'a1', 'assignment.md'), assignmentMd('a1id', 'a1', 'in_progress'));
+  await writeFile(resolve(pDir, 'tickets', 'a1', 'ticket.md'), assignmentMd('a1id', 'a1', 'in_progress'));
 
-  // Standalone assignment resolvable by UUID.
-  const sDir = resolve(home, 'assignments', 'standalone-uuid');
+  // Standalone ticket resolvable by UUID.
+  const sDir = resolve(home, 'tickets', 'standalone-uuid');
   await mkdir(sDir, { recursive: true });
-  await writeFile(resolve(sDir, 'assignment.md'), assignmentMd('standalone-uuid', 'solo', 'review').replace('project: p\n', ''));
+  await writeFile(resolve(sDir, 'ticket.md'), assignmentMd('standalone-uuid', 'solo', 'review').replace('project: p\n', ''));
 });
 
 afterEach(async () => {
@@ -38,29 +38,29 @@ afterEach(async () => {
 });
 
 describe('runArchive / runRestore', () => {
-  it('archives + restores a project-scoped assignment, preserving status', async () => {
-    const path = resolve(projectsDir, 'p', 'assignments', 'a1', 'assignment.md');
+  it('archives + restores a project-scoped ticket, preserving status', async () => {
+    const path = resolve(projectsDir, 'p', 'tickets', 'a1', 'ticket.md');
 
     const archived = await runArchive('a1', { project: 'p', dir: projectsDir, reason: 'stale' });
     expect(archived.success).toBe(true);
-    let fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    let fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(true);
     expect(fm.archivedReason).toBe('stale');
     expect(fm.status).toBe('in_progress'); // status untouched
 
     const restored = await runRestore('a1', { project: 'p', dir: projectsDir });
     expect(restored.success).toBe(true);
-    fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(false);
     expect(fm.archivedAt).toBeNull();
     expect(fm.status).toBe('in_progress'); // prior status preserved
   });
 
-  it('archives a standalone assignment resolved by UUID', async () => {
-    const path = resolve(home, 'assignments', 'standalone-uuid', 'assignment.md');
+  it('archives a standalone ticket resolved by UUID', async () => {
+    const path = resolve(home, 'tickets', 'standalone-uuid', 'ticket.md');
     const res = await runArchive('standalone-uuid', { dir: projectsDir });
     expect(res.success).toBe(true);
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(true);
     expect(fm.status).toBe('review');
   });
@@ -79,6 +79,6 @@ describe('runArchive / runRestore', () => {
   it('returns a failure result when nothing matches', async () => {
     const res = await runArchive('does-not-exist', { dir: projectsDir });
     expect(res.success).toBe(false);
-    expect(res.message).toMatch(/No assignment or project matched/);
+    expect(res.message).toMatch(/No ticket or project matched/);
   });
 });

@@ -20,8 +20,8 @@ afterEach(async () => {
 describe('appendProgressLog', () => {
   it('scaffolds a missing progress.md and lands entryCount: 1', async () => {
     const { path, timestamp } = await appendProgressLog({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       text: 'First entry',
     });
 
@@ -34,13 +34,13 @@ describe('appendProgressLog', () => {
 
   it('gives entryCount: 2 on a second call with the newest entry first', async () => {
     await appendProgressLog({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       text: 'First entry',
     });
     await appendProgressLog({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       text: 'Second entry',
     });
 
@@ -65,8 +65,8 @@ describe('appendProgressEntry', () => {
 describe('appendDecisionEntry', () => {
   it('scaffolds, writes ## title + **Recorded:**, returns { number: 1 }', async () => {
     const result = await appendDecisionEntry({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       title: 'Use X',
       body: 'We chose X because it is simpler.',
     });
@@ -83,14 +83,14 @@ describe('appendDecisionEntry', () => {
 
   it('returns 2 on a second call with decisionCount: 2', async () => {
     await appendDecisionEntry({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       title: 'First',
       body: 'One',
     });
     const result = await appendDecisionEntry({
-      assignmentDir: testDir,
-      assignmentRef: 'demo',
+      ticketDir: testDir,
+      ticketRef: 'demo',
       title: 'Second',
       body: 'Two',
     });

@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -26,7 +26,7 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
   });
 }
 
-function assignmentMd(slug: string, dependsOn: string[]): string {
+function ticketMd(slug: string, dependsOn: string[]): string {
   // The frontmatter parser supports `dependsOn: []` (empty inline) or YAML
   // block style — NOT inline non-empty arrays. Emit block style when present.
   const depsYaml =
@@ -77,14 +77,14 @@ describe('deps warning on start/implement (non-blocking)', () => {
     );
     await mkdir(join(home, 'projects', 'p1'), { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-    // Dependency assignment, NOT terminal (status: draft).
-    const depDir = join(home, 'projects', 'p1', 'assignments', 'dep-a');
+    // Dependency ticket, NOT terminal (status: draft).
+    const depDir = join(home, 'projects', 'p1', 'tickets', 'dep-a');
     await mkdir(depDir, { recursive: true });
-    await writeFile(join(depDir, 'assignment.md'), assignmentMd('dep-a', []));
-    // Main assignment depends on dep-a.
-    const mainDir = join(home, 'projects', 'p1', 'assignments', 'main');
+    await writeFile(join(depDir, 'ticket.md'), assignmentMd('dep-a', []));
+    // Main ticket depends on dep-a.
+    const mainDir = join(home, 'projects', 'p1', 'tickets', 'main');
     await mkdir(mainDir, { recursive: true });
-    mainPath = join(mainDir, 'assignment.md');
+    mainPath = join(mainDir, 'ticket.md');
     await writeFile(mainPath, assignmentMd('main', ['dep-a']));
   });
 
@@ -93,7 +93,7 @@ describe('deps warning on start/implement (non-blocking)', () => {
   });
 
   async function fm() {
-    return parseAssignmentFrontmatter(await readFile(mainPath, 'utf-8'));
+    return parseTicketFrontmatter(await readFile(mainPath, 'utf-8'));
   }
 
   it('implement warns about unmet deps but still succeeds and asserts implementationStarted', async () => {
@@ -113,7 +113,7 @@ describe('deps warning on start/implement (non-blocking)', () => {
 
   it('no warning when the dependency is terminal (completed)', async () => {
     // Mark dep-a completed so the dependency is satisfied.
-    const depPath = join(home, 'projects', 'p1', 'assignments', 'dep-a', 'assignment.md');
+    const depPath = join(home, 'projects', 'p1', 'tickets', 'dep-a', 'ticket.md');
     const depContent = await readFile(depPath, 'utf-8');
     await writeFile(depPath, depContent.replace('status: draft', 'status: completed'));
 

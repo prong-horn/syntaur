@@ -3,7 +3,7 @@
  *
  * When an engagement STAGE-OPEN transition happens (a deliberate stage switch
  * driven by the `implement`/`review` verbs), assert the corresponding
- * session-stage fact on the assignment and let the derive engine recompute
+ * session-stage fact on the ticket and let the derive engine recompute
  * status. This is what makes status track reality instead of self-reported
  * scalars drifting. See decision-record.md for the full design.
  *
@@ -24,20 +24,20 @@
 
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
-import { parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
-import type { AssignmentFrontmatter } from './types.js';
+import { parseTicketFrontmatter, updateTicketFile } from './frontmatter.js';
+import type { TicketFrontmatter } from './types.js';
 import { recomputeAndWrite, resolveRecomputeContext, isStagesMigrated } from './recompute.js';
 
 export interface StageFactInput {
-  /** Path to the target assignment.md (the caller resolves it — honours --dir
+  /** Path to the target ticket.md (the caller resolves it — honours --dir
    * and avoids re-resolving by id against the wrong tree; codex finding). */
-  assignmentPath: string;
+  ticketPath: string;
   /** Project dir for dependency facts; null for standalone. */
   projectDir: string | null;
   /** The stage that just opened (`implement` | `review` | `plan` | …). */
   stage: string;
   /** The stage open before the switch FOR THIS ASSIGNMENT (null when none, or
-   * when the prior engagement was for a different assignment — the caller must
+   * when the prior engagement was for a different ticket — the caller must
    * only pass it when same-assignment). */
   prevStage?: string | null;
   /** Actor for the history entry — 'agent:<id>' | 'human' | 'system'. */
@@ -51,7 +51,7 @@ export interface StageFactInput {
 }
 
 type ScalarWrites = Partial<
-  Pick<AssignmentFrontmatter, 'implementationStarted' | 'reviewRequested' | 'reworkRequested'>
+  Pick<TicketFrontmatter, 'implementationStarted' | 'reviewRequested' | 'reworkRequested'>
 >;
 
 /**
@@ -62,7 +62,7 @@ type ScalarWrites = Partial<
 function computeDelta(
   stage: string,
   prevStage: string | null | undefined,
-  fm: AssignmentFrontmatter,
+  fm: TicketFrontmatter,
 ): ScalarWrites {
   const writes: ScalarWrites = {};
   if (stage === 'implement') {
@@ -89,7 +89,7 @@ function computeDelta(
 function workStartVerb(
   stage: string,
   prevStage: string | null | undefined,
-  fm: AssignmentFrontmatter,
+  fm: TicketFrontmatter,
 ): string | undefined {
   if (stage === 'implement') {
     const afterReview = prevStage === 'review' || fm.phase === 'review';
@@ -100,7 +100,7 @@ function workStartVerb(
 }
 
 export async function assertStageFactOnOpen(input: StageFactInput): Promise<void> {
-  if (!(await fileExists(input.assignmentPath))) return; // nothing to assert against
+  if (!(await fileExists(input.ticketPath))) return; // nothing to assert against
 
   // WS-2 (Decision 1): on the MIGRATED path a stage-open is a `work-start`
   // ENGINE move (traverse the stage's `on: work-start` route), NOT a fact
@@ -111,8 +111,8 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
     // The verb discriminator (WS-3 Task 0): a cheap pre-lock read — the
     // `phase`/`status` binding fields a verb depends on don't change under the
     // move itself, and a verb'd route only ever matches its own verb.
-    const preFm = parseAssignmentFrontmatter(await readFile(input.assignmentPath, 'utf-8'));
-    const result = await recomputeAndWrite(input.assignmentPath, {
+    const preFm = parseTicketFrontmatter(await readFile(input.ticketPath, 'utf-8'));
+    const result = await recomputeAndWrite(input.ticketPath, {
       cause: 'work-start',
       by: input.by ?? 'system',
       projectDir: input.projectDir,
@@ -130,9 +130,9 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
       // and the cascade bounces the ticket straight back to review. The
       // assignee-set (etc.) folds into the same payload after the delta.
       mutate: (content) => {
-        const writes = computeDelta(input.stage, input.prevStage, parseAssignmentFrontmatter(content));
+        const writes = computeDelta(input.stage, input.prevStage, parseTicketFrontmatter(content));
         const withDelta =
-          Object.keys(writes).length > 0 ? updateAssignmentFile(content, writes) : content;
+          Object.keys(writes).length > 0 ? updateTicketFile(content, writes) : content;
         return input.foldMutate ? input.foldMutate(withDelta) : withDelta;
       },
     });
@@ -143,7 +143,7 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
     }
     if (result.warning) throw new Error(result.warning);
     // Only the ENGINE path retires the session-stage facts. If the marker is set
-    // but this assignment resolves to NO per-file workflow (rollout-dormant), the
+    // but this ticket resolves to NO per-file workflow (rollout-dormant), the
     // recompute fell through to the ladder derive WITHOUT the work-start move —
     // so `implementationStarted`/`reviewRequested` were never asserted. Fall
     // through to the legacy fact assertion below (codex review blocker 3). Any
@@ -157,13 +157,13 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
   const pre = computeDelta(
     input.stage,
     input.prevStage,
-    parseAssignmentFrontmatter(await readFile(input.assignmentPath, 'utf-8')),
+    parseTicketFrontmatter(await readFile(input.ticketPath, 'utf-8')),
   );
   if (Object.keys(pre).length === 0) return;
 
   const { context, workflowResolver } = await resolveRecomputeContext();
 
-  const result = await recomputeAndWrite(input.assignmentPath, {
+  const result = await recomputeAndWrite(input.ticketPath, {
     cause: 'stage-open',
     by: input.by ?? 'system',
     projectDir: input.projectDir,
@@ -172,11 +172,11 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
     mutate: (content) => {
       // Re-derive against the FRESH locked content so a concurrent same-assignment
       // stage write can't be clobbered by a stale pre-lock delta (codex r2).
-      const writes = computeDelta(input.stage, input.prevStage, parseAssignmentFrontmatter(content));
-      return Object.keys(writes).length > 0 ? updateAssignmentFile(content, writes) : content;
+      const writes = computeDelta(input.stage, input.prevStage, parseTicketFrontmatter(content));
+      return Object.keys(writes).length > 0 ? updateTicketFile(content, writes) : content;
     },
   });
-  // Terminal assignment ⇒ facts are frozen; refuse loudly (mirrors the verb's
+  // Terminal ticket ⇒ facts are frozen; refuse loudly (mirrors the verb's
   // assertFact behavior) instead of a silent "✓" with the fact unwritten.
   if (result.deferredTerminal) {
     throw new Error(

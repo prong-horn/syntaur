@@ -27,7 +27,7 @@ import { nowTimestamp } from '../utils/timestamp.js';
 import { computeFacts, resolveBindingEnv } from './facts.js';
 import { computeEngineStep, type EngineMove } from './engine-step.js';
 import { appendComment } from './comment-append.js';
-import type { AssignmentFrontmatter } from './types.js';
+import type { TicketFrontmatter } from './types.js';
 import { deriveDimensions, type DerivedDimensions } from './derive.js';
 import { buildDeriveContext, type DeriveContext } from './derive-context.js';
 import {
@@ -36,8 +36,8 @@ import {
 } from './workflow-context.js';
 import {
   appendStatusHistoryEntry,
-  parseAssignmentFrontmatter,
-  updateAssignmentFile,
+  parseTicketFrontmatter,
+  updateTicketFile,
 } from './frontmatter.js';
 import { recordStatusEvent, resolveActor } from './event-emit.js';
 
@@ -56,7 +56,7 @@ const CAS_RETRIES = 3;
  * One-time migration marker (rollout safety): IMPLICIT recompute triggers —
  * the dashboard boot sweep, watcher-driven recomputes, config-change sweeps —
  * stay dormant until `syntaur migrate-derive` has seeded facts. Without this,
- * upgrading the dashboard would re-derive every in-flight assignment before
+ * upgrading the dashboard would re-derive every in-flight ticket before
  * its implementationStarted/reviewRequested standing was seeded, regressing
  * real work. EXPLICIT actions (CLI verbs, dashboard transitions, `syntaur
  * recompute`) are deliberate per-assignment acts and run regardless — their
@@ -101,7 +101,7 @@ export async function resolveDeriveContext(
 
 /** Resolve BOTH the default-lifecycle context (back-compat fallback) and a
  * per-ticket workflow resolver in a SINGLE config read. Recompute callers that
- * act on a specific assignment pass `workflowResolver` into the recompute opts;
+ * act on a specific ticket pass `workflowResolver` into the recompute opts;
  * {@link recomputeAndWrite} then resolves that ticket's own workflow context
  * (derive/terminal/known/registry) from its fresh frontmatter + project binding.
  * `context` stays the default-lifecycle fallback for callers that pass no
@@ -132,8 +132,8 @@ export async function resolveRecomputeContext(): Promise<{
  * Exported (with {@link contentHash}) for WS-3's migration-only locked writer
  * (`migrate-workflows.ts`), which needs the same lock + CAS discipline but
  * must NOT run the ladder derive that `recomputeAndWrite` performs pre-marker. */
-export async function acquireLock(assignmentDir: string): Promise<() => Promise<void>> {
-  const lockPath = resolve(assignmentDir, LOCK_FILE);
+export async function acquireLock(ticketDir: string): Promise<() => Promise<void>> {
+  const lockPath = resolve(ticketDir, LOCK_FILE);
   const token = `${process.pid}:${createHash('sha256').update(`${Math.random()}${Date.now()}`).digest('hex').slice(0, 12)}`;
   for (let attempt = 0; attempt <= LOCK_MAX_WAITS; attempt++) {
     try {
@@ -181,7 +181,7 @@ export interface RecomputeOptions {
   cause: string;
   /** Actor — 'human', 'agent:<id>', or 'system' for watcher/sweep recomputes. */
   by: string | null;
-  /** Project dir for dependency facts; null for standalone assignments. */
+  /** Project dir for dependency facts; null for standalone tickets. */
   projectDir: string | null;
   /** Default-lifecycle derive context — the fallback used when no
    * `workflowResolver` is supplied (legacy single-workflow path). */
@@ -222,7 +222,7 @@ export interface RecomputeResult {
   /** Effective headline after recompute (unchanged when deferred/no-op). */
   status: string;
   dimensions: DerivedDimensions | null;
-  /** True when the assignment is terminal and derivation deferred entirely. */
+  /** True when the ticket is terminal and derivation deferred entirely. */
   deferredTerminal: boolean;
   /** Set when CAS retries were exhausted — caller should surface it. */
   warning?: string;
@@ -238,36 +238,36 @@ export interface RecomputeResult {
  * command transitions use — derived changes are recorded by the existing path.
  */
 export async function recomputeAndWrite(
-  assignmentPath: string,
+  ticketPath: string,
   opts: RecomputeOptions,
 ): Promise<RecomputeResult> {
-  const assignmentDir = dirname(assignmentPath);
+  const ticketDir = dirname(ticketPath);
   // WS-2 Decision 2: the engine-vs-ladder choice is IN here (not the sweep
   // gates). `stages-migrated` unset OR no per-file workflow → the ladder path,
   // byte-for-byte unchanged (golden-tested).
   const stagesMigrated = await isStagesMigrated();
   // Engine success is captured here and returned AFTER the lock releases, so its
   // dissent-note copy (an external comments.md side effect) runs post-release,
-  // not while holding the assignment lock (codex review major 4).
+  // not while holding the ticket lock (codex review major 4).
   let engineResult: RecomputeResult | null = null;
   let engineDissentNotes: Array<{ author: string; body: string }> = [];
   let engineDissentRef = '';
-  const release = await acquireLock(assignmentDir);
+  const release = await acquireLock(ticketDir);
   try {
     for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
-      const original = await readFile(assignmentPath, 'utf-8');
+      const original = await readFile(ticketPath, 'utf-8');
       const hash = contentHash(original);
 
       // Terminal check on the FRESH read, inside the lock — a concurrent
       // completion between caller and lock acquisition freezes facts here.
-      const originalFm = parseAssignmentFrontmatter(original);
+      const originalFm = parseTicketFrontmatter(original);
       // Resolve the ticket's OWN workflow context from its fresh frontmatter +
       // project binding (per-workflow derive/terminal/known/registry). The
       // `workflow`/`type` binding fields don't change under a fact mutate, so
       // resolving from `originalFm` is stable for this transaction. Absent
       // resolver → the default-lifecycle `context` (legacy single-workflow).
       const wctx = opts.workflowResolver
-        ? await opts.workflowResolver.forAssignment(originalFm, opts.projectDir)
+        ? await opts.workflowResolver.forTicket(originalFm, opts.projectDir)
         : null;
       const ctx = wctx ? wctx.deriveContext : opts.context;
       const stageWorkflow = stagesMigrated ? (wctx?.stageWorkflow ?? null) : null;
@@ -291,20 +291,20 @@ export async function recomputeAndWrite(
       // Apply the caller's fact mutation as part of this transaction.
       const content = opts.mutate ? await opts.mutate(original) : original;
       const mutated = content !== original;
-      const frontmatter = mutated ? parseAssignmentFrontmatter(content) : originalFm;
+      const frontmatter = mutated ? parseTicketFrontmatter(content) : originalFm;
 
       // Per-dependency terminal predicate (codex r4): resolve each dependency's
       // OWN workflow terminal set so a mixed-workflow edge isn't misclassified.
       const depTerminalFor =
         engineActive && opts.workflowResolver
-          ? async (depFm: AssignmentFrontmatter): Promise<ReadonlySet<string> | null> => {
+          ? async (depFm: TicketFrontmatter): Promise<ReadonlySet<string> | null> => {
               const sw = await opts.workflowResolver!.stageWorkflowFor(depFm, opts.projectDir);
               return sw ? new Set(sw.stages.filter((s) => s.terminal).map((s) => s.id)) : null;
             }
           : undefined;
 
       const facts = await computeFacts({
-        assignmentDir,
+        ticketDir,
         frontmatter,
         body: extractBody(content),
         projectDir: opts.projectDir,
@@ -319,7 +319,7 @@ export async function recomputeAndWrite(
       //    isn't a stage in this workflow. ─────────────────────────────────────
       if (engineActive && stageWorkflow) {
         const at = nowTimestamp();
-        const env = await resolveBindingEnv(stageWorkflow, frontmatter, assignmentDir);
+        const env = await resolveBindingEnv(stageWorkflow, frontmatter, ticketDir);
         const step = computeEngineStep({
           content,
           frontmatter,
@@ -336,9 +336,9 @@ export async function recomputeAndWrite(
           if (!step.changed) {
             // No engine movement — but a fact mutation still has to land.
             if (mutated) {
-              const cur = await readFile(assignmentPath, 'utf-8');
+              const cur = await readFile(ticketPath, 'utf-8');
               if (contentHash(cur) !== hash) continue;
-              await writeFileForce(assignmentPath, content);
+              await writeFileForce(ticketPath, content);
               return {
                 changed: true,
                 status: step.finalStatus,
@@ -355,12 +355,12 @@ export async function recomputeAndWrite(
               viaEngine: true,
             };
           }
-          const cur = await readFile(assignmentPath, 'utf-8');
+          const cur = await readFile(ticketPath, 'utf-8');
           if (contentHash(cur) !== hash) continue;
-          await writeFileForce(assignmentPath, step.nextContent);
+          await writeFileForce(ticketPath, step.nextContent);
           if (step.finalStatus !== originalFm.status) {
             recordStatusEvent({
-              assignmentId: frontmatter.id,
+              ticketId: frontmatter.id,
               projectSlug: frontmatter.project,
               at,
               actor: resolveActor(opts.by),
@@ -412,7 +412,7 @@ export async function recomputeAndWrite(
             // AC9: record the fact/attestation mutation as a same-status entry
             // and bump `updated`, even though no dimension moved.
             const at = nowTimestamp();
-            toWrite = updateAssignmentFile(toWrite, { updated: at });
+            toWrite = updateTicketFile(toWrite, { updated: at });
             toWrite = appendStatusHistoryEntry(toWrite, {
               at,
               from: frontmatter.status,
@@ -422,16 +422,16 @@ export async function recomputeAndWrite(
               ...(opts.reason !== undefined ? { reason: opts.reason } : {}),
             });
           }
-          const current = await readFile(assignmentPath, 'utf-8');
+          const current = await readFile(ticketPath, 'utf-8');
           if (contentHash(current) !== hash) continue;
-          await writeFileForce(assignmentPath, toWrite);
+          await writeFileForce(ticketPath, toWrite);
           return { changed: true, status: frontmatter.status, dimensions: dims, deferredTerminal: false };
         }
         return { changed: false, status: frontmatter.status, dimensions: dims, deferredTerminal: false };
       }
 
       const at = nowTimestamp();
-      let next = updateAssignmentFile(content, {
+      let next = updateTicketFile(content, {
         status: dims.status,
         phase: dims.phase,
         disposition: dims.disposition,
@@ -452,18 +452,18 @@ export async function recomputeAndWrite(
 
       // Content CAS vs the ORIGINAL read: a non-cooperating writer (human
       // editor) may have raced us. Re-read and verify before the atomic rename.
-      const current = await readFile(assignmentPath, 'utf-8');
+      const current = await readFile(ticketPath, 'utf-8');
       if (contentHash(current) !== hash) {
         continue; // retry the whole read-mutate-compute-write cycle
       }
-      await writeFileForce(assignmentPath, next);
+      await writeFileForce(ticketPath, next);
 
       // Audit event (best-effort): this is the dimension-change status write
       // (from !== to is implied by statusChanged, but recordStatusEvent
       // self-guards on from===to regardless — R5). Actor is the recompute's
       // own resolved `by` (null → 'system').
       recordStatusEvent({
-        assignmentId: frontmatter.id,
+        ticketId: frontmatter.id,
         projectSlug: frontmatter.project,
         at,
         actor: resolveActor(opts.by),
@@ -477,13 +477,13 @@ export async function recomputeAndWrite(
     // The loop ended. If the engine success path broke out, its result is
     // finished post-release below; otherwise the CAS retries were exhausted.
     if (!engineResult) {
-      const frontmatter = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+      const frontmatter = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
       return {
         changed: false,
         status: frontmatter.status,
         dimensions: null,
         deferredTerminal: false,
-        warning: `recompute skipped after ${CAS_RETRIES} concurrent-edit retries: ${assignmentPath}`,
+        warning: `recompute skipped after ${CAS_RETRIES} concurrent-edit retries: ${ticketPath}`,
       };
     }
   } finally {
@@ -497,8 +497,8 @@ export async function recomputeAndWrite(
     for (const note of engineDissentNotes) {
       try {
         await appendComment({
-          assignmentDir,
-          assignmentRef: engineDissentRef,
+          ticketDir,
+          ticketRef: engineDissentRef,
           author: note.author,
           type: 'feedback',
           body: note.body,
@@ -510,7 +510,7 @@ export async function recomputeAndWrite(
     return engineResult;
   }
   // Unreachable: the loop returned, threw, or set engineResult before breaking.
-  throw new Error(`recomputeAndWrite: no result after lock release for ${assignmentPath}`);
+  throw new Error(`recomputeAndWrite: no result after lock release for ${ticketPath}`);
 }
 
 /**
@@ -523,10 +523,10 @@ export async function recomputeDependents(
   changedSlug: string,
   opts: Omit<RecomputeOptions, 'projectDir'>,
 ): Promise<RecomputeResult[]> {
-  const assignmentsDir = resolve(projectDir, 'assignments');
+  const ticketsDir = resolve(projectDir, 'tickets');
   let entries: string[];
   try {
-    entries = await readdir(assignmentsDir);
+    entries = await readdir(ticketsDir);
   } catch {
     return [];
   }
@@ -536,10 +536,10 @@ export async function recomputeDependents(
   const results: RecomputeResult[] = [];
   for (const slug of entries) {
     if (slug === changedSlug) continue;
-    const path = resolve(assignmentsDir, slug, 'assignment.md');
+    const path = resolve(ticketsDir, slug, 'ticket.md');
     if (!(await fileExists(path))) continue;
     try {
-      const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+      const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
       if (!fm.dependsOn.includes(changedSlug)) continue;
       results.push(await recomputeAndWrite(path, { ...opts, projectDir, workflowResolver }));
     } catch {
@@ -557,7 +557,7 @@ export interface SweepSummary {
 }
 
 /**
- * Reconciliation sweep: recompute every assignment under a projects dir (and
+ * Reconciliation sweep: recompute every ticket under a projects dir (and
  * optionally a standalone-assignments dir). Used on dashboard-server boot
  * (catches edits made while it was down), on config.md changes (the rules
  * changed → everything re-derives), by `syntaur recompute --all`, and by the
@@ -596,15 +596,15 @@ export async function recomputeAll(
   }
   for (const project of projects) {
     const projectDir = resolve(projectsDir, project);
-    const assignmentsDir = resolve(projectDir, 'assignments');
+    const ticketsDir = resolve(projectDir, 'tickets');
     let slugs: string[] = [];
     try {
-      slugs = await readdir(assignmentsDir);
+      slugs = await readdir(ticketsDir);
     } catch {
       continue;
     }
     for (const slug of slugs) {
-      const path = resolve(assignmentsDir, slug, 'assignment.md');
+      const path = resolve(ticketsDir, slug, 'ticket.md');
       if (await fileExists(path)) await sweepOne(path, projectDir);
     }
   }
@@ -617,7 +617,7 @@ export async function recomputeAll(
       /* none */
     }
     for (const id of ids) {
-      const path = resolve(standaloneDir, id, 'assignment.md');
+      const path = resolve(standaloneDir, id, 'ticket.md');
       if (await fileExists(path)) await sweepOne(path, null);
     }
   }
@@ -626,27 +626,27 @@ export async function recomputeAll(
 }
 
 /**
- * Best-effort recompute keyed by an assignment DIRECTORY, for explicit
+ * Best-effort recompute keyed by a ticket DIRECTORY, for explicit
  * file-mutating CLI verbs (`plan create`/`plan version`/`capture`) that change a
  * file-derived fact (planExists / planApproved-invalidation) but don't flow
  * through the `assertFact` spine. Resolves the derive context and infers
- * `projectDir` from the directory layout (`<projectDir>/assignments/<slug>` →
+ * `projectDir` from the directory layout (`<projectDir>/tickets/<slug>` →
  * projectDir; standalone → null). EXPLICIT trigger: runs regardless of the
  * migration gate (the verb is a deliberate per-assignment act). Never throws —
  * the verb's primary effect already succeeded — returning null on any failure.
  */
 export async function recomputeAssignmentDir(
-  assignmentDir: string,
+  ticketDir: string,
   cause: string,
   by: string | null,
 ): Promise<RecomputeResult | null> {
   try {
-    const assignmentPath = resolve(assignmentDir, 'assignment.md');
-    if (!(await fileExists(assignmentPath))) return null;
-    const parent = dirname(assignmentDir);
-    const projectDir = basename(parent) === 'assignments' ? dirname(parent) : null;
+    const ticketPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketPath))) return null;
+    const parent = dirname(ticketDir);
+    const projectDir = basename(parent) === 'tickets' ? dirname(parent) : null;
     const { context, workflowResolver } = await resolveRecomputeContext();
-    return await recomputeAndWrite(assignmentPath, {
+    return await recomputeAndWrite(ticketPath, {
       cause,
       by,
       projectDir,

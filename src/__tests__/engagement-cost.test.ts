@@ -39,8 +39,8 @@ function snap(models: Record<string, ModelTokens>): TokenSnapshot {
 function window(opts: {
   sessionId: string;
   projectSlug: string | null;
-  assignmentSlug: string;
-  assignmentId?: string | null;
+  ticketSlug: string;
+  ticketId?: string | null;
   startedAt: string;
   endedAt: string;
   open: TokenSnapshot | null;
@@ -48,9 +48,9 @@ function window(opts: {
 }): void {
   const row = openEngagement({
     sessionId: opts.sessionId,
-    assignmentId: opts.assignmentId ?? null,
+    ticketId: opts.ticketId ?? null,
     projectSlug: opts.projectSlug,
-    assignmentSlug: opts.assignmentSlug,
+    ticketSlug: opts.ticketSlug,
     stage: 'implement',
     startedAt: opts.startedAt,
     tokensAtOpen: opts.open,
@@ -65,42 +65,42 @@ function window(opts: {
 }
 
 describe('assignmentWindowCost', () => {
-  it('(a) attributes each window to the right assignment for A-then-B on the same model', () => {
+  it('(a) attributes each window to the right ticket for A-then-B on the same model', () => {
     const m = 'claude-opus-4-7';
     // One session, same model, cumulative cost grows across both windows:
     //   A: 0.00 -> 1.50  (delta 1.50)
     //   B: 1.50 -> 4.00  (delta 2.50)
     window({
-      sessionId: 's1', projectSlug: 'proj', assignmentSlug: 'A',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ [m]: model({ total: 100, cost: 0 }) }),
       close: snap({ [m]: model({ total: 200, cost: 1.5 }) }),
     });
     window({
-      sessionId: 's1', projectSlug: 'proj', assignmentSlug: 'B',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B',
       startedAt: '2026-06-01T02:00:00.000Z', endedAt: '2026-06-01T03:00:00.000Z',
       open: snap({ [m]: model({ total: 200, cost: 1.5 }) }),
       close: snap({ [m]: model({ total: 400, cost: 4.0 }) }),
     });
 
-    const a = assignmentWindowCost({ projectSlug: 'proj', assignmentSlug: 'A' });
-    const b = assignmentWindowCost({ projectSlug: 'proj', assignmentSlug: 'B' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const b = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'B' });
     expect(a.cost).toBeCloseTo(1.5, 6);
     expect(a.pricedWindowCount).toBe(1);
     expect(b.cost).toBeCloseTo(2.5, 6);
     expect(b.pricedWindowCount).toBe(1);
-    // NOT the whole cumulative (4.0) attributed to one assignment.
+    // NOT the whole cumulative (4.0) attributed to one ticket.
     expect(a.cost + b.cost).toBeCloseTo(4.0, 6);
   });
 
   it('(b) flags a null-open window as uncomputable, not silently zeroed', () => {
     window({
-      sessionId: 's2', projectSlug: 'proj', assignmentSlug: 'A',
+      sessionId: 's2', projectSlug: 'proj', ticketSlug: 'A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: null,
       close: snap({ 'claude-opus-4-7': model({ total: 200, cost: 3.0 }) }),
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', assignmentSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     expect(a.cost).toBe(0);
     expect(a.uncomputableWindowCount).toBe(1);
     expect(a.pricedWindowCount).toBe(0);
@@ -110,7 +110,7 @@ describe('assignmentWindowCost', () => {
     const known = 'moonshotai/kimi-k2.6'; // in MODEL_PRICING (input 0.95 / 1e6)
     const unknown = 'claude-opus-4-7'; // priceForModel returns null
     window({
-      sessionId: 's3', projectSlug: 'proj', assignmentSlug: 'A',
+      sessionId: 's3', projectSlug: 'proj', ticketSlug: 'A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       // cost delta 0 for both, but input tokens grew by 1,000,000 each.
       open: snap({
@@ -122,7 +122,7 @@ describe('assignmentWindowCost', () => {
         [unknown]: model({ input: 1_000_000, total: 1_000_000, cost: 0 }),
       }),
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', assignmentSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     // known model: 1e6 * 0.95 / 1e6 = 0.95; unknown: 0 (not priced) but window still computable.
     expect(a.cost).toBeCloseTo(0.95, 6);
     expect(a.pricedWindowCount).toBe(1);
@@ -131,54 +131,54 @@ describe('assignmentWindowCost', () => {
 
   it('(d) clamps a negative cost delta to 0 and counts it as anomalous', () => {
     window({
-      sessionId: 's4', projectSlug: 'proj', assignmentSlug: 'A',
+      sessionId: 's4', projectSlug: 'proj', ticketSlug: 'A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ total: 200, cost: 5.0 }) }),
       close: snap({ 'claude-opus-4-7': model({ total: 100, cost: 2.0 }) }), // went DOWN
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', assignmentSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     expect(a.cost).toBe(0);
     expect(a.negativeDeltaCount).toBe(1);
     expect(a.pricedWindowCount).toBe(1);
   });
 
-  it('(e) matches a standalone assignment via project_slug IS NULL', () => {
+  it('(e) matches a standalone ticket via project_slug IS NULL', () => {
     window({
-      sessionId: 's5', projectSlug: null, assignmentSlug: 'solo',
+      sessionId: 's5', projectSlug: null, ticketSlug: 'solo',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ total: 0, cost: 0 }) }),
       close: snap({ 'claude-opus-4-7': model({ total: 50, cost: 0.7 }) }),
     });
     // Empty-string projectSlug (the standalone endpoint shape) maps to the NULL match.
-    const viaEmpty = assignmentWindowCost({ projectSlug: '', assignmentSlug: 'solo' });
-    const viaNull = assignmentWindowCost({ projectSlug: null, assignmentSlug: 'solo' });
+    const viaEmpty = ticketWindowCost({ projectSlug: '', ticketSlug: 'solo' });
+    const viaNull = ticketWindowCost({ projectSlug: null, ticketSlug: 'solo' });
     expect(viaEmpty.cost).toBeCloseTo(0.7, 6);
     expect(viaNull.cost).toBeCloseTo(0.7, 6);
   });
 
   it('matches by assignment_id when provided', () => {
     window({
-      sessionId: 's6', projectSlug: 'proj', assignmentSlug: 'A', assignmentId: 'id-A',
+      sessionId: 's6', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'id-A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ cost: 0 }) }),
       close: snap({ 'claude-opus-4-7': model({ cost: 1.25 }) }),
     });
-    const a = assignmentWindowCost({ assignmentId: 'id-A' });
+    const a = ticketWindowCost({ ticketId: 'id-A' });
     expect(a.cost).toBeCloseTo(1.25, 6);
   });
 });
 
 describe('projectWindowCosts', () => {
-  it('(f) enumerates every assignment with a closed window in the project', () => {
+  it('(f) enumerates every ticket with a closed window in the project', () => {
     const m = 'claude-opus-4-7';
     window({
-      sessionId: 's1', projectSlug: 'proj', assignmentSlug: 'A',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ [m]: model({ cost: 0 }) }),
       close: snap({ [m]: model({ cost: 1.5 }) }),
     });
     window({
-      sessionId: 's1', projectSlug: 'proj', assignmentSlug: 'B',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B',
       startedAt: '2026-06-01T02:00:00.000Z', endedAt: '2026-06-01T03:00:00.000Z',
       open: snap({ [m]: model({ cost: 1.5 }) }),
       close: snap({ [m]: model({ cost: 4.0 }) }),

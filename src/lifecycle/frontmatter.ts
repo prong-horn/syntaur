@@ -1,5 +1,5 @@
 import type {
-  AssignmentFrontmatter,
+  TicketFrontmatter,
   AttestationRecord,
   ExternalId,
   FrozenCheck,
@@ -443,7 +443,7 @@ function parseFrozenChecks(frontmatter: string): FrozenCheck[] | null {
   return out;
 }
 
-export function parseAssignmentFrontmatter(fileContent: string): AssignmentFrontmatter {
+export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
   const [frontmatter] = extractFrontmatter(fileContent);
 
   function getField(key: string): string | null {
@@ -460,7 +460,7 @@ export function parseAssignmentFrontmatter(fileContent: string): AssignmentFront
     type: getField('type'),
     workflow: getField('workflow'),
     status: getField('status') ?? 'pending',
-    priority: (getField('priority') ?? 'medium') as AssignmentFrontmatter['priority'],
+    priority: (getField('priority') ?? 'medium') as TicketFrontmatter['priority'],
     created: getField('created') ?? '',
     updated: getField('updated') ?? '',
     assignee: getField('assignee'),
@@ -524,11 +524,11 @@ function formatYamlValue(value: string | boolean | null): string {
   return value;
 }
 
-export function updateAssignmentFile(
+export function updateTicketFile(
   fileContent: string,
   updates: Partial<
     Pick<
-      AssignmentFrontmatter,
+      TicketFrontmatter,
       | 'status'
       | 'workflow'
       | 'assignee'
@@ -609,13 +609,13 @@ function findWorkspaceBlock(
  * field ordering and unknown workspace fields. If the `workspace:` block does
  * not exist, it is appended to the frontmatter.
  */
-export function updateAssignmentWorkspace(
+export function updateTicketWorkspace(
   fileContent: string,
   partial: Partial<Workspace>,
 ): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
-    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
 
   const fmBlock = fmMatch[2];
@@ -653,7 +653,7 @@ export function updateAssignmentWorkspace(
 }
 
 /**
- * Relabel a status id within an assignment's `statusHistory` — rewrite every
+ * Relabel a status id within a ticket's `statusHistory` — rewrite every
  * entry whose `from`/`to` equals `oldId` to `newId`, WITHOUT appending a new
  * entry or changing any `at`. Used by `syntaur status rename`: a rename is a
  * relabel, not a transition, so it must preserve `statusAge` (no new entry) yet
@@ -760,18 +760,18 @@ function tryJson(raw: string): unknown {
 }
 
 /**
- * Append one entry to an assignment file's `statusHistory` frontmatter list,
+ * Append one entry to a ticket file's `statusHistory` frontmatter list,
  * returning the new file content. Robust to three states:
  *   (i)   no `statusHistory:` key      → create the block before the closing `---`;
  *   (ii)  inline `statusHistory: []`   → convert it to a block with this entry;
  *   (iii) existing block               → append the item after the last item.
  * This is the single shared serializer used by the lifecycle transition paths and
  * the dashboard write paths. Mirrors the bespoke block handling of
- * `updateAssignmentWorkspace` (scalar `updateAssignmentFile` cannot append to a list).
+ * `updateTicketWorkspace` (scalar `updateTicketFile` cannot append to a list).
  */
 /**
  * Set or clear a flat nested mapping block (`header:` + indented `key: value`
- * lines) in assignment frontmatter. `record = null` writes `header: null`
+ * lines) in ticket frontmatter. `record = null` writes `header: null`
  * (preserving the key so future sets edit in place). Creates the block before
  * the closing `---` when absent. Used for `planApproval` and `override`.
  *
@@ -786,7 +786,7 @@ export function updateNestedBlock(
 ): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
-    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
   const fmBlock = fmMatch[2];
 
@@ -849,7 +849,7 @@ export function updateOverride(fileContent: string, override: StatusOverride | n
  * map through {@link updateNestedBlock}). `value` must already be the CANONICAL
  * serialization (`'true'`/`'false'` / `String(n)`) — the CLI coerces before
  * calling. Dedicated block writer (like {@link updatePlanApproval}); no
- * `updateAssignmentFile` whitelist entry needed.
+ * `updateTicketFile` whitelist entry needed.
  */
 export function updateFactsMap(fileContent: string, name: string, value: string): string {
   const [frontmatter] = extractFrontmatter(fileContent);
@@ -907,7 +907,7 @@ function findAttestationsBlock(
 export function upsertAttestation(fileContent: string, record: AttestationRecord): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
-    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
   const fmBlock = fmMatch[2];
 
@@ -942,7 +942,7 @@ export function appendStatusHistoryEntry(
 ): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
-    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
   const fmBlock = fmMatch[2];
   const item = renderStatusHistoryItem(entry);
@@ -1004,7 +1004,7 @@ function findListBlock(
 function setFrontmatterBlock(fileContent: string, header: string, rendered: string): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
-    throw new Error('No frontmatter found in assignment file. Expected --- delimiters.');
+    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
   const fmBlock = fmMatch[2];
   const scalarRegex = new RegExp(`^${header}:[ \\t]*(\\[[ \\t]*\\]|null|~)[ \\t]*$`, 'm');
@@ -1090,3 +1090,8 @@ export function writeFrozenChecks(fileContent: string, checks: FrozenCheck[] | n
   if (checks.length === 0) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: []');
   return replaceListBlock(fileContent, 'frozenChecks', checks.map(renderFrozenCheckItem));
 }
+
+/** @deprecated migrate-* commands and dashboard compat until Task 2 */
+export const parseAssignmentFrontmatter = parseTicketFrontmatter;
+/** @deprecated migrate-* commands and dashboard compat until Task 2 */
+export const updateAssignmentFile = updateTicketFile;

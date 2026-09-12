@@ -20,9 +20,12 @@ export function defaultProjectDir(): string {
   return resolve(syntaurRoot(), 'projects');
 }
 
-export function assignmentsDir(): string {
-  return resolve(syntaurRoot(), 'assignments');
+export function ticketsDir(): string {
+  return resolve(syntaurRoot(), 'tickets');
 }
+
+/** @deprecated Dashboard compat until Task 2 — standalone tree is now under tickets/ */
+export const assignmentsDir = ticketsDir;
 
 export function playbooksDir(): string {
   return resolve(syntaurRoot(), 'playbooks');

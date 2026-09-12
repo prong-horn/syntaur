@@ -50,7 +50,7 @@ tags: []
 
 # ${slug}
 `;
-  const p = join(dir, 'assignment.md');
+  const p = join(dir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -81,7 +81,7 @@ beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-status-res-api-'));
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   projectsDir = join(tmpHome, 'projects');
-  standaloneDir = join(tmpHome, '.syntaur', 'assignments');
+  standaloneDir = join(tmpHome, '.syntaur', 'tickets');
   await mkdir(projectsDir, { recursive: true });
   await mkdir(standaloneDir, { recursive: true });
   process.env.HOME = tmpHome;
@@ -112,9 +112,9 @@ afterEach(async () => {
 
 describe('GET /affected/:id', () => {
   it('returns count + sample for a status with affected assignments', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a3'), 'a3', 'in_progress');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'in_progress');
 
     const res = await fetch(`${baseUrl}/affected/pending`);
     expect(res.status).toBe(200);
@@ -126,7 +126,7 @@ describe('GET /affected/:id', () => {
     expect(body.assignments[0].display).toMatch(/p1\/a[12]/);
   });
 
-  it('returns count=0 for an id with no assignments', async () => {
+  it('returns count=0 for an id with no tickets', async () => {
     const res = await fetch(`${baseUrl}/affected/in_progress`);
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -137,7 +137,7 @@ describe('GET /affected/:id', () => {
 
 describe('POST / — resolution-aware writes', () => {
   it('(a) zero-affected drop succeeds without resolutions', async () => {
-    // Drop "completed" — no assignment is on completed.
+    // Drop "completed" — no ticket is on completed.
     const newStatuses = baseStatuses.filter((s) => s.id !== 'completed');
     const res = await fetch(baseUrl, {
       method: 'POST',
@@ -201,8 +201,8 @@ statuses:
   });
 
   it('(b) drop with remap rewrites frontmatters + writes config', async () => {
-    const a1Path = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    const a2Path = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    const a1Path = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    const a2Path = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -227,9 +227,9 @@ statuses:
     expect(a2).toMatch(/^status: in_progress$/m);
   });
 
-  it('(c) drop with delete removes assignment dirs + writes config', async () => {
-    const a1Path = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    const a2Path = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+  it('(c) drop with delete removes ticket dirs + writes config', async () => {
+    const a1Path = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    const a2Path = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -250,7 +250,7 @@ statuses:
   });
 
   it('(d) drop with affected and no resolution → 409 unresolved-orphans with sample', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -287,7 +287,7 @@ statuses:
   });
 
   it('(f) remap target not in newStatuses → 400 invalid-remap-target not-in-new-config', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -307,7 +307,7 @@ statuses:
   });
 
   it('(g) remap target is brand-new status (not in oldIds) → 400 not-in-old-config', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     // Add a brand-new status "triage" and drop "pending" remapping to "triage".
     const newStatuses = [
@@ -331,7 +331,7 @@ statuses:
   });
 
   it('(h) duplicate resolution ids → 400 duplicate-resolution-ids', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -371,8 +371,8 @@ statuses:
   });
 
   it('(k) per-resolution counts in applied.byId reflect actual writes (not scan-time list size)', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
 
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');
     const res = await fetch(baseUrl, {
@@ -391,7 +391,7 @@ statuses:
   });
 
   it('(j) remap target same as source → 400 invalid-remap-target same-as-source', async () => {
-    await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'pending');
+    await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
     // Drop pending. Resolution target = 'pending' (same as source).
     const newStatuses = baseStatuses.filter((s) => s.id !== 'pending');

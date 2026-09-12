@@ -2,12 +2,12 @@
  * Read-only staleness watchdog (pure core).
  *
  * Proactively surfaces assignments whose status has gone stale WITHOUT anyone
- * loading the dashboard, by emitting an audit event the first time an assignment
+ * loading the dashboard, by emitting an audit event the first time a ticket
  * becomes stale and another when it recovers. Modeled on the idempotent
  * `gcExpiredLeases` sweep: running the same tick twice with the same inputs emits
  * nothing new — the `seen` set is the dedup cursor.
  *
- * STRICTLY read-only (decision D1): this never writes assignment frontmatter,
+ * STRICTLY read-only (decision D1): this never writes ticket frontmatter,
  * status, or statusHistory. Its ONLY side effect is the caller-supplied `emit`
  * (which the server points at the audit event log) — and that fires at most once
  * per stale episode, so repeated ticks don't spam.
@@ -16,7 +16,9 @@
 import type { StaleReason } from './classify.js';
 
 export interface StaleCandidate {
-  assignmentId: string;
+  ticketId?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentId?: string;
   projectSlug: string | null;
   /** Empty → not currently stale. */
   reasons: StaleReason[];
@@ -25,7 +27,9 @@ export interface StaleCandidate {
 export type WatchdogEventType = 'staleness-detected' | 'staleness-cleared';
 
 export interface WatchdogEvent {
-  assignmentId: string;
+  ticketId?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentId?: string;
   projectSlug: string | null;
   type: WatchdogEventType;
   /** The reasons at detection time; empty for a clear event. */
@@ -54,7 +58,9 @@ export function runStalenessWatchdogTick(
 ): WatchdogSummary {
   const staleNow = new Map<string, StaleCandidate>();
   for (const c of candidates) {
-    if (c.reasons.length > 0) staleNow.set(c.assignmentId, c);
+    const id = c.ticketId ?? c.assignmentId;
+    if (!id) continue;
+    if (c.reasons.length > 0) staleNow.set(id, c);
   }
 
   let newlyStale = 0;
@@ -62,7 +68,7 @@ export function runStalenessWatchdogTick(
     if (!seen.has(id)) {
       seen.add(id);
       newlyStale++;
-      emit({ assignmentId: id, projectSlug: c.projectSlug, type: 'staleness-detected', reasons: c.reasons });
+      emit({ ticketId: id, projectSlug: c.projectSlug, type: 'staleness-detected', reasons: c.reasons });
     }
   }
 
@@ -72,8 +78,8 @@ export function runStalenessWatchdogTick(
       seen.delete(id);
       cleared++;
       // projectSlug isn't retained for recovered items; the consumer keys on
-      // assignmentId. (Recovery events are advisory.)
-      emit({ assignmentId: id, projectSlug: null, type: 'staleness-cleared', reasons: [] });
+      // ticketId. (Recovery events are advisory.)
+      emit({ ticketId: id, projectSlug: null, type: 'staleness-cleared', reasons: [] });
     }
   }
 

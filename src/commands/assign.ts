@@ -5,12 +5,12 @@ export interface AssignOptions extends LifecycleOptions {
 }
 
 export async function assignCommand(
-  assignment: string,
+  ticket: string,
   options: AssignOptions,
 ): Promise<void> {
   if (!options.agent) {
     throw new Error('--agent <name> is required.');
   }
-  const result = await runAssign(assignment, options.agent, options);
+  const result = await runAssign(ticket, options.agent, options);
   reportResult(result);
 }

@@ -1,13 +1,13 @@
 /**
  * Per-window / per-assignment cost from engagement SNAPSHOT deltas — the source
- * of truth for assignment cost attribution (decision-record.md Decision 1/3).
+ * of truth for ticket cost attribution (decision-record.md Decision 1/3).
  *
  * `usage_events` is cumulative per `(session_id, model)` with a date-only
  * session-level `event_ts`, so it CANNOT split one session's cost across two
  * assignments it worked in sequence. Each engagement instead snapshots the
  * session's cumulative per-model cost at open and close (`tokens_at_open` /
  * `tokens_at_close`); a window's cost is the per-model `cost` DELTA between them.
- * Summing windows per assignment attributes each window to the right assignment
+ * Summing windows per ticket attributes each window to the right ticket
  * even when the same model spans both (the M2 fix).
  *
  * Cost source: the snapshot already carries ccusage `cost` per model
@@ -40,11 +40,11 @@ export interface WindowCostResult {
 
 export interface AssignmentWindowCostOpts {
   /** Preferred match key — the engagement's `assignment_id`, when known. */
-  assignmentId?: string | null;
+  ticketId?: string | null;
   /** Fallback match: project-nested slug; empty/null ⇒ standalone (NULL match). */
   projectSlug?: string | null;
-  /** Fallback match: the assignment slug. Required when `assignmentId` is absent. */
-  assignmentSlug?: string | null;
+  /** Fallback match: the ticket slug. Required when `ticketId` is absent. */
+  ticketSlug?: string | null;
   /** Inclusive `since` (YYYY-MM-DD) — filters windows by `ended_at`. */
   since?: string;
   /** Inclusive `until` (YYYY-MM-DD) — filters windows by `ended_at`. */
@@ -61,8 +61,8 @@ export interface ProjectWindowCostsOpts {
 }
 
 export interface AssignmentWindowCost extends WindowCostResult {
-  assignmentSlug: string;
-  assignmentId: string | null;
+  ticketSlug: string;
+  ticketId: string | null;
 }
 
 interface EngagementCostRow {
@@ -184,15 +184,15 @@ function rollupWindows(rows: EngagementCostRow[], modelFilter: string | undefine
  * `assignment_id` when supplied, else by `(project_slug, assignment_slug)` —
  * standalone (`projectSlug` empty/null) matches `project_slug IS NULL`.
  */
-export function assignmentWindowCost(opts: AssignmentWindowCostOpts): WindowCostResult {
+export function ticketWindowCost(opts: AssignmentWindowCostOpts): WindowCostResult {
   const db = engagementDb();
   if (!db) return { ...EMPTY };
   const clauses = ['ended_at IS NOT NULL'];
   const params: unknown[] = [];
 
-  if (opts.assignmentId) {
+  if (opts.ticketId) {
     clauses.push('assignment_id = ?');
-    params.push(opts.assignmentId);
+    params.push(opts.ticketId);
   } else {
     const proj = opts.projectSlug && opts.projectSlug.length > 0 ? opts.projectSlug : null;
     if (proj === null) {
@@ -202,7 +202,7 @@ export function assignmentWindowCost(opts: AssignmentWindowCostOpts): WindowCost
       params.push(proj);
     }
     clauses.push('assignment_slug = ?');
-    params.push(opts.assignmentSlug ?? null);
+    params.push(opts.ticketSlug ?? null);
   }
 
   const since = sinceBound(opts.since);
@@ -227,9 +227,9 @@ export function assignmentWindowCost(opts: AssignmentWindowCostOpts): WindowCost
 }
 
 /**
- * Per-assignment cost for EVERY assignment that has at least one closed
+ * Per-assignment cost for EVERY ticket that has at least one closed
  * engagement window in the project, keyed by `assignment_slug`. The project
- * rollup endpoint unions these keys with its `usage_daily` keys so an assignment
+ * rollup endpoint unions these keys with its `usage_daily` keys so a ticket
  * with a snapshot window but no `usage_daily` row (the A-then-B cumulative-row
  * case) still appears with its cost.
  */
@@ -272,10 +272,13 @@ export function projectWindowCosts(
   const out = new Map<string, AssignmentWindowCost>();
   for (const [slug, bucket] of grouped) {
     out.set(slug, {
-      assignmentSlug: slug,
-      assignmentId: idForSlug.get(slug) ?? null,
+      ticketSlug: slug,
+      ticketId: idForSlug.get(slug) ?? null,
       ...rollupWindows(bucket, opts.model),
     });
   }
   return out;
 }
+
+/** @deprecated Dashboard compat until Task 2 */
+export const assignmentWindowCost = ticketWindowCost;

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildEngineInput, getCheckStates } from '../lifecycle/engine-input.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { AttestationEnv } from '../lifecycle/facts.js';
-import type { AssignmentFrontmatter, AttestationRecord, Solicitation } from '../lifecycle/types.js';
+import type { TicketFrontmatter, AttestationRecord, Solicitation } from '../lifecycle/types.js';
 import type { AssignmentFacts } from '../lifecycle/derive.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
 
@@ -35,8 +35,8 @@ statusHistory: []
 # T
 `;
 
-function fm(overrides: Partial<AssignmentFrontmatter>): AssignmentFrontmatter {
-  return { ...parseAssignmentFrontmatter(BASE), ...overrides };
+function fm(overrides: Partial<TicketFrontmatter>): TicketFrontmatter {
+  return { ...parseTicketFrontmatter(BASE), ...overrides };
 }
 
 const HEAD = 'deadbeefcafe';

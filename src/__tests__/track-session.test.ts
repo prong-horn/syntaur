@@ -55,21 +55,21 @@ describe('trackSessionCommand session-id self-resolution', () => {
 
 
   it('resolves and stores assignment_id on the opened engagement (M1)', async () => {
-    // A project assignment with a frontmatter id under the projects dir.
+    // A project ticket with a frontmatter id under the projects dir.
     const projectsDir = resolve(testDir, 'projects');
-    const asgnDir = resolve(projectsDir, 'proj', 'assignments', 'asgn');
+    const asgnDir = resolve(projectsDir, 'proj', 'tickets', 'asgn');
     await mkdir(asgnDir, { recursive: true });
     await writeFile(
       resolve(projectsDir, 'proj', 'project.md'),
       `---\nslug: proj\ntitle: proj\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# proj\n`,
     );
     await writeFile(
-      resolve(asgnDir, 'assignment.md'),
+      resolve(asgnDir, 'ticket.md'),
       `---\nid: asgn-uuid-1\nslug: asgn\ntitle: asgn\nstatus: in_progress\n---\n# asgn\n`,
     );
 
     await trackSessionCommand(
-      { agent: 'claude', sessionId: 'track-id-1', path: testDir, dir: projectsDir, project: 'proj', assignment: 'asgn' },
+      { agent: 'claude', sessionId: 'track-id-1', path: testDir, dir: projectsDir, project: 'proj', ticket: 'asgn' },
       { fallbackPid: () => null },
     );
 
@@ -80,24 +80,24 @@ describe('trackSessionCommand session-id self-resolution', () => {
     expect(open!.assignment_slug).toBe('asgn');
   });
 
-  it('rejects a WEAK session id with no --assignment (gate)', async () => {
+  it('rejects a WEAK session id with no --ticket (gate)', async () => {
     await expect(
       trackSessionCommand(
         { agent: 'claude', path: testDir },
         { resolveSessionId: async () => ({ id: 'weak-id', provenance: 'WEAK' as const }), fallbackPid: () => null },
       ),
-    ).rejects.toThrow(/--assignment/);
+    ).rejects.toThrow(/--ticket/);
   });
 
-  it('accepts a WEAK session id when --assignment is provided', async () => {
+  it('accepts a WEAK session id when --ticket is provided', async () => {
     await trackSessionCommand(
-      { agent: 'claude', path: testDir, assignment: 'my-assignment' },
+      { agent: 'claude', path: testDir, ticket: 'my-assignment' },
       { resolveSessionId: async () => ({ id: 'weak-id-2', provenance: 'WEAK' as const }), fallbackPid: () => null },
     );
     expect(getSessionById('weak-id-2')).not.toBeNull();
   });
 
-  it('accepts an EXPLICIT --session-id with no --assignment', async () => {
+  it('accepts an EXPLICIT --session-id with no --ticket', async () => {
     await trackSessionCommand(
       { agent: 'claude', sessionId: 'explicit-id-2', path: testDir },
       { fallbackPid: () => null },

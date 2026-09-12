@@ -56,10 +56,10 @@ function buildV5Db(path: string): void {
   db.close();
 }
 
-async function writeAssignmentFile(dir: string, id: string, slug: string): Promise<void> {
+async function writeTicketFile(dir: string, id: string, slug: string): Promise<void> {
   await mkdir(dir, { recursive: true });
   await writeFile(
-    resolve(dir, 'assignment.md'),
+    resolve(dir, 'ticket.md'),
     `---\nid: ${id}\nslug: ${slug}\ntitle: "T"\nstatus: in_progress\n---\n\n# ${slug}\n`,
     'utf-8',
   );
@@ -71,8 +71,8 @@ beforeEach(async () => {
   dbPath = resolve(testDir, 'syntaur.db');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = homeDir;
-  await writeAssignmentFile(resolve(homeDir, 'projects/proj-a/assignments/asg-1'), PROJ_ASG_ID, 'asg-1');
-  await writeAssignmentFile(resolve(homeDir, 'assignments', STANDALONE_UUID), STANDALONE_UUID, STANDALONE_UUID);
+  await writeTicketFile(resolve(homeDir, 'projects/proj-a/tickets/asg-1'), PROJ_ASG_ID, 'asg-1');
+  await writeTicketFile(resolve(homeDir, 'tickets', STANDALONE_UUID), STANDALONE_UUID, STANDALONE_UUID);
   resetSessionDb();
 });
 

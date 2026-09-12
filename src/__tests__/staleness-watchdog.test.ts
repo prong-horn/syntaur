@@ -5,7 +5,7 @@ import type { StaleReason } from '../staleness/classify.js';
 const REASON: StaleReason = { kind: 'review_aging', label: 'Awaiting review', severity: 'high' };
 
 function cand(id: string, stale: boolean, project: string | null = 'p1'): StaleCandidate {
-  return { assignmentId: id, projectSlug: project, reasons: stale ? [REASON] : [] };
+  return { ticketId: id, projectSlug: project, reasons: stale ? [REASON] : [] };
 }
 
 describe('runStalenessWatchdogTick', () => {
@@ -15,7 +15,7 @@ describe('runStalenessWatchdogTick', () => {
     const summary = runStalenessWatchdogTick([cand('a', true), cand('b', false)], seen, (e) => events.push(e));
     expect(summary).toEqual({ scanned: 2, stale: 1, newlyStale: 1, cleared: 0 });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ assignmentId: 'a', type: 'staleness-detected' });
+    expect(events[0]).toMatchObject({ ticketId: 'a', type: 'staleness-detected' });
     expect(seen.has('a')).toBe(true);
   });
 
@@ -28,12 +28,12 @@ describe('runStalenessWatchdogTick', () => {
     expect(summary.newlyStale).toBe(0);
   });
 
-  it('emits staleness-cleared when an assignment recovers, and forgets it', () => {
+  it('emits staleness-cleared when a ticket recovers, and forgets it', () => {
     const seen = new Set<string>(['a']);
     const events: WatchdogEvent[] = [];
     const summary = runStalenessWatchdogTick([cand('a', false)], seen, (e) => events.push(e));
     expect(summary.cleared).toBe(1);
-    expect(events[0]).toMatchObject({ assignmentId: 'a', type: 'staleness-cleared' });
+    expect(events[0]).toMatchObject({ ticketId: 'a', type: 'staleness-cleared' });
     expect(seen.has('a')).toBe(false);
   });
 
@@ -58,7 +58,7 @@ describe('runStalenessWatchdogTick', () => {
       (e) => events.push(e),
     );
     expect(summary).toEqual({ scanned: 3, stale: 2, newlyStale: 1, cleared: 1 });
-    expect(events.map((e) => `${e.type}:${e.assignmentId}`).sort()).toEqual([
+    expect(events.map((e) => `${e.type}:${e.ticketId}`).sort()).toEqual([
       'staleness-cleared:gone',
       'staleness-detected:fresh',
     ]);

@@ -5,8 +5,8 @@ import { join } from 'node:path';
 import {
   buildWorkflowContext,
   makeWorkflowContextResolver,
-  resolveAssignmentWorkflowContext,
-  resolveAssignmentWorkflowId,
+  resolveTicketWorkflowContext,
+  resolveTicketWorkflowId,
   type WorkflowConfigView,
 } from '../lifecycle/workflow-context.js';
 import { DEFAULT_DERIVE_CONFIG } from '../utils/derive-config.js';
@@ -59,49 +59,49 @@ const config: WorkflowConfigView = {
   defaultWorkflow: null,
 };
 
-describe('resolveAssignmentWorkflowId — first-hit-wins precedence', () => {
+describe('resolveTicketWorkflowId — first-hit-wins precedence', () => {
   it('assignment `workflow:` wins over everything', () => {
     const binding: ProjectWorkflowBinding = {
       defaultWorkflow: 'feature',
       workflowByType: { bug: 'feature' },
     };
-    expect(resolveAssignmentWorkflowId(config, binding, { workflow: 'bug', type: 'bug' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: 'bug', type: 'bug' })).toBe(
       'bug',
     );
   });
 
-  it('falls to project workflowByType[type] when no assignment override', () => {
+  it('falls to project workflowByType[type] when no ticket override', () => {
     const binding: ProjectWorkflowBinding = {
       defaultWorkflow: 'feature',
       workflowByType: { bug: 'bug' },
     };
-    expect(resolveAssignmentWorkflowId(config, binding, { workflow: null, type: 'bug' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: null, type: 'bug' })).toBe(
       'bug',
     );
   });
 
   it('falls to project defaultWorkflow when type is unmapped', () => {
     const binding: ProjectWorkflowBinding = { defaultWorkflow: 'feature', workflowByType: {} };
-    expect(resolveAssignmentWorkflowId(config, binding, { workflow: null, type: 'chore' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: null, type: 'chore' })).toBe(
       'feature',
     );
   });
 
   it('falls to global defaultWorkflow when project has no binding', () => {
     const cfg: WorkflowConfigView = { ...config, defaultWorkflow: 'feature' };
-    expect(resolveAssignmentWorkflowId(cfg, EMPTY, { workflow: null, type: null })).toBe('feature');
+    expect(resolveTicketWorkflowId(cfg, EMPTY, { workflow: null, type: null })).toBe('feature');
   });
 
   it('terminates at "default" when nothing else resolves', () => {
-    expect(resolveAssignmentWorkflowId(config, EMPTY, { workflow: null, type: null })).toBe(
+    expect(resolveTicketWorkflowId(config, EMPTY, { workflow: null, type: null })).toBe(
       'default',
     );
   });
 
   it('skips an unknown/deleted workflow id and falls through', () => {
     const binding: ProjectWorkflowBinding = { defaultWorkflow: 'bug', workflowByType: {} };
-    // assignment override points at a ghost id → skipped → project default 'bug'
-    expect(resolveAssignmentWorkflowId(config, binding, { workflow: 'ghost', type: null })).toBe(
+    // ticket override points at a ghost id → skipped → project default 'bug'
+    expect(resolveTicketWorkflowId(config, binding, { workflow: 'ghost', type: null })).toBe(
       'bug',
     );
   });
@@ -150,7 +150,7 @@ describe('legacy config (no workflows: block)', () => {
       statuses: legacyStatuses,
       defaultWorkflow: null,
     };
-    expect(resolveAssignmentWorkflowId(legacy, EMPTY, { workflow: null, type: null })).toBe(
+    expect(resolveTicketWorkflowId(legacy, EMPTY, { workflow: null, type: null })).toBe(
       'default',
     );
     const ctx = buildWorkflowContext(legacy, 'default');
@@ -167,10 +167,10 @@ describe('legacy config (no workflows: block)', () => {
   });
 });
 
-describe('resolveAssignmentWorkflowContext (async)', () => {
+describe('resolveTicketWorkflowContext (async)', () => {
   it('resolves via a pre-read projectBinding', async () => {
-    const ctx = await resolveAssignmentWorkflowContext({
-      assignment: { workflow: null, type: 'bug' },
+    const ctx = await resolveTicketWorkflowContext({
+      ticket: { workflow: null, type: 'bug' },
       projectBinding: { defaultWorkflow: null, workflowByType: { bug: 'bug' } },
       config,
     });
@@ -185,8 +185,8 @@ describe('resolveAssignmentWorkflowContext (async)', () => {
         '---\nid: p\ndefaultWorkflow: feature\n---\n# P\n',
         'utf-8',
       );
-      const ctx = await resolveAssignmentWorkflowContext({
-        assignment: { workflow: null, type: null },
+      const ctx = await resolveTicketWorkflowContext({
+        ticket: { workflow: null, type: null },
         projectDir: dir,
         config,
       });
@@ -197,8 +197,8 @@ describe('resolveAssignmentWorkflowContext (async)', () => {
   });
 
   it('standalone (no project) resolves via global/default', async () => {
-    const ctx = await resolveAssignmentWorkflowContext({
-      assignment: { workflow: null, type: null },
+    const ctx = await resolveTicketWorkflowContext({
+      ticket: { workflow: null, type: null },
       config,
     });
     expect(ctx.workflowId).toBe('default');
@@ -214,10 +214,10 @@ describe('makeWorkflowContextResolver — sweep memoization', () => {
     expect(resolver.context('feature')).not.toBe(a);
   });
 
-  it('forAssignment resolves and returns the memoized context', async () => {
+  it('forTicket resolves and returns the memoized context', async () => {
     const resolver = makeWorkflowContextResolver(config);
     const direct = resolver.context('bug');
-    const viaAssignment = await resolver.forAssignment({ workflow: 'bug', type: null }, null);
+    const viaAssignment = await resolver.forTicket({ workflow: 'bug', type: null }, null);
     expect(viaAssignment).toBe(direct);
   });
 });

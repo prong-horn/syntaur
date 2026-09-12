@@ -198,7 +198,7 @@ describe('listProjectSessions', () => {
     expect(sessions[0].sessionId).toBe('s1');
   });
 
-  it('filters by project and assignment slug', async () => {
+  it('filters by project and ticket slug', async () => {
     await appendSession('', makeSession({ assignmentSlug: 'task-a', sessionId: 's1' }));
     await appendSession('', makeSession({ assignmentSlug: 'task-b', sessionId: 's2' }));
 
@@ -209,13 +209,13 @@ describe('listProjectSessions', () => {
 });
 
 describe('reconcileActiveSessions', () => {
-  it('marks sessions as completed when assignment is completed', async () => {
+  it('marks sessions as completed when ticket is completed', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nstatus: completed\n---\n# Test',
     );
 
@@ -228,13 +228,13 @@ describe('reconcileActiveSessions', () => {
     expect(all[0].status).toBe('completed');
   });
 
-  it('marks sessions as stopped when assignment is failed', async () => {
+  it('marks sessions as stopped when ticket is failed', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nstatus: failed\n---\n# Test',
     );
 
@@ -250,10 +250,10 @@ describe('reconcileActiveSessions', () => {
   it('skips standalone sessions (null project/assignment)', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nstatus: completed\n---\n# Test',
     );
 
@@ -274,10 +274,10 @@ describe('reconcileActiveSessions', () => {
   it('does not update sessions for in-progress assignments', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nstatus: in_progress\n---\n# Test',
     );
 
@@ -1262,7 +1262,7 @@ describe('appendSession path sanitization (persistence boundary)', () => {
 
 // --- Curation flags: pin + archive + name (schema v10) ----------------------
 
-describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, assignment detail)', () => {
+describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, ticket detail)', () => {
   it('listAllSessions excludes archived by default and includes them on opt-in', async () => {
     await appendSession('', makeSession({ sessionId: 'keep' }));
     await appendSession('', makeSession({ sessionId: 'gone' }));

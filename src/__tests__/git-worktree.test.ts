@@ -95,20 +95,20 @@ describe('git-worktree helpers', () => {
     ).rejects.toBeInstanceOf(GitWorktreeError);
   });
 
-  it('createWorktreeAndRecord updates assignment frontmatter', async () => {
-    const assignmentPath = resolve(scratch, 'assignment.md');
-    await writeFile(assignmentPath, ASSIGNMENT_TEMPLATE);
+  it('createWorktreeAndRecord updates ticket frontmatter', async () => {
+    const ticketPath = resolve(scratch, 'ticket.md');
+    await writeFile(ticketPath, ASSIGNMENT_TEMPLATE);
     const wtPath = resolve(scratch, 'wt3');
 
     await createWorktreeAndRecord({
-      assignmentPath,
+      ticketPath,
       repository: repo,
       branch: 'feature/three',
       worktreePath: wtPath,
       parentBranch: 'main',
     });
 
-    const content = await readFile(assignmentPath, 'utf-8');
+    const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain(`repository: ${repo}`);
     expect(content).toContain(`worktreePath: ${wtPath}`);
     expect(content).toContain('branch: feature/three');
@@ -121,16 +121,16 @@ describe('git-worktree helpers', () => {
     await mkdir(readonlyDir);
     // Remove write perms on the dir
     await import('node:fs/promises').then((fs) => fs.chmod(readonlyDir, 0o555));
-    const assignmentPath = resolve(readonlyDir, 'assignment.md');
+    const ticketPath = resolve(readonlyDir, 'ticket.md');
     // Write a stub so readFile succeeds but writeFile fails
     await import('node:fs/promises').then((fs) => fs.chmod(readonlyDir, 0o755));
-    await writeFile(assignmentPath, ASSIGNMENT_TEMPLATE);
+    await writeFile(ticketPath, ASSIGNMENT_TEMPLATE);
     await import('node:fs/promises').then((fs) => fs.chmod(readonlyDir, 0o555));
 
     const wtPath = resolve(scratch, 'wt4');
     await expect(
       createWorktreeAndRecord({
-        assignmentPath,
+        ticketPath,
         repository: repo,
         branch: 'feature/four',
         worktreePath: wtPath,

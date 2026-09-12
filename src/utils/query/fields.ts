@@ -43,7 +43,7 @@ export type FieldRegistry = Record<string, FieldDef>;
 export const PRIORITY_ORDER = ['low', 'medium', 'high', 'critical'];
 
 /**
- * Default assignment field vocabulary: core frontmatter fields (AQL design,
+ * Default ticket field vocabulary: core frontmatter fields (AQL design,
  * Piece 2 table) + the derived-status fact fields (derived-status design v3,
  * Piece 1). Consumers may extend or restrict (e.g. derive rules evaluate over
  * facts only).

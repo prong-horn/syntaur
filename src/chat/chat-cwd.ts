@@ -44,7 +44,7 @@ export function resolveChatCwd(input: ResolveChatCwdInput): ChatCwdResult {
       return {
         cwd: repo,
         tier: 'project',
-        fallbackWarning: `No workspace configured for ${input.assignmentSlug} — launching in project repository ${repo}`,
+        fallbackWarning: `No workspace configured for ${input.ticketSlug} — launching in project repository ${repo}`,
       };
     }
   }
@@ -53,6 +53,6 @@ export function resolveChatCwd(input: ResolveChatCwdInput): ChatCwdResult {
   return {
     cwd: homedir(),
     tier: 'home',
-    fallbackWarning: `No workspace configured for ${input.assignmentSlug} — launching in home directory`,
+    fallbackWarning: `No workspace configured for ${input.ticketSlug} — launching in home directory`,
   };
 }

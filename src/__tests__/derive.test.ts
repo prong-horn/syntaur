@@ -17,7 +17,7 @@ import {
   latestPlanFile,
   planDigest,
 } from '../lifecycle/facts.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const TERMINALS = new Set(['completed', 'failed']);
 const KNOWN = new Set([
@@ -63,7 +63,7 @@ function derive(facts: Partial<AssignmentFacts>, overrides: Partial<Parameters<t
 }
 
 describe('deriveDimensions — phase ladder', () => {
-  it('empty assignment → draft', () => {
+  it('empty ticket → draft', () => {
     const d = derive({})!;
     expect(d.phase).toBe('draft');
     expect(d.disposition).toBe('active');
@@ -295,10 +295,10 @@ planApproval:
   at: "2026-06-09T11:00:00Z"
 ---
 ${REAL_BODY}`;
-    await writeFile(join(dir, 'assignment.md'), fm);
-    const frontmatter = parseAssignmentFrontmatter(fm);
+    await writeFile(join(dir, 'ticket.md'), fm);
+    const frontmatter = parseTicketFrontmatter(fm);
     const facts = await computeFacts({
-      assignmentDir: dir,
+      ticketDir: dir,
       frontmatter,
       body: REAL_BODY,
       projectDir: null,

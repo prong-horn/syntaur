@@ -99,7 +99,7 @@ tags: []
 
 # ${slug}
 `;
-  const p = join(dir, 'assignment.md');
+  const p = join(dir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -126,7 +126,7 @@ beforeEach(async () => {
   tmpHome = await mkdtemp(join(tmpdir(), 'syntaur-derive-api-'));
   await mkdir(join(tmpHome, '.syntaur'), { recursive: true });
   projectsDir = join(tmpHome, 'projects');
-  standaloneDir = join(tmpHome, '.syntaur', 'assignments');
+  standaloneDir = join(tmpHome, '.syntaur', 'tickets');
   await mkdir(projectsDir, { recursive: true });
   await mkdir(standaloneDir, { recursive: true });
   process.env.HOME = tmpHome;
@@ -346,9 +346,9 @@ describe('custom status set with no transitions (P1-1)', () => {
 });
 
 describe('deep derive shape validation before mutation (P1-2)', () => {
-  it('a null rung returns invalid-derive 400 (not 500) and leaves assignment files untouched', async () => {
+  it('a null rung returns invalid-derive 400 (not 500) and leaves ticket files untouched', async () => {
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a3'), 'a3', 'review');
+    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'review');
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({
       statuses: droppedStatuses,
@@ -376,10 +376,10 @@ describe('deep derive shape validation before mutation (P1-2)', () => {
 });
 
 describe('validation before mutation', () => {
-  it('an invalid-derive payload with pending resolutions does NOT touch assignment files', async () => {
-    // status "review" will be dropped, with an assignment in it + a resolution.
+  it('an invalid-derive payload with pending resolutions does NOT touch ticket files', async () => {
+    // status "review" will be dropped, with a ticket in it + a resolution.
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a1'), 'a1', 'review');
+    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'review');
 
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({
@@ -393,14 +393,14 @@ describe('validation before mutation', () => {
 
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe('invalid-derive');
-    // The assignment file is untouched: still exists, still status review.
+    // The ticket file is untouched: still exists, still status review.
     expect(await fileGone(assignPath)).toBe(false);
     expect(await statusOf(assignPath)).toBe('review');
   });
 
-  it('an invalid-facts payload with pending resolutions does NOT touch assignment files', async () => {
+  it('an invalid-facts payload with pending resolutions does NOT touch ticket files', async () => {
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'assignments', 'a2'), 'a2', 'review');
+    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'review');
 
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({

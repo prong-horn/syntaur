@@ -55,7 +55,7 @@ describe('POST /api/config/search', () => {
   it('persists a valid config and reports custom=true', async () => {
     const payload = {
       defaultScope: 'project',
-      aliases: { a: 'assignment', pb: 'playbook' },
+      aliases: { a: 'ticket', pb: 'playbook' },
       externalIds: false,
     };
     const postRes = await fetch(baseUrl, {
@@ -78,7 +78,7 @@ describe('POST /api/config/search', () => {
     const res = await fetch(baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aliases: { status: 'assignment' } }),
+      body: JSON.stringify({ aliases: { status: 'ticket' } }),
     });
     expect(res.status).toBe(400);
     const body = await res.json();
@@ -89,7 +89,7 @@ describe('POST /api/config/search', () => {
     const res = await fetch(baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aliases: { all: 'assignment' } }),
+      body: JSON.stringify({ aliases: { all: 'ticket' } }),
     });
     expect(res.status).toBe(400);
   });
@@ -98,7 +98,7 @@ describe('POST /api/config/search', () => {
     const res = await fetch(baseUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aliases: { Foo: 'assignment' } }),
+      body: JSON.stringify({ aliases: { Foo: 'ticket' } }),
     });
     expect(res.status).toBe(400);
   });
@@ -145,8 +145,8 @@ describe('DELETE /api/config/search', () => {
 describe('config.md persistence round-trip', () => {
   it('writeSearchConfig emits a search: block that readConfig parses back', async () => {
     const cfg = {
-      defaultScope: 'assignment' as const,
-      aliases: { a: 'assignment' as const, p: 'project' as const },
+      defaultScope: 'ticket' as const,
+      aliases: { a: 'ticket' as const, p: 'project' as const },
       externalIds: false,
     };
     await writeSearchConfig(cfg);
@@ -195,7 +195,7 @@ describe('parseSearchConfig robustness', () => {
     const config = await readConfig();
     expect(config.searchConfig).toEqual({
       defaultScope: 'project',
-      aliases: { a: 'assignment' },
+      aliases: { a: 'ticket' },
       externalIds: false,
     });
   });

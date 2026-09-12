@@ -45,9 +45,9 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   try {
     openEngagement({
       sessionId,
-      assignmentId: 'x',
+      ticketId: 'x',
       projectSlug: 'p',
-      assignmentSlug: 'demo',
+      ticketSlug: 'demo',
       startedAt: '2026-01-01T00:00:00Z',
     });
   } finally {
@@ -58,7 +58,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
 describe('syntaur session resume (handoff-only)', () => {
   let syntaurHome: string;
   let workspaceRoot: string;
-  let assignmentDir: string;
+  let ticketDir: string;
   const SID = 'resume-handoff-1';
 
   beforeEach(async () => {
@@ -68,10 +68,10 @@ describe('syntaur session resume (handoff-only)', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-resume-handoff-wkspc-'));
-    assignmentDir = resolve(syntaurHome, 'projects', 'p', 'assignments', 'demo');
-    await mkdir(assignmentDir, { recursive: true });
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       '---\nid: x\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n',
     );
   });
@@ -83,7 +83,7 @@ describe('syntaur session resume (handoff-only)', () => {
 
   it('prints an open handoff when no session summary exists on disk', async () => {
     seedOpenEngagement(syntaurHome, SID);
-    const handoffPath = resolve(assignmentDir, 'handoff.md');
+    const handoffPath = resolve(ticketDir, 'handoff.md');
     await writeFile(
       handoffPath,
       `---\nassignment: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nReal content.\n`,

@@ -7,9 +7,9 @@ import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import {
   listProjects,
-  listAssignmentsBoard,
+  listTicketsBoard,
   getProjectDetail,
-  getAssignmentDetail,
+  getTicketDetail,
   getOverview,
   getEditableDocument,
   getHelp,
@@ -64,34 +64,34 @@ async function createProjectFiles(
     await writeFile(resolve(projectPath, '_status.md'), statusMd, 'utf-8');
   }
 
-  for (const assignment of assignments) {
-    const assignmentDir = resolve(projectPath, 'assignments', assignment.slug);
-    await mkdir(assignmentDir, { recursive: true });
-    await writeFile(resolve(assignmentDir, 'assignment.md'), assignment.assignmentMd, 'utf-8');
+  for (const ticket of assignments) {
+    const ticketDir = resolve(projectPath, 'tickets', ticket.slug);
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(resolve(ticketDir, 'ticket.md'), ticket.assignmentMd, 'utf-8');
 
     if (assignment.planMd) {
-      await writeFile(resolve(assignmentDir, 'plan.md'), assignment.planMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'plan.md'), ticket.planMd, 'utf-8');
     }
     if (assignment.scratchpadMd) {
-      await writeFile(resolve(assignmentDir, 'scratchpad.md'), assignment.scratchpadMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'scratchpad.md'), ticket.scratchpadMd, 'utf-8');
     }
     if (assignment.handoffMd) {
-      await writeFile(resolve(assignmentDir, 'handoff.md'), assignment.handoffMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'handoff.md'), ticket.handoffMd, 'utf-8');
     }
     if (assignment.decisionMd) {
-      await writeFile(resolve(assignmentDir, 'decision-record.md'), assignment.decisionMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'decision-record.md'), ticket.decisionMd, 'utf-8');
     }
     if (assignment.progressMd) {
-      await writeFile(resolve(assignmentDir, 'progress.md'), assignment.progressMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'progress.md'), ticket.progressMd, 'utf-8');
     }
     if (assignment.commentsMd) {
-      await writeFile(resolve(assignmentDir, 'comments.md'), assignment.commentsMd, 'utf-8');
+      await writeFile(resolve(ticketDir, 'comments.md'), ticket.commentsMd, 'utf-8');
     }
   }
 }
 
 const COMMENTS_MD_ONE_OPEN_QUESTION = `---
-assignment: test-assignment
+ticket: test-assignment
 entryCount: 1
 generated: "2026-04-07T10:00:00Z"
 updated: "2026-04-07T10:00:00Z"
@@ -129,7 +129,7 @@ tags: []
 
 # Test Project`;
 
-// Use a recent date so this assignment is never stale (within the 7-day window)
+// Use a recent date so this ticket is never stale (within the 7-day window)
 const RECENT_DATE = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString().replace(/\.\d+Z$/, 'Z');
 
 const ASSIGNMENT_MD = `---
@@ -190,7 +190,7 @@ tags: []
 # Blocked Assignment`;
 
 const PLAN_MD = `---
-assignment: test-assignment
+ticket: test-assignment
 status: in_progress
 created: "2026-03-20T10:00:00Z"
 updated: "${RECENT_DATE}"
@@ -201,7 +201,7 @@ updated: "${RECENT_DATE}"
 - [ ] Do something`;
 
 const SCRATCHPAD_MD = `---
-assignment: test-assignment
+ticket: test-assignment
 updated: "2026-04-07T11:00:00Z"
 ---
 
@@ -210,7 +210,7 @@ updated: "2026-04-07T11:00:00Z"
 Some notes`;
 
 const HANDOFF_MD = `---
-assignment: test-assignment
+ticket: test-assignment
 updated: "2026-04-07T12:00:00Z"
 handoffCount: 1
 ---
@@ -222,7 +222,7 @@ handoffCount: 1
 Initial handoff`;
 
 const DECISION_MD = `---
-assignment: test-assignment
+ticket: test-assignment
 updated: "2026-04-07T13:00:00Z"
 decisionCount: 1
 ---
@@ -239,7 +239,7 @@ describe('listProjects', () => {
     expect(result).toEqual([]);
   });
 
-  it('uses source-first assignment state even when _status.md disagrees', async () => {
+  it('uses source-first ticket state even when _status.md disagrees', async () => {
     const statusMd = `---
 project: test-project
 generated: "2026-03-20T10:00:00Z"
@@ -306,13 +306,13 @@ describe('getProjectDetail', () => {
   });
 });
 
-describe('getAssignmentDetail', () => {
+describe('getTicketDetail', () => {
   it('returns null for a missing assignment', async () => {
-    const result = await getAssignmentDetail(testDir, 'test-project', 'missing');
+    const result = await getTicketDetail(testDir, 'test-project', 'missing');
     expect(result).toBeNull();
   });
 
-  it('returns assignment detail with companion document metadata and transitions', async () => {
+  it('returns ticket detail with companion document metadata and transitions', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       {
         slug: 'test-assignment',
@@ -324,7 +324,7 @@ describe('getAssignmentDetail', () => {
       },
     ]);
 
-    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    const result = await getTicketDetail(testDir, 'test-project', 'test-assignment');
     expect(result).not.toBeNull();
     expect(result!.type).toBe('feature');
     expect(result!.plan?.status).toBe('in_progress');
@@ -336,7 +336,7 @@ describe('getAssignmentDetail', () => {
 
   it('attaches progress and comments when the files exist', async () => {
     const progressMd = `---
-assignment: test-assignment
+ticket: test-assignment
 entryCount: 2
 generated: "2026-04-07T10:00:00Z"
 updated: "2026-04-07T14:00:00Z"
@@ -362,7 +362,7 @@ First entry.
       },
     ]);
 
-    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    const result = await getTicketDetail(testDir, 'test-project', 'test-assignment');
     expect(result).not.toBeNull();
     expect(result!.progress).not.toBeNull();
     expect(result!.progress!.entryCount).toBe(2);
@@ -377,7 +377,7 @@ First entry.
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
     ]);
-    const result = await getAssignmentDetail(testDir, 'test-project', 'test-assignment');
+    const result = await getTicketDetail(testDir, 'test-project', 'test-assignment');
     expect(result).not.toBeNull();
     expect(result!.progress).toBeNull();
     expect(result!.comments).toBeNull();
@@ -385,16 +385,16 @@ First entry.
 
 });
 
-describe('listAssignmentsBoard standalone support', () => {
-  it('includes standalone assignments with projectSlug: null', async () => {
-    const { getAssignmentDetailById, listAssignmentsBoard } = await import('../dashboard/api.js');
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
+describe('listTicketsBoard standalone support', () => {
+  it('includes standalone tickets with projectSlug: null', async () => {
+    const { getTicketDetailById, listTicketsBoard } = await import('../dashboard/api.js');
+    const ticketsDir = resolve(testDir, 'standalone');
+    await mkdir(ticketsDir, { recursive: true });
     const uuid = 'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb';
-    const dir = resolve(assignmentsDir, uuid);
+    const dir = resolve(ticketsDir, uuid);
     await mkdir(dir, { recursive: true });
     await writeFile(
-      resolve(dir, 'assignment.md'),
+      resolve(dir, 'ticket.md'),
       `---
 id: ${uuid}
 slug: my-standalone
@@ -421,7 +421,7 @@ tags: []
       'utf-8',
     );
 
-    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const board = await listTicketsBoard(testDir, ticketsDir);
     const item = board.assignments.find((a) => a.id === uuid);
     expect(item).toBeTruthy();
     expect(item!.projectSlug).toBeNull();
@@ -429,27 +429,27 @@ tags: []
     expect(item!.slug).toBe('my-standalone');
     expect(item!.type).toBe('feature');
 
-    const detail = await getAssignmentDetailById(testDir, assignmentsDir, uuid);
+    const detail = await getTicketDetailById(testDir, ticketsDir, uuid);
     expect(detail).not.toBeNull();
     expect(detail!.projectSlug).toBeNull();
     expect(detail!.dependsOn).toEqual([]);
     expect(detail!.type).toBe('feature');
   });
 
-  it('returns null from getAssignmentDetailById for an unknown id', async () => {
-    const { getAssignmentDetailById } = await import('../dashboard/api.js');
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
-    const detail = await getAssignmentDetailById(testDir, assignmentsDir, 'no-such-id');
+  it('returns null from getTicketDetailById for an unknown id', async () => {
+    const { getTicketDetailById } = await import('../dashboard/api.js');
+    const ticketsDir = resolve(testDir, 'standalone');
+    await mkdir(ticketsDir, { recursive: true });
+    const detail = await getTicketDetailById(testDir, ticketsDir, 'no-such-id');
     expect(detail).toBeNull();
   });
 });
 
 describe('referencedBy backlinks', () => {
   it('lists A under B.referencedBy when A links to B via relative path in its comments', async () => {
-    const { getAssignmentDetail } = await import('../dashboard/api.js');
+    const { getTicketDetail } = await import('../dashboard/api.js');
     const commentsWithLink = `---
-assignment: source-a
+ticket: source-a
 entryCount: 1
 generated: "2026-04-20T10:00:00Z"
 updated: "2026-04-20T10:00:00Z"
@@ -463,7 +463,7 @@ updated: "2026-04-20T10:00:00Z"
 **Author:** claude-1
 **Type:** note
 
-See [target](../target-b/assignment.md) for context.
+See [target](../target-b/ticket.md) for context.
 `;
 
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
@@ -478,7 +478,7 @@ See [target](../target-b/assignment.md) for context.
       },
     ]);
 
-    const detail = await getAssignmentDetail(testDir, 'test-project', 'target-b');
+    const detail = await getTicketDetail(testDir, 'test-project', 'target-b');
     expect(detail).not.toBeNull();
     const refs = detail!.referencedBy;
     const ref = refs.find((r) => r.sourceSlug === 'source-a');
@@ -488,7 +488,7 @@ See [target](../target-b/assignment.md) for context.
   });
 
   it('caps referencedBy at 50 entries', async () => {
-    const { getAssignmentDetail } = await import('../dashboard/api.js');
+    const { getTicketDetail } = await import('../dashboard/api.js');
     const target: Array<{ slug: string; assignmentMd: string; commentsMd?: string }> = [
       {
         slug: 'target',
@@ -500,7 +500,7 @@ See [target](../target-b/assignment.md) for context.
         slug: `src-${i}`,
         assignmentMd: ASSIGNMENT_MD.replace('slug: test-assignment', `slug: src-${i}`).replace('id: a-123', `id: src-${i}`),
         commentsMd: `---
-assignment: src-${i}
+ticket: src-${i}
 entryCount: 1
 generated: "2026-04-20T10:00:00Z"
 updated: "2026-04-20T10:00:00Z"
@@ -514,18 +514,18 @@ updated: "2026-04-20T10:00:00Z"
 **Author:** a
 **Type:** note
 
-link: [t](../target/assignment.md)
+link: [t](../target/ticket.md)
 `,
       });
     }
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, target);
 
-    const detail = await getAssignmentDetail(testDir, 'test-project', 'target');
+    const detail = await getTicketDetail(testDir, 'test-project', 'target');
     expect(detail!.referencedBy.length).toBe(50);
   });
 });
 
-describe('listAssignmentsBoard', () => {
+describe('listTicketsBoard', () => {
   it('returns assignments from every project with project context and transitions', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
@@ -546,21 +546,21 @@ tags: []
       { slug: 'blocked-assignment', assignmentMd: BLOCKED_ASSIGNMENT_MD },
     ]);
 
-    const result = await listAssignmentsBoard(testDir);
+    const result = await listTicketsBoard(testDir);
 
     expect(result.assignments).toHaveLength(2);
-    expect(result.assignments.map((assignment) => assignment.projectSlug).sort()).toEqual([
+    expect(result.assignments.map((ticket) => ticket.projectSlug).sort()).toEqual([
       'second-project',
       'test-project',
     ]);
-    expect(result.assignments.find((assignment) => assignment.slug === 'blocked-assignment'))
+    expect(result.assignments.find((ticket) => ticket.slug === 'blocked-assignment'))
       .toMatchObject({
         projectTitle: 'Second Project',
         blockedReason: 'Waiting on API credentials',
         status: 'blocked',
       });
     expect(
-      result.assignments.find((assignment) => assignment.slug === 'test-assignment')
+      result.assignments.find((ticket) => ticket.slug === 'test-assignment')
         ?.availableTransitions.map((action) => action.command),
     ).toContain('review');
   });
@@ -575,28 +575,28 @@ tags: []
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
     ]);
 
-    const result = await listAssignmentsBoard(testDir);
-    const assignment = result.assignments.find((a) => a.slug === 'test-assignment');
-    expect(assignment).toBeDefined();
+    const result = await listTicketsBoard(testDir);
+    const ticket = result.assignments.find((a) => a.slug === 'test-assignment');
+    expect(ticket).toBeDefined();
     expect(assignment!.status).toBe('in_progress');
 
-    const commands = assignment!.availableTransitions.map((a) => a.command);
+    const commands = ticket!.availableTransitions.map((a) => a.command);
     // None of the previously-bogus from-pending-only commands should leak.
     expect(commands).not.toContain('start');
     expect(commands).not.toContain('reopen');
     expect(commands).not.toContain('unblock');
   });
 
-  it('only includes valid transitions for standalone assignments too', async () => {
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
+  it('only includes valid transitions for standalone tickets too', async () => {
+    const ticketsDir = resolve(testDir, 'standalone');
+    await mkdir(ticketsDir, { recursive: true });
     const standaloneId = '99999999-9999-9999-9999-999999999999';
-    await mkdir(resolve(assignmentsDir, standaloneId), { recursive: true });
+    await mkdir(resolve(ticketsDir, standaloneId), { recursive: true });
     // status: completed — from completed, only `reopen` should be valid
     // under the default transition table. Commands like `start`, `block`,
     // `review`, `complete` are not valid and used to leak through.
     await writeFile(
-      resolve(assignmentsDir, standaloneId, 'assignment.md'),
+      resolve(ticketsDir, standaloneId, 'ticket.md'),
       `---
 id: ${standaloneId}
 slug: standalone-task
@@ -617,7 +617,7 @@ tags: []
       'utf-8',
     );
 
-    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const board = await listTicketsBoard(testDir, ticketsDir);
     const standalone = board.assignments.find((a) => a.id === standaloneId);
     expect(standalone).toBeDefined();
     const commands = standalone!.availableTransitions.map((a) => a.command);
@@ -667,11 +667,11 @@ tags: []
     ]);
   });
 
-  it('nested assignment board summary carries externalIds', async () => {
+  it('nested ticket board summary carries externalIds', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'ext-assignment', assignmentMd: EXTERNAL_IDS_ASSIGNMENT_MD },
     ]);
-    const board = await listAssignmentsBoard(testDir);
+    const board = await listTicketsBoard(testDir);
     const item = board.assignments.find((a) => a.slug === 'ext-assignment');
     expect(item).toBeTruthy();
     expect(item!.externalIds).toEqual([
@@ -679,13 +679,13 @@ tags: []
     ]);
   });
 
-  it('standalone assignment board summary carries externalIds', async () => {
-    const assignmentsDir = resolve(testDir, 'standalone');
-    await mkdir(assignmentsDir, { recursive: true });
+  it('standalone ticket board summary carries externalIds', async () => {
+    const ticketsDir = resolve(testDir, 'standalone');
+    await mkdir(ticketsDir, { recursive: true });
     const uuid = 'eeee1111-2222-3333-4444-555566667777';
-    await mkdir(resolve(assignmentsDir, uuid), { recursive: true });
+    await mkdir(resolve(ticketsDir, uuid), { recursive: true });
     await writeFile(
-      resolve(assignmentsDir, uuid, 'assignment.md'),
+      resolve(ticketsDir, uuid, 'ticket.md'),
       `---
 id: ${uuid}
 slug: ext-standalone
@@ -714,7 +714,7 @@ tags: []
 # Ext Standalone`,
       'utf-8',
     );
-    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+    const board = await listTicketsBoard(testDir, ticketsDir);
     const item = board.assignments.find((a) => a.id === uuid);
     expect(item).toBeTruthy();
     expect(item!.externalIds).toEqual([{ system: 'jira', id: 'STA-1', url: null }]);
@@ -793,9 +793,9 @@ describe('overview', () => {
 
 describe('overview performance', () => {
   // Regression test for the slow /api/overview fix. The original implementation
-  // walked every project + every assignment sequentially via `for…await`, which
+  // walked every project + every ticket sequentially via `for…await`, which
   // scaled linearly with FS round-trip latency. After parallelization
-  // (`listProjectRecords` + `listAssignmentRecords` + `buildProjectRollup` +
+  // (`listProjectRecords` + `listTicketRecords` + `buildProjectRollup` +
   // `buildOverviewSegmentBuckets` in `src/dashboard/api.ts`), wall-clock drops
   // by ~2× on a fast tmpfs and substantially more on slower disks where
   // per-syscall latency is the dominant cost.
@@ -819,7 +819,7 @@ describe('overview performance', () => {
   // the nearest 50ms = 246 × 3 = 738 → 750ms. This catches the >1000ms
   // pre-fix regression decisively (1291ms >> 750ms) while still giving the
   // ~250ms post-fix baseline ample CI hardware headroom. See scratchpad.md
-  // in the originating assignment for the full table.
+  // in the originating ticket for the full table.
   const OVERVIEW_PERF_CEILING_MS = 750;
   const PERF_FIXTURE_PROJECTS = 60;
   const PERF_FIXTURE_ASSIGNMENTS_PER_PROJECT = 30;
@@ -895,19 +895,19 @@ tags: []
           Array.from({ length: PERF_FIXTURE_ASSIGNMENTS_PER_PROJECT }, async (_, a) => {
             const slug = `asg-${a.toString().padStart(3, '0')}`;
             const status = statuses[a % statuses.length]!;
-            // Every 5th assignment depends on the previous one in the same
+            // Every 5th ticket depends on the previous one in the same
             // project — exercises getUnmetDependencies and the new
             // dependencyStatusMap fast-path.
             const dependsOn =
               a > 0 && a % 5 === 0 ? [`asg-${(a - 1).toString().padStart(3, '0')}`] : [];
-            const aDir = resolve(projectPath, 'assignments', slug);
+            const aDir = resolve(projectPath, 'tickets', slug);
             await mkdir(aDir, { recursive: true });
             await writeFile(
-              resolve(aDir, 'assignment.md'),
+              resolve(aDir, 'ticket.md'),
               buildPerfAssignmentMd(slug, status, dependsOn),
               'utf-8',
             );
-            // Every 4th assignment gets a comments.md with an open question —
+            // Every 4th ticket gets a comments.md with an open question —
             // exercises the parallelized countOpenQuestions in buildProjectRollup.
             if (a % 4 === 0) {
               await writeFile(resolve(aDir, 'comments.md'), COMMENTS_MD_ONE_OPEN_QUESTION, 'utf-8');
@@ -968,7 +968,7 @@ describe('help and editable documents', () => {
     expect(help.coreConcepts.some((concept) => concept.term === 'Project')).toBe(true);
   });
 
-  it('returns editable document payloads for project and assignment files', async () => {
+  it('returns editable document payloads for project and ticket files', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD },
     ]);
@@ -976,14 +976,14 @@ describe('help and editable documents', () => {
     const projectDoc = await getEditableDocument(testDir, 'project', 'test-project');
     const assignmentDoc = await getEditableDocument(
       testDir,
-      'assignment',
+      'ticket',
       'test-project',
       'test-assignment',
     );
 
     expect(projectDoc?.documentType).toBe('project');
     expect(projectDoc?.content).toContain('Test Project');
-    expect(assignmentDoc?.documentType).toBe('assignment');
+    expect(assignmentDoc?.documentType).toBe('ticket');
     expect(assignmentDoc?.content).toContain('Test Assignment');
   });
 });
@@ -1268,15 +1268,15 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   async function writeStandalone(dir: string, id: string, slug: string, archived: boolean): Promise<void> {
     const adir = resolve(dir, id);
     await mkdir(adir, { recursive: true });
-    await writeFile(resolve(adir, 'assignment.md'),
+    await writeFile(resolve(adir, 'ticket.md'),
       `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
       'utf-8');
   }
 
-  // Project A: active, with one active + one individually-archived assignment.
+  // Project A: active, with one active + one individually-archived ticket.
   // Project B: archived, with two assignments (one individually archived).
   // Standalone: one active, one archived.
-  async function seed(assignmentsDir: string): Promise<void> {
+  async function seed(ticketsDir: string): Promise<void> {
     clearStatusConfigCache();
     await createProjectFiles(testDir, 'proj-a', projectMd('proj-a'), [
       { slug: 'a-active', assignmentMd: asgMd('a-active-id', 'a-active') },
@@ -1286,31 +1286,31 @@ describe('archive hiding + cascade + listArchived + migration', () => {
       { slug: 'b1', assignmentMd: asgMd('b1-id', 'b1') },
       { slug: 'b2', assignmentMd: asgMd('b2-id', 'b2', { archived: true }) },
     ]);
-    await mkdir(assignmentsDir, { recursive: true });
-    await writeStandalone(assignmentsDir, 'sa-active', 's-active', false);
-    await writeStandalone(assignmentsDir, 'sa-arch', 's-arch', true);
+    await mkdir(ticketsDir, { recursive: true });
+    await writeStandalone(ticketsDir, 'sa-active', 's-active', false);
+    await writeStandalone(ticketsDir, 'sa-arch', 's-arch', true);
   }
 
   it('listProjects excludes archived projects', async () => {
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
     const projects = await listProjects(testDir);
     expect(projects.map((p) => p.slug).sort()).toEqual(['proj-a']);
   });
 
-  it('listAssignmentsBoard default-excludes archived + cascade-hides archived-project children', async () => {
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
-    const board = await listAssignmentsBoard(testDir, assignmentsDir);
+  it('listTicketsBoard default-excludes archived + cascade-hides archived-project children', async () => {
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
+    const board = await listTicketsBoard(testDir, ticketsDir);
     const slugs = board.assignments.map((a) => a.slug).sort();
     // a-active + s-active only. a-arch hidden; b1/b2 cascade-hidden; s-arch hidden.
     expect(slugs).toEqual(['a-active', 's-active']);
   });
 
-  it("listAssignmentsBoard { archived: 'only' } returns individually-archived only (no cascade children)", async () => {
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
-    const board = await listAssignmentsBoard(testDir, assignmentsDir, { archived: 'only' });
+  it("listTicketsBoard { archived: 'only' } returns individually-archived only (no cascade children)", async () => {
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
+    const board = await listTicketsBoard(testDir, ticketsDir, { archived: 'only' });
     const slugs = board.assignments.map((a) => a.slug).sort();
     // a-arch (individually) + b2 (individually, even under archived project) + s-arch.
     // b1 is NOT included (it is cascade-hidden, not individually archived).
@@ -1319,9 +1319,9 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
   it('listArchived returns archived projects with children + individually-archived (no double-listing)', async () => {
     const { listArchived } = await import('../dashboard/api.js');
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
-    const archived = await listArchived(testDir, assignmentsDir);
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
+    const archived = await listArchived(testDir, ticketsDir);
 
     expect(archived.projects.map((p) => p.slug)).toEqual(['proj-b']);
     expect(archived.projects[0].assignments.map((a) => a.slug).sort()).toEqual(['b1', 'b2']);
@@ -1332,8 +1332,8 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   });
 
   it('buildProjectRollup progress.total excludes archived children', async () => {
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
     const detail = await getProjectDetail(testDir, 'proj-a');
     expect(detail).not.toBeNull();
     // getProjectDetail still returns ALL assignments...
@@ -1343,9 +1343,9 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   });
 
   it('getOverview excludes archived projects + individually-archived (incl. standalone) from stats', async () => {
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
-    const overview = await getOverview(testDir, assignmentsDir);
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
+    const overview = await getOverview(testDir, ticketsDir);
     // proj-b is archived → not counted as an active project.
     expect(overview.recentProjects.map((p) => p.slug)).toEqual(['proj-a']);
     // in-progress count: only a-active (a-arch hidden, proj-b cascade-hidden).
@@ -1382,11 +1382,11 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
   it('restoring an archived project unhides cascade children but keeps individually-archived ones hidden', async () => {
     const { invalidateRecordsCache } = await import('../dashboard/api.js');
-    const assignmentsDir = resolve(testDir, '.assignments');
-    await seed(assignmentsDir);
+    const ticketsDir = resolve(testDir, '.assignments');
+    await seed(ticketsDir);
 
     // While proj-b is archived, both its children are hidden from the board.
-    let board = await listAssignmentsBoard(testDir, assignmentsDir);
+    let board = await listTicketsBoard(testDir, ticketsDir);
     expect(board.assignments.map((a) => a.slug)).not.toContain('b1');
     expect(board.assignments.map((a) => a.slug)).not.toContain('b2');
 
@@ -1398,7 +1398,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     );
     invalidateRecordsCache();
 
-    board = await listAssignmentsBoard(testDir, assignmentsDir);
+    board = await listTicketsBoard(testDir, ticketsDir);
     const slugs = board.assignments.map((a) => a.slug);
     expect(slugs).toContain('b1'); // cascade-hidden child reappears
     expect(slugs).not.toContain('b2'); // individually-archived child stays hidden
@@ -1407,7 +1407,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
 // ── AC5/AC6: board items carry a computed facts block (terminal items too) ────
 describe('board payload — facts block + terminal completedAt (AC5/AC6)', () => {
-  // A completed assignment with a statusHistory entry transitioning INTO the
+  // A completed ticket with a statusHistory entry transitioning INTO the
   // terminal `completed` status → deriveStatusVirtuals materializes completedAt.
   const COMPLETED_MD = `---
 id: done-1
@@ -1456,7 +1456,7 @@ Ship it.
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-assignment', assignmentMd: ASSIGNMENT_MD, planMd: PLAN_MD },
     ]);
-    const board = await listAssignmentsBoard(testDir);
+    const board = await listTicketsBoard(testDir);
     const item = board.assignments.find((a) => a.slug === 'test-assignment');
     expect(item).toBeDefined();
     // facts are computed (not nulled) and include the built-in objective facts.
@@ -1469,7 +1469,7 @@ Ship it.
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'done-task', assignmentMd: COMPLETED_MD },
     ]);
-    const board = await listAssignmentsBoard(testDir);
+    const board = await listTicketsBoard(testDir);
     const item = board.assignments.find((a) => a.slug === 'done-task');
     expect(item).toBeDefined();
     expect(item!.status).toBe('completed');

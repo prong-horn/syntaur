@@ -27,7 +27,7 @@ function applyPatches(into: Map<string, ChatItem>, patches: ItemPatch[]): void {
 
 export function normalizeEvents(events: ChatEvent[], agentId = 'claude'): ChatItem[] {
   const normalizer = new ChatNormalizer({
-    assignmentId: 'assignment-fixture',
+    ticketId: 'assignment-fixture',
     agentId,
     sessionKey: `assignment-fixture:${agentId}`,
   });
@@ -67,7 +67,7 @@ function digest(items: ChatItem[]): unknown[] {
   return items.map((item) => {
     // `ts` is a wall-clock timestamp from the recording; the seq pair already
     // pins order, so it is dropped to keep the snapshot about structure.
-    const { ts: _ts, assignmentId: _a, agentId: _g, ...rest } = item as ChatItem & { ts: string };
+    const { ts: _ts, ticketId: _a, agentId: _g, ...rest } = item as ChatItem & { ts: string };
     return shrink(rest);
   });
 }
@@ -248,7 +248,7 @@ describe('permissions', () => {
 
   it('marks auto-approved responses on the sealed item', () => {
     const base = {
-      assignmentId: 'assignment-fixture',
+      ticketId: 'assignment-fixture',
       agentId: 'claude',
       sessionKey: 'assignment-fixture:claude',
       turnId: 'turn-1',
@@ -417,7 +417,7 @@ describe('pure helpers', () => {
 });
 
 /**
- * Task 5 — the assignment scope (`${assignmentId}:@assignment`, Decision 3).
+ * Task 5 — the ticket scope (`${ticketId}:@assignment`, Decision 3).
  * Routing rows belong to no agent session: a fan-out `user.message`, the
  * `handoff` rows between agents, and the router's notices all live here, and
  * each item's author comes from the EVENT rather than from the normalizer's own
@@ -429,7 +429,7 @@ describe('assignment scope (Task 5)', () => {
 
   function scope(): { normalizer: ChatNormalizer; items: Map<string, ChatItem>; seq: number } {
     return {
-      normalizer: new ChatNormalizer({ assignmentId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE }),
+      normalizer: new ChatNormalizer({ ticketId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE }),
       items: new Map<string, ChatItem>(),
       seq: 0,
     };
@@ -446,7 +446,7 @@ describe('assignment scope (Task 5)', () => {
       ctx.normalizer.ingest({
         seq: ctx.seq++,
         ts: `2026-09-02T12:00:0${ctx.seq}.000Z`,
-        assignmentId: ASSIGNMENT,
+        ticketId: ASSIGNMENT,
         agentId,
         sessionKey: SCOPE,
         turnId: null,
@@ -612,7 +612,7 @@ describe('assignment scope (Task 5)', () => {
       budget: 4,
     }, 'planner');
 
-    const replayed = new ChatNormalizer({ assignmentId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE });
+    const replayed = new ChatNormalizer({ ticketId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE });
     const rebuilt = new Map<string, ChatItem>();
     for (const event of events) applyPatches(rebuilt, replayed.ingest(event));
     expect([...rebuilt.values()]).toEqual([...ctx.items.values()]);
@@ -622,7 +622,7 @@ describe('assignment scope (Task 5)', () => {
 describe('turn.status carries its trigger (Task 5)', () => {
   it('labels a hop turn with the handoff it answers', () => {
     const normalizer = new ChatNormalizer({
-      assignmentId: 'a1',
+      ticketId: 'a1',
       agentId: 'implementer',
       sessionKey: 'a1:implementer',
     });
@@ -632,7 +632,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
       normalizer.ingest({
         seq: 0,
         ts: '2026-09-02T12:00:00.000Z',
-        assignmentId: 'a1',
+        ticketId: 'a1',
         agentId: 'implementer',
         sessionKey: 'a1:implementer',
         turnId: 'turn-1',
@@ -651,14 +651,14 @@ describe('turn.status carries its trigger (Task 5)', () => {
   });
 
   it('leaves the trigger off a phase-2 turn.start that has none', () => {
-    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'claude', sessionKey: 'a1:claude' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'claude', sessionKey: 'a1:claude' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,
       normalizer.ingest({
         seq: 0,
         ts: '2026-09-02T12:00:00.000Z',
-        assignmentId: 'a1',
+        ticketId: 'a1',
         agentId: 'claude',
         sessionKey: 'a1:claude',
         turnId: 'turn-1',
@@ -672,7 +672,7 @@ describe('turn.status carries its trigger (Task 5)', () => {
 
 describe('cursor extension events', () => {
   const base = {
-    assignmentId: 'a1',
+    ticketId: 'a1',
     agentId: 'cursor',
     sessionKey: 'a1:cursor',
     turnId: 'turn-1',
@@ -680,7 +680,7 @@ describe('cursor extension events', () => {
   };
 
   it('maps update_todos onto the plan item', () => {
-    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,
@@ -709,7 +709,7 @@ describe('cursor extension events', () => {
   });
 
   it('folds question.answered into the question card', () => {
-    const normalizer = new ChatNormalizer({ assignmentId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
+    const normalizer = new ChatNormalizer({ ticketId: 'a1', agentId: 'cursor', sessionKey: 'a1:cursor' });
     const items = new Map<string, ChatItem>();
     applyPatches(
       items,

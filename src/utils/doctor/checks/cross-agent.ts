@@ -218,7 +218,7 @@ const crossAgentSkillsCheck: Check = {
         remediation: {
           kind: 'manual',
           suggestion:
-            'Re-run `syntaur setup --target <id>` (from the assignment workspace, to also write protocol files) to complete or refresh the install.',
+            'Re-run `syntaur setup --target <id>` (from the ticket workspace, to also write protocol files) to complete or refresh the install.',
           command: null,
         },
         autoFixable: false,

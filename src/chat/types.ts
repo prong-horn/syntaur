@@ -2,7 +2,7 @@
  * Assignment-chat vocabulary — the types every other `src/chat/` module imports.
  *
  * Two layers, per Decision 2:
- *   - `ChatEvent` is the lossless append-only log record (`<assignmentDir>/chat/events.jsonl`).
+ *   - `ChatEvent` is the lossless append-only log record (`<ticketDir>/chat/events.jsonl`).
  *     Nothing is dropped: every ACP frame Syntaur renders plus every Syntaur-originated
  *     lifecycle event lands here in order.
  *   - `ChatItem` is the derived, renderable view (design doc §5.3, eight types). Items are
@@ -63,12 +63,12 @@ export type ChatEventKind =
   | 'system';
 
 export interface ChatEvent {
-  /** Monotonic per assignment, recovered from the log's last line on reopen. */
+  /** Monotonic per ticket, recovered from the log's last line on reopen. */
   seq: number;
   ts: string;
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
-  /** `${assignmentId}:${agentId}` — the broker's session key. */
+  /** `${ticketId}:${agentId}` — the broker's session key. */
   sessionKey: string;
   /** Broker-minted UUID, stamped on every event between `turn.start` and its `turn.end`/`turn.cancel`. */
   turnId: string | null;
@@ -278,7 +278,7 @@ export type ChatItemType =
 
 export interface ChatItemBase {
   itemId: string;
-  assignmentId: string;
+  ticketId: string;
   /** Null for items outside a turn (adapter notices, replay, session lifecycle). */
   turnId: string | null;
   agentId: string;
@@ -461,7 +461,7 @@ export type { ChatCommand, ChatCommandAction, ChatCommandsSource } from './comma
 
 /** Payload of the `chat-session` WS frame and of `GET …/chat/session`. */
 export interface ChatSessionSummary {
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
   harness: Harness;
   acpSessionId: string | null;
@@ -494,7 +494,7 @@ export interface ChatSessionSummary {
 }
 
 /**
- * The per-assignment participant set — `<assignmentDir>/chat/participants.json`
+ * The per-assignment participant set — `<ticketDir>/chat/participants.json`
  * (Decision 1). Ids are always filtered to definitions that still exist.
  */
 export interface Participants {
@@ -755,18 +755,18 @@ export interface ChatItemRow {
 // --- WS frames -------------------------------------------------------------
 
 export interface ChatItemFrame {
-  assignmentId: string;
+  ticketId: string;
   patch: ItemPatch;
 }
 
 export interface ChatSessionFrame {
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
   session: ChatSessionSummary;
 }
 
 export interface ChatParticipantsFrame {
-  assignmentId: string;
+  ticketId: string;
   participants: Participants;
   agents: ChatAgentSummary[];
 }

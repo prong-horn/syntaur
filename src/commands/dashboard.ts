@@ -4,7 +4,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readConfig } from '../utils/config.js';
 import { createDashboardServer } from '../dashboard/server.js';
-import { playbooksDir as getPlaybooksDir, assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
+import { playbooksDir as getPlaybooksDir, ticketsDir as getTicketsDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { SyntaurError } from '../errors.js';
 
@@ -109,7 +109,7 @@ export async function dashboardCommand(options: DashboardOptions): Promise<void>
   const server = createDashboardServer({
     port,
     projectsDir,
-    assignmentsDir: getAssignmentsDir(),
+    assignmentsDir: getTicketsDir(),
     playbooksDir: getPlaybooksDir(),
     serveStaticUi: mode === 'static',
     dashboardDistPath: dashboardDist,

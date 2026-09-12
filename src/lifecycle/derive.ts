@@ -147,8 +147,8 @@ export interface DeriveInput {
 }
 
 /**
- * Derive phase/disposition/headline for one assignment. Returns `null` when
- * the assignment is terminal — derivation defers entirely until `reopen`.
+ * Derive phase/disposition/headline for one ticket. Returns `null` when
+ * the ticket is terminal — derivation defers entirely until `reopen`.
  */
 export function deriveDimensions(input: DeriveInput): DerivedDimensions | null {
   const { facts, derive, currentStatus, terminalStatuses, knownStatusIds, override } = input;

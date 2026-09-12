@@ -33,14 +33,14 @@ import { fixtureEvents, listFixtures } from './helpers/acp-fixtures.js';
  */
 
 let sandbox: string;
-let assignmentDir: string;
+let ticketDir: string;
 
 const ASSIGNMENT_ID = 'assignment-1';
 const SESSION_KEY = 'assignment-1:claude';
 
 function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'itemId'>): ChatItem {
   return {
-    assignmentId: ASSIGNMENT_ID,
+    ticketId: ASSIGNMENT_ID,
     turnId: 't1',
     agentId: 'claude',
     type: 'system',
@@ -56,8 +56,8 @@ function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'itemId'>): ChatItem
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-store-'));
-  assignmentDir = join(sandbox, 'assignment');
-  await mkdir(assignmentDir, { recursive: true });
+  ticketDir = join(sandbox, 'ticket');
+  await mkdir(ticketDir, { recursive: true });
   closeSessionDb();
   initSessionDb(join(sandbox, 'syntaur.db'));
 });
@@ -69,10 +69,10 @@ afterEach(async () => {
 
 describe('event log', () => {
   it('creates chat/ on first use and assigns monotonic seqs', async () => {
-    const log = await openChatLog(assignmentDir);
-    expect(log.path).toBe(chatLogPath(assignmentDir));
+    const log = await openChatLog(ticketDir);
+    expect(log.path).toBe(chatLogPath(ticketDir));
     const a = await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -80,7 +80,7 @@ describe('event log', () => {
       payload: { messageId: 'm1', text: 'hi' },
     });
     const b = await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: 't1',
@@ -96,10 +96,10 @@ describe('event log', () => {
   });
 
   it('recovers seq across a reopen', async () => {
-    const first = await openChatLog(assignmentDir);
+    const first = await openChatLog(ticketDir);
     for (let i = 0; i < 3; i++) {
       await first.append({
-        assignmentId: ASSIGNMENT_ID,
+        ticketId: ASSIGNMENT_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: null,
@@ -107,10 +107,10 @@ describe('event log', () => {
         payload: { level: 'info', text: `n${i}` },
       });
     }
-    const second = await openChatLog(assignmentDir);
+    const second = await openChatLog(ticketDir);
     expect(second.nextSeq).toBe(3);
     const next = await second.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -122,9 +122,9 @@ describe('event log', () => {
   });
 
   it('tolerates a torn final line and keeps appending after it', async () => {
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -137,10 +137,10 @@ describe('event log', () => {
     const events = await readEvents(log.path);
     expect(events).toHaveLength(1);
 
-    const reopened = await openChatLog(assignmentDir);
+    const reopened = await openChatLog(ticketDir);
     expect(reopened.nextSeq).toBe(1);
     await reopened.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -152,11 +152,11 @@ describe('event log', () => {
   });
 
   it('serialises concurrent appends without losing or duplicating a seq', async () => {
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     await Promise.all(
       Array.from({ length: 25 }, (_, i) =>
         log.append({
-          assignmentId: ASSIGNMENT_ID,
+          ticketId: ASSIGNMENT_ID,
           agentId: 'claude',
           sessionKey: SESSION_KEY,
           turnId: null,
@@ -170,10 +170,10 @@ describe('event log', () => {
   });
 
   it('readAfter pages forward', async () => {
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     for (let i = 0; i < 5; i++) {
       await log.append({
-        assignmentId: ASSIGNMENT_ID,
+        ticketId: ASSIGNMENT_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: null,
@@ -186,7 +186,7 @@ describe('event log', () => {
 
   it('an empty or missing log reads as no events', async () => {
     expect(await readEvents(join(sandbox, 'nope.jsonl'))).toEqual([]);
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     expect(await log.readAll()).toEqual([]);
     expect(log.nextSeq).toBe(0);
   });
@@ -233,7 +233,7 @@ describe('chat_items index', () => {
 
   it('keeps assignments apart', () => {
     upsertChatItem(SESSION_KEY, item({ itemId: 't1:0' }));
-    upsertChatItem('other:claude', item({ itemId: 't2:0', assignmentId: 'assignment-2' }));
+    upsertChatItem('other:claude', item({ itemId: 't2:0', ticketId: 'assignment-2' }));
     expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
     expect(deleteChatItems('assignment-2')).toBe(1);
     expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
@@ -243,15 +243,15 @@ describe('chat_items index', () => {
 describe('chat_sessions', () => {
   const base = {
     sessionKey: SESSION_KEY,
-    assignmentId: ASSIGNMENT_ID,
+    ticketId: ASSIGNMENT_ID,
     projectSlug: 'syntaur-meta',
-    assignmentSlug: 'chat',
+    ticketSlug: 'chat',
     agentId: 'claude',
     harness: 'claude',
     state: 'spawning',
   };
 
-  it('upserts and reads back by (assignment, agent) and by key', () => {
+  it('upserts and reads back by (ticket, agent) and by key', () => {
     upsertChatSession({ ...base, acpSessionId: 'acp-1', pid: 4242 });
     const row = getChatSession(ASSIGNMENT_ID, 'claude');
     expect(row?.acp_session_id).toBe('acp-1');
@@ -276,19 +276,19 @@ describe('chat_sessions', () => {
 describe('rebuild == live', () => {
   async function seedFromFixture(name: string): Promise<{ events: ChatEvent[]; live: ChatItem[] }> {
     const fixture = listFixtures().find((f) => f.name === name)!;
-    const raw = fixtureEvents(fixture.path, { assignmentId: ASSIGNMENT_ID, agentId: 'claude' });
-    const log = await openChatLog(assignmentDir);
+    const raw = fixtureEvents(fixture.path, { ticketId: ASSIGNMENT_ID, agentId: 'claude' });
+    const log = await openChatLog(ticketDir);
     const events: ChatEvent[] = [];
     // Write the log the way the broker does — one append per event — and index
     // each patch as it is produced, exactly like the live path.
     const normalizer = new ChatNormalizer({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
     });
     for (const e of raw) {
       const stored = await log.append({
-        assignmentId: ASSIGNMENT_ID,
+        ticketId: ASSIGNMENT_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: e.turnId,
@@ -307,7 +307,7 @@ describe('rebuild == live', () => {
     const liveRows = listChatItemRows(ASSIGNMENT_ID);
     expect(live.length).toBeGreaterThan(5);
 
-    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    const result = await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
     expect(result.deleted).toBe(liveRows.length);
     expect(result.items).toBe(liveRows.length);
     expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
@@ -316,7 +316,7 @@ describe('rebuild == live', () => {
   it('holds for a transcript with tool cards, a fold and a plan', async () => {
     await seedFromFixture('claude/08-plan-events.ndjson');
     const liveRows = listChatItemRows(ASSIGNMENT_ID);
-    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
     expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
   });
 
@@ -330,7 +330,7 @@ describe('rebuild == live', () => {
     };
     expect(card.lead).toBeDefined();
 
-    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
     expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
   });
 
@@ -339,27 +339,27 @@ describe('rebuild == live', () => {
     expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
   });
 
-  it('rebuilding an assignment with no log clears its index', async () => {
+  it('rebuilding a ticket with no log clears its index', async () => {
     upsertChatItem(SESSION_KEY, item({ itemId: 'stale:0' }));
-    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    const result = await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
     expect(result).toEqual({ events: 0, items: 0, deleted: 1 });
   });
 });
 
-describe('rebuild == live across the assignment scope (Task 5)', () => {
+describe('rebuild == live across the ticket scope (Task 5)', () => {
   const ASSIGNMENT_SCOPE = `${ASSIGNMENT_ID}:@assignment`;
   const PLANNER_KEY = `${ASSIGNMENT_ID}:planner`;
   const IMPLEMENTER_KEY = `${ASSIGNMENT_ID}:implementer`;
 
   /**
    * A two-agent chat as the broker writes it: the routing rows in the
-   * assignment scope, each agent's turn under its own key, and all of it
+   * ticket scope, each agent's turn under its own key, and all of it
    * interleaved in one `events.jsonl` (Decision 3). `rebuildChatIndex` builds
    * one normalizer per distinct `sessionKey`, so this is the case that proves
    * the new key needs nothing else.
    */
   async function seedTwoAgents(): Promise<void> {
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     const normalizers = new Map<string, ChatNormalizer>();
     const write = async (
       sessionKey: string,
@@ -369,7 +369,7 @@ describe('rebuild == live across the assignment scope (Task 5)', () => {
       payload: unknown,
     ) => {
       const stored = await log.append({
-        assignmentId: ASSIGNMENT_ID,
+        ticketId: ASSIGNMENT_ID,
         agentId,
         sessionKey,
         turnId,
@@ -378,7 +378,7 @@ describe('rebuild == live across the assignment scope (Task 5)', () => {
       });
       let normalizer = normalizers.get(sessionKey);
       if (!normalizer) {
-        normalizer = new ChatNormalizer({ assignmentId: ASSIGNMENT_ID, agentId, sessionKey });
+        normalizer = new ChatNormalizer({ ticketId: ASSIGNMENT_ID, agentId, sessionKey });
         normalizers.set(sessionKey, normalizer);
       }
       for (const patch of normalizer.ingest(stored)) applyChatPatch(sessionKey, patch);
@@ -431,7 +431,7 @@ describe('rebuild == live across the assignment scope (Task 5)', () => {
     });
     await write(ASSIGNMENT_SCOPE, 'system', null, 'route.notice', {
       level: 'warn',
-      text: 'No agent @reviewer is attached to this assignment.',
+      text: 'No agent @reviewer is attached to this ticket.',
     });
     await write(IMPLEMENTER_KEY, 'implementer', 'turn-i', 'turn.end', {
       stopReason: 'end_turn',
@@ -455,14 +455,14 @@ describe('rebuild == live across the assignment scope (Task 5)', () => {
     expect(message.state).toBe('sent');
     expect(message.deliveredTo).toEqual(['planner', 'implementer']);
 
-    await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
+    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
     expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
   });
 
   it('replayItems reproduces the interleaved stream', async () => {
     await seedTwoAgents();
     const live = listChatItems(ASSIGNMENT_ID, { limit: 1000 });
-    const events = await readEvents(chatLogPath(assignmentDir));
+    const events = await readEvents(chatLogPath(ticketDir));
     expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
   });
 });

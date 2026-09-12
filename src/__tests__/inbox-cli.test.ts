@@ -36,12 +36,12 @@ interface SeedOpts {
   updated?: string;
 }
 
-/** Create a real on-disk assignment fixture under the seeded SYNTAUR_HOME. */
+/** Create a real on-disk ticket fixture under the seeded SYNTAUR_HOME. */
 async function seed(o: SeedOpts): Promise<void> {
   const standalone = o.project === undefined || o.project === null;
   const dir = standalone
     ? join(standaloneDir, o.slug)
-    : join(projectsDir, o.project as string, 'assignments', o.slug);
+    : join(projectsDir, o.project as string, 'tickets', o.slug);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
@@ -57,7 +57,7 @@ async function seed(o: SeedOpts): Promise<void> {
     fm.push('statusHistory:');
     fm.push(...o.statusHistory.map((l) => `  ${l}`));
   }
-  await writeFile(join(dir, 'assignment.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
+  await writeFile(join(dir, 'ticket.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
 
   if (o.comments && o.comments.length > 0) {
     const body = o.comments.map(formatCommentEntry).join('\n');
@@ -71,7 +71,7 @@ async function seed(o: SeedOpts): Promise<void> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-inbox-cli-'));
   projectsDir = join(root, 'projects');
-  standaloneDir = join(root, 'assignments'); // assignmentsDir() = <home>/assignments
+  standaloneDir = join(root, 'tickets'); // ticketsDir() = <home>/assignments
   await mkdir(projectsDir, { recursive: true });
   await mkdir(standaloneDir, { recursive: true });
 
@@ -119,8 +119,8 @@ describe('runInbox — JSON shape', () => {
     const review = result.items.find((i) => i.category === 'review')!;
     expect(review).toMatchObject({
       project: 'p1',
-      assignmentSlug: 'rev',
-      assignmentId: 'r1',
+      ticketSlug: 'rev',
+      ticketId: 'r1',
       category: 'review',
       action: { verb: 'Accept', command: 'syntaur complete rev --project p1' },
     });
@@ -305,7 +305,7 @@ describe('inbox human output (grouped, smoke)', () => {
     }
     const out = logs.join('\n');
     expect(out).toContain(
-      '→ http://localhost:4999/projects/p1/assignments/chat-row?tab=chat#turn-1:1',
+      '→ http://localhost:4999/projects/p1/tickets/chat-row?tab=chat#turn-1:1',
     );
   });
 
@@ -348,7 +348,7 @@ describe('runInbox — max-age and snoozes', () => {
       statusHistory: [`- at: "${freshAt}"`, '  to: review', '  command: review'],
     });
     const result = await runInbox({ maxAge: '1' });
-    expect(result.items.map((i) => i.assignmentSlug)).toEqual(['new-rev']);
+    expect(result.items.map((i) => i.ticketSlug)).toEqual(['new-rev']);
   });
 
   it('rejects invalid --max-age', async () => {

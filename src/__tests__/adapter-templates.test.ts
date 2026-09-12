@@ -9,10 +9,10 @@ import {
 
 const TEST_PARAMS = {
   projectSlug: 'test-project',
-  assignmentSlug: 'test-assignment',
+  ticketSlug: 'test-assignment',
   projectDir: '/home/user/.syntaur/projects/test-project',
-  assignmentDir:
-    '/home/user/.syntaur/projects/test-project/assignments/test-assignment',
+  ticketDir:
+    '/home/user/.syntaur/projects/test-project/tickets/test-assignment',
 };
 
 describe('renderCursorProtocol', () => {
@@ -26,7 +26,7 @@ describe('renderCursorProtocol', () => {
     const out = renderCursorProtocol();
     expect(out).toContain('~/.syntaur/');
     expect(out).toContain('manifest.md');
-    expect(out).toContain('assignment.md');
+    expect(out).toContain('ticket.md');
   });
 
   it('contains write boundary rules', () => {
@@ -56,7 +56,7 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('syntaur unblock');
     expect(out).toContain('syntaur fail');
     expect(out).toContain('syntaur comment');
-    expect(out).toContain('syntaur create-assignment');
+    expect(out).toContain('syntaur new');
   });
 
   it('references v2.0 protocol files', () => {
@@ -65,7 +65,7 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('comments.md');
   });
 
-  it('documents standalone assignments', () => {
+  it('documents standalone tickets', () => {
     const out = renderCursorProtocol();
     expect(out).toContain('standalone');
     expect(out).toMatch(/~\/\.syntaur\/assignments\//);
@@ -79,18 +79,18 @@ describe('renderCursorAssignment', () => {
     expect(out).toContain('alwaysApply: true');
   });
 
-  it('contains project and assignment context', () => {
+  it('contains project and ticket context', () => {
     const out = renderCursorAssignment(TEST_PARAMS);
     expect(out).toContain('test-project');
     expect(out).toContain('test-assignment');
     expect(out).toContain(TEST_PARAMS.projectDir);
-    expect(out).toContain(TEST_PARAMS.assignmentDir);
+    expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 
   it('contains reading order', () => {
     const out = renderCursorAssignment(TEST_PARAMS);
     expect(out).toContain('project.md');
-    expect(out).toContain('assignment.md');
+    expect(out).toContain('ticket.md');
     expect(out).toContain('plan*.md');
     expect(out).toContain('progress.md');
     expect(out).toContain('comments.md');
@@ -121,19 +121,19 @@ describe('renderCodexAgents', () => {
     expect(out).toMatch(/^# Syntaur Protocol/);
   });
 
-  it('contains assignment context', () => {
+  it('contains ticket context', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('test-project');
     expect(out).toContain('test-assignment');
     expect(out).toContain(TEST_PARAMS.projectDir);
-    expect(out).toContain(TEST_PARAMS.assignmentDir);
+    expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 
   it('contains preferred plugin workflows', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('syntaur-operator');
     expect(out).toContain('syntaur-protocol');
-    expect(out).toContain('grab-assignment');
+    expect(out).toContain('grab-ticket');
     expect(out).toContain('plan-assignment');
     expect(out).toContain('complete-assignment');
     expect(out).toContain('track-session');
@@ -172,10 +172,10 @@ describe('renderCodexAgents', () => {
   it('includes assignment-specific CLI commands', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain(
-      `syntaur start ${TEST_PARAMS.assignmentSlug} --project ${TEST_PARAMS.projectSlug}`,
+      `syntaur start ${TEST_PARAMS.ticketSlug} --project ${TEST_PARAMS.projectSlug}`,
     );
     expect(out).toContain(
-      `syntaur comment ${TEST_PARAMS.assignmentSlug}`,
+      `syntaur comment ${TEST_PARAMS.ticketSlug}`,
     );
   });
 
@@ -190,13 +190,13 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('comments.md');
   });
 
-  it('documents --one-off for standalone assignments', () => {
+  it('documents --one-off for standalone tickets', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('--one-off');
     expect(out).toMatch(/~\/\.syntaur\/assignments\//);
   });
 
-  it('mentions --type flag for create-assignment', () => {
+  it('mentions --type flag for new', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('--type');
   });
@@ -256,11 +256,11 @@ describe('renderHermesSoul', () => {
     expect(out).toContain('Write Boundary Rules');
   });
 
-  it('contains assignment context', () => {
+  it('contains ticket context', () => {
     const out = renderHermesSoul(TEST_PARAMS);
     expect(out).toContain('test-project');
     expect(out).toContain('test-assignment');
-    expect(out).toContain(TEST_PARAMS.assignmentDir);
+    expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 
   it('contains lifecycle commands', () => {

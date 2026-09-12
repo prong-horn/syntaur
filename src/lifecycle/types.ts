@@ -5,7 +5,9 @@
 import type { HopTrigger, GateSnapshotEntry, DissentCause } from './stage-engine.js';
 import type { StageRoute } from '../utils/stage-model.js';
 
-export type AssignmentStatus = string;
+export type TicketStatus = string;
+/** @deprecated Dashboard compat until Task 2 */
+export type AssignmentStatus = TicketStatus;
 
 export type TransitionCommand = string;
 
@@ -49,7 +51,7 @@ export interface ExternalId {
 }
 
 /**
- * One row in an assignment's `statusHistory` frontmatter array — an append-only
+ * One row in a ticket's `statusHistory` frontmatter array — an append-only
  * log of status transitions. `at`/`from`/`to` are always present (`from` is null
  * only for the creation/seed entry). `command`/`by` are recorded when known;
  * `reason` is set on `block` transitions. See the Query Language design doc,
@@ -171,7 +173,7 @@ export interface AttestationRecord {
  *
  * WS-1 defines the type + its pure evaluation (`evaluateCheckState`, where an
  * open, current solicitation yields the `awaiting` state). WS-2 wires it into
- * `AssignmentFrontmatter` + the parser/serializer on the write path; the
+ * `TicketFrontmatter` + the parser/serializer on the write path; the
  * dispatcher-driven parts (auto-solicitation, TTL/dead-judge reaping, per-revision
  * fan-out) are Phase 4a (parent-plan decision #8). Currentness (does
  * `revisionBinding` match the live revision?) is evaluated Node-side and passed
@@ -196,7 +198,7 @@ export interface Solicitation {
  * Sticky manual status override ("pin"). Folded into the written headline
  * `status` at recompute time; the un-overridden derived headline travels in
  * API payloads only (divergence display). May not target a terminal status
- * and may not be applied to a terminal assignment.
+ * and may not be applied to a terminal ticket.
  */
 export interface StatusOverride {
   status: string;
@@ -216,7 +218,7 @@ export interface Workspace {
   parentBranch: string | null;
 }
 
-export interface AssignmentFrontmatter {
+export interface TicketFrontmatter {
   id: string;
   slug: string;
   title: string;
@@ -225,7 +227,7 @@ export interface AssignmentFrontmatter {
   /** Explicit lifecycle-workflow override (`workflow:` id). Null → resolve via
    * project `workflowByType[type]` / project default / global default / `default`. */
   workflow: string | null;
-  status: AssignmentStatus;
+  status: TicketStatus;
   priority: 'low' | 'medium' | 'high' | 'critical';
   created: string;
   updated: string;
@@ -279,10 +281,13 @@ export interface AssignmentFrontmatter {
   gateOverrides: GateOverride[];
 }
 
+/** @deprecated Dashboard compat until Task 2 */
+export type AssignmentFrontmatter = TicketFrontmatter;
+
 export interface TransitionResult {
   success: boolean;
   message: string;
-  fromStatus: AssignmentStatus;
-  toStatus?: AssignmentStatus;
+  fromStatus: TicketStatus;
+  toStatus?: TicketStatus;
   warnings?: string[];
 }

@@ -3,7 +3,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  getAssignmentDetail,
+  getTicketDetail,
   getProjectDetail,
   clearStatusConfigCache,
 } from '../dashboard/api.js';
@@ -28,7 +28,7 @@ const bug: WorkflowDefinition = {
   facts: null,
 };
 
-function assignmentMd(opts: {
+function ticketMd(opts: {
   slug: string;
   type?: string | null;
   workflow?: string | null;
@@ -61,9 +61,9 @@ async function seedAssignment(opts: {
   workflow?: string | null;
   status: string;
 }): Promise<void> {
-  const dir = resolve(projectsDir, 'proj', 'assignments', opts.slug);
+  const dir = resolve(projectsDir, 'proj', 'tickets', opts.slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), assignmentMd(opts), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(opts), 'utf-8');
 }
 
 beforeEach(async () => {
@@ -97,7 +97,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
     );
     await seedAssignment({ slug: 'a1', type: 'bug', status: 'fixing' });
 
-    const detail = await getAssignmentDetail(projectsDir, 'proj', 'a1');
+    const detail = await getTicketDetail(projectsDir, 'proj', 'a1');
     expect(detail).not.toBeNull();
     expect(detail!.workflow).toBeNull(); // no explicit override — resolved via type
     expect(detail!.resolvedWorkflow).toBe('bug');
@@ -105,17 +105,17 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
     expect(detail!.statusLabel).toBe('Fixing Hard'); // label from the bug workflow, not default
   });
 
-  it('honors an explicit assignment `workflow:` override', async () => {
+  it('honors an explicit ticket `workflow:` override', async () => {
     await mkdir(resolve(projectsDir, 'proj'), { recursive: true });
     await writeFile(
       resolve(projectsDir, 'proj', 'project.md'),
       `---\nid: p\nslug: proj\ntitle: Proj\n---\n# Proj\n`,
       'utf-8',
     );
-    // No project binding; the assignment pins the bug workflow explicitly.
+    // No project binding; the ticket pins the bug workflow explicitly.
     await seedAssignment({ slug: 'a2', type: 'feature', workflow: 'bug', status: 'verified' });
 
-    const detail = await getAssignmentDetail(projectsDir, 'proj', 'a2');
+    const detail = await getTicketDetail(projectsDir, 'proj', 'a2');
     expect(detail!.workflow).toBe('bug');
     expect(detail!.resolvedWorkflow).toBe('bug');
     expect(detail!.workflowLabel).toBe('Bug Flow');
@@ -131,7 +131,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
     );
     await seedAssignment({ slug: 'a3', type: 'feature', status: 'in_progress' });
 
-    const detail = await getAssignmentDetail(projectsDir, 'proj', 'a3');
+    const detail = await getTicketDetail(projectsDir, 'proj', 'a3');
     expect(detail!.resolvedWorkflow).toBe('default');
     expect(detail!.workflowLabel).toBe('Default');
     expect(detail!.statusLabel).toBe('In Progress');

@@ -48,7 +48,7 @@ tags: []
 # ${title}`;
 }
 
-function assignmentMd(slug: string, status: string): string {
+function ticketMd(slug: string, status: string): string {
   return `---
 id: ${slug}-id
 slug: ${slug}
@@ -74,11 +74,11 @@ tags: []
 
 async function seedProjectWithAssignment(status: string): Promise<string> {
   const projectDir = resolve(testDir, 'test-project');
-  const assignmentDir = resolve(projectDir, 'assignments', 'test-assignment');
-  await mkdir(assignmentDir, { recursive: true });
+  const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+  await mkdir(ticketDir, { recursive: true });
   await writeFile(resolve(projectDir, 'project.md'), projectMd('test-project', 'Test Project'), 'utf-8');
-  await writeFile(resolve(assignmentDir, 'assignment.md'), assignmentMd('test-assignment', status), 'utf-8');
-  return resolve(assignmentDir, 'assignment.md');
+  await writeFile(resolve(ticketDir, 'ticket.md'), assignmentMd('test-assignment', status), 'utf-8');
+  return resolve(ticketDir, 'ticket.md');
 }
 
 // Minimal direct-handler invocation matching dashboard-write.test.ts so a
@@ -115,7 +115,7 @@ async function invokeRoute(
 describe('records cache', () => {
   it('serves a cached snapshot until explicitly invalidated', async () => {
     await seedProjectWithAssignment('pending');
-    const assignmentPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
 
     // Warm the cache.
     const first = await getOverview(testDir);
@@ -123,7 +123,7 @@ describe('records cache', () => {
 
     // Mutate the file directly on disk, bypassing every router (so nothing
     // invalidates). A live (non-cached) read would see in_progress.
-    await writeFile(assignmentPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
 
     // Cache is still serving the warm snapshot — proves it is not re-fanning out.
     const cached = await getOverview(testDir);
@@ -168,7 +168,7 @@ describe('records cache', () => {
     const status = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/assignments/:aslug',
+      '/api/projects/:slug/tickets/:aslug',
       { slug: 'test-project', aslug: 'test-assignment' },
       { content: assignmentMd('test-assignment', 'in_progress') },
     );
@@ -181,7 +181,7 @@ describe('records cache', () => {
 
   it('invalidates the records cache after a status-config mutation', async () => {
     await seedProjectWithAssignment('pending');
-    const assignmentPath = resolve(testDir, 'test-project', 'assignments', 'test-assignment', 'assignment.md');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
     const router = createStatusConfigRouter(testDir, null);
 
     // Warm the cache with the pending state.
@@ -189,7 +189,7 @@ describe('records cache', () => {
     expect(before.stats.inProgressAssignments).toBe(0);
 
     // Mutate on disk, bypassing every router.
-    await writeFile(assignmentPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
 
     // A malformed body short-circuits to 400 before any global status-config
     // read/write, but it must still run the invalidation wrapper's `finally` —
@@ -204,11 +204,11 @@ describe('records cache', () => {
 
   it('derives workspace records from the cache without a second fan-out', async () => {
     const projectDir = resolve(testDir, 'wsp');
-    const assignmentDir = resolve(projectDir, 'assignments', 'has-worktree');
-    await mkdir(assignmentDir, { recursive: true });
+    const ticketDir = resolve(projectDir, 'tickets', 'has-worktree');
+    await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(projectDir, 'project.md'), projectMd('wsp', 'WSP'), 'utf-8');
     await writeFile(
-      resolve(assignmentDir, 'assignment.md'),
+      resolve(ticketDir, 'ticket.md'),
       assignmentMd('has-worktree', 'in_progress').replace(
         'worktreePath: null\n  branch: null',
         'worktreePath: /tmp/wt\n  branch: feature-x',
@@ -217,7 +217,7 @@ describe('records cache', () => {
     );
 
     const records = await listWorkspaceRecords(testDir);
-    const match = records.find((r) => r.assignmentSlug === 'has-worktree');
+    const match = records.find((r) => r.ticketSlug === 'has-worktree');
     expect(match).toMatchObject({
       projectSlug: 'wsp',
       worktreePath: '/tmp/wt',

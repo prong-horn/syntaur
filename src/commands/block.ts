@@ -7,6 +7,6 @@ export interface BlockOptions extends DeriveVerbOptions {
 
 /** Derived model: `block` asserts the blockedReason FACT; the blocked status
  * follows from derivation (disposition rule) rather than an imperative write. */
-export async function blockCommand(assignment: string, options: BlockOptions): Promise<void> {
-  await blockFactCommand(assignment, options);
+export async function blockCommand(ticket: string, options: BlockOptions): Promise<void> {
+  await blockFactCommand(ticket, options);
 }

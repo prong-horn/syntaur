@@ -32,7 +32,7 @@ describe('resolveChatCwd', () => {
       worktreePath: worktree,
       repository: repo,
       branch: 'main',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [projectRepo],
     });
     expect(r.cwd).toBe(worktree);
@@ -45,7 +45,7 @@ describe('resolveChatCwd', () => {
       worktreePath: null,
       repository: repo,
       branch: 'main',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [projectRepo],
     });
     expect(r.cwd).toBe(repo);
@@ -57,7 +57,7 @@ describe('resolveChatCwd', () => {
       worktreePath: null,
       repository: null,
       branch: null,
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [projectRepo],
     });
     expect(r.cwd).toBe(projectRepo);
@@ -70,7 +70,7 @@ describe('resolveChatCwd', () => {
       worktreePath: null,
       repository: null,
       branch: null,
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [],
     });
     expect(r.cwd).toBe(homedir());
@@ -83,7 +83,7 @@ describe('resolveChatCwd', () => {
       worktreePath: null,
       repository: null,
       branch: null,
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [resolve(base, 'gone'), resolve(base, 'also-gone')],
     });
     expect(r.cwd).toBe(homedir());
@@ -95,7 +95,7 @@ describe('resolveChatCwd', () => {
       worktreePath: null,
       repository: null,
       branch: null,
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [resolve(base, 'gone'), projectRepo],
     });
     expect(r.cwd).toBe(projectRepo);
@@ -108,7 +108,7 @@ describe('resolveChatCwd', () => {
       worktreePath: worktree,
       repository: repo,
       branch: 'main',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       projectRepositories: [projectRepo],
     });
     expect(r.tier).toBe('worktree');

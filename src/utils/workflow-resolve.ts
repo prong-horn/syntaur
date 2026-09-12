@@ -1,7 +1,7 @@
 /**
  * Pure, browser-safe workflow binding resolution — the single place the
  * first-hit-wins binding precedence lives. Consumed by both the Node lifecycle
- * (via the central `resolveAssignmentWorkflowContext` helper) and the dashboard
+ * (via the central `resolveTicketWorkflowContext` helper) and the dashboard
  * (board modes, filters), so it must stay free of Node imports.
  *
  * @see WorkflowDefinition in config.ts for the bundle shape.
@@ -13,9 +13,13 @@ import { buildDefaultStatusConfig, toTitleCase } from './status-defaults.js';
 export const DEFAULT_WORKFLOW_ID = 'default';
 
 export interface ResolveWorkflowInput {
-  /** `workflow:` on the assignment frontmatter — explicit override, wins. */
+  /** `workflow:` on the ticket frontmatter — explicit override, wins. */
+  ticketWorkflow?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentWorkflow?: string | null;
-  /** The assignment's `type:` — keys into the project's `workflowByType` map. */
+  /** The ticket's `type:` — keys into the project's `workflowByType` map. */
+  ticketType?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentType?: string | null;
   /** Project `defaultWorkflow`. */
   projectDefaultWorkflow?: string | null;
@@ -29,9 +33,9 @@ export interface ResolveWorkflowInput {
 }
 
 /**
- * Resolve the workflow id for an assignment, first-hit-wins:
+ * Resolve the workflow id for a ticket, first-hit-wins:
  *
- *   1. assignment `workflow:`         (explicit override)
+ *   1. ticket `workflow:`         (explicit override)
  *   2. project `workflowByType[type]` (the type map)
  *   3. project `defaultWorkflow`
  *   4. global `defaultWorkflow`
@@ -44,19 +48,19 @@ export interface ResolveWorkflowInput {
  */
 export function resolveWorkflowId(input: ResolveWorkflowInput): string {
   const {
-    assignmentWorkflow,
-    assignmentType,
     projectDefaultWorkflow,
     projectWorkflowByType,
     globalDefaultWorkflow,
     available,
   } = input;
+  const ticketWorkflow = input.ticketWorkflow ?? input.assignmentWorkflow;
+  const ticketType = input.ticketType ?? input.assignmentType;
 
   const typeMapped =
-    assignmentType && projectWorkflowByType ? projectWorkflowByType[assignmentType] : null;
+    ticketType && projectWorkflowByType ? projectWorkflowByType[ticketType] : null;
 
   const candidates = [
-    assignmentWorkflow,
+    ticketWorkflow,
     typeMapped,
     projectDefaultWorkflow,
     globalDefaultWorkflow,

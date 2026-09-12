@@ -2,29 +2,29 @@ import { describe, it, expect, vi } from 'vitest';
 import { recreateRequest, type RecreateIdentity } from '../../dashboard/src/lib/recreate';
 
 describe('recreateRequest', () => {
-  it('routes a project-nested assignment to the project recreate endpoint', () => {
+  it('routes a project-nested ticket to the project recreate endpoint', () => {
     const id: RecreateIdentity = {
-      kind: 'assignment',
+      kind: 'ticket',
       id: 'uuid-1',
       projectSlug: 'proj',
-      assignmentSlug: 'task-x',
+      ticketSlug: 'task-x',
     };
     expect(recreateRequest(id)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/assignments/task-x/worktree/recreate',
+      url: '/api/projects/proj/tickets/task-x/worktree/recreate',
     });
   });
 
-  it('routes a standalone assignment (no project) to the by-id endpoint', () => {
+  it('routes a standalone ticket (no project) to the by-id endpoint', () => {
     const id: RecreateIdentity = {
-      kind: 'assignment',
+      kind: 'ticket',
       id: 'uuid-2',
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
     };
     expect(recreateRequest(id)).toEqual({
       method: 'POST',
-      url: '/api/assignments/uuid-2/worktree/recreate',
+      url: '/api/tickets/uuid-2/worktree/recreate',
     });
   });
 
@@ -33,7 +33,7 @@ describe('recreateRequest', () => {
       kind: 'session',
       id: 'sess-9',
       projectSlug: 'p',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
     };
     expect(recreateRequest(id)).toEqual({
       method: 'POST',
@@ -48,7 +48,7 @@ describe('recreateRequest', () => {
     try {
       // Building the descriptor (what a confirm would do) never fetches; a
       // cancel simply never calls this, so cancelling fires nothing.
-      recreateRequest({ kind: 'session', id: 's', projectSlug: null, assignmentSlug: null });
+      recreateRequest({ kind: 'session', id: 's', projectSlug: null, ticketSlug: null });
       expect(fetchSpy).not.toHaveBeenCalled();
     } finally {
       (globalThis as { fetch?: unknown }).fetch = original;

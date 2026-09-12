@@ -11,7 +11,7 @@
  */
 
 import type { AssignmentFacts } from './derive.js';
-import type { AssignmentFrontmatter } from './types.js';
+import type { TicketFrontmatter } from './types.js';
 import type { StageCheck, StageWorkflow } from '../utils/stage-model.js';
 import {
   type AttestationEnv,
@@ -51,7 +51,7 @@ function normalizeBinds(binds: string | undefined): 'plan' | 'commit' | 'none' {
  * `binds:commit` gate validates against a live HEAD.
  */
 export function buildEngineInput(
-  frontmatter: AssignmentFrontmatter,
+  frontmatter: TicketFrontmatter,
   facts: AssignmentFacts,
   workflow: StageWorkflow,
   env: AttestationEnv,
@@ -100,7 +100,7 @@ export function buildEngineInput(
  * recompute-side regression. Legacy FACT reads stay live and are out of scope.
  */
 export function getCheckStates(
-  frontmatter: AssignmentFrontmatter,
+  frontmatter: TicketFrontmatter,
   facts: AssignmentFacts,
   workflow: StageWorkflow,
   env: AttestationEnv,

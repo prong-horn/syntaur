@@ -57,7 +57,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
     instructions: {
       files: [
         { path: '.cursor/rules/syntaur-protocol.mdc', renderer: 'cursorProtocol' },
-        { path: '.cursor/rules/syntaur-assignment.mdc', renderer: 'cursorAssignment' },
+        { path: '.cursor/rules/syntaur-ticket.mdc', renderer: 'cursorAssignment' },
       ],
     },
   },

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeEngineStep } from '../lifecycle/engine-step.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { AttestationEnv } from '../lifecycle/facts.js';
 import type { AssignmentFacts } from '../lifecycle/derive.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
@@ -39,7 +39,7 @@ describe('computeEngineStep', () => {
     const c = content('building');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ acAllChecked: true, reviewOk: true }),
       workflow: WF,
       env,
@@ -52,7 +52,7 @@ describe('computeEngineStep', () => {
     expect(step!.finalStatus).toBe('done');
     expect(step!.terminalArrival).toBe(true);
     expect(step!.successTerminal).toBe(true);
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.status).toBe('done');
     expect(fm.disposition).toBe('terminal');
     expect(fm.frozenChecks).not.toBeNull();
@@ -64,7 +64,7 @@ describe('computeEngineStep', () => {
     const c = content('building');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ acAllChecked: false }),
       workflow: WF,
       env,
@@ -81,7 +81,7 @@ describe('computeEngineStep', () => {
     const c = content('building');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ acAllChecked: false, reviewOk: false }),
       workflow: WF,
       env,
@@ -92,7 +92,7 @@ describe('computeEngineStep', () => {
       at: '2026-07-09T02:00:00Z',
     });
     expect(step!.finalStatus).toBe('reviewing');
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.status).toBe('reviewing');
     expect(fm.gateOverrides).toHaveLength(1);
     expect(fm.gateOverrides[0]).toMatchObject({
@@ -112,7 +112,7 @@ describe('computeEngineStep', () => {
     const c = content('reviewing');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ reviewOk: false }),
       workflow: WF,
       env,
@@ -122,14 +122,14 @@ describe('computeEngineStep', () => {
       at: '2026-07-09T02:00:00Z',
     });
     expect(step!.finalStatus).toBe('building');
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.gateOverrides).toEqual([]);
   });
 
   it('reopen: re-places from terminal and clears the freeze', () => {
     // A done ticket with frozenChecks; reopen caps at reviewing (the reopen target).
     const c = content('done', 'frozenChecks:\n  - key: "done:0"\n    label: reviewOk\n    passed: true\n');
-    const fm0 = parseAssignmentFrontmatter(c);
+    const fm0 = parseTicketFrontmatter(c);
     expect(fm0.frozenChecks).not.toBeNull();
     const step = computeEngineStep({
       content: c,
@@ -143,7 +143,7 @@ describe('computeEngineStep', () => {
       at: '2026-07-09T03:00:00Z',
     });
     expect(step!.finalStatus).toBe('reviewing');
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.status).toBe('reviewing');
     expect(fm.frozenChecks).toBeNull(); // freeze cleared
     expect(fm.statusHistory.find((h) => h.trigger === 'reopen')).toBeDefined();
@@ -153,7 +153,7 @@ describe('computeEngineStep', () => {
     const c = content('some_legacy_status');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({}),
       workflow: WF,
       env,
@@ -171,7 +171,7 @@ describe('computeEngineStep', () => {
     const c = content('building');
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ acAllChecked: false, reviewOk: false }),
       workflow: WF,
       env,
@@ -180,7 +180,7 @@ describe('computeEngineStep', () => {
       by: 'human',
       at: '2026-07-09T05:00:00Z',
     });
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.status).toBe('done');
     expect(fm.gateOverrides.map((o) => o.stage).sort()).toEqual(['building', 'reviewing']);
     const building = fm.gateOverrides.find((o) => o.stage === 'building')!;
@@ -196,10 +196,10 @@ describe('computeEngineStep', () => {
     const existing =
       'gateOverrides:\n  - stage: building\n    key: "building:0"\n    label: acAllChecked\n    from: building\n    to: reviewing\n    actor: human\n    at: "2026-07-09T05:00:00Z"\n';
     const c = content('reviewing', existing);
-    expect(parseAssignmentFrontmatter(c).gateOverrides).toHaveLength(1);
+    expect(parseTicketFrontmatter(c).gateOverrides).toHaveLength(1);
     const step = computeEngineStep({
       content: c,
-      frontmatter: parseAssignmentFrontmatter(c),
+      frontmatter: parseTicketFrontmatter(c),
       facts: facts({ acAllChecked: true, reviewOk: false }), // reviewOk fails → stays in reviewing
       workflow: WF,
       env,
@@ -209,7 +209,7 @@ describe('computeEngineStep', () => {
       at: '2026-07-09T06:00:00Z',
     });
     expect(step!.changed).toBe(true); // the clear itself is a change
-    const fm = parseAssignmentFrontmatter(step!.nextContent);
+    const fm = parseTicketFrontmatter(step!.nextContent);
     expect(fm.status).toBe('reviewing'); // no move
     expect(fm.gateOverrides).toEqual([]); // building override cleared
   });
@@ -237,7 +237,7 @@ describe('computeEngineStep', () => {
       const c = content(status);
       return computeEngineStep({
         content: c,
-        frontmatter: parseAssignmentFrontmatter(c),
+        frontmatter: parseTicketFrontmatter(c),
         facts: facts({ acAllChecked: false }),
         workflow: VWF,
         env,

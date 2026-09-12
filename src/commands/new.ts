@@ -2,11 +2,11 @@ import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { generateId } from '../utils/uuid.js';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import {
-  renderAssignment,
+  renderTicket,
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
@@ -14,7 +14,7 @@ import {
   renderComments,
 } from '../templates/index.js';
 
-export interface CreateAssignmentOptions {
+export interface NewTicketOptions {
   project?: string;
   oneOff?: boolean;
   slug?: string;
@@ -29,19 +29,19 @@ export interface CreateAssignmentOptions {
   acceptanceCriteria?: string[];
 }
 
-export interface CreateAssignmentResult {
+export interface NewTicketResult {
   id: string;
   slug: string;
   projectSlug: string | null;
-  assignmentDir: string;
+  ticketDir: string;
 }
 
-export async function createAssignmentCommand(
+export async function newCommand(
   title: string,
-  options: CreateAssignmentOptions,
-): Promise<CreateAssignmentResult> {
+  options: NewTicketOptions,
+): Promise<NewTicketResult> {
   if (!title.trim()) {
-    throw new Error('Assignment title cannot be empty.');
+    throw new Error('Ticket title cannot be empty.');
   }
 
   if (!options.project && !options.oneOff) {
@@ -51,7 +51,7 @@ export async function createAssignmentCommand(
   }
   if (options.project && options.oneOff) {
     throw new Error(
-      'Cannot use both --project and --one-off. Use --project to add to an existing project, or --one-off to create a standalone assignment.',
+      'Cannot use both --project and --one-off. Use --project to add to an existing project, or --one-off to create a standalone ticket.',
     );
   }
 
@@ -62,13 +62,13 @@ export async function createAssignmentCommand(
   }
 
   if (options.oneOff && options.dependsOn) {
-    throw new Error('Standalone assignments cannot have dependencies (--depends-on is not allowed with --one-off).');
+    throw new Error('Standalone tickets cannot have dependencies (--depends-on is not allowed with --one-off).');
   }
 
-  const assignmentSlug = options.slug || slugify(title);
-  if (!isValidSlug(assignmentSlug)) {
+  const ticketSlug = options.slug || slugify(title);
+  if (!isValidSlug(ticketSlug)) {
     throw new Error(
-      `Invalid slug "${assignmentSlug}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+      `Invalid slug "${ticketSlug}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
     );
   }
 
@@ -90,7 +90,7 @@ export async function createAssignmentCommand(
     const parts = link.split('/');
     if (parts.length !== 2 || !parts.every(isValidSlug)) {
       throw new Error(
-        `Invalid link "${link}". Links must be in projectSlug/assignmentSlug format (e.g., "my-project/my-assignment").`,
+        `Invalid link "${link}". Links must be in projectSlug/ticketSlug format (e.g., "my-project/my-assignment").`,
       );
     }
   }
@@ -107,15 +107,15 @@ export async function createAssignmentCommand(
   const timestamp = nowTimestamp();
   const id = generateId();
 
-  let assignmentDir: string;
+  let ticketDir: string;
   let projectSlug: string | null;
   let folderName: string;
 
   if (options.oneOff) {
     // Standalone: folder name = UUID, project: null
-    const standaloneRoot = assignmentsDirFn();
+    const standaloneRoot = ticketsDirFn();
     folderName = id;
-    assignmentDir = resolve(standaloneRoot, folderName);
+    ticketDir = resolve(standaloneRoot, folderName);
     projectSlug = null;
     await ensureDir(standaloneRoot);
   } else {
@@ -133,7 +133,7 @@ export async function createAssignmentCommand(
     }
 
     if (dependsOn.length > 0) {
-      const depDirBase = resolve(projectDir, 'assignments');
+      const depDirBase = resolve(projectDir, 'tickets');
       for (const dep of dependsOn) {
         const depDir = resolve(depDirBase, dep);
         if (!(await fileExists(depDir))) {
@@ -144,26 +144,26 @@ export async function createAssignmentCommand(
       }
     }
 
-    folderName = assignmentSlug;
-    assignmentDir = resolve(projectDir, 'assignments', folderName);
+    folderName = ticketSlug;
+    ticketDir = resolve(projectDir, 'tickets', folderName);
   }
 
-  if (await fileExists(assignmentDir)) {
+  if (await fileExists(ticketDir)) {
     throw new Error(
-      `Assignment folder already exists: ${assignmentDir}\nUse --slug to specify a different slug.`,
+      `Ticket folder already exists: ${ticketDir}\nUse --slug to specify a different slug.`,
     );
   }
 
-  await ensureDir(assignmentDir);
+  await ensureDir(ticketDir);
 
-  const companionAssignmentRef = projectSlug === null ? id : assignmentSlug;
+  const companionAssignmentRef = projectSlug === null ? id : ticketSlug;
 
   const files: Array<[string, string]> = [
     [
-      resolve(assignmentDir, 'assignment.md'),
-      renderAssignment({
+      resolve(ticketDir, 'ticket.md'),
+      renderTicket({
         id,
-        slug: assignmentSlug,
+        slug: ticketSlug,
         title,
         timestamp,
         priority,
@@ -177,37 +177,37 @@ export async function createAssignmentCommand(
       }),
     ],
     [
-      resolve(assignmentDir, 'scratchpad.md'),
+      resolve(ticketDir, 'scratchpad.md'),
       renderScratchpad({
-        assignmentSlug: companionAssignmentRef,
+        ticketSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
-      resolve(assignmentDir, 'handoff.md'),
+      resolve(ticketDir, 'handoff.md'),
       renderHandoff({
-        assignmentSlug: companionAssignmentRef,
+        ticketSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
-      resolve(assignmentDir, 'decision-record.md'),
+      resolve(ticketDir, 'decision-record.md'),
       renderDecisionRecord({
-        assignmentSlug: companionAssignmentRef,
+        ticketSlug: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
-      resolve(assignmentDir, 'progress.md'),
+      resolve(ticketDir, 'progress.md'),
       renderProgress({
-        assignment: companionAssignmentRef,
+        ticket: companionAssignmentRef,
         timestamp,
       }),
     ],
     [
-      resolve(assignmentDir, 'comments.md'),
+      resolve(ticketDir, 'comments.md'),
       renderComments({
-        assignment: companionAssignmentRef,
+        ticket: companionAssignmentRef,
         timestamp,
       }),
     ],
@@ -220,15 +220,15 @@ export async function createAssignmentCommand(
   if (!options.silent) {
     if (projectSlug === null) {
       console.log(
-        `Created standalone assignment "${title}" at ${assignmentDir}/`,
+        `Created standalone ticket "${title}" at ${ticketDir}/`,
       );
       console.log(`  UUID: ${id}`);
-      console.log(`  Slug: ${assignmentSlug} (display only)`);
+      console.log(`  Slug: ${ticketSlug} (display only)`);
     } else {
       console.log(
-        `Created assignment "${title}" in project "${projectSlug}" at ${assignmentDir}/`,
+        `Created ticket "${title}" in project "${projectSlug}" at ${ticketDir}/`,
       );
-      console.log(`  Slug: ${assignmentSlug}`);
+      console.log(`  Slug: ${ticketSlug}`);
     }
     console.log(`  Priority: ${priority}`);
     if (options.type) {
@@ -241,7 +241,7 @@ export async function createAssignmentCommand(
       console.log(`  Links: ${links.join(', ')}`);
     }
     console.log(`  Files created:`);
-    console.log(`    assignment.md`);
+    console.log(`    ticket.md`);
     console.log(`    scratchpad.md`);
     console.log(`    handoff.md`);
     console.log(`    decision-record.md`);
@@ -252,5 +252,5 @@ export async function createAssignmentCommand(
     );
   }
 
-  return { id, slug: assignmentSlug, projectSlug, assignmentDir };
+  return { id, slug: ticketSlug, projectSlug, ticketDir };
 }

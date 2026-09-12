@@ -5,7 +5,7 @@ describe('computeWorktreeDefaults', () => {
   it('uses project-prefixed branch when projectSlug is non-empty', () => {
     const out = computeWorktreeDefaults({
       projectSlug: 'proj',
-      assignmentSlug: 'task',
+      ticketSlug: 'task',
       existing: { repository: '/r', branch: null, parentBranch: null },
     });
     expect(out.branch).toBe('syntaur/proj/task');
@@ -17,7 +17,7 @@ describe('computeWorktreeDefaults', () => {
   it('drops the project segment when projectSlug is empty (standalone fallback)', () => {
     const out = computeWorktreeDefaults({
       projectSlug: '',
-      assignmentSlug: 'task',
+      ticketSlug: 'task',
       existing: { repository: '/r', branch: null, parentBranch: null },
     });
     expect(out.branch).toBe('syntaur/task');
@@ -27,7 +27,7 @@ describe('computeWorktreeDefaults', () => {
   it('honors existing parentBranch instead of falling back', () => {
     const out = computeWorktreeDefaults({
       projectSlug: 'proj',
-      assignmentSlug: 'task',
+      ticketSlug: 'task',
       existing: { repository: '/r', branch: null, parentBranch: 'develop' },
     });
     expect(out.parentBranch).toBe('develop');
@@ -36,7 +36,7 @@ describe('computeWorktreeDefaults', () => {
   it('honors existing repository instead of probing cwd', () => {
     const out = computeWorktreeDefaults({
       projectSlug: 'proj',
-      assignmentSlug: 'task',
+      ticketSlug: 'task',
       existing: { repository: '/custom/repo', branch: null, parentBranch: null },
     });
     expect(out.repository).toBe('/custom/repo');

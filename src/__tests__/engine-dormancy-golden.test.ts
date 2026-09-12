@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { recomputeAndWrite, resolveRecomputeContext } from '../lifecycle/recompute.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 
 /**
@@ -64,10 +64,10 @@ Real objective text.
 - [ ] First real criterion
 `;
 
-async function writeAssignment(content: string): Promise<string> {
-  const dir = join(home, 'assignments', 't');
+async function writeTicket(content: string): Promise<string> {
+  const dir = join(home, 'tickets', 't');
   await mkdir(dir, { recursive: true });
-  const path = join(dir, 'assignment.md');
+  const path = join(dir, 'ticket.md');
   await writeFile(path, content, 'utf-8');
   return path;
 }
@@ -90,7 +90,7 @@ afterEach(async () => {
   await rm(home, { recursive: true, force: true });
 });
 
-function noEngineArtifacts(fm: ReturnType<typeof parseAssignmentFrontmatter>): void {
+function noEngineArtifacts(fm: ReturnType<typeof parseTicketFrontmatter>): void {
   // Engine-only frontmatter slots must stay untouched on the ladder path.
   expect(fm.frozenChecks).toBeNull();
   expect(fm.gateOverrides ?? []).toHaveLength(0);
@@ -106,7 +106,7 @@ function noEngineArtifacts(fm: ReturnType<typeof parseAssignmentFrontmatter>): v
 
 describe('engine dormancy — marker unset keeps recompute on the ladder', () => {
   it('with the per-file workflow field set, an unset marker still derives via the ladder', async () => {
-    const path = await writeAssignment(ASSIGNMENT('draft', true));
+    const path = await writeTicket(ASSIGNMENT('draft', true));
     const { context, workflowResolver } = await resolveRecomputeContext();
     const result = await recomputeAndWrite(path, {
       cause: 'derive',
@@ -118,14 +118,14 @@ describe('engine dormancy — marker unset keeps recompute on the ladder', () =>
     expect(result.viaEngine).not.toBe(true);
     // The ladder derives a real-objective draft to ready_for_planning.
     expect(result.status).toBe('ready_for_planning');
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.status).toBe('ready_for_planning');
     expect(fm.statusHistory.at(-1)).toMatchObject({ dispositionTo: 'active' });
     noEngineArtifacts(fm);
   });
 
   it('without a workflow field either, the ladder result is identical (marker-independent)', async () => {
-    const path = await writeAssignment(ASSIGNMENT('draft', false));
+    const path = await writeTicket(ASSIGNMENT('draft', false));
     const { context, workflowResolver } = await resolveRecomputeContext();
     const result = await recomputeAndWrite(path, {
       cause: 'derive',
@@ -136,6 +136,6 @@ describe('engine dormancy — marker unset keeps recompute on the ladder', () =>
     });
     expect(result.viaEngine).not.toBe(true);
     expect(result.status).toBe('ready_for_planning');
-    noEngineArtifacts(parseAssignmentFrontmatter(await readFile(path, 'utf-8')));
+    noEngineArtifacts(parseTicketFrontmatter(await readFile(path, 'utf-8')));
   });
 });

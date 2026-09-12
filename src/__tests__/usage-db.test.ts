@@ -49,7 +49,7 @@ function makeEvent(overrides: Partial<UsageEventInput> = {}): UsageEventInput {
     totalCost: 0.5,
     cwd: '/Users/dev/proj',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     rawJson: null,
     ...overrides,
   };
@@ -61,7 +61,7 @@ function makeDaily(overrides: Partial<UsageDailyInput> = {}): UsageDailyInput {
     tool: 'claude',
     model: 'claude-opus-4-7',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     inputTokens: 100,
     outputTokens: 200,
     cacheCreationTokens: 50,
@@ -255,14 +255,14 @@ describe('advanceMetaIso (monotonic)', () => {
 describe('upsertEvent monotonic guards (codex-review CRITICAL/HIGH fixes)', () => {
   it('preserves attribution when later UPSERT has none', () => {
     initUsageDb(dbPath);
-    upsertEvent(makeEvent({ projectSlug: 'p1', assignmentSlug: 'a1', cwd: '/proj' }));
+    upsertEvent(makeEvent({ projectSlug: 'p1', ticketSlug: 'a1', cwd: '/proj' }));
     // A later collect that couldn't attribute (cwd walk missed the JSONL) sends
     // the same session+model but with empty attribution. Existing attribution
     // must survive.
     upsertEvent(
       makeEvent({
         projectSlug: '',
-        assignmentSlug: '',
+        ticketSlug: '',
         cwd: null,
         totalTokens: 9999,
         eventTs: '2026-05-21T13:00:00.000Z',
@@ -278,11 +278,11 @@ describe('upsertEvent monotonic guards (codex-review CRITICAL/HIGH fixes)', () =
 
   it('overwrites attribution when later UPSERT has fresher attribution', () => {
     initUsageDb(dbPath);
-    upsertEvent(makeEvent({ projectSlug: '', assignmentSlug: '', cwd: null }));
+    upsertEvent(makeEvent({ projectSlug: '', ticketSlug: '', cwd: null }));
     upsertEvent(
       makeEvent({
         projectSlug: 'newproj',
-        assignmentSlug: 'newasgn',
+        ticketSlug: 'newasgn',
         cwd: '/Users/dev/newproj',
         eventTs: '2026-05-21T13:00:00.000Z',
       }),
@@ -345,11 +345,11 @@ describe('listDaily model filter', () => {
 describe('listDaily / listEvents workspaceMembers filter', () => {
   function seedDaily() {
     insertDailyBatch([
-      makeDaily({ projectSlug: 'p1', assignmentSlug: 'a1' }), // project member
-      makeDaily({ projectSlug: 'p2', assignmentSlug: 'a1' }), // other project
-      makeDaily({ projectSlug: '', assignmentSlug: 's1' }), // standalone member
-      makeDaily({ projectSlug: '', assignmentSlug: 's2' }), // other standalone
-      makeDaily({ projectSlug: '', assignmentSlug: '' }), // unattributed
+      makeDaily({ projectSlug: 'p1', ticketSlug: 'a1' }), // project member
+      makeDaily({ projectSlug: 'p2', ticketSlug: 'a1' }), // other project
+      makeDaily({ projectSlug: '', ticketSlug: 's1' }), // standalone member
+      makeDaily({ projectSlug: '', ticketSlug: 's2' }), // other standalone
+      makeDaily({ projectSlug: '', ticketSlug: '' }), // unattributed
     ]);
   }
 
@@ -357,7 +357,7 @@ describe('listDaily / listEvents workspaceMembers filter', () => {
     initUsageDb(dbPath);
     seedDaily();
     const rows = listDaily({
-      workspaceMembers: { projectSlugs: ['p1'], standaloneAssignmentIds: ['s1'] },
+      workspaceMembers: { projectSlugs: ['p1'], standaloneTicketIds: ['s1'] },
     });
     expect(rows.length).toBe(2);
     expect(rows.some((r) => r.project_slug === 'p1')).toBe(true);
@@ -369,14 +369,14 @@ describe('listDaily / listEvents workspaceMembers filter', () => {
   it('empty membership matches no rows (never all)', () => {
     initUsageDb(dbPath);
     seedDaily();
-    expect(listDaily({ workspaceMembers: { projectSlugs: [], standaloneAssignmentIds: [] } }).length).toBe(0);
+    expect(listDaily({ workspaceMembers: { projectSlugs: [], standaloneTicketIds: [] } }).length).toBe(0);
   });
 
   it('one-empty-side still filters correctly (e.g. _ungrouped with only standalones)', () => {
     initUsageDb(dbPath);
     seedDaily();
     const rows = listDaily({
-      workspaceMembers: { projectSlugs: [], standaloneAssignmentIds: ['s1', 's2'] },
+      workspaceMembers: { projectSlugs: [], standaloneTicketIds: ['s1', 's2'] },
     });
     expect(rows.length).toBe(2);
     expect(rows.every((r) => r.project_slug === '')).toBe(true);
@@ -384,12 +384,12 @@ describe('listDaily / listEvents workspaceMembers filter', () => {
 
   it('composes with model on the events table too', () => {
     initUsageDb(dbPath);
-    upsertEvent(makeEvent({ sessionId: 'm1', model: 'opus', projectSlug: 'p1', assignmentSlug: 'a1' }));
-    upsertEvent(makeEvent({ sessionId: 'm2', model: 'sonnet', projectSlug: 'p1', assignmentSlug: 'a1' }));
-    upsertEvent(makeEvent({ sessionId: 'm3', model: 'opus', projectSlug: 'p2', assignmentSlug: 'a1' }));
+    upsertEvent(makeEvent({ sessionId: 'm1', model: 'opus', projectSlug: 'p1', ticketSlug: 'a1' }));
+    upsertEvent(makeEvent({ sessionId: 'm2', model: 'sonnet', projectSlug: 'p1', ticketSlug: 'a1' }));
+    upsertEvent(makeEvent({ sessionId: 'm3', model: 'opus', projectSlug: 'p2', ticketSlug: 'a1' }));
     const rows = listEvents({
       model: 'opus',
-      workspaceMembers: { projectSlugs: ['p1'], standaloneAssignmentIds: [] },
+      workspaceMembers: { projectSlugs: ['p1'], standaloneTicketIds: [] },
     });
     expect(rows.length).toBe(1);
     expect(rows[0].session_id).toBe('m1');
@@ -419,7 +419,7 @@ describe('listSessionUsage', () => {
       cacheReadTokens: 0,
       cwd: '/repo',
       projectSlug: '',
-      assignmentSlug: '',
+      ticketSlug: '',
       rawJson: null,
     };
     // Priced by the collector — passed through untouched.
@@ -484,7 +484,7 @@ describe('listSessionUsage', () => {
       totalTokens: 2,
       totalCost: 0,
       projectSlug: '',
-      assignmentSlug: '',
+      ticketSlug: '',
       rawJson: null,
     };
     upsertEvent({

@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   appendStatusHistoryEntry,
   replaceSolicitations,
   replaceFiredVerdicts,
   replaceGateOverrides,
   writeFrozenChecks,
-  updateAssignmentFile,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import type {
   Solicitation,
@@ -41,7 +41,7 @@ archived: false
 
 describe('WS-2 stage-engine frontmatter blocks', () => {
   it('defaults are sane when the blocks are absent', () => {
-    const fm = parseAssignmentFrontmatter(BASE);
+    const fm = parseTicketFrontmatter(BASE);
     expect(fm.solicitations).toEqual([]);
     expect(fm.firedVerdicts).toEqual([]);
     expect(fm.frozenChecks).toBeNull();
@@ -55,30 +55,30 @@ describe('WS-2 stage-engine frontmatter blocks', () => {
       { check: 'planApproved', at: '2026-07-09T02:00:00Z', state: 'rendered' },
     ];
     const written = replaceSolicitations(BASE, list);
-    expect(parseAssignmentFrontmatter(written).solicitations).toEqual(list);
+    expect(parseTicketFrontmatter(written).solicitations).toEqual(list);
   });
 
   it('round-trips firedVerdicts (colon-bearing dissent keys)', () => {
     const keys = ['codeReviewed:alice:2026-07-09T03:00:00Z:deadbeef', 'planApproved:bob:2026-07-09T04:00:00Z:none'];
     const written = replaceFiredVerdicts(BASE, keys);
-    expect(parseAssignmentFrontmatter(written).firedVerdicts).toEqual(keys);
+    expect(parseTicketFrontmatter(written).firedVerdicts).toEqual(keys);
   });
 
   it('round-trips frozenChecks: null / [] / list', () => {
-    expect(parseAssignmentFrontmatter(writeFrozenChecks(BASE, null)).frozenChecks).toBeNull();
-    expect(parseAssignmentFrontmatter(writeFrozenChecks(BASE, [])).frozenChecks).toEqual([]);
+    expect(parseTicketFrontmatter(writeFrozenChecks(BASE, null)).frozenChecks).toBeNull();
+    expect(parseTicketFrontmatter(writeFrozenChecks(BASE, [])).frozenChecks).toEqual([]);
     const checks: FrozenCheck[] = [
       { key: 'reviewing:0', label: 'codeReviewed', passed: true },
       { key: 'reviewing:1', label: 'acsChecked', passed: false },
     ];
-    expect(parseAssignmentFrontmatter(writeFrozenChecks(BASE, checks)).frozenChecks).toEqual(checks);
+    expect(parseTicketFrontmatter(writeFrozenChecks(BASE, checks)).frozenChecks).toEqual(checks);
   });
 
   it('round-trips hold via the scalar whitelist', () => {
-    const written = updateAssignmentFile(BASE, { hold: true });
-    expect(parseAssignmentFrontmatter(written).hold).toBe(true);
-    const cleared = updateAssignmentFile(written, { hold: false });
-    expect(parseAssignmentFrontmatter(cleared).hold).toBe(false);
+    const written = updateTicketFile(BASE, { hold: true });
+    expect(parseTicketFrontmatter(written).hold).toBe(true);
+    const cleared = updateTicketFile(written, { hold: false });
+    expect(parseTicketFrontmatter(cleared).hold).toBe(false);
   });
 
   it('round-trips gateOverrides', () => {
@@ -95,7 +95,7 @@ describe('WS-2 stage-engine frontmatter blocks', () => {
       },
     ];
     const written = replaceGateOverrides(BASE, overrides);
-    expect(parseAssignmentFrontmatter(written).gateOverrides).toEqual(overrides);
+    expect(parseTicketFrontmatter(written).gateOverrides).toEqual(overrides);
   });
 
   it('round-trips a full engine hop statusHistory entry', () => {
@@ -111,7 +111,7 @@ describe('WS-2 stage-engine frontmatter blocks', () => {
       dissent: { key: 'codeReviewed:alice:2026-07-09T05:00:00Z:abc', check: 'codeReviewed', actor: 'alice', verdict: 'changes-requested', note: 'fix the thing' },
     };
     const written = appendStatusHistoryEntry(BASE, entry);
-    const parsed = parseAssignmentFrontmatter(written).statusHistory;
+    const parsed = parseTicketFrontmatter(written).statusHistory;
     expect(parsed).toHaveLength(1);
     expect(parsed[0]).toEqual(entry);
   });
@@ -127,7 +127,7 @@ describe('WS-2 stage-engine frontmatter blocks', () => {
     const written = appendStatusHistoryEntry(BASE, entry);
     // No hop-field keys were serialized.
     expect(written).not.toMatch(/trigger:|route:|gateSnapshot:|dissent:/);
-    const parsed = parseAssignmentFrontmatter(written).statusHistory[0];
+    const parsed = parseTicketFrontmatter(written).statusHistory[0];
     expect(parsed).toEqual(entry);
     expect(parsed.trigger).toBeUndefined();
     expect(parsed.route).toBeUndefined();

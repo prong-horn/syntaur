@@ -1,7 +1,7 @@
 import { basename, dirname, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
-import { parseAssignmentFull } from '../../../dashboard/parser.js';
+import { parseTicketFull } from '../../../dashboard/parser.js';
 import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
@@ -11,9 +11,9 @@ interface ContextFile {
   sessionId?: string;
   transcriptPath?: string;
   projectSlug?: string;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   projectDir?: string;
-  assignmentDir?: string;
+  ticketDir?: string;
   workspaceRoot?: string;
   branch?: string;
   worktreePath?: string;
@@ -21,10 +21,10 @@ interface ContextFile {
   boundAt?: string;
 }
 
-const ASSIGNMENT_FIELDS = ['projectSlug', 'assignmentSlug', 'projectDir', 'assignmentDir'] as const;
+const ASSIGNMENT_FIELDS = ['projectSlug', 'ticketSlug', 'projectDir', 'ticketDir'] as const;
 // context.json is a WORKSPACE MARKER now — these are the fields the launcher/grab
-// flow writes. The active assignment resolves from the session's open engagement,
-// NOT from this file (the legacy assignment scalars were removed).
+// flow writes. The active ticket resolves from the session's open engagement,
+// NOT from this file (the legacy ticket scalars were removed).
 const WORKSPACE_MARKER_FIELDS = ['repository', 'worktreePath', 'workspaceRoot', 'branch'] as const;
 
 function hasAnyAssignmentField(ctx: ContextFile | null): boolean {
@@ -87,7 +87,7 @@ const contextValid: Check = {
         affected: [path],
         remediation: {
           kind: 'manual',
-          suggestion: 'Fix or regenerate the context file by re-grabbing the assignment',
+          suggestion: 'Fix or regenerate the context file by re-grabbing the ticket',
           command: null,
         },
         autoFixable: false,
@@ -97,9 +97,9 @@ const contextValid: Check = {
       return pass(this, 'standalone session context (sessionId only)');
     }
     // context.json is a workspace marker — a file carrying workspace markers
-    // (or legacy assignment scalars from before the demotion) is valid. The
-    // active assignment resolves from the session's open engagement, so the
-    // assignment scalars are no longer a required part of this file's contract.
+    // (or legacy ticket scalars from before the demotion) is valid. The
+    // active ticket resolves from the session's open engagement, so the
+    // ticket scalars are no longer a required part of this file's contract.
     if (hasWorkspaceMarker(data) || hasAnyAssignmentField(data)) {
       return pass(this, 'workspace marker context');
     }
@@ -119,24 +119,24 @@ const contextValid: Check = {
 const contextAssignmentResolves: Check = {
   id: 'workspace.context-assignment-resolves',
   category: CATEGORY,
-  title: 'Context references an assignment that exists on disk',
+  title: 'Context references a ticket that exists on disk',
   async run(ctx) {
     const { data, path, exists } = await loadContext(ctx);
     if (!exists) return skipped(this, 'no context to resolve');
-    if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no assignment to resolve');
-    if (!data?.assignmentDir) return skipped(this, 'context has no assignmentDir');
-    const assignmentMd = resolve(data.assignmentDir, 'assignment.md');
+    if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no ticket to resolve');
+    if (!data?.ticketDir) return skipped(this, 'context has no ticketDir');
+    const assignmentMd = resolve(data.ticketDir, 'ticket.md');
     if (!(await fileExists(assignmentMd))) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
-        detail: `context points to ${data.assignmentDir} but assignment.md is missing`,
+        detail: `context points to ${data.ticketDir} but ticket.md is missing`,
         affected: [assignmentMd, path],
         remediation: {
           kind: 'manual',
-          suggestion: 'Remove the stale .syntaur/context.json or restore the assignment',
+          suggestion: 'Remove the stale .syntaur/context.json or restore the ticket',
           command: null,
         },
         autoFixable: false,
@@ -149,32 +149,32 @@ const contextAssignmentResolves: Check = {
 const contextTerminal: Check = {
   id: 'workspace.context-terminal',
   category: CATEGORY,
-  title: 'Context assignment is not in a terminal status',
+  title: 'Context ticket is not in a terminal status',
   async run(ctx) {
     const { data, exists } = await loadContext(ctx);
     if (!exists) return skipped(this, 'no context to check');
-    if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no assignment to check');
-    if (!data?.assignmentDir) return skipped(this, 'context has no assignmentDir');
-    const assignmentMd = resolve(data.assignmentDir, 'assignment.md');
-    if (!(await fileExists(assignmentMd))) return skipped(this, 'assignment file missing');
+    if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no ticket to check');
+    if (!data?.ticketDir) return skipped(this, 'context has no ticketDir');
+    const assignmentMd = resolve(data.ticketDir, 'ticket.md');
+    if (!(await fileExists(assignmentMd))) return skipped(this, 'ticket file missing');
     try {
       const content = await readFile(assignmentMd, 'utf-8');
-      const parsed = parseAssignmentFull(content);
+      const parsed = parseTicketFull(content);
       // Terminality per the ticket's OWN workflow (custom terminal statuses).
-      const parent = dirname(data.assignmentDir);
-      const projectDir = basename(parent) === 'assignments' ? dirname(parent) : null;
-      const wctx = await makeWorkflowContextResolver(ctx.config).forAssignment(parsed, projectDir);
+      const parent = dirname(data.ticketDir);
+      const projectDir = basename(parent) === 'tickets' ? dirname(parent) : null;
+      const wctx = await makeWorkflowContextResolver(ctx.config).forTicket(parsed, projectDir);
       if (wctx.terminalStatuses.has(parsed.status)) {
         return {
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'warn',
-          detail: `context references assignment with terminal status "${parsed.status}"`,
+          detail: `context references ticket with terminal status "${parsed.status}"`,
           affected: [assignmentMd],
           remediation: {
             kind: 'manual',
-            suggestion: 'Grab a new assignment or remove the stale .syntaur/context.json',
+            suggestion: 'Grab a new ticket or remove the stale .syntaur/context.json',
             command: null,
           },
           autoFixable: false,
@@ -182,7 +182,7 @@ const contextTerminal: Check = {
       }
       return pass(this);
     } catch {
-      return skipped(this, 'could not parse assignment.md');
+      return skipped(this, 'could not parse ticket.md');
     }
   },
 };

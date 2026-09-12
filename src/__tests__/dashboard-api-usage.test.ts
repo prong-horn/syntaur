@@ -23,7 +23,7 @@ import { createUsageRouter } from '../dashboard/api-usage.js';
 
 let sandbox: string;
 let projectsDir: string;
-let assignmentsDir: string;
+let ticketsDir: string;
 let server: ReturnType<typeof express>['listen'] extends (port: number) => infer T ? T : never;
 let baseUrl: string;
 let originalEnv: string | undefined;
@@ -39,12 +39,12 @@ async function writeProject(slug: string): Promise<void> {
   );
 }
 
-/** Write a minimal standalone assignment.md (folder name = id). */
+/** Write a minimal standalone ticket.md (folder name = id). */
 async function writeStandalone(id: string, archived = false): Promise<void> {
-  const dir = resolve(assignmentsDir, id);
+  const dir = resolve(ticketsDir, id);
   await mkdir(dir, { recursive: true });
   await writeFile(
-    resolve(dir, 'assignment.md'),
+    resolve(dir, 'ticket.md'),
     `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\nstatus: pending\npriority: medium\ncreated: "2026-05-01T00:00:00Z"\nupdated: "2026-05-01T00:00:00Z"\narchived: ${archived}\ntags: []\n---\n\n# ${id}\n`,
     'utf-8',
   );
@@ -53,7 +53,7 @@ async function writeStandalone(id: string, archived = false): Promise<void> {
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-usage-'));
   projectsDir = resolve(sandbox, 'projects');
-  assignmentsDir = resolve(sandbox, 'assignments');
+  ticketsDir = resolve(sandbox, 'tickets');
   originalEnv = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = sandbox;
   invalidateRecordsCache();
@@ -65,7 +65,7 @@ beforeEach(async () => {
   initSessionDb();
 
   const app = express();
-  app.use('/api/usage', createUsageRouter(projectsDir, assignmentsDir));
+  app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
 
   await new Promise<void>((res) => {
     server = app.listen(0, '127.0.0.1', () => res());
@@ -90,7 +90,7 @@ afterEach(async () => {
  */
 function seedWindow(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   costDelta: number,
   model = 'claude-opus-4-7',
   endedAt = '2026-05-21T12:30:00.000Z',
@@ -102,9 +102,9 @@ function seedWindow(
     capturedAt: '2026-05-21T12:00:00.000Z',
   });
   const row = openEngagement({
-    sessionId: `win-${projectSlug}-${assignmentSlug}-${model}-${endedAt}`,
+    sessionId: `win-${projectSlug}-${ticketSlug}-${model}-${endedAt}`,
     projectSlug: projectSlug === '' ? null : projectSlug,
-    assignmentSlug,
+    ticketSlug,
     stage: 'implement',
     startedAt,
     tokensAtOpen: snap(0),
@@ -120,14 +120,14 @@ function seedWindow(
 
 function seed(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   totalTokens: number,
   totalCost: number,
   eventTs = '2026-05-21T12:00:00.000Z',
   model = 'claude-opus-4-7',
 ) {
   upsertEvent({
-    sessionId: `${projectSlug}-${assignmentSlug}-${model}-${eventTs}`,
+    sessionId: `${projectSlug}-${ticketSlug}-${model}-${eventTs}`,
     model,
     tool: 'claude',
     eventTs,
@@ -139,7 +139,7 @@ function seed(
     totalCost,
     cwd: null,
     projectSlug,
-    assignmentSlug,
+    ticketSlug,
     rawJson: null,
   });
 }
@@ -189,7 +189,7 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(body.summary.every((s: { projectSlug: string }) => s.projectSlug === 'p1')).toBe(true);
   });
 
-  it('includes an assignment that has only a snapshot window (A-then-B cumulative row)', async () => {
+  it('includes a ticket that has only a snapshot window (A-then-B cumulative row)', async () => {
     // The TRUE failure shape: one session worked A then B on the same model, but
     // the cumulative usage_events row attributes only to B (the latest). A has a
     // real closed engagement window yet NO usage_daily row — it must still appear.
@@ -202,16 +202,16 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     const cost = Object.fromEntries(
-      body.summary.map((s: { assignmentSlug: string; totalCost: number }) => [s.assignmentSlug, s.totalCost]),
+      body.summary.map((s: { ticketSlug: string; totalCost: number }) => [s.ticketSlug, s.totalCost]),
     );
     // A is present (snapshot window) despite having no usage_daily row.
-    expect(body.summary.some((s: { assignmentSlug: string }) => s.assignmentSlug === 'A')).toBe(true);
+    expect(body.summary.some((s: { ticketSlug: string }) => s.ticketSlug === 'A')).toBe(true);
     expect(cost.A).toBeCloseTo(1.5, 6);
     // B's cost is its WINDOW delta (2.5), NOT the whole cumulative row (4.0).
     expect(cost.B).toBeCloseTo(2.5, 6);
   });
 
-  it('surfaces zeroed confidence counts for a project-rollup assignment with no closed window', async () => {
+  it('surfaces zeroed confidence counts for a project-rollup ticket with no closed window', async () => {
     // a1 has usage_daily but NO engagement window — it must still carry the
     // window-confidence count fields (all 0), not omit them.
     seed('p1', 'a1', 100, 0.5);
@@ -219,7 +219,7 @@ describe('GET /api/usage/projects/:projectSlug', () => {
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
     const body = await res.json();
-    const a1 = body.summary.find((s: { assignmentSlug: string }) => s.assignmentSlug === 'a1');
+    const a1 = body.summary.find((s: { ticketSlug: string }) => s.ticketSlug === 'a1');
     expect(a1).toBeDefined();
     expect(a1.totalCost).toBe(0); // snapshot-derived: no closed window yet
     expect(a1.pricedWindowCount).toBe(0);
@@ -232,7 +232,7 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     runRollup();
     seedWindow('p1', 'a1', 0.5);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
     const body = await res.json();
     expect(body.summary.pricedWindowCount).toBe(1);
     expect(body.summary.uncomputableWindowCount).toBe(0);
@@ -240,30 +240,30 @@ describe('GET /api/usage/projects/:projectSlug', () => {
   });
 });
 
-describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () => {
+describe('GET /api/usage/projects/:projectSlug/tickets/:ticketSlug', () => {
   it('returns daily + events for a specific assignment', async () => {
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.projectSlug).toBe('p1');
-    expect(body.assignmentSlug).toBe('a1');
+    expect(body.ticketSlug).toBe('a1');
     expect(body.daily.length).toBe(1);
     expect(body.events.length).toBe(1);
     expect(body.events[0].total_tokens).toBe(100);
   });
 
-  it('includes a pre-aggregated summary for the assignment', async () => {
+  it('includes a pre-aggregated summary for the ticket', async () => {
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
     // M2: per-assignment cost is the snapshot-window delta, not the cumulative row.
     seedWindow('p1', 'a1', 0.5);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/a1`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/a1`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.totalTokens).toBe(100);
@@ -275,7 +275,7 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
   });
 
   it('merges byModel across multiple days and models, ordered by tokens desc', async () => {
-    // One assignment, two models, spread across two days.
+    // One ticket, two models, spread across two days.
     seed('p1', 'merge', 100, 0.5, '2026-05-20T12:00:00.000Z', 'claude-opus-4-7');
     seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
     seed('p1', 'merge', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
@@ -284,7 +284,7 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     // byModel keeps the usage_daily per-model breakdown.
     seedWindow('p1', 'merge', 0.875);
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/merge`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/merge`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.totalTokens).toBe(180);
@@ -298,7 +298,7 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
   });
 
   it('reconciles the header total with the by-model breakdown when there is NO engagement window', async () => {
-    // The photographed bug: an assignment accrues usage_daily cost (attributed by
+    // The photographed bug: a ticket accrues usage_daily cost (attributed by
     // slug) yet never had a registered agent session, so there are ZERO closed
     // engagement windows. The window-derived header must NOT show $0 over a
     // non-zero per-model breakdown — with no window to attribute, it falls back to
@@ -306,9 +306,9 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     seed('p1', 'nowin', 100, 0.5, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
     seed('p1', 'nowin', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
     runRollup();
-    // NOTE: no seedWindow() — this assignment has no engagement window at all.
+    // NOTE: no seedWindow() — this ticket has no engagement window at all.
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/nowin`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/nowin`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.summary.pricedWindowCount).toBe(0); // confirms the no-window path
@@ -322,11 +322,11 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
     expect(body.summary.totalCost).toBeCloseTo(0.625, 6);
   });
 
-  it('returns a calm zero summary when the assignment has no usage', async () => {
+  it('returns a calm zero summary when the ticket has no usage', async () => {
     seed('p1', 'a1', 100, 0.5);
     runRollup();
 
-    const res = await fetch(`${baseUrl}/api/usage/projects/p1/assignments/none`);
+    const res = await fetch(`${baseUrl}/api/usage/projects/p1/tickets/none`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.daily.length).toBe(0);
@@ -338,8 +338,8 @@ describe('GET /api/usage/projects/:projectSlug/assignments/:assignmentSlug', () 
   });
 });
 
-describe('GET /api/usage/standalone/:assignmentId', () => {
-  it('treats project_slug as empty for standalone assignments', async () => {
+describe('GET /api/usage/standalone/:ticketId', () => {
+  it('treats project_slug as empty for standalone tickets', async () => {
     seed('', 'standalone-asgn', 500, 0.7);
     runRollup();
     // Standalone window stored with project_slug NULL; reader maps ''→NULL.
@@ -348,7 +348,7 @@ describe('GET /api/usage/standalone/:assignmentId', () => {
     const res = await fetch(`${baseUrl}/api/usage/standalone/standalone-asgn`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.assignmentId).toBe('standalone-asgn');
+    expect(body.ticketId).toBe('standalone-asgn');
     expect(body.daily.length).toBe(1);
     expect(body.events.length).toBe(1);
     expect(body.summary.totalTokens).toBe(500);
@@ -358,7 +358,7 @@ describe('GET /api/usage/standalone/:assignmentId', () => {
     ]);
   });
 
-  it('returns a calm zero summary for a standalone assignment with no usage', async () => {
+  it('returns a calm zero summary for a standalone ticket with no usage', async () => {
     seed('', 'standalone-asgn', 500, 0.7);
     runRollup();
 

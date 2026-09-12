@@ -13,7 +13,7 @@ import { getOpenEngagement } from '../db/engagement-db.js';
 
 /**
  * The dashboard tick's session-maintenance pass (plan Task 4): reconcile FIRST,
- * then sweep. The order is the whole point — a session bound to an assignment
+ * then sweep. The order is the whole point — a session bound to a ticket
  * that has finished must be reconciled to `completed` on the tick, not left for
  * the six-hour stale sweep to call `stopped`. `completed` and `stopped` are
  * different facts, and only the ordering decides which one a finished
@@ -25,17 +25,17 @@ let projectsDir: string;
 let prevHome: string | undefined;
 const HOUR = 60 * 60 * 1000;
 
-async function writeAssignment(slug: string, status: string): Promise<void> {
-  const d = resolve(projectsDir, 'proj', 'assignments', slug);
+async function writeTicket(slug: string, status: string): Promise<void> {
+  const d = resolve(projectsDir, 'proj', 'tickets', slug);
   await mkdir(d, { recursive: true });
   await writeFile(
-    join(d, 'assignment.md'),
+    join(d, 'ticket.md'),
     ['---', `slug: ${slug}`, `status: ${status}`, 'project: proj', '---', '', `# ${slug}`].join('\n'),
     'utf-8',
   );
 }
 
-/** Register a session bound to an assignment, then age its heartbeat. */
+/** Register a session bound to a ticket, then age its heartbeat. */
 async function seed(sessionId: string, slug: string, ageMs: number): Promise<void> {
   await appendSession('', {
     projectSlug: 'proj',
@@ -73,22 +73,22 @@ afterEach(async () => {
 });
 
 describe('runSessionMaintenance', () => {
-  it('reconciles a session on a finished assignment BEFORE the sweep can call it stale', async () => {
-    await writeAssignment('done-task', 'completed');
+  it('reconciles a session on a finished ticket BEFORE the sweep can call it stale', async () => {
+    await writeTicket('done-task', 'completed');
     // Old enough that the sweep would take it if it got there first.
     await seed('sess-done', 'done-task', 9 * HOUR);
 
     const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
 
     expect(result.reconciled).toBe(1);
-    // `completed` — the assignment finished. If the sweep had run first this
+    // `completed` — the ticket finished. If the sweep had run first this
     // would read `stopped`, which is a different and wrong fact.
     expect(statusOf('sess-done')).toBe('completed');
     expect(result.swept).toEqual([]);
   });
 
-  it('still sweeps a stale session whose assignment is NOT finished', async () => {
-    await writeAssignment('live-task', 'in_progress');
+  it('still sweeps a stale session whose ticket is NOT finished', async () => {
+    await writeTicket('live-task', 'in_progress');
     await seed('sess-stale', 'live-task', 9 * HOUR);
 
     const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
@@ -99,8 +99,8 @@ describe('runSessionMaintenance', () => {
     expect(getOpenEngagement('sess-stale')).toBeNull();
   });
 
-  it('leaves a fresh session on a live assignment alone', async () => {
-    await writeAssignment('live-task', 'in_progress');
+  it('leaves a fresh session on a live ticket alone', async () => {
+    await writeTicket('live-task', 'in_progress');
     await seed('sess-fresh', 'live-task', 1 * HOUR);
 
     const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR });
@@ -112,16 +112,16 @@ describe('runSessionMaintenance', () => {
 
 describe('runSessionMaintenance failure isolation (review round 2, finding 2)', () => {
   it('still sweeps when the reconcile throws', async () => {
-    await writeAssignment('live-task', 'in_progress');
+    await writeTicket('live-task', 'in_progress');
     await seed('sess-stale-2', 'live-task', 9 * HOUR);
     const logged: unknown[] = [];
 
-    // A corrupt assignment.md or a transient FS error must not cost the tick its
+    // A corrupt ticket.md or a transient FS error must not cost the tick its
     // sweep: before the reconcile was added, the tick ALWAYS swept, and adding a
     // step must not take that away.
     const result = await runSessionMaintenance(projectsDir, undefined, { idleMs: 6 * HOUR }, {
       reconcile: async () => {
-        throw new Error('EIO: corrupt assignment.md');
+        throw new Error('EIO: corrupt ticket.md');
       },
       log: (_m, err) => logged.push(err),
     });
@@ -131,6 +131,6 @@ describe('runSessionMaintenance failure isolation (review round 2, finding 2)', 
     expect(statusOf('sess-stale-2')).toBe('stopped');
     // The failure is reported, not swallowed silently.
     expect(logged).toHaveLength(1);
-    expect((logged[0] as Error).message).toMatch(/corrupt assignment.md/);
+    expect((logged[0] as Error).message).toMatch(/corrupt ticket.md/);
   });
 });

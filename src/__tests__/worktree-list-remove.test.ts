@@ -47,7 +47,7 @@ workspace:
 describe('syntaur worktree list/remove', () => {
   let home: string;
   let repo: string;
-  let assignmentPath: string;
+  let ticketPath: string;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-wt-'));
@@ -61,11 +61,11 @@ describe('syntaur worktree list/remove', () => {
     git(repo, ['commit', '-q', '-m', 'init']);
 
     await writeFile(resolve(home, 'config.md'), `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`, 'utf-8');
-    const dir = resolve(home, 'projects', 'p', 'assignments', 'a');
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
     await mkdir(dir, { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
-    assignmentPath = resolve(dir, 'assignment.md');
-    await writeFile(assignmentPath, ASSIGNMENT, 'utf-8');
+    ticketPath = resolve(dir, 'ticket.md');
+    await writeFile(ticketPath, ASSIGNMENT, 'utf-8');
   });
 
   afterEach(async () => {
@@ -74,32 +74,32 @@ describe('syntaur worktree list/remove', () => {
 
   it('create → list shows the worktree → remove deletes it and clears workspace.*', async () => {
     const create = await runCli(
-      ['worktree', 'create', '--branch', 'feat-x', '--repository', repo, '--assignment', 'a', '--project', 'p'],
+      ['worktree', 'create', '--branch', 'feat-x', '--repository', repo, '--ticket', 'a', '--project', 'p'],
       home,
     );
     expect(create.code, create.stderr).toBe(0);
     expect(await fileExists(resolve(repo, '.worktrees', 'feat-x'))).toBe(true);
     // workspace.* recorded.
-    expect(await readFile(assignmentPath, 'utf-8')).toContain('branch: feat-x');
+    expect(await readFile(ticketPath, 'utf-8')).toContain('branch: feat-x');
 
     const list = await runCli(['worktree', 'list', '--repository', repo, '--json'], home);
     expect(list.code, list.stderr).toBe(0);
     const entries = JSON.parse(list.stdout);
     expect(entries.some((e: { branch: string | null }) => e.branch === 'feat-x')).toBe(true);
 
-    const remove = await runCli(['worktree', 'remove', '--assignment', 'a', '--project', 'p', '--delete-branch'], home);
+    const remove = await runCli(['worktree', 'remove', '--ticket', 'a', '--project', 'p', '--delete-branch'], home);
     expect(remove.code, remove.stderr).toBe(0);
     expect(await fileExists(resolve(repo, '.worktrees', 'feat-x'))).toBe(false);
 
     // workspace.* cleared back to null.
-    const content = await readFile(assignmentPath, 'utf-8');
+    const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain('branch: null');
     expect(content).toContain('worktreePath: null');
   });
 
   it('prints the branch SHA recovery hint before deleting the branch (U1)', async () => {
     const create = await runCli(
-      ['worktree', 'create', '--branch', 'feat-y', '--repository', repo, '--assignment', 'a', '--project', 'p'],
+      ['worktree', 'create', '--branch', 'feat-y', '--repository', repo, '--ticket', 'a', '--project', 'p'],
       home,
     );
     expect(create.code, create.stderr).toBe(0);
@@ -108,7 +108,7 @@ describe('syntaur worktree list/remove', () => {
       return r.stdout.trim();
     })();
 
-    const remove = await runCli(['worktree', 'remove', '--assignment', 'a', '--project', 'p', '--delete-branch'], home);
+    const remove = await runCli(['worktree', 'remove', '--ticket', 'a', '--project', 'p', '--delete-branch'], home);
     expect(remove.code, remove.stderr).toBe(0);
     // Recovery hint names the branch + its SHA so the user can re-create it.
     expect(remove.stdout).toContain(`Branch "feat-y" was at ${sha}`);
@@ -117,7 +117,7 @@ describe('syntaur worktree list/remove', () => {
 
   it('blocks --force without --yes off a TTY and leaves the worktree intact (U1)', async () => {
     const create = await runCli(
-      ['worktree', 'create', '--branch', 'feat-z', '--repository', repo, '--assignment', 'a', '--project', 'p'],
+      ['worktree', 'create', '--branch', 'feat-z', '--repository', repo, '--ticket', 'a', '--project', 'p'],
       home,
     );
     expect(create.code, create.stderr).toBe(0);
@@ -125,7 +125,7 @@ describe('syntaur worktree list/remove', () => {
     await writeFile(resolve(repo, '.worktrees', 'feat-z', 'scratch.txt'), 'dirty\n', 'utf-8');
 
     // Spawned with no TTY: --force without --yes must refuse and explain.
-    const remove = await runCli(['worktree', 'remove', '--assignment', 'a', '--project', 'p', '--force'], home);
+    const remove = await runCli(['worktree', 'remove', '--ticket', 'a', '--project', 'p', '--force'], home);
     expect(remove.code).toBe(1);
     expect(remove.stderr).toContain('--yes');
     // The destructive removal did not happen.

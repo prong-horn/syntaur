@@ -3,8 +3,8 @@ import {
   extractFrontmatter,
   parseProject,
   parseStatus,
-  parseAssignmentSummary,
-  parseAssignmentFull,
+  parseTicketSummary,
+  parseTicketFull,
   parsePlan,
   parseScratchpad,
   parseHandoff,
@@ -180,7 +180,7 @@ needsAttention:
   });
 });
 
-describe('parseAssignmentSummary', () => {
+describe('parseTicketSummary', () => {
   const ASSIGNMENT_MD = `---
 id: d1e2f3a4-b5c6-7890-abcd-111111111111
 slug: design-auth-schema
@@ -205,7 +205,7 @@ tags: []
 # Design Auth Database Schema`;
 
   it('parses key summary fields', () => {
-    const summary = parseAssignmentSummary(ASSIGNMENT_MD);
+    const summary = parseTicketSummary(ASSIGNMENT_MD);
     expect(summary.slug).toBe('design-auth-schema');
     expect(summary.title).toBe('Design Auth Database Schema');
     expect(summary.status).toBe('completed');
@@ -216,7 +216,7 @@ tags: []
   });
 });
 
-describe('parseAssignmentFull', () => {
+describe('parseTicketFull', () => {
   const ASSIGNMENT_WITH_DEPS = `---
 id: d1e2f3a4-b5c6-7890-abcd-222222222222
 slug: implement-jwt-middleware
@@ -248,7 +248,7 @@ tags: []
 Body here.`;
 
   it('parses all fields including dependencies and workspace', () => {
-    const assignment = parseAssignmentFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
     expect(assignment.slug).toBe('implement-jwt-middleware');
     expect(assignment.status).toBe('in_progress');
     expect(assignment.assignee).toBe('claude-1');
@@ -259,14 +259,14 @@ Body here.`;
   });
 
   it('defaults archive fields when absent (backward compatible)', () => {
-    const assignment = parseAssignmentFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
     expect(assignment.archived).toBe(false);
     expect(assignment.archivedAt).toBeNull();
     expect(assignment.archivedReason).toBeNull();
   });
 
   it('parses archive fields when present', () => {
-    const archived = parseAssignmentFull(
+    const archived = parseTicketFull(
       ASSIGNMENT_WITH_DEPS.replace(
         'tags: []\n---',
         'tags: []\narchived: true\narchivedAt: "2026-05-31T12:00:00Z"\narchivedReason: stale\n---',
@@ -278,7 +278,7 @@ Body here.`;
   });
 
   it('parses externalIds', () => {
-    const assignment = parseAssignmentFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
     expect(assignment.externalIds).toHaveLength(1);
     expect(assignment.externalIds[0]).toEqual({
       system: 'jira',
@@ -315,7 +315,7 @@ tags: []
 ---
 
 # Link-less External ID`;
-    const assignment = parseAssignmentFull(ASSIGNMENT_URL_LESS);
+    const ticket = parseTicketFull(ASSIGNMENT_URL_LESS);
     expect(assignment.externalIds).toHaveLength(2);
     expect(assignment.externalIds[0]).toEqual({
       system: 'linear',
@@ -367,7 +367,7 @@ tags: []
 ---
 
 # Quirky URLs`;
-    const assignment = parseAssignmentFull(ASSIGNMENT_QUIRKY_URLS);
+    const ticket = parseTicketFull(ASSIGNMENT_QUIRKY_URLS);
     expect(assignment.externalIds).toHaveLength(5);
     expect(assignment.externalIds[0].url).toBeNull();
     expect(assignment.externalIds[1].url).toBeNull();
@@ -379,7 +379,7 @@ tags: []
 
 describe('parsePlan', () => {
   const PLAN_MD = `---
-assignment: design-auth-schema
+ticket: design-auth-schema
 status: completed
 created: "2026-03-15T09:30:00Z"
 updated: "2026-03-17T10:00:00Z"
@@ -400,7 +400,7 @@ updated: "2026-03-17T10:00:00Z"
 
 describe('parseScratchpad', () => {
   const SCRATCHPAD_MD = `---
-assignment: design-auth-schema
+ticket: design-auth-schema
 updated: "2026-03-17T09:00:00Z"
 ---
 
@@ -417,7 +417,7 @@ Notes here.`;
 
 describe('parseHandoff', () => {
   const HANDOFF_MD = `---
-assignment: design-auth-schema
+ticket: design-auth-schema
 updated: "2026-03-17T10:00:00Z"
 handoffCount: 1
 ---
@@ -437,7 +437,7 @@ Details.`;
 
 describe('parseDecisionRecord', () => {
   const DECISION_MD = `---
-assignment: design-auth-schema
+ticket: design-auth-schema
 updated: "2026-03-16T11:00:00Z"
 decisionCount: 1
 ---
@@ -467,7 +467,7 @@ describe('extractMermaidGraph', () => {
   });
 });
 
-describe('parseAssignmentFull — statusHistory parity', () => {
+describe('parseTicketFull — statusHistory parity', () => {
   // Same fixture parsed by both the dashboard parser and the lifecycle parser
   // must yield identical statusHistory (the two parsers are independent copies).
   const HISTORY_BLOCK = `statusHistory:
@@ -511,19 +511,19 @@ tags: []`;
   }
 
   it('matches the lifecycle parser (statusHistory in the middle)', async () => {
-    const { parseAssignmentFrontmatter } = await import('../lifecycle/frontmatter.js');
+    const { parseTicketFrontmatter } = await import('../lifecycle/frontmatter.js');
     const content = fixture('middle');
-    expect(parseAssignmentFull(content).statusHistory).toEqual(
-      parseAssignmentFrontmatter(content).statusHistory,
+    expect(parseTicketFull(content).statusHistory).toEqual(
+      parseTicketFrontmatter(content).statusHistory,
     );
-    expect(parseAssignmentFull(content).statusHistory).toHaveLength(2);
+    expect(parseTicketFull(content).statusHistory).toHaveLength(2);
   });
 
   it('matches the lifecycle parser when statusHistory is the LAST key (EOF-safe)', async () => {
-    const { parseAssignmentFrontmatter } = await import('../lifecycle/frontmatter.js');
+    const { parseTicketFrontmatter } = await import('../lifecycle/frontmatter.js');
     const content = fixture('last');
-    const dashboard = parseAssignmentFull(content).statusHistory;
-    const lifecycle = parseAssignmentFrontmatter(content).statusHistory;
+    const dashboard = parseTicketFull(content).statusHistory;
+    const lifecycle = parseTicketFrontmatter(content).statusHistory;
     expect(dashboard).toEqual(lifecycle);
     expect(dashboard).toHaveLength(2);
     expect(dashboard[1]).toMatchObject({ to: 'blocked', command: 'block', reason: 'waiting on API' });
@@ -531,6 +531,6 @@ tags: []`;
 
   it('returns [] when statusHistory is absent or inline empty', () => {
     const base = fixture('middle').replace(HISTORY_BLOCK, 'statusHistory: []');
-    expect(parseAssignmentFull(base).statusHistory).toEqual([]);
+    expect(parseTicketFull(base).statusHistory).toEqual([]);
   });
 });

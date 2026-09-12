@@ -76,7 +76,7 @@ export function runRollup(): RollupResult {
          input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
          total_tokens, total_cost, frozen, computed_at
        ) VALUES (
-         @day, @tool, @model, @projectSlug, @assignmentSlug,
+         @day, @tool, @model, @projectSlug, @ticketSlug,
          @inputTokens, @outputTokens, @cacheCreationTokens, @cacheReadTokens,
          @totalTokens, @totalCost, 0, @computedAt
        )`,
@@ -90,7 +90,7 @@ export function runRollup(): RollupResult {
         tool: r.tool,
         model: r.model,
         projectSlug: r.project_slug,
-        assignmentSlug: r.assignment_slug,
+        ticketSlug: r.assignment_slug,
         inputTokens: r.input_tokens,
         outputTokens: r.output_tokens,
         cacheCreationTokens: r.cache_creation_tokens,

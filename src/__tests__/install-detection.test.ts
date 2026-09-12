@@ -341,7 +341,7 @@ describe('nudgeStampPath sanitization', () => {
 });
 
 describe('nudgeMessage', () => {
-  it('returns the exact literal required by the assignment AC', () => {
+  it('returns the exact literal required by the ticket AC', () => {
     expect(nudgeMessage()).toBe(
       'syntaur: running from npx — install durably with `npm i -g syntaur` so the CLI, its hooks and the dashboard all point at one copy.',
     );

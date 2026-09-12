@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir, chmod } from 'node:fs/promises
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { initSessionDb, resetSessionDb } from '../dashboard/session-db.js';
 import { openEngagement } from '../db/engagement-db.js';
 
@@ -58,16 +58,16 @@ async function setup(withMarker: boolean): Promise<Ctx> {
     join(home, 'config.md'),
     `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
   );
-  const aDir = join(home, 'projects', 'p1', 'assignments', 'hook-test');
+  const aDir = join(home, 'projects', 'p1', 'tickets', 'hook-test');
   await mkdir(aDir, { recursive: true });
   await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-  const aPath = join(aDir, 'assignment.md');
+  const aPath = join(aDir, 'ticket.md');
   await writeFile(aPath, ASSIGNMENT);
   if (withMarker) await writeFile(join(home, 'derive-migrated'), '2026-06-17T00:00:00Z\n');
 
   // Seed the session DB the hook subprocess reads ($SYNTAUR_HOME/syntaur.db):
   // open an engagement for session 'abc' (the payload's session_id) bound to the
-  // assignment. recompute is keyed on this engagement via --session-id — the
+  // ticket. recompute is keyed on this engagement via --session-id — the
   // open-else-latest read recovers it even after the hook's `session stop`
   // closes it. resetSessionDb()/close so the file flushes and the subprocess
   // opens it fresh. The not-migrated test also seeds it, so the ONLY thing
@@ -76,9 +76,9 @@ async function setup(withMarker: boolean): Promise<Ctx> {
   const db = initSessionDb(dbPath);
   openEngagement({
     sessionId: 'abc',
-    assignmentId: 'hook-test-id',
+    ticketId: 'hook-test-id',
     projectSlug: 'p1',
-    assignmentSlug: 'hook-test',
+    ticketSlug: 'hook-test',
     stage: 'implement',
     startedAt: '2026-06-18T00:00:00Z',
   });
@@ -89,7 +89,7 @@ async function setup(withMarker: boolean): Promise<Ctx> {
   await mkdir(join(workspace, '.syntaur'), { recursive: true });
   await writeFile(
     join(workspace, '.syntaur', 'context.json'),
-    JSON.stringify({ projectSlug: 'p1', assignmentSlug: 'hook-test', assignmentDir: aDir }),
+    JSON.stringify({ projectSlug: 'p1', ticketSlug: 'hook-test', ticketDir: aDir }),
   );
 
   // A `syntaur` shim on PATH that execs the worktree's built CLI.
@@ -127,7 +127,7 @@ describe('SessionEnd hooks recompute derived status (migration-gated, bounded)',
   });
 
   async function status(aPath: string): Promise<string> {
-    return parseAssignmentFrontmatter(await readFile(aPath, 'utf-8')).status;
+    return parseTicketFrontmatter(await readFile(aPath, 'utf-8')).status;
   }
 
   it('claude hook recomputes when migrated and exits 0', async () => {

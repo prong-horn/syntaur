@@ -5,14 +5,14 @@ import { createWatcher, ignoreDotSegmentsBelow } from '../dashboard/watcher.js';
 // Deterministic regression guard for the dead-watcher bug. chokidar 4 calls
 // `ignored(absolutePath)` for every path it encounters; the old
 // `/(^|[\/\\])\../` regex returned `true` (ignore) for records like
-// `/x/.syntaur/projects/proj/assignment.md` because it matched the `.syntaur`
+// `/x/.syntaur/projects/proj/ticket.md` because it matched the `.syntaur`
 // ANCESTOR — so the whole tree was suppressed and 0 events fired. These tests
 // assert the new matcher returns the correct boolean for exactly the kinds of
 // absolute paths chokidar passes, which is precisely what un-breaks delivery.
 //
 // (The end-to-end "events actually fire under the running dashboard" behavior is
 // verified manually against a live `syntaur dashboard` and captured as a proof
-// artifact on the assignment — a real-chokidar test is too timing-flaky to live
+// artifact on the ticket — a real-chokidar test is too timing-flaky to live
 // in the parallel suite, where fs-event delivery stalls under heavy load.)
 describe('ignoreDotSegmentsBelow', () => {
   it('keeps the root and normal nested records; ignores only dot-segments at/below the root', () => {
@@ -22,7 +22,7 @@ describe('ignoreDotSegmentsBelow', () => {
 
     expect(ignore('/tmp/.syntaur/projects')).toBe(false); // the watched root itself
     expect(ignore('/tmp/.syntaur/other')).toBe(false); // a sibling/ancestor path, outside root
-    expect(ignore('/tmp/.syntaur/projects/proj/assignments/x/assignment.md')).toBe(false); // real record
+    expect(ignore('/tmp/.syntaur/projects/proj/tickets/x/ticket.md')).toBe(false); // real record
     expect(ignore('/tmp/.syntaur/projects/proj/.git/config')).toBe(true); // hidden dir below root
     expect(ignore('/tmp/.syntaur/projects/proj/.hidden/x')).toBe(true);
     expect(ignore('/tmp/.syntaur/projects/.hidden')).toBe(true); // hidden file directly in root
@@ -49,13 +49,13 @@ describe('ignoreDotSegmentsBelow', () => {
   it('handles Windows separators and cross-drive paths via the injected path API', () => {
     const winIgnore = ignoreDotSegmentsBelow('C:\\Users\\me\\.syntaur\\projects', win32);
     expect(winIgnore('C:\\Users\\me\\.syntaur\\projects')).toBe(false); // root itself
-    expect(winIgnore('C:\\Users\\me\\.syntaur\\projects\\proj\\assignment.md')).toBe(false); // real record
+    expect(winIgnore('C:\\Users\\me\\.syntaur\\projects\\proj\\ticket.md')).toBe(false); // real record
     expect(winIgnore('C:\\Users\\me\\.syntaur\\projects\\proj\\.git\\config')).toBe(true); // hidden below root
     // Different drive → win32.relative yields an absolute path → isAbsolute guard keeps it.
     expect(winIgnore('D:\\other\\.hidden')).toBe(false);
 
     const posixIgnore = ignoreDotSegmentsBelow('/home/me/.syntaur/projects', posix);
-    expect(posixIgnore('/home/me/.syntaur/projects/proj/assignment.md')).toBe(false);
+    expect(posixIgnore('/home/me/.syntaur/projects/proj/ticket.md')).toBe(false);
     expect(posixIgnore('/home/me/.syntaur/projects/proj/.hidden/x')).toBe(true);
   });
 });
@@ -69,10 +69,10 @@ describe('watcher derive hooks', () => {
     const { join } = await import('node:path');
     const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-derive-'));
     const projectsDir = join(root, 'projects');
-    const assignmentsDir = join(root, 'assignments');
+    const ticketsDir = join(root, 'tickets');
     const configPath = join(root, 'config.md');
-    await mkdir(join(projectsDir, 'p1', 'assignments', 'a1'), { recursive: true });
-    await mkdir(join(assignmentsDir, 'u1'), { recursive: true });
+    await mkdir(join(projectsDir, 'p1', 'tickets', 'a1'), { recursive: true });
+    await mkdir(join(ticketsDir, 'u1'), { recursive: true });
     await writeFile(configPath, '---\nversion: "2.0"\n---\n');
 
     const assignmentEvents: Array<[string | null, string]> = [];
@@ -80,7 +80,7 @@ describe('watcher derive hooks', () => {
 
     const watcher = createWatcher({
       projectsDir,
-      assignmentsDir,
+      ticketsDir,
       configPath,
       onMessage: () => {},
       onAssignmentChanged: (p, a) => assignmentEvents.push([p, a]),
@@ -90,8 +90,8 @@ describe('watcher derive hooks', () => {
 
     // let chokidar settle before generating events
     await new Promise((r) => setTimeout(r, 300));
-    await writeFile(join(projectsDir, 'p1', 'assignments', 'a1', 'assignment.md'), '---\nslug: a1\n---\n');
-    await writeFile(join(assignmentsDir, 'u1', 'assignment.md'), '---\nslug: u1\n---\n');
+    await writeFile(join(projectsDir, 'p1', 'tickets', 'a1', 'ticket.md'), '---\nslug: a1\n---\n');
+    await writeFile(join(ticketsDir, 'u1', 'ticket.md'), '---\nslug: u1\n---\n');
     await writeFile(configPath, '---\nversion: "2.0"\nupdated: true\n---\n');
     await new Promise((r) => setTimeout(r, 700));
 

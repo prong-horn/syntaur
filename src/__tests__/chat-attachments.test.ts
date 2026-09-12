@@ -34,17 +34,17 @@ describe('sanitizeAttachmentName', () => {
 describe('resolveChatAttachment', () => {
   it('ignores .tmp siblings and serves the real file', async () => {
     const root = await mkdtemp(join(tmpdir(), 'chat-att-'));
-    const assignmentDir = join(root, 'assignment');
-    const att = await writeChatAttachment(assignmentDir, {
+    const ticketDir = join(root, 'ticket');
+    const att = await writeChatAttachment(ticketDir, {
       name: 'dot.png',
       mime: 'image/png',
       bytes: PNG_1X1,
     });
-    const attDir = join(assignmentDir, 'chat', 'attachments');
+    const attDir = join(ticketDir, 'chat', 'attachments');
     const realName = `${att.id}__dot.png.png`;
     await writeFile(join(attDir, `${realName}.${randomUUID()}.tmp`), Buffer.from('leftover'));
 
-    const resolved = await resolveChatAttachment(assignmentDir, att.id);
+    const resolved = await resolveChatAttachment(ticketDir, att.id);
     expect(resolved).not.toBeNull();
     expect(resolved!.bytes).toBe(PNG_1X1.length);
     expect(resolved!.mimeType).toBe('image/png');

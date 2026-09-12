@@ -25,18 +25,18 @@ import {
   canonicalizeFactValue,
 } from '../lifecycle/facts.js';
 import {
-  parseAssignmentFrontmatter,
+  parseTicketFrontmatter,
   updateFactsMap,
   upsertAttestation,
 } from '../lifecycle/frontmatter.js';
-import { parseAssignmentFull } from '../dashboard/parser.js';
+import { parseTicketFull } from '../dashboard/parser.js';
 import {
   recomputeAndWrite,
   type DeriveContext,
 } from '../lifecycle/recompute.js';
 import { deriveConfigChecks } from '../utils/doctor/checks/derive-config.js';
-import { getAssignmentDetail, clearStatusConfigCache } from '../dashboard/api.js';
-import type { AssignmentFrontmatter, AttestationRecord } from '../lifecycle/types.js';
+import { getTicketDetail, clearStatusConfigCache } from '../dashboard/api.js';
+import type { TicketFrontmatter, AttestationRecord } from '../lifecycle/types.js';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -395,7 +395,7 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
   it('updateFactsMap writes a facts: map that round-trips', () => {
     let content = updateFactsMap(BASE_FM, 'qaPassed', 'true');
     content = updateFactsMap(content, 'storyPoints', '5');
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     expect(fm.facts).toEqual({ qaPassed: 'true', storyPoints: '5' });
   });
 
@@ -406,7 +406,7 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
     let content = upsertAttestation(BASE_FM, r1);
     content = upsertAttestation(content, r2); // replaces r1
     content = upsertAttestation(content, r3); // new actor
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     expect(fm.attestations).toHaveLength(2);
     const codex = fm.attestations.find((a) => a.actor === 'agent:codex')!;
     expect(codex.verdict).toBe('approved');
@@ -418,8 +418,8 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
     content = upsertAttestation(content, {
       fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't', file: 'plan.md', digest: 'd',
     });
-    const lifecycle = parseAssignmentFrontmatter(content);
-    const dashboard = parseAssignmentFull(content);
+    const lifecycle = parseTicketFrontmatter(content);
+    const dashboard = parseTicketFull(content);
     expect(dashboard.facts).toEqual(lifecycle.facts);
     expect(dashboard.attestations).toEqual(lifecycle.attestations);
   });
@@ -430,8 +430,8 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
       fact: 'codeReview', actor: 'agent:codex', verdict: 'changes-requested', at: 't',
       file: 'plan.md', digest: 'd', note,
     });
-    const lifecycle = parseAssignmentFrontmatter(content);
-    const dashboard = parseAssignmentFull(content);
+    const lifecycle = parseTicketFrontmatter(content);
+    const dashboard = parseTicketFull(content);
     expect(lifecycle.attestations[0].note).toBe(note); // round-trips through formatYamlValue escaping
     expect(dashboard.attestations).toEqual(lifecycle.attestations); // dashboard unescapes identically
   });
@@ -440,7 +440,7 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
     const withNull = BASE_FM.replace('override: null', 'override: null\nattestations: null');
     const out = upsertAttestation(withNull, { fact: 'codeReview', actor: 'a', verdict: 'approved', at: 't' });
     expect((out.match(/^attestations:/gm) ?? []).length).toBe(1); // no duplicate key
-    expect(parseAssignmentFrontmatter(out).attestations).toHaveLength(1);
+    expect(parseTicketFrontmatter(out).attestations).toHaveLength(1);
   });
 });
 
@@ -461,9 +461,9 @@ describe('computeFactsDetailed: custom + attestation materialization', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  async function compute(fm: AssignmentFrontmatter) {
+  async function compute(fm: TicketFrontmatter) {
     return computeFactsDetailed({
-      assignmentDir: dir,
+      ticketDir: dir,
       frontmatter: fm,
       body: '## Objective\nReal.\n## Acceptance Criteria\n- [ ] one\n',
       projectDir: null,
@@ -475,7 +475,7 @@ describe('computeFactsDetailed: custom + attestation materialization', () => {
   it('coerces stored bool/number; invalid/absent degrade to false/0', async () => {
     let content = updateFactsMap(BASE_FM, 'qaPassed', 'true');
     content = updateFactsMap(content, 'storyPoints', 'garbage'); // invalid → 0
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     const { facts } = await compute(fm);
     expect(facts.qaPassed).toBe(true);
     expect(facts.storyPoints).toBe(0);
@@ -488,7 +488,7 @@ describe('computeFactsDetailed: custom + attestation materialization', () => {
     let content = upsertAttestation(BASE_FM, {
       fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't', file: 'plan.md', digest,
     });
-    let fm = parseAssignmentFrontmatter(content);
+    let fm = parseTicketFrontmatter(content);
 
     // valid now
     let res = await compute(fm);
@@ -514,7 +514,7 @@ describe('computeFactsDetailed: custom + attestation materialization', () => {
     let content = upsertAttestation(BASE_FM, {
       fact: 'signoff', actor: 'human', verdict: 'changes-requested', at: 't',
     });
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     const { facts } = await compute(fm);
     expect(facts.signoff).toBe(true); // any valid record
     expect(facts.signoffApproved).toBe(false);
@@ -527,7 +527,7 @@ describe('computeFactsDetailed: custom + attestation materialization', () => {
     let content = upsertAttestation(BASE_FM, {
       fact: 'deploy', actor: 'agent:ci', verdict: 'approved', at: 't', commit: 'abc123',
     });
-    const fm = parseAssignmentFrontmatter(content); // workspace paths are null in BASE_FM
+    const fm = parseTicketFrontmatter(content); // workspace paths are null in BASE_FM
     const { facts } = await compute(fm);
     expect(facts.deploy).toBe(false);
   });
@@ -587,7 +587,7 @@ override: null
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), 'syntaur-audit-'));
-    path = join(dir, 'assignment.md');
+    path = join(dir, 'ticket.md');
     await writeFile(path, CONVERGED);
   });
   afterEach(async () => {
@@ -603,7 +603,7 @@ override: null
       mutate: (c) => updateFactsMap(c, 'extra', 'true'),
     });
     expect(r.changed).toBe(true); // the fact still landed
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.facts.extra).toBe('true');
     expect(fm.statusHistory).toHaveLength(0); // but no audit entry
   });
@@ -618,7 +618,7 @@ override: null
       mutate: (c) => updateFactsMap(c, 'extra', 'true'),
     });
     expect(r.changed).toBe(true);
-    const fm = parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({
       command: 'fact-set',
@@ -681,7 +681,7 @@ describe('doctor derive-config check', () => {
 
 // ── Task 8/9: dashboard detail payload ───────────────────────────────────────
 
-describe('dashboard getAssignmentDetail derived payload', () => {
+describe('dashboard getTicketDetail derived payload', () => {
   let home: string;
   let prevHome: string | undefined;
 
@@ -691,7 +691,7 @@ describe('dashboard getAssignmentDetail derived payload', () => {
     process.env.SYNTAUR_HOME = home;
     clearStatusConfigCache();
     await writeFile(resolve(home, 'config.md'), configContent());
-    const aDir = resolve(home, 'projects', 'p1', 'assignments', 'feat-x');
+    const aDir = resolve(home, 'projects', 'p1', 'tickets', 'feat-x');
     await mkdir(aDir, { recursive: true });
     await writeFile(resolve(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     await writeFile(resolve(aDir, 'plan.md'), '# Plan');
@@ -746,7 +746,7 @@ Real.
     content = upsertAttestation(content, {
       fact: 'codeReview', actor: 'human', verdict: 'changes-requested', at: 't', file: 'plan.md', digest: 'STALEDIGEST',
     });
-    await writeFile(resolve(aDir, 'assignment.md'), content);
+    await writeFile(resolve(aDir, 'ticket.md'), content);
   });
 
   afterEach(async () => {
@@ -757,7 +757,7 @@ Real.
   });
 
   it('ships customFacts (bool/number only) + attestation records with stale flags', async () => {
-    const detail = await getAssignmentDetail(resolve(home, 'projects'), 'p1', 'feat-x');
+    const detail = await getTicketDetail(resolve(home, 'projects'), 'p1', 'feat-x');
     expect(detail).not.toBeNull();
     const derived = detail!.derived!;
     expect(derived).not.toBeNull();
@@ -776,11 +776,11 @@ Real.
     expect(derived.facts.codeReviewApprovedBy).toEqual(['agent:codex']);
   });
 
-  it('returns derived: null for a terminal assignment (guard intact)', async () => {
-    const aPath = resolve(home, 'projects', 'p1', 'assignments', 'feat-x', 'assignment.md');
+  it('returns derived: null for a terminal ticket (guard intact)', async () => {
+    const aPath = resolve(home, 'projects', 'p1', 'tickets', 'feat-x', 'ticket.md');
     const raw = await readFile(aPath, 'utf-8');
     await writeFile(aPath, raw.replace('status: in_progress', 'status: completed'));
-    const detail = await getAssignmentDetail(resolve(home, 'projects'), 'p1', 'feat-x');
+    const detail = await getTicketDetail(resolve(home, 'projects'), 'p1', 'feat-x');
     expect(detail!.derived).toBeNull();
   });
 });

@@ -15,7 +15,7 @@ import {
   type InboxStatusConfig,
 } from '../inbox/index.js';
 import type { InboxItem } from '../inbox/types.js';
-import { parseAssignmentFull, type ParsedAssignmentFull, type ParsedComment } from '../dashboard/parser.js';
+import { parseTicketFull, type ParsedAssignmentFull, type ParsedComment } from '../dashboard/parser.js';
 import { buildDefaultStatusConfig } from '../utils/config.js';
 import { buildTransitionTable } from '../lifecycle/state-machine.js';
 import { planDigest } from '../lifecycle/facts.js';
@@ -37,8 +37,8 @@ function defaultStatusConfig(): InboxStatusConfig {
 }
 
 /** Build a ParsedAssignmentFull from frontmatter by round-tripping the real parser. */
-function assignment(frontmatter: string): ParsedAssignmentFull {
-  return parseAssignmentFull(`---\n${frontmatter}\n---\n# body\n`);
+function ticket(frontmatter: string): ParsedAssignmentFull {
+  return parseTicketFull(`---\n${frontmatter}\n---\n# body\n`);
 }
 
 function comment(partial: Partial<ParsedComment> & { id: string }): ParsedComment {
@@ -57,11 +57,11 @@ function comment(partial: Partial<ParsedComment> & { id: string }): ParsedCommen
 
 describe('isReview', () => {
   it('positive: derived status === review', () => {
-    expect(isReview(assignment('status: review'))).toBe(true);
+    expect(isReview(ticket('status: review'))).toBe(true);
   });
   it('negative: any other status', () => {
     for (const s of ['draft', 'ready_to_implement', 'in_progress', 'completed', 'blocked']) {
-      expect(isReview(assignment(`status: ${s}`))).toBe(false);
+      expect(isReview(ticket(`status: ${s}`))).toBe(false);
     }
   });
 });
@@ -105,13 +105,13 @@ describe('isPlanAwaitingApproval', () => {
   });
 
   it('negative: ready_for_planning WITHOUT a plan file', async () => {
-    const a = assignment('status: ready_for_planning');
+    const a = ticket('status: ready_for_planning');
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
   it('positive: ready_for_planning WITH an unapproved latest plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
-    const a = assignment('status: ready_for_planning');
+    const a = ticket('status: ready_for_planning');
     expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
 
@@ -119,7 +119,7 @@ describe('isPlanAwaitingApproval', () => {
     const content = '# plan content\n';
     await writeFile(join(dir, 'plan.md'), content);
     const digest = planDigest(content);
-    const a = assignment(
+    const a = ticket(
       `status: ready_for_planning\nplanApproval:\n  file: plan.md\n  digest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
@@ -128,7 +128,7 @@ describe('isPlanAwaitingApproval', () => {
   it('negative: wrong status even with an unapproved plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
     for (const s of ['ready_to_implement', 'in_progress', 'draft']) {
-      expect(await isPlanAwaitingApproval(assignment(`status: ${s}`), dir)).toBe(false);
+      expect(await isPlanAwaitingApproval(ticket(`status: ${s}`), dir)).toBe(false);
     }
   });
 });
@@ -139,7 +139,7 @@ describe('resolveSince', () => {
   const now = Date.parse('2026-06-16T12:00:00Z');
 
   it('review: picks latest statusHistory entry with to===review', () => {
-    const a = assignment(
+    const a = ticket(
       [
         'status: review',
         'statusHistory:',
@@ -158,13 +158,13 @@ describe('resolveSince', () => {
   });
 
   it('question: uses comment.timestamp', () => {
-    const a = assignment('status: in_progress');
+    const a = ticket('status: in_progress');
     const c = comment({ id: 'q', timestamp: '2026-06-09T08:00:00Z' });
     expect(resolveSince('question', a, now, c)).toBe('2026-06-09T08:00:00Z');
   });
 
   it('plan-approval: uses latest statusHistory .at', () => {
-    const a = assignment(
+    const a = ticket(
       [
         'status: ready_for_planning',
         'statusHistory:',
@@ -180,7 +180,7 @@ describe('resolveSince', () => {
   });
 
   it('fallback: category entry missing → latest statusHistory .at', () => {
-    const a = assignment(
+    const a = ticket(
       [
         'status: review',
         'statusHistory:',
@@ -194,17 +194,17 @@ describe('resolveSince', () => {
   });
 
   it('fallback: no statusHistory → frontmatter updated', () => {
-    const a = assignment('status: review\nupdated: "2026-06-06T00:00:00Z"\ncreated: "2026-06-01T00:00:00Z"');
+    const a = ticket('status: review\nupdated: "2026-06-06T00:00:00Z"\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-06T00:00:00Z');
   });
 
   it('fallback: no statusHistory, no updated → created', () => {
-    const a = assignment('status: review\ncreated: "2026-06-01T00:00:00Z"');
+    const a = ticket('status: review\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
   });
 
   it('fallback: nothing → now, normalized to canonical RFC 3339 (no millis)', () => {
-    const a = assignment('status: review');
+    const a = ticket('status: review');
     const since = resolveSince('review', a, now);
     expect(Number.isNaN(Date.parse(since))).toBe(false);
     // Canonical: no millis, trailing Z.
@@ -213,18 +213,18 @@ describe('resolveSince', () => {
   });
 
   it('skips invalid timestamps in the chain', () => {
-    const a = assignment('status: review\nupdated: not-a-date\ncreated: "2026-06-01T00:00:00Z"');
+    const a = ticket('status: review\nupdated: not-a-date\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
   });
 
   it('normalizes a date-only timestamp to ...T00:00:00Z', () => {
     // `created: 2026-06-01` (no time) → canonical midnight RFC 3339.
-    const a = assignment('status: review\ncreated: "2026-06-01"');
+    const a = ticket('status: review\ncreated: "2026-06-01"');
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
   });
 
   it('leaves an already-canonical full timestamp unchanged', () => {
-    const a = assignment('status: review\nupdated: "2026-06-17T03:54:48Z"');
+    const a = ticket('status: review\nupdated: "2026-06-17T03:54:48Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-17T03:54:48Z');
   });
 });
@@ -375,8 +375,8 @@ describe('deriveReviewVerbs', () => {
 // ── action descriptor (exact command strings) ──────────────────────────────────
 
 describe('buildAction', () => {
-  const projItem = { project: 'proj', assignmentSlug: 'my-slug', assignmentId: 'uuid-1' };
-  const standalone = { project: null, assignmentSlug: 'uuid-2', assignmentId: 'uuid-2' };
+  const projItem = { project: 'proj', ticketSlug: 'my-slug', ticketId: 'uuid-1' };
+  const standalone = { project: null, ticketSlug: 'uuid-2', ticketId: 'uuid-2' };
 
   it('review (project): Accept + complete command with --project', () => {
     expect(buildAction('review', projItem, { acceptCommand: 'complete', reopenCommand: 'start' })).toEqual({
@@ -422,8 +422,8 @@ describe('orderByUrgency', () => {
   it('orders largest ageMs first', () => {
     const item = (id: string, ageMs: number): InboxItem => ({
       project: null,
-      assignmentSlug: id,
-      assignmentId: id,
+      ticketSlug: id,
+      ticketId: id,
       title: id,
       category: 'review',
       since: '2026-06-01T00:00:00Z',
@@ -433,6 +433,6 @@ describe('orderByUrgency', () => {
       assignmentUpdated: '',
     });
     const ordered = orderByUrgency([item('a', 100), item('b', 5000), item('c', 300)]);
-    expect(ordered.map((i) => i.assignmentSlug)).toEqual(['b', 'c', 'a']);
+    expect(ordered.map((i) => i.ticketSlug)).toEqual(['b', 'c', 'a']);
   });
 });

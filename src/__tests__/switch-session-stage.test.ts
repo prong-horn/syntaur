@@ -28,12 +28,12 @@ afterEach(async () => {
 
 describe('switchSessionStage', () => {
   it('switches the open engagement to the new stage and reports the previous one', async () => {
-    openEngagement({ sessionId: 's1', assignmentId: 'a1', stage: 'plan', startedAt: '2026-03-26T09:00:00Z' });
+    openEngagement({ sessionId: 's1', ticketId: 'a1', stage: 'plan', startedAt: '2026-03-26T09:00:00Z' });
     const res = await switchSessionStage({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       projectSlug: 'p',
-      assignmentSlug: 'asg',
+      ticketSlug: 'asg',
       stage: 'implement',
     });
     expect(res.switched).toBe(true);
@@ -42,13 +42,13 @@ describe('switchSessionStage', () => {
     expect(getOpenEngagement('s1')?.stage).toBe('implement');
   });
 
-  it('skips the switch when already on the same (assignment, stage)', async () => {
-    openEngagement({ sessionId: 's1', assignmentId: 'a1', stage: 'implement', startedAt: '2026-03-26T09:00:00Z' });
+  it('skips the switch when already on the same (ticket, stage)', async () => {
+    openEngagement({ sessionId: 's1', ticketId: 'a1', stage: 'implement', startedAt: '2026-03-26T09:00:00Z' });
     const res = await switchSessionStage({
       sessionId: 's1',
-      assignmentId: 'a1',
+      ticketId: 'a1',
       projectSlug: 'p',
-      assignmentSlug: 'asg',
+      ticketSlug: 'asg',
       stage: 'implement',
     });
     expect(res.switched).toBe(false);
@@ -64,9 +64,9 @@ describe('switchSessionStage', () => {
   it('opens a first engagement when the session has none', async () => {
     const res = await switchSessionStage({
       sessionId: 's2',
-      assignmentId: 'a2',
+      ticketId: 'a2',
       projectSlug: 'p',
-      assignmentSlug: 'asg2',
+      ticketSlug: 'asg2',
       stage: 'review',
     });
     expect(res.switched).toBe(true);

@@ -1,8 +1,8 @@
 /**
  * Fact computation (derived-status design v3, Piece 1) — Node-side.
  *
- * Materializes an assignment's objective facts from the files already on disk
- * (assignment.md body, sibling plan files, comments.md) plus the asserted
+ * Materializes a ticket's objective facts from the files already on disk
+ * (ticket.md body, sibling plan files, comments.md) plus the asserted
  * frontmatter facts. The browser never runs this — the dashboard ships the
  * result in payloads (loader-derived, NOT stored), mirroring the
  * `deriveStatusVirtuals` pattern.
@@ -14,12 +14,12 @@ import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { type AssignmentFacts, factFieldNames } from './derive.js';
-import { parseAssignmentFrontmatter } from './frontmatter.js';
-import type { AssignmentFrontmatter, AttestationRecord } from './types.js';
+import { parseTicketFrontmatter } from './frontmatter.js';
+import type { TicketFrontmatter, AttestationRecord } from './types.js';
 import type { FactDeclaration } from '../utils/config.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
 
-/** Matches the assignment template's placeholder list items / comments. */
+/** Matches the ticket template's placeholder list items / comments. */
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
 
 /** Extract the body of a `## <heading>` section (up to the next `## `). */
@@ -63,11 +63,11 @@ export function countRealAcceptanceCriteria(body: string): { total: number; chec
 
 const PLAN_FILE_RE = /^plan(?:-v(\d+))?\.md$/;
 
-/** Latest plan revision in an assignment dir (`plan.md` = v1 < `plan-v2.md` < …). */
-export async function latestPlanFile(assignmentDir: string): Promise<string | null> {
+/** Latest plan revision in a ticket dir (`plan.md` = v1 < `plan-v2.md` < …). */
+export async function latestPlanFile(ticketDir: string): Promise<string | null> {
   let entries: string[];
   try {
-    entries = await readdir(assignmentDir);
+    entries = await readdir(ticketDir);
   } catch {
     return null;
   }
@@ -91,15 +91,15 @@ export function planDigest(content: string): string {
  * content. A replan (new plan-vN) or a post-approval edit auto-invalidates.
  */
 export async function isPlanApproved(
-  assignmentDir: string,
-  frontmatter: Pick<AssignmentFrontmatter, 'planApproval'>,
+  ticketDir: string,
+  frontmatter: Pick<TicketFrontmatter, 'planApproval'>,
 ): Promise<boolean> {
   const approval = frontmatter.planApproval;
   if (!approval) return false;
-  const latest = await latestPlanFile(assignmentDir);
+  const latest = await latestPlanFile(ticketDir);
   if (!latest || latest !== approval.file) return false;
   try {
-    const content = await readFile(resolve(assignmentDir, latest), 'utf-8');
+    const content = await readFile(resolve(ticketDir, latest), 'utf-8');
     return planDigest(content) === approval.digest;
   } catch {
     return false;
@@ -108,8 +108,8 @@ export async function isPlanApproved(
 
 /** Count open (unresolved) question comments in comments.md. Parity with the
  * dashboard's countOpenQuestions, kept dependency-light for the lifecycle layer. */
-export async function countUnresolvedQuestions(assignmentDir: string): Promise<number> {
-  const commentsPath = resolve(assignmentDir, 'comments.md');
+export async function countUnresolvedQuestions(ticketDir: string): Promise<number> {
+  const commentsPath = resolve(ticketDir, 'comments.md');
   if (!(await fileExists(commentsPath))) return 0;
   try {
     const content = await readFile(commentsPath, 'utf-8');
@@ -126,7 +126,7 @@ export async function countUnresolvedQuestions(assignmentDir: string): Promise<n
   }
 }
 
-/** All `dependsOn` targets terminal? Standalone assignments (no project dir)
+/** All `dependsOn` targets terminal? Standalone tickets (no project dir)
  * and empty dependency lists are trivially satisfied. */
 export async function areDependenciesSatisfied(
   projectDir: string | null,
@@ -134,11 +134,11 @@ export async function areDependenciesSatisfied(
   terminalStatuses: ReadonlySet<string>,
   /** WS-2: resolve each dependency's OWN terminal set (mixed-workflow edges).
    * Returns null → use the shared `terminalStatuses`. */
-  depTerminalFor?: (depFrontmatter: AssignmentFrontmatter) => Promise<ReadonlySet<string> | null>,
+  depTerminalFor?: (depFrontmatter: TicketFrontmatter) => Promise<ReadonlySet<string> | null>,
 ): Promise<boolean> {
   if (dependsOn.length === 0 || projectDir === null) return true;
   for (const depSlug of dependsOn) {
-    const depPath = resolve(projectDir, 'assignments', depSlug, 'assignment.md');
+    const depPath = resolve(projectDir, 'tickets', depSlug, 'ticket.md');
     if (!(await fileExists(depPath))) return false;
     try {
       const content = await readFile(depPath, 'utf-8');
@@ -147,7 +147,7 @@ export async function areDependenciesSatisfied(
       // its bare value and matches `terminalStatuses`. Parity with the sibling
       // `checkDependencies` in transitions.ts. A parser throw (no frontmatter)
       // still falls through to the catch → `return false` (fail-closed).
-      const depFm = parseAssignmentFrontmatter(content);
+      const depFm = parseTicketFrontmatter(content);
       // Test the dep's status against ITS OWN terminal set when a resolver is
       // supplied (each dep may use a different workflow); else the shared set.
       const depTerminal = depTerminalFor ? await depTerminalFor(depFm) : null;
@@ -160,10 +160,12 @@ export async function areDependenciesSatisfied(
 }
 
 export interface ComputeFactsInput {
-  assignmentDir: string;
-  frontmatter: AssignmentFrontmatter;
+  ticketDir?: string;
+  /** @deprecated Dashboard/migrate compat until Task 2 */
+  assignmentDir?: string;
+  frontmatter: TicketFrontmatter;
   body: string;
-  /** Project dir for dependency checks; null for standalone assignments. */
+  /** Project dir for dependency checks; null for standalone tickets. */
   projectDir: string | null;
   terminalStatuses: ReadonlySet<string>;
   /** The ACCEPTED custom-fact declarations (normalize→accept output). Absent →
@@ -172,7 +174,7 @@ export interface ComputeFactsInput {
   /** WS-2 mixed-workflow dependency correctness (codex r4): resolve EACH
    * dependency's OWN terminal set from its frontmatter (its workflow may differ
    * from this ticket's). Returns null → fall back to `terminalStatuses`. */
-  depTerminalFor?: (depFrontmatter: AssignmentFrontmatter) => Promise<ReadonlySet<string> | null>;
+  depTerminalFor?: (depFrontmatter: TicketFrontmatter) => Promise<ReadonlySet<string> | null>;
 }
 
 /**
@@ -273,8 +275,8 @@ export function isSolicitationCurrent(
  */
 export async function resolveBindingEnv(
   workflow: StageWorkflow,
-  frontmatter: Pick<AssignmentFrontmatter, 'workspace'>,
-  assignmentDir: string,
+  frontmatter: Pick<TicketFrontmatter, 'workspace'>,
+  ticketDir: string,
 ): Promise<AttestationEnv> {
   let needsCommit = false;
   let needsPlan = false;
@@ -284,10 +286,10 @@ export async function resolveBindingEnv(
       else if (check.binds === 'plan') needsPlan = true;
     }
   }
-  const planFile = needsPlan ? await latestPlanFile(assignmentDir) : null;
+  const planFile = needsPlan ? await latestPlanFile(ticketDir) : null;
   const [planFileContent, headSha] = await Promise.all([
     needsPlan && planFile
-      ? readFile(resolve(assignmentDir, planFile), 'utf-8').catch(() => null)
+      ? readFile(resolve(ticketDir, planFile), 'utf-8').catch(() => null)
       : Promise.resolve<string | null>(null),
     (async (): Promise<string | null> => {
       if (!needsCommit) return null;
@@ -309,7 +311,9 @@ export async function resolveBindingEnv(
  * is a thin delegate returning just `.facts`.
  */
 export async function computeFactsDetailed(input: ComputeFactsInput): Promise<ComputeFactsResult> {
-  const { assignmentDir, frontmatter, body, projectDir, terminalStatuses } = input;
+  const ticketDir = input.ticketDir ?? input.assignmentDir;
+  if (!ticketDir) throw new Error('computeFactsDetailed requires ticketDir');
+  const { frontmatter, body, projectDir, terminalStatuses } = input;
   const declarations = input.declarations ?? [];
 
   const ac = countRealAcceptanceCriteria(body);
@@ -320,12 +324,12 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
   const needsPlanDigest =
     frontmatter.planApproval !== null ||
     declarations.some((d) => d.type === 'attestation' && d.binds === 'plan');
-  const planFile = await latestPlanFile(assignmentDir);
+  const planFile = await latestPlanFile(ticketDir);
   const [planFileContent, unresolvedQuestions, depsSatisfied] = await Promise.all([
     needsPlanDigest && planFile
-      ? readFile(resolve(assignmentDir, planFile), 'utf-8').catch(() => null)
+      ? readFile(resolve(ticketDir, planFile), 'utf-8').catch(() => null)
       : Promise.resolve(null),
-    countUnresolvedQuestions(assignmentDir),
+    countUnresolvedQuestions(ticketDir),
     areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses, input.depTerminalFor),
   ]);
   const planFileDigest = planFileContent !== null ? planDigest(planFileContent) : null;
@@ -408,7 +412,7 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
   return { facts, attestations };
 }
 
-/** Materialize the full fact set for one assignment (thin delegate). */
+/** Materialize the full fact set for one ticket (thin delegate). */
 export async function computeFacts(input: ComputeFactsInput): Promise<AssignmentFacts> {
   return (await computeFactsDetailed(input)).facts;
 }

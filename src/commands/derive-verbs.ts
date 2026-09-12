@@ -9,15 +9,15 @@
 
 import { readFile } from 'node:fs/promises';
 import { resolve, basename } from 'node:path';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveAssignmentById, type ResolvedAssignment } from '../utils/assignment-resolver.js';
+import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
 import {
-  parseAssignmentFrontmatter,
-  updateAssignmentFile,
+  parseTicketFrontmatter,
+  updateTicketFile,
   updateFactsMap,
   updateOverride,
   updatePlanApproval,
@@ -34,11 +34,11 @@ import {
   type DeriveContext,
   type RecomputeResult,
 } from '../lifecycle/recompute.js';
-import { resolveAssignmentWorkflowContext } from '../lifecycle/workflow-context.js';
+import { resolveTicketWorkflowContext } from '../lifecycle/workflow-context.js';
 import { runEngineOverride } from '../lifecycle/engine-transition.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { checkDependencies } from '../lifecycle/transitions.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import {
   resolveSessionEngagement,
   latestBindingForSessionId,
@@ -64,35 +64,35 @@ export interface DeriveVerbOptions {
 }
 
 interface ResolvedTarget {
-  assignmentDir: string;
-  assignmentPath: string;
+  ticketDir: string;
+  ticketPath: string;
   projectDir: string | null;
 }
 
-async function resolveTarget(assignment: string, options: DeriveVerbOptions): Promise<ResolvedTarget> {
+async function resolveTarget(ticket: string, options: DeriveVerbOptions): Promise<ResolvedTarget> {
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
   if (options.project) {
     if (!isValidSlug(options.project)) throw new Error(`Invalid project slug "${options.project}".`);
-    if (!isValidSlug(assignment)) throw new Error(`Invalid assignment slug "${assignment}".`);
+    if (!isValidSlug(ticket)) throw new Error(`Invalid ticket slug "${ticket}".`);
     const projectDir = resolve(baseDir, options.project);
-    const assignmentDir = resolve(projectDir, 'assignments', assignment);
-    const assignmentPath = resolve(assignmentDir, 'assignment.md');
-    if (!(await fileExists(assignmentPath))) {
-      throw new Error(`Assignment "${assignment}" not found at ${assignmentPath}.`);
+    const ticketDir = resolve(projectDir, 'tickets', ticket);
+    const ticketPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketPath))) {
+      throw new Error(`Ticket "${ticket}" not found at ${ticketPath}.`);
     }
-    return { assignmentDir, assignmentPath, projectDir };
+    return { ticketDir, ticketPath, projectDir };
   }
 
-  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
   if (!resolved) {
-    throw new Error(`Assignment "${assignment}" not found. Provide --project <slug> or a valid standalone UUID.`);
+    throw new Error(`Ticket "${ticket}" not found. Provide --project <slug> or a valid standalone UUID.`);
   }
   return {
-    assignmentDir: resolved.assignmentDir,
-    assignmentPath: resolve(resolved.assignmentDir, 'assignment.md'),
-    projectDir: resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..'),
+    ticketDir: resolved.ticketDir,
+    ticketPath: resolve(resolved.ticketDir, 'ticket.md'),
+    projectDir: resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..'),
   };
 }
 
@@ -112,7 +112,7 @@ async function inferActor(options: DeriveVerbOptions): Promise<string> {
 
 /**
  * Emit a non-status audit event for a resolved derive target (best-effort).
- * Resolves the assignment `id` from the freshly-written file and the project
+ * Resolves the ticket `id` from the freshly-written file and the project
  * slug from the resolved project dir (null for standalone). Never throws.
  */
 async function emitDeriveEvent(
@@ -122,9 +122,9 @@ async function emitDeriveEvent(
   details: Record<string, unknown>,
 ): Promise<void> {
   try {
-    const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(target.ticketPath, 'utf-8'));
     emitEvent({
-      assignmentId: fm.id,
+      ticketId: fm.id,
       projectSlug: target.projectDir ? basename(target.projectDir) : null,
       type,
       actor,
@@ -138,7 +138,7 @@ async function emitDeriveEvent(
 function reportDerived(label: string, result: RecomputeResult): void {
   const dims = result.dimensions;
   if (result.deferredTerminal) {
-    console.log(`${label} — assignment is terminal; derivation deferred (reopen to re-enter).`);
+    console.log(`${label} — ticket is terminal; derivation deferred (reopen to re-enter).`);
     return;
   }
   const parts = [`status: ${result.status}`];
@@ -156,18 +156,18 @@ function reportDerived(label: string, result: RecomputeResult): void {
  * the global default. For legacy/default configs this equals the global
  * context, so nothing changes until real workflows exist. */
 async function resolveTicketContext(
-  assignment: string,
+  ticket: string,
   options: DeriveVerbOptions,
 ): Promise<DeriveContext> {
-  return resolveTicketContextForTarget(await resolveTarget(assignment, options));
+  return resolveTicketContextForTarget(await resolveTarget(ticket, options));
 }
 
 async function resolveTicketContextForTarget(target: ResolvedTarget): Promise<DeriveContext> {
   const config = await readConfig();
-  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(target.ticketPath, 'utf-8'));
   return (
-    await resolveAssignmentWorkflowContext({
-      assignment: fm,
+    await resolveTicketWorkflowContext({
+      ticket: fm,
       projectDir: target.projectDir,
       config,
     })
@@ -182,19 +182,19 @@ async function resolveTicketContextForTarget(target: ResolvedTarget): Promise<De
  * Terminal assignments surface a clear error instead of a silent defer.
  */
 async function assertFact(
-  assignment: string,
+  ticket: string,
   options: DeriveVerbOptions,
   cause: string,
   mutate: (content: string, target: ResolvedTarget) => Promise<string> | string,
   label: string,
   extra?: { context?: DeriveContext; auditMutation?: boolean },
 ): Promise<RecomputeResult> {
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   // Per-ticket workflow resolver → recomputeAndWrite derives against THIS
   // ticket's own workflow. `context` is the default-lifecycle fallback.
   const { context: defaultContext, workflowResolver } = await resolveRecomputeContext();
 
-  const result = await recomputeAndWrite(target.assignmentPath, {
+  const result = await recomputeAndWrite(target.ticketPath, {
     cause,
     by: await inferActor(options),
     projectDir: target.projectDir,
@@ -220,19 +220,19 @@ async function assertFact(
 
 // ── plan approval ───────────────────────────────────────────────────────────
 
-export async function planApproveCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+export async function planApproveCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   let approvedFile: string | null = null;
   await assertFact(
-    assignment,
+    ticket,
     options,
     'plan-approve',
     async (content, target) => {
-      const planFile = await latestPlanFile(target.assignmentDir);
+      const planFile = await latestPlanFile(target.ticketDir);
       if (!planFile) {
         throw new Error('No plan file found (plan.md / plan-v*.md). Write a plan before approving.');
       }
       approvedFile = planFile;
-      const planContent = await readFile(resolve(target.assignmentDir, planFile), 'utf-8');
+      const planContent = await readFile(resolve(target.ticketDir, planFile), 'utf-8');
       return updatePlanApproval(content, {
         file: planFile,
         digest: planDigest(planContent),
@@ -243,18 +243,18 @@ export async function planApproveCommand(assignment: string, options: DeriveVerb
     'Plan approved (revision-bound)',
   );
   // Audit event (best-effort) — emitted only after the verb succeeds.
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   await emitDeriveEvent(target, 'plan-approval', await inferActor(options), { file: approvedFile });
 }
 
-export async function planUnapproveCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
-  await assertFact(assignment, options, 'plan-unapprove', (content) => updatePlanApproval(content, null), 'Plan approval cleared');
+export async function planUnapproveCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
+  await assertFact(ticket, options, 'plan-unapprove', (content) => updatePlanApproval(content, null), 'Plan approval cleared');
 }
 
 // ── custom asserted facts + attestations ────────────────────────────────────
 
 /**
- * `syntaur fact set <assignment> <name> <value>` — assert a declared bool/number
+ * `syntaur fact set <ticket> <name> <value>` — assert a declared bool/number
  * custom fact through the assertFact spine. The name must be in the ACCEPTED
  * declaration list (a collision-skipped / malformed declaration is "not declared"
  * here too) and the value must coerce to the declared type. Records an audit
@@ -262,12 +262,12 @@ export async function planUnapproveCommand(assignment: string, options: DeriveVe
  * marker — explicit verbs always run.
  */
 export async function factSetCommand(
-  assignment: string,
+  ticket: string,
   name: string,
   value: string,
   options: DeriveVerbOptions,
 ): Promise<void> {
-  const context = await resolveTicketContext(assignment, options);
+  const context = await resolveTicketContext(ticket, options);
   const decl = context.factDeclarations.find((d) => d.name === name);
   if (!decl || (decl.type !== 'bool' && decl.type !== 'number')) {
     throw new Error(
@@ -279,7 +279,7 @@ export async function factSetCommand(
     throw new Error(`"${value}" is not a valid ${decl.type} value for fact "${name}".`);
   }
   await assertFact(
-    assignment,
+    ticket,
     options,
     'fact-set',
     (content) => updateFactsMap(content, name, canonical),
@@ -287,12 +287,12 @@ export async function factSetCommand(
     { context, auditMutation: true },
   );
   // Audit event (best-effort) — emitted only after the verb succeeds.
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   await emitDeriveEvent(target, 'fact-set', await inferActor(options), { name, value: canonical });
 }
 
 /**
- * `syntaur attest <assignment> <fact> [--agent] [--verdict] [--note]` — record
+ * `syntaur attest <ticket> <fact> [--agent] [--verdict] [--note]` — record
  * an attestation (default verdict `approved`). The binding snapshot is captured
  * inside the mutate transaction: binds:plan → latest plan file + digest (errors
  * when no plan); binds:commit → workspace HEAD sha read off the fresh content
@@ -300,11 +300,11 @@ export async function factSetCommand(
  * re-attesting replaces it. Records an audit entry (AC9).
  */
 export async function attestCommand(
-  assignment: string,
+  ticket: string,
   fact: string,
   options: DeriveVerbOptions & { verdict?: string; note?: string },
 ): Promise<void> {
-  const context = await resolveTicketContext(assignment, options);
+  const context = await resolveTicketContext(ticket, options);
   const decl = context.factDeclarations.find((d) => d.name === fact);
   if (!decl || decl.type !== 'attestation') {
     throw new Error(
@@ -320,7 +320,7 @@ export async function attestCommand(
   const binds = decl.binds;
 
   await assertFact(
-    assignment,
+    ticket,
     options,
     'attest',
     async (content, target) => {
@@ -332,17 +332,17 @@ export async function attestCommand(
         ...(options.note ? { note: options.note } : {}),
       };
       if (binds === 'plan') {
-        const planFile = await latestPlanFile(target.assignmentDir);
+        const planFile = await latestPlanFile(target.ticketDir);
         if (!planFile) {
           throw new Error(
             'No plan file found (plan.md / plan-v*.md). Write a plan before attesting a binds:plan fact.',
           );
         }
-        const planContent = await readFile(resolve(target.assignmentDir, planFile), 'utf-8');
+        const planContent = await readFile(resolve(target.ticketDir, planFile), 'utf-8');
         record.file = planFile;
         record.digest = planDigest(planContent);
       } else if (binds === 'commit') {
-        const fm = parseAssignmentFrontmatter(content);
+        const fm = parseTicketFrontmatter(content);
         const dir = fm.workspace.worktreePath ?? fm.workspace.repository;
         const sha = dir ? await captureHeadSha(dir) : null;
         if (!sha) {
@@ -358,28 +358,28 @@ export async function attestCommand(
     { context, auditMutation: true },
   );
   // Audit event (best-effort) — emitted only after the verb succeeds.
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   await emitDeriveEvent(target, 'attestation', actor, { fact, verdict });
 }
 
 // ── park / review / implementation facts ───────────────────────────────────
 
-export async function parkCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+export async function parkCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   await assertFact(
-    assignment,
+    ticket,
     options,
     'park',
-    (content) => updateAssignmentFile(content, { parked: true }),
+    (content) => updateTicketFile(content, { parked: true }),
     'Parked',
   );
 }
 
-export async function unparkCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+export async function unparkCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   await assertFact(
-    assignment,
+    ticket,
     options,
     'unpark',
-    (content) => updateAssignmentFile(content, { parked: false }),
+    (content) => updateTicketFile(content, { parked: false }),
     'Unparked',
   );
 }
@@ -392,10 +392,10 @@ export async function unparkCommand(assignment: string, options: DeriveVerbOptio
  * legacy direct fact write — a documented escape hatch.
  */
 async function applyStageFact(
-  assignment: string,
+  ticket: string,
   options: DeriveVerbOptions,
   target: ResolvedTarget,
-  fm: ReturnType<typeof parseAssignmentFrontmatter>,
+  fm: ReturnType<typeof parseTicketFrontmatter>,
   stage: 'implement' | 'review',
   label: string,
   context: DeriveContext,
@@ -419,18 +419,18 @@ async function applyStageFact(
     assertMayMutate(se.session, { hasSelector: true });
     const sw = await switchSessionStage({
       sessionId: se.session.id,
-      assignmentId: fm.id,
+      ticketId: fm.id,
       projectSlug: fm.project,
-      assignmentSlug: fm.slug,
+      ticketSlug: fm.slug,
       stage,
     });
     // Rework keys on the prior stage FOR THIS ASSIGNMENT only — a session that
-    // was reviewing a DIFFERENT assignment must not mark this one as rework
+    // was reviewing a DIFFERENT ticket must not mark this one as rework
     // (codex finding). Pass the resolved path so --dir is honoured.
     const prevStage =
       sw.previous && sw.previous.assignment_id === fm.id ? sw.previous.stage : null;
     await assertStageFactOnOpen({
-      assignmentPath: target.assignmentPath,
+      ticketPath: target.ticketPath,
       projectDir: target.projectDir,
       prevStage,
       stage,
@@ -441,9 +441,9 @@ async function applyStageFact(
       ...(foldAssignee
         ? {
             foldMutate: (content: string) => {
-              const innerFm = parseAssignmentFrontmatter(content);
+              const innerFm = parseTicketFrontmatter(content);
               return innerFm.assignee === null
-                ? updateAssignmentFile(content, { assignee: foldAssignee })
+                ? updateTicketFile(content, { assignee: foldAssignee })
                 : content;
             },
           }
@@ -461,7 +461,7 @@ async function applyStageFact(
   // resolves). Pre-marker behavior below is byte-identical.
   if (await isStagesMigrated()) {
     await assertStageFactOnOpen({
-      assignmentPath: target.assignmentPath,
+      ticketPath: target.ticketPath,
       projectDir: target.projectDir,
       prevStage: null,
       stage,
@@ -469,9 +469,9 @@ async function applyStageFact(
       ...(foldAssignee
         ? {
             foldMutate: (content: string) => {
-              const innerFm = parseAssignmentFrontmatter(content);
+              const innerFm = parseTicketFrontmatter(content);
               return innerFm.assignee === null
-                ? updateAssignmentFile(content, { assignee: foldAssignee })
+                ? updateTicketFile(content, { assignee: foldAssignee })
                 : content;
             },
           }
@@ -485,18 +485,18 @@ async function applyStageFact(
   // standalone assignee write), carry it in THIS locked write so it isn't
   // dropped — re-checking empty against the fresh locked content.
   await assertFact(
-    assignment,
+    ticket,
     options,
     stage === 'implement' ? 'implement' : 'request-review',
     (content) => {
-      const innerFm = parseAssignmentFrontmatter(content);
+      const innerFm = parseTicketFrontmatter(content);
       const base =
         stage === 'implement' ? { implementationStarted: true } : { reviewRequested: true };
       const write =
         foldAssignee && innerFm.assignee === null
           ? { ...base, assignee: foldAssignee }
           : base;
-      return updateAssignmentFile(content, write);
+      return updateTicketFile(content, write);
     },
     label,
     { context },
@@ -504,39 +504,39 @@ async function applyStageFact(
 }
 
 export async function requestReviewCommand(
-  assignment: string,
+  ticket: string,
   options: DeriveVerbOptions & { clear?: boolean },
 ): Promise<void> {
   if (options.clear) {
     // Clearing review is a deliberate explicit human act, not a stage-open —
     // keep it a direct fact mutation (stage-fact-status-bridge Decision 10).
     await assertFact(
-      assignment,
+      ticket,
       options,
       'review-request-clear',
-      (content) => updateAssignmentFile(content, { reviewRequested: false }),
+      (content) => updateTicketFile(content, { reviewRequested: false }),
       'Review request cleared',
     );
     return;
   }
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   const context = await resolveTicketContextForTarget(target);
-  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
-  await applyStageFact(assignment, options, target, fm, 'review', 'Review requested', context);
+  const fm = parseTicketFrontmatter(await readFile(target.ticketPath, 'utf-8'));
+  await applyStageFact(ticket, options, target, fm, 'review', 'Review requested', context);
 }
 
 /** Assert implementation has begun. The derived replacement for the old
  * imperative `implement`/`start` status write. Preserves the legacy side
  * effect: `--agent` sets the assignee when none is set yet. */
-export async function implementStartedCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
-  const target = await resolveTarget(assignment, options);
+export async function implementStartedCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
+  const target = await resolveTarget(ticket, options);
   const context = await resolveTicketContextForTarget(target);
 
   // Non-blocking unmet-dependency warning. We WARN, never refuse — refusing
   // would diverge from the legacy transition behavior (transitions.ts) and
   // could trap legitimate work; the divergence is surfaced (here + as a
   // needs-attention reason) rather than faked in the phase ladder.
-  const fm = parseAssignmentFrontmatter(await readFile(target.assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(target.ticketPath, 'utf-8'));
   if (fm.dependsOn.length > 0 && target.projectDir) {
     const dep = await checkDependencies(target.projectDir, fm.dependsOn, context.terminalStatuses);
     if (!dep.satisfied) {
@@ -556,13 +556,13 @@ export async function implementStartedCommand(assignment: string, options: Deriv
   // race the engine CAS — so skip the standalone assertFact when migrated.
   if (assigneeIfEmpty && !migrated) {
     await assertFact(
-      assignment,
+      ticket,
       options,
       'implement',
       (content) => {
-        const innerFm = parseAssignmentFrontmatter(content);
+        const innerFm = parseTicketFrontmatter(content);
         return innerFm.assignee === null
-          ? updateAssignmentFile(content, { assignee: assigneeIfEmpty })
+          ? updateTicketFile(content, { assignee: assigneeIfEmpty })
           : content;
       },
       'Assignee set',
@@ -574,7 +574,7 @@ export async function implementStartedCommand(assignment: string, options: Deriv
   // to the `implement` stage and let the bridge assert the fact + recompute. On
   // the migrated session path, the assignee-set rides along in that same CAS.
   await applyStageFact(
-    assignment,
+    ticket,
     options,
     target,
     fm,
@@ -588,24 +588,24 @@ export async function implementStartedCommand(assignment: string, options: Deriv
 // ── block / unblock (fact form) ─────────────────────────────────────────────
 
 export async function blockFactCommand(
-  assignment: string,
+  ticket: string,
   options: DeriveVerbOptions & { reason?: string },
 ): Promise<void> {
   await assertFact(
-    assignment,
+    ticket,
     options,
     'block',
-    (content) => updateAssignmentFile(content, { blockedReason: options.reason ?? '(unspecified)' }),
+    (content) => updateTicketFile(content, { blockedReason: options.reason ?? '(unspecified)' }),
     'Blocked',
   );
 }
 
-export async function unblockFactCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+export async function unblockFactCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   await assertFact(
-    assignment,
+    ticket,
     options,
     'unblock',
-    (content) => updateAssignmentFile(content, { blockedReason: null }),
+    (content) => updateTicketFile(content, { blockedReason: null }),
     'Unblocked',
   );
 }
@@ -613,16 +613,16 @@ export async function unblockFactCommand(assignment: string, options: DeriveVerb
 // ── pin / unpin ─────────────────────────────────────────────────────────────
 
 export async function statusPinCommand(
-  assignment: string,
+  ticket: string,
   status: string,
   options: DeriveVerbOptions,
 ): Promise<void> {
   // WS-2 (Decision 1): migrated → a pin is a `manual-override` engine move to
   // stage `status` (parity with the dashboard drag), stamping the crossed
   // failing gates. `null` ⇒ not migrated / no per-file workflow → ladder pin.
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   const engineOverride = await runEngineOverride({
-    assignmentPath: target.assignmentPath,
+    ticketPath: target.ticketPath,
     projectDir: target.projectDir,
     status,
     by: await inferActor(options),
@@ -634,7 +634,7 @@ export async function statusPinCommand(
     return;
   }
 
-  const context: DeriveContext = await resolveTicketContext(assignment, options);
+  const context: DeriveContext = await resolveTicketContext(ticket, options);
   if (!context.knownStatusIds.has(status)) {
     throw new Error(`"${status}" is not a defined status id.`);
   }
@@ -644,7 +644,7 @@ export async function statusPinCommand(
     );
   }
   await assertFact(
-    assignment,
+    ticket,
     options,
     'pin',
     async (content) =>
@@ -658,13 +658,13 @@ export async function statusPinCommand(
   );
 }
 
-export async function statusUnpinCommand(assignment: string, options: DeriveVerbOptions): Promise<void> {
+export async function statusUnpinCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   // WS-2 (Decision 1): migrated → unpin has no engine analogue (position is
   // authoritative) → `runEngineOverride` refuses (deferred to WS-4). `null` ⇒
   // not migrated → the ladder unpin clears the `override` field.
-  const target = await resolveTarget(assignment, options);
+  const target = await resolveTarget(ticket, options);
   const engineOverride = await runEngineOverride({
-    assignmentPath: target.assignmentPath,
+    ticketPath: target.ticketPath,
     projectDir: target.projectDir,
     status: null,
     by: await inferActor(options),
@@ -674,18 +674,18 @@ export async function statusUnpinCommand(assignment: string, options: DeriveVerb
     console.log('Unpinned');
     return;
   }
-  await assertFact(assignment, options, 'unpin', (content) => updateOverride(content, null), 'Unpinned');
+  await assertFact(ticket, options, 'unpin', (content) => updateOverride(content, null), 'Unpinned');
 }
 
 // ── recompute (manual trigger / headless reconcile) ─────────────────────────
 
 export async function recomputeCommand(
-  assignment: string | undefined,
+  ticket: string | undefined,
   options: DeriveVerbOptions & { all?: boolean; ifMigrated?: boolean },
 ): Promise<void> {
   // `--if-migrated` makes this honor the same migration gate the implicit
   // sweeps use (D6) — so a SessionEnd hook firing `recompute` can't re-derive
-  // pre-migration assignments during rollout. A bare `syntaur recompute`
+  // pre-migration tickets during rollout. A bare `syntaur recompute`
   // (explicit human/agent act) stays ungated.
   //
   // WS-2 Decision 2: this gate stays on `isDeriveMigrated()`. The stage engine
@@ -700,7 +700,7 @@ export async function recomputeCommand(
     const config = await readConfig();
     const summary = await recomputeAll(
       options.dir ? expandHome(options.dir) : config.defaultProjectDir,
-      assignmentsDirFn(),
+      ticketsDirFn(),
       { cause: 'recompute', by: await inferActor(options), context, workflowResolver },
     );
     console.log(
@@ -709,25 +709,25 @@ export async function recomputeCommand(
     for (const w of summary.warnings) console.warn(`Warning: ${w}`);
     return;
   }
-  // No positional arg resolves the active assignment from the session's OPEN
-  // engagement — so `syntaur recompute` works from an assignment workspace
-  // (e.g. a SessionEnd hook) without threading slugs. resolveAssignmentTarget
+  // No positional arg resolves the active ticket from the session's OPEN
+  // engagement — so `syntaur recompute` works from a ticket workspace
+  // (e.g. a SessionEnd hook) without threading slugs. resolveTicketTarget
   // covers all three shapes: --project + slug, bare UUID, and the session's
-  // open engagement. The legacy .syntaur/context.json assignment scalar is no
+  // open engagement. The legacy .syntaur/context.json ticket scalar is no
   // longer a resolution source.
   //
-  // recompute MUTATES derived assignment state, so gate the implicit
+  // recompute MUTATES derived ticket state, so gate the implicit
   // (engagement-resolved) path: a session whose id was resolved from a WEAK
   // source (transcript scan / legacy hint) cannot drive a mutation without an
   // explicit target. The positional slug/UUID is that explicit selector.
   const cwd = options.cwd ?? process.cwd();
-  const hasSelector = Boolean(assignment) || Boolean(options.project);
+  const hasSelector = Boolean(ticket) || Boolean(options.project);
   // The engagement edge lives in the session DB; ensure it's open first
   // (idempotent — no-op if already initialized).
   const { initSessionDb } = await import('../dashboard/session-db.js');
   initSessionDb();
 
-  let resolved: ResolvedAssignment;
+  let resolved: ResolvedTicket;
   if (options.sessionId) {
     // EXPLICIT caller-supplied session id (the SessionEnd hook). Key the target
     // on THIS session's latest engagement (open-else-latest) — by now the hook's
@@ -736,7 +736,7 @@ export async function recomputeCommand(
     // provenance, so it may drive a mutation with no positional selector; we
     // still run assertMayMutate for symmetry (it passes).
     assertMayMutate({ id: options.sessionId, provenance: 'EXPLICIT' }, { hasSelector });
-    resolved = await resolveAssignmentTarget(assignment, {
+    resolved = await resolveTicketTarget(ticket, {
       project: options.project,
       dir: options.dir,
       cwd,
@@ -747,15 +747,15 @@ export async function recomputeCommand(
     // engagement (WEAK-source sessions can't mutate without a selector).
     const se = await resolveSessionEngagement(cwd);
     if (se) assertMayMutate(se.session, { hasSelector });
-    resolved = await resolveAssignmentTarget(assignment, {
+    resolved = await resolveTicketTarget(ticket, {
       project: options.project,
       dir: options.dir,
       cwd,
       resolveEngagement: async () => se?.open ?? null,
     });
   }
-  const projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
-  const result = await recomputeAndWrite(resolve(resolved.assignmentDir, 'assignment.md'), {
+  const projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+  const result = await recomputeAndWrite(resolve(resolved.ticketDir, 'ticket.md'), {
     cause: 'recompute',
     by: await inferActor(options),
     projectDir,

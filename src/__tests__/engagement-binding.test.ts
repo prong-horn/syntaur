@@ -36,13 +36,13 @@ afterEach(async () => {
 });
 
 describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
-  it('does NOT split a slug-only interval when the first resolved-id assertion has the same (project, assignment, stage)', async () => {
-    // A freshly grabbed/tracked assignment: open with slugs, assignment_id NULL.
+  it('does NOT split a slug-only interval when the first resolved-id assertion has the same (project, ticket, stage)', async () => {
+    // A freshly grabbed/tracked ticket: open with slugs, assignment_id NULL.
     openEngagement({
       sessionId: 's1',
-      assignmentId: null,
+      ticketId: null,
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
@@ -51,9 +51,9 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
     // The first `implement` stage assertion arrives WITH a resolved id.
     const result = await switchSessionStage({
       sessionId: 's1',
-      assignmentId: 'resolved-id',
+      ticketId: 'resolved-id',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
     });
 
@@ -62,12 +62,12 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
     expect(after.id).toBe(before.id); // same interval — not split
   });
 
-  it('DOES switch when the target assignment slug differs', async () => {
+  it('DOES switch when the target ticket slug differs', async () => {
     openEngagement({
       sessionId: 's2',
-      assignmentId: null,
+      ticketId: null,
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
@@ -75,9 +75,9 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
 
     const result = await switchSessionStage({
       sessionId: 's2',
-      assignmentId: null,
+      ticketId: null,
       projectSlug: 'proj',
-      assignmentSlug: 'b', // different assignment
+      ticketSlug: 'b', // different ticket
       stage: 'implement',
     });
 
@@ -90,18 +90,18 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
   it('DOES switch when both ids are present and differ', async () => {
     openEngagement({
       sessionId: 's3',
-      assignmentId: 'id-A',
+      ticketId: 'id-A',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's3',
-      assignmentId: 'id-B', // same slugs, different id
+      ticketId: 'id-B', // same slugs, different id
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
     });
 
@@ -111,18 +111,18 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
   it('skips when both ids are present and equal (no churn on repeat)', async () => {
     openEngagement({
       sessionId: 's4',
-      assignmentId: 'id-A',
+      ticketId: 'id-A',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's4',
-      assignmentId: 'id-A',
+      ticketId: 'id-A',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
     });
 
@@ -132,18 +132,18 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
   it('DOES switch when the stage differs (real stage transition)', async () => {
     openEngagement({
       sessionId: 's5',
-      assignmentId: 'id-A',
+      ticketId: 'id-A',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's5',
-      assignmentId: 'id-A',
+      ticketId: 'id-A',
       projectSlug: 'proj',
-      assignmentSlug: 'a',
+      ticketSlug: 'a',
       stage: 'review', // stage change
     });
 

@@ -96,7 +96,7 @@ export interface UsageEventInput {
   totalCost: number;
   cwd: string | null;
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   rawJson: string | null;
 }
 
@@ -123,7 +123,7 @@ export interface UsageDailyInput {
   tool: string;
   model: string;
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -152,20 +152,22 @@ export interface UsageDailyRow {
  * A workspace expanded to the rows it owns. The resulting WHERE clause is the
  * disjoint union of project-scoped rows (`project_slug IN projectSlugs`) and
  * standalone-scoped rows (`project_slug = '' AND assignment_slug IN
- * standaloneAssignmentIds`). The two branches are disjoint because project rows
+ * standaloneTicketIds`). The two branches are disjoint because project rows
  * have a non-empty `project_slug` and standalone rows have an empty one.
  * Unattributed rows (`project_slug = '' AND assignment_slug = ''`) are never
  * members, so they are excluded. Empty membership matches NO rows.
  */
 export interface WorkspaceMembers {
   projectSlugs: string[];
-  standaloneAssignmentIds: string[];
+  standaloneTicketIds: string[];
 }
 
 export interface ListEventsFilter {
   since?: string;
   until?: string;
   projectSlug?: string;
+  ticketSlug?: string;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentSlug?: string;
   tool?: string;
   model?: string;
@@ -176,6 +178,8 @@ export interface ListDailyFilter {
   since?: string;
   until?: string;
   projectSlug?: string;
+  ticketSlug?: string;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentSlug?: string;
   tool?: string;
   model?: string;
@@ -192,13 +196,13 @@ function pushWorkspaceClause(members: WorkspaceMembers, where: string[], params:
     disjuncts.push(`project_slug IN (${members.projectSlugs.map(() => '?').join(', ')})`);
     params.push(...members.projectSlugs);
   }
-  if (members.standaloneAssignmentIds.length > 0) {
+  if (members.standaloneTicketIds.length > 0) {
     disjuncts.push(
-      `(project_slug = '' AND assignment_slug IN (${members.standaloneAssignmentIds
+      `(project_slug = '' AND assignment_slug IN (${members.standaloneTicketIds
         .map(() => '?')
         .join(', ')}))`,
     );
-    params.push(...members.standaloneAssignmentIds);
+    params.push(...members.standaloneTicketIds);
   }
   where.push(disjuncts.length > 0 ? `(${disjuncts.join(' OR ')})` : '1 = 0');
 }
@@ -336,7 +340,7 @@ export function upsertEvent(input: UsageEventInput): void {
          @sessionId, @model, @tool, @eventTs,
          @inputTokens, @outputTokens, @cacheCreationTokens, @cacheReadTokens,
          @totalTokens, @totalCost,
-         @cwd, @projectSlug, @assignmentSlug, @rawJson, @updatedAt
+         @cwd, @projectSlug, @ticketSlug, @rawJson, @updatedAt
        )
        ON CONFLICT(session_id, model) DO UPDATE SET
          tool                  = CASE WHEN excluded.event_ts >  usage_events.event_ts THEN excluded.tool     ELSE usage_events.tool     END,
@@ -366,7 +370,7 @@ export function upsertEvent(input: UsageEventInput): void {
       totalCost: input.totalCost,
       cwd: input.cwd,
       projectSlug: input.projectSlug,
-      assignmentSlug: input.assignmentSlug,
+      ticketSlug: input.ticketSlug,
       rawJson: input.rawJson,
       updatedAt: nowIso(),
     });
@@ -388,9 +392,10 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
     where.push('project_slug = ?');
     params.push(filter.projectSlug);
   }
-  if (filter.assignmentSlug !== undefined) {
+  const ticketSlug = filter.ticketSlug ?? filter.assignmentSlug;
+  if (ticketSlug !== undefined) {
     where.push('assignment_slug = ?');
-    params.push(filter.assignmentSlug);
+    params.push(ticketSlug);
   }
   if (filter.tool) {
     where.push('tool = ?');
@@ -537,7 +542,7 @@ export function insertDailyBatch(rows: UsageDailyInput[]): void {
        input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
        total_tokens, total_cost, frozen, computed_at
      ) VALUES (
-       @day, @tool, @model, @projectSlug, @assignmentSlug,
+       @day, @tool, @model, @projectSlug, @ticketSlug,
        @inputTokens, @outputTokens, @cacheCreationTokens, @cacheReadTokens,
        @totalTokens, @totalCost, 0, @computedAt
      )`,
@@ -551,7 +556,7 @@ export function insertDailyBatch(rows: UsageDailyInput[]): void {
         tool: row.tool,
         model: row.model,
         projectSlug: row.projectSlug,
-        assignmentSlug: row.assignmentSlug,
+        ticketSlug: row.ticketSlug,
         inputTokens: row.inputTokens,
         outputTokens: row.outputTokens,
         cacheCreationTokens: row.cacheCreationTokens,
@@ -582,9 +587,10 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
     where.push('project_slug = ?');
     params.push(filter.projectSlug);
   }
-  if (filter.assignmentSlug !== undefined) {
+  const ticketSlug = filter.ticketSlug ?? filter.assignmentSlug;
+  if (ticketSlug !== undefined) {
     where.push('assignment_slug = ?');
-    params.push(filter.assignmentSlug);
+    params.push(ticketSlug);
   }
   if (filter.tool) {
     where.push('tool = ?');

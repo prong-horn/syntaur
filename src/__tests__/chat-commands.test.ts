@@ -38,7 +38,7 @@ const codexPrefixPrompt = {
 
 const cursorEntry = {
   name: 'plan-assignment',
-  description: 'Create a detailed implementation plan for the current assignment.',
+  description: 'Create a detailed implementation plan for the current ticket.',
 };
 
 describe('parseAvailableCommands', () => {
@@ -96,7 +96,7 @@ describe('parseAvailableCommands', () => {
     ).toEqual([
       {
         name: 'plan-assignment',
-        description: 'Create a detailed implementation plan for the current assignment.',
+        description: 'Create a detailed implementation plan for the current ticket.',
         inputHint: null,
         action: { kind: 'prompt' },
       },
@@ -188,7 +188,7 @@ function evt(kind: ChatEventKind, payload: unknown, seq: number): ChatEvent {
   return {
     seq,
     ts: '2026-09-03T12:00:00.000Z',
-    assignmentId: 'a1',
+    ticketId: 'a1',
     agentId: 'codex',
     sessionKey: 'a1:codex',
     turnId: null,

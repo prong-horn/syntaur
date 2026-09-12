@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
 import { readConfig } from '../utils/config.js';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
 
 export interface FailOptions extends LifecycleOptions {
@@ -14,10 +14,10 @@ export interface FailOptions extends LifecycleOptions {
  * even when addressed by UUID without `--project`, and recomputes by the
  * resolved SLUG. */
 export async function failCommand(
-  assignment: string,
+  ticket: string,
   options: FailOptions,
 ): Promise<void> {
-  const result = await runTransition(assignment, 'fail', options);
+  const result = await runTransition(ticket, 'fail', options);
   reportResult(result);
   if (!result.success) return;
 
@@ -27,12 +27,12 @@ export async function failCommand(
   let changedSlug: string;
   if (options.project) {
     projectDir = resolve(baseDir, options.project);
-    changedSlug = assignment;
+    changedSlug = ticket;
   } else {
-    const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+    const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
     if (!resolved) return;
-    projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
-    changedSlug = resolved.assignmentSlug;
+    projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+    changedSlug = resolved.ticketSlug;
   }
   if (projectDir) {
     const { context, workflowResolver } = await resolveRecomputeContext();

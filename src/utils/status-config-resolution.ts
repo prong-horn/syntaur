@@ -1,13 +1,13 @@
 import { readFile, writeFile, rm, readdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
-import type { AssignmentStatus } from '../lifecycle/types.js';
+import type { TicketStatus } from '../lifecycle/types.js';
 import {
   appendStatusHistoryEntry,
-  parseAssignmentFrontmatter,
-  updateAssignmentFile,
+  parseTicketFrontmatter,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import { recordStatusEvent, resolveActor } from '../lifecycle/event-emit.js';
-import { listAssignmentsByProject, type AssignmentEntry } from './assignment-walk.js';
+import { listTicketsByProject, type AssignmentEntry } from './ticket-walk.js';
 import { readProjectBinding } from './project-binding.js';
 import { DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
 import type { WorkflowContextResolver } from '../lifecycle/workflow-context.js';
@@ -15,14 +15,16 @@ import { fileExists } from './fs.js';
 import { nowTimestamp } from './timestamp.js';
 
 export interface AffectedAssignment {
-  /** Absolute path to the assignment.md file. */
+  /** Absolute path to the ticket.md file. */
   path: string;
   /** Human display label: "<project>/<slug>" or "(standalone) <slug>". */
   display: string;
   projectSlug: string | null;
-  assignmentSlug: string;
-  status: AssignmentStatus;
-  /** Explicit `workflow:` override on the assignment (null → resolved via binding). */
+  ticketSlug?: string;
+  /** @deprecated Dashboard compat until Task 2 */
+  assignmentSlug?: string;
+  status: TicketStatus;
+  /** Explicit `workflow:` override on the ticket (null → resolved via binding). */
   workflow: string | null;
   /** The workflow this ticket RESOLVES to. `'default'` when no resolver was
    * supplied (legacy single-workflow reads — every ticket is `default`). */
@@ -30,7 +32,7 @@ export interface AffectedAssignment {
 }
 
 /**
- * Optional per-workflow scoping for the assignment scans. When a `resolver`
+ * Optional per-workflow scoping for the ticket scans. When a `resolver`
  * (Task 5) is supplied, each ticket's workflow is resolved and recorded on the
  * result; when `workflowId` is also set, only tickets RESOLVING to that
  * workflow are included — this is what makes a per-workflow status change touch
@@ -67,7 +69,7 @@ export class StatusResolutionError extends Error {
 }
 
 /**
- * Walk all project and standalone assignments, parse each `assignment.md`,
+ * Walk all project and standalone tickets, parse each `ticket.md`,
  * and group those whose `status` matches one of the requested `ids`.
  *
  * Returns a Map keyed by status id, **always pre-populated with an entry
@@ -93,13 +95,13 @@ export async function scanAssignmentsByStatus(
   if (ids.length === 0) return result;
   const idSet = new Set(ids);
 
-  const walk = await listAssignmentsByProject(projectsDir, standaloneDir);
+  const walk = await listTicketsByProject(projectsDir, standaloneDir);
 
   for (const entry of walk.withAssignmentMd) {
-    const assignmentPath = `${entry.assignmentDir}/assignment.md`;
+    const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
-      content = await readFile(assignmentPath, 'utf-8');
+      content = await readFile(ticketPath, 'utf-8');
     } catch (err) {
       // Don't swallow IO errors silently — surface them as scan-failed.
       // Silent skip would hide affected assignments and let the server
@@ -110,11 +112,11 @@ export async function scanAssignmentsByStatus(
         continue;
       }
       throw new StatusResolutionError(
-        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        `failed to read ${ticketPath}: ${err instanceof Error ? err.message : String(err)}`,
         'scan-failed',
       );
     }
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     if (!idSet.has(fm.status)) continue;
 
     // Resolve the ticket's workflow (Task 5). Without a resolver every ticket
@@ -123,19 +125,19 @@ export async function scanAssignmentsByStatus(
     // a DIFFERENT workflow are skipped so the status change stays scoped.
     let resolvedWorkflow = DEFAULT_WORKFLOW_ID;
     if (scope.resolver) {
-      const wctx = await scope.resolver.forAssignment(fm, bindingProjectDir(entry));
+      const wctx = await scope.resolver.forTicket(fm, bindingProjectDir(entry));
       resolvedWorkflow = wctx.workflowId;
     }
     if (scope.workflowId && resolvedWorkflow !== scope.workflowId) continue;
 
     const display = entry.standalone
-      ? `(standalone) ${entry.assignmentSlug}`
-      : `${entry.projectSlug}/${entry.assignmentSlug}`;
+      ? `(standalone) ${entry.ticketSlug}`
+      : `${entry.projectSlug}/${entry.ticketSlug}`;
     const affected: AffectedAssignment = {
-      path: assignmentPath,
+      path: ticketPath,
       display,
       projectSlug: entry.projectSlug,
-      assignmentSlug: entry.assignmentSlug,
+      ticketSlug: entry.ticketSlug,
       status: fm.status,
       workflow: fm.workflow ?? null,
       resolvedWorkflow,
@@ -153,9 +155,9 @@ export async function scanAssignmentsByStatus(
  * Order (per `decision-record.md` Decision 3):
  *   1. Validate (duplicates, stale ids, invalid targets) — no writes.
  *   2. Buffer original content for every file we're about to remap.
- *   3. Remap phase: re-verify status (TOCTOU), rewrite assignment.md.
+ *   3. Remap phase: re-verify status (TOCTOU), rewrite ticket.md.
  *      On any failure, restore from buffer and throw.
- *   4. Delete phase: re-verify status, rm -rf assignment directories.
+ *   4. Delete phase: re-verify status, rm -rf ticket directories.
  *      On failure, throw without rolling back remaps (caller leaves
  *      config un-written so the old config still considers every
  *      remaining assignment's status valid).
@@ -235,7 +237,7 @@ export async function applyStatusResolutions(
         // raw ENOENT/EACCES.
         const code = (err as NodeJS.ErrnoException)?.code;
         if (code === 'ENOENT') {
-          // Skip silently — assignment is already gone; remap is moot.
+          // Skip silently — ticket is already gone; remap is moot.
           continue;
         }
         throw new StatusResolutionError(
@@ -253,7 +255,7 @@ export async function applyStatusResolutions(
   // file failure rolls earlier writes back; emitting inside the loop would leave
   // a false event for a rolled-back file (FIX 2).
   const pendingRemapEvents: Array<{
-    assignmentId: string;
+    ticketId: string;
     projectSlug: string | null;
     at: string;
     from: string;
@@ -279,13 +281,13 @@ export async function applyStatusResolutions(
         } catch (err) {
           const code = (err as NodeJS.ErrnoException)?.code;
           if (code === 'ENOENT') {
-            // File vanished between buffer and remap — assignment is gone;
+            // File vanished between buffer and remap — ticket is gone;
             // remap is moot. Skip silently (mirrors the delete phase).
             continue;
           }
           throw err;
         }
-        const fm = parseAssignmentFrontmatter(current);
+        const fm = parseTicketFrontmatter(current);
         if (fm.status !== r.id) {
           console.warn(
             `status-config-resolution: skipping remap of ${a.display} — status drifted from "${r.id}" to "${fm.status}"`,
@@ -294,7 +296,7 @@ export async function applyStatusResolutions(
         }
         const now = nowTimestamp();
         const next = appendStatusHistoryEntry(
-          updateAssignmentFile(current, {
+          updateTicketFile(current, {
             status: r.target,
             updated: now,
           }),
@@ -304,7 +306,7 @@ export async function applyStatusResolutions(
         // Defer the audit event past the rollback boundary (FIX 2): collect now,
         // emit only in the success path below.
         pendingRemapEvents.push({
-          assignmentId: fm.id,
+          ticketId: fm.id,
           projectSlug: a.projectSlug,
           at: now,
           from: r.id,
@@ -339,7 +341,7 @@ export async function applyStatusResolutions(
   // events now (FIX 2): status remap, actor 'system' (null by).
   for (const e of pendingRemapEvents) {
     recordStatusEvent({
-      assignmentId: e.assignmentId,
+      ticketId: e.ticketId,
       projectSlug: e.projectSlug,
       at: e.at,
       actor: resolveActor(null),
@@ -357,7 +359,7 @@ export async function applyStatusResolutions(
     for (const a of list) {
       try {
         const current = await readFile(a.path, 'utf-8');
-        const fm = parseAssignmentFrontmatter(current);
+        const fm = parseTicketFrontmatter(current);
         if (fm.status !== r.id) {
           console.warn(
             `status-config-resolution: skipping delete of ${a.display} — status drifted from "${r.id}" to "${fm.status}"`,
@@ -369,9 +371,9 @@ export async function applyStatusResolutions(
         // intent (delete) is effectively satisfied.
         continue;
       }
-      const assignmentDir = dirname(a.path);
+      const ticketDir = dirname(a.path);
       try {
-        await rm(assignmentDir, { recursive: true, force: true });
+        await rm(ticketDir, { recursive: true, force: true });
         deleted++;
         const bucket = byId.get(r.id);
         if (bucket) bucket.count++;
@@ -389,9 +391,9 @@ export async function applyStatusResolutions(
 
 /**
  * After `applyStatusResolutions` runs, the apply-time TOCTOU re-verify
- * catches drift WITHIN the same dropped id. But an assignment can drift
+ * catches drift WITHIN the same dropped id. But a ticket can drift
  * from one dropped id to ANOTHER dropped id between scan and apply (e.g.
- * the user is dropping both A and B; an assignment changes A → B while
+ * the user is dropping both A and B; a ticket changes A → B while
  * we're working). In that case the scan saw it as A (skipped because
  * status changed to B at apply time) and B's resolution doesn't include
  * it (scan never saw it as B). Writing the config now would orphan it.
@@ -424,11 +426,11 @@ export async function verifyNoDriftedOrphans(
 }
 
 /**
- * Rename-scope scan (derived-status v3): find every assignment that references
+ * Rename-scope scan (derived-status v3): find every ticket that references
  * a status id ANYWHERE relabeling must reach — headline `status`, cached
  * `phase`, or any statusHistory from/to/phaseFrom/phaseTo. The plain
  * `scanAssignmentsByStatus` only matches the headline, which misses e.g. a
- * blocked assignment whose cached phase uses the renamed id.
+ * blocked ticket whose cached phase uses the renamed id.
  */
 export async function scanAssignmentsReferencingStatus(
   projectsDir: string,
@@ -436,22 +438,22 @@ export async function scanAssignmentsReferencingStatus(
   id: string,
   scope: WorkflowScanScope = {},
 ): Promise<AffectedAssignment[]> {
-  const walk = await listAssignmentsByProject(projectsDir, standaloneDir);
+  const walk = await listTicketsByProject(projectsDir, standaloneDir);
   const affected: AffectedAssignment[] = [];
   for (const entry of walk.withAssignmentMd) {
-    const assignmentPath = `${entry.assignmentDir}/assignment.md`;
+    const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
-      content = await readFile(assignmentPath, 'utf-8');
+      content = await readFile(ticketPath, 'utf-8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') continue;
       throw new StatusResolutionError(
-        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        `failed to read ${ticketPath}: ${err instanceof Error ? err.message : String(err)}`,
         'scan-failed',
       );
     }
-    const fm = parseAssignmentFrontmatter(content);
+    const fm = parseTicketFrontmatter(content);
     const inHistory = fm.statusHistory.some(
       (e) => e.from === id || e.to === id || e.phaseFrom === id || e.phaseTo === id,
     );
@@ -459,18 +461,18 @@ export async function scanAssignmentsReferencingStatus(
 
     let resolvedWorkflow = DEFAULT_WORKFLOW_ID;
     if (scope.resolver) {
-      const wctx = await scope.resolver.forAssignment(fm, bindingProjectDir(entry));
+      const wctx = await scope.resolver.forTicket(fm, bindingProjectDir(entry));
       resolvedWorkflow = wctx.workflowId;
     }
     if (scope.workflowId && resolvedWorkflow !== scope.workflowId) continue;
 
     affected.push({
-      path: assignmentPath,
+      path: ticketPath,
       display: entry.standalone
-        ? `(standalone) ${entry.assignmentSlug}`
-        : `${entry.projectSlug}/${entry.assignmentSlug}`,
+        ? `(standalone) ${entry.ticketSlug}`
+        : `${entry.projectSlug}/${entry.ticketSlug}`,
       projectSlug: entry.projectSlug,
-      assignmentSlug: entry.assignmentSlug,
+      ticketSlug: entry.ticketSlug,
       status: fm.status,
       workflow: fm.workflow ?? null,
       resolvedWorkflow,
@@ -537,31 +539,31 @@ export async function scanWorkflowUsage(
   }
 
   // Tickets that resolve to the workflow (headline scan across all statuses).
-  const walk = await listAssignmentsByProject(opts.projectsDir, opts.standaloneDir);
+  const walk = await listTicketsByProject(opts.projectsDir, opts.standaloneDir);
   const assignments: AffectedAssignment[] = [];
   for (const entry of walk.withAssignmentMd) {
-    const assignmentPath = `${entry.assignmentDir}/assignment.md`;
+    const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
-      content = await readFile(assignmentPath, 'utf-8');
+      content = await readFile(ticketPath, 'utf-8');
     } catch (err) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') continue;
       throw new StatusResolutionError(
-        `failed to read ${assignmentPath}: ${err instanceof Error ? err.message : String(err)}`,
+        `failed to read ${ticketPath}: ${err instanceof Error ? err.message : String(err)}`,
         'scan-failed',
       );
     }
-    const fm = parseAssignmentFrontmatter(content);
-    const wctx = await opts.resolver.forAssignment(fm, bindingProjectDir(entry));
+    const fm = parseTicketFrontmatter(content);
+    const wctx = await opts.resolver.forTicket(fm, bindingProjectDir(entry));
     if (wctx.workflowId !== workflowId) continue;
     assignments.push({
-      path: assignmentPath,
+      path: ticketPath,
       display: entry.standalone
-        ? `(standalone) ${entry.assignmentSlug}`
-        : `${entry.projectSlug}/${entry.assignmentSlug}`,
+        ? `(standalone) ${entry.ticketSlug}`
+        : `${entry.projectSlug}/${entry.ticketSlug}`,
       projectSlug: entry.projectSlug,
-      assignmentSlug: entry.assignmentSlug,
+      ticketSlug: entry.ticketSlug,
       status: fm.status,
       workflow: fm.workflow ?? null,
       resolvedWorkflow: wctx.workflowId,

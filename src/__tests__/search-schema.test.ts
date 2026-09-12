@@ -75,7 +75,7 @@ describe('search-schema', () => {
     it('drops invalid alias entries (bad key, collision, reserved, non-kind value)', () => {
       const result = normalizeSearchConfig({
         aliases: {
-          x: 'assignment', // ok
+          x: 'ticket', // ok
           A: 'project', // bad key shape (uppercase)
           status: 'todo', // collides with a field name
           all: 'playbook', // reserved
@@ -83,13 +83,13 @@ describe('search-schema', () => {
           '2bad': 'todo', // must start with a letter
         },
       });
-      expect(result.aliases).toEqual({ x: 'assignment' });
+      expect(result.aliases).toEqual({ x: 'ticket' });
     });
   });
 
   describe('validateAliases', () => {
     it('accepts a valid map', () => {
-      expect(validateAliases({ a: 'assignment', pb: 'playbook' })).toEqual({ ok: true });
+      expect(validateAliases({ a: 'ticket', pb: 'playbook' })).toEqual({ ok: true });
     });
 
     it('accepts an empty map', () => {
@@ -102,19 +102,19 @@ describe('search-schema', () => {
     });
 
     it('rejects a bad key shape', () => {
-      const r = validateAliases({ Foo: 'assignment' });
+      const r = validateAliases({ Foo: 'ticket' });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.errors.join(' ')).toMatch(/lowercase/);
     });
 
     it('rejects the reserved "all" key', () => {
-      const r = validateAliases({ all: 'assignment' });
+      const r = validateAliases({ all: 'ticket' });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.errors.join(' ')).toMatch(/reserved/);
     });
 
     it('rejects a collision with a field name', () => {
-      const r = validateAliases({ status: 'assignment' });
+      const r = validateAliases({ status: 'ticket' });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.errors.join(' ')).toMatch(/collides/);
     });

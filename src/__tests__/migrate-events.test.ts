@@ -28,7 +28,7 @@ interface HistoryEntry {
   by?: string | null;
 }
 
-function assignmentMd(
+function ticketMd(
   slug: string,
   id: string,
   history: HistoryEntry[],
@@ -79,15 +79,15 @@ async function seedProject(
   history: HistoryEntry[],
   opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
 ): Promise<void> {
-  const dir = resolve(projectsDir, project, 'assignments', slug);
+  const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), assignmentMd(slug, id, history, opts), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(slug, id, history, opts), 'utf-8');
 }
 
 async function seedStandalone(uuid: string, history: HistoryEntry[]): Promise<void> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), assignmentMd(uuid, uuid, history), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(uuid, uuid, history), 'utf-8');
 }
 
 function countAllEvents(): number {
@@ -98,7 +98,7 @@ function countAllEvents(): number {
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-migrate-events-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'assignments');
+  standaloneDir = resolve(home, 'tickets');
   dbPath = resolve(home, 'syntaur.db');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
@@ -159,12 +159,12 @@ describe('migrateEventsCommand', () => {
     expect(countAllEvents()).toBe(2);
   });
 
-  it('a second assignment added after a first apply backfills only its own events', async () => {
+  it('a second ticket added after a first apply backfills only its own events', async () => {
     await seedProject('p1', 'a1', 'a1-id', HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
     expect(countAllEvents()).toBe(2);
 
-    // Add a second assignment, then re-apply: only its 2 new events insert.
+    // Add a second ticket, then re-apply: only its 2 new events insert.
     await seedProject('p1', 'a2', 'a2-id', HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
     expect(countAllEvents()).toBe(4);
@@ -184,11 +184,11 @@ describe('migrateEventsCommand', () => {
     expect(pe.at).toBe('2026-03-03T00:00:00Z');
     expect(pe.actor).toBe('agent:rev');
     expect(pe.source_key).toBe('backfill:a1-id:plan-approval');
-    // status-change + plan-approval = 3 total for this assignment
+    // status-change + plan-approval = 3 total for this ticket
     expect(listEventsByAssignment('a1-id')).toHaveLength(3);
   });
 
-  it('backfills standalone assignments (uuid dir, project_slug null)', async () => {
+  it('backfills standalone tickets (uuid dir, project_slug null)', async () => {
     const uuid = '11111111-2222-3333-4444-555555555555';
     await seedStandalone(uuid, HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
@@ -230,7 +230,7 @@ describe('migrateEventsCommand', () => {
     expect(keys).not.toContain('backfill:a1-id:status:1');
   });
 
-  it('does not throw and writes nothing when there are no assignments', async () => {
+  it('does not throw and writes nothing when there are no tickets', async () => {
     await mkdir(projectsDir, { recursive: true });
     await expect(migrateEventsCommand({ dir: projectsDir, apply: true })).resolves.toBeUndefined();
     expect(countAllEvents()).toBe(0);

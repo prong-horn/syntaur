@@ -4,11 +4,11 @@ import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { resolveEngagementBinding } from '../utils/engagement-binding.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { readConfig } from '../utils/config.js';
-import { assignmentsDir, defaultProjectDir } from '../utils/paths.js';
+import { ticketsDir, defaultProjectDir } from '../utils/paths.js';
 import { recreateForTarget, recreateOutcomeToHttp } from '../dashboard/worktree-recreate.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { openInEditor, openInTerminal } from '../utils/open-launch.js';
@@ -24,7 +24,7 @@ interface OpenOptions {
 }
 
 export async function runOpen(
-  assignmentArg: string | undefined,
+  ticketArg: string | undefined,
   options: OpenOptions,
 ): Promise<{ worktreePath: string; recreated: boolean; copied: boolean; launched: 'editor' | 'terminal' | null }> {
   // A UUID (--id) is globally unique, so it must resolve WITHOUT a project
@@ -32,22 +32,22 @@ export async function runOpen(
   // under that project). --project only applies to a positional slug.
   const cwd = options.cwd ?? process.cwd();
   const resolved = options.id
-    ? await resolveAssignmentTarget(options.id, { cwd, resolveEngagement: () => resolveEngagementBinding(cwd) })
-    : await resolveAssignmentTarget(assignmentArg, {
+    ? await resolveTicketTarget(options.id, { cwd, resolveEngagement: () => resolveEngagementBinding(cwd) })
+    : await resolveTicketTarget(ticketArg, {
         project: options.project,
         cwd,
         resolveEngagement: () => resolveEngagementBinding(cwd),
       });
-  const assignmentPath = resolve(resolved.assignmentDir, 'assignment.md');
-  if (!(await fileExists(assignmentPath))) {
-    throw new SyntaurError(`Assignment file not found: ${assignmentPath}`, {
-      remediation: 'check the assignment slug or --id',
+  const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketPath))) {
+    throw new SyntaurError(`Ticket file not found: ${ticketPath}`, {
+      remediation: 'check the ticket slug or --id',
     });
   }
-  const fm = parseAssignmentFrontmatter(await readFile(assignmentPath, 'utf-8'));
+  const fm = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
   const worktreePath = fm.workspace?.worktreePath;
   if (!worktreePath) {
-    throw new SyntaurError('No worktree recorded for this assignment.', {
+    throw new SyntaurError('No worktree recorded for this ticket.', {
       remediation: 'create one with `syntaur worktree create`',
     });
   }
@@ -68,7 +68,7 @@ export async function runOpen(
     const outcome = await recreateForTarget(
       {
         projectsDir: config.defaultProjectDir || defaultProjectDir(),
-        assignmentsDir: assignmentsDir(),
+        assignmentsDir: ticketsDir(),
       },
       { kind: 'assignment', id: resolved.id },
     );
@@ -76,7 +76,7 @@ export async function runOpen(
     if (mapped.httpStatus >= 400) {
       throw new SyntaurError(
         typeof mapped.body.error === 'string' ? mapped.body.error : `Recreate failed (${outcome.status})`,
-        { remediation: 'check the assignment workspace.repository/branch fields' },
+        { remediation: 'check the ticket workspace.repository/branch fields' },
       );
     }
     recreated = outcome.status === 'recreated';
@@ -95,18 +95,18 @@ export async function runOpen(
 
 export const openCommand = new Command('open')
   .description(
-    "Resolve an assignment's worktree path — print it and copy it to the clipboard. Optionally open it in your editor/terminal, or recreate the worktree if its directory is missing.",
+    "Resolve a ticket's worktree path — print it and copy it to the clipboard. Optionally open it in your editor/terminal, or recreate the worktree if its directory is missing.",
   )
-  .argument('[assignment]', 'Assignment slug (or UUID). Omit to use --id or the session open engagement')
-  .option('--id <uuid>', 'Resolve the assignment by its UUID (standalone or project-nested)')
-  .option('--project <slug>', 'Project slug (narrows a project-nested assignment slug)')
+  .argument('[assignment]', 'Ticket slug (or UUID). Omit to use --id or the session open engagement')
+  .option('--id <uuid>', 'Resolve the ticket by its UUID (standalone or project-nested)')
+  .option('--project <slug>', 'Project slug (narrows a project-nested ticket slug)')
   .option('--editor', 'Open the worktree in $VISUAL/$EDITOR (or VS Code / macOS open)')
   .option('--terminal', 'Open a terminal at the worktree')
   .option('--recreate', 'If the worktree directory is missing, recreate it at the recorded path')
   .option('--json', 'Output as JSON')
-  .action(async (assignmentArg: string | undefined, options: OpenOptions) => {
+  .action(async (ticketArg: string | undefined, options: OpenOptions) => {
     try {
-      const { worktreePath, recreated, copied, launched } = await runOpen(assignmentArg, options);
+      const { worktreePath, recreated, copied, launched } = await runOpen(ticketArg, options);
       if (options.json) {
         console.log(JSON.stringify({ worktreePath, recreated, copied, launched }, null, 2));
         return;

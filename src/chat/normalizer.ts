@@ -97,13 +97,13 @@ interface OpenTurn {
 }
 
 export interface NormalizerOptions {
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
   sessionKey: string;
 }
 
 export class ChatNormalizer {
-  private readonly assignmentId: string;
+  private readonly ticketId: string;
   private readonly agentId: string;
   private readonly sessionKey: string;
 
@@ -137,7 +137,7 @@ export class ChatNormalizer {
   private replayCount = 0;
 
   constructor(options: NormalizerOptions) {
-    this.assignmentId = options.assignmentId;
+    this.ticketId = options.ticketId;
     this.agentId = options.agentId;
     this.sessionKey = options.sessionKey;
   }
@@ -164,10 +164,10 @@ export class ChatNormalizer {
     const scopeId = this.scopeId();
     return {
       itemId: this.nextItemId(scopeId),
-      assignmentId: this.assignmentId,
+      ticketId: this.ticketId,
       turnId: this.replayScope ? null : (this.currentTurn?.turnId ?? null),
       // The AUTHOR is the event's, not the instance's. In an agent scope the two
-      // are always the same id; in the assignment scope (Decision 3) one
+      // are always the same id; in the ticket scope (Decision 3) one
       // normalizer carries rows written by the human, by each handing-off agent
       // and by Syntaur itself, and each must render as its own author.
       agentId: event.agentId || this.agentId,
@@ -385,7 +385,7 @@ export class ChatNormalizer {
       if (item.type !== 'agent.message') continue;
       const replacement: SystemItem = {
         itemId: item.itemId,
-        assignmentId: item.assignmentId,
+        ticketId: item.ticketId,
         turnId: item.turnId,
         agentId: item.agentId,
         type: 'system',
@@ -654,7 +654,7 @@ export class ChatNormalizer {
     const scopeId = turnId;
     const status: TurnStatusItem = {
       itemId: `${scopeId}:${this.ordinals.get(scopeId) ?? 0}`,
-      assignmentId: this.assignmentId,
+      ticketId: this.ticketId,
       turnId,
       agentId: event.agentId || this.agentId,
       type: 'turn.status',
@@ -671,7 +671,7 @@ export class ChatNormalizer {
     this.ordinals.set(scopeId, (this.ordinals.get(scopeId) ?? 0) + 1);
     this.turns.push({ turnId, status, startedAt: status.startedAt, cancelRequested: false, plan: null });
 
-    // A user message's delivery state lives ONLY in the assignment scope, which
+    // A user message's delivery state lives ONLY in the ticket scope, which
     // no agent normalizer ever sees (Decision 3). `user.message.delivered`
     // maintains it; nothing is flipped from here.
     patches.push({ op: 'upsert', item: status });

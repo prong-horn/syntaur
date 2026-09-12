@@ -6,7 +6,7 @@ import { KNOWN_TOP_LEVEL } from '../utils/doctor/checks/structure.js';
 const REPO_ROOT = resolve(import.meta.dirname, '../..');
 
 const CRITERION_NAMES = [
-  'assignments',
+  'tickets',
   'agents',
   'workflows',
   'targets',

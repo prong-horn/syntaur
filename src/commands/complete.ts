@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
 import { readConfig } from '../utils/config.js';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
 
 export interface CompleteOptions extends LifecycleOptions {}
@@ -10,14 +10,14 @@ export interface CompleteOptions extends LifecycleOptions {}
 /** Terminal stays gated: complete runs the existing transition, then
  * reverse-dependency recompute —
  * dependents' depsSatisfied fact just changed. Resolves the project dir + slug
- * even when the assignment was addressed by UUID without `--project` (mirrors
+ * even when the ticket was addressed by UUID without `--project` (mirrors
  * reopen), and recomputes by the resolved SLUG (recomputeDependents matches
  * `dependsOn` against slugs, not UUIDs). */
 export async function completeCommand(
-  assignment: string,
+  ticket: string,
   options: CompleteOptions,
 ): Promise<void> {
-  const result = await runTransition(assignment, 'complete', options);
+  const result = await runTransition(ticket, 'complete', options);
   reportResult(result);
   if (!result.success) return;
 
@@ -27,12 +27,12 @@ export async function completeCommand(
   let changedSlug: string;
   if (options.project) {
     projectDir = resolve(baseDir, options.project);
-    changedSlug = assignment;
+    changedSlug = ticket;
   } else {
-    const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), assignment);
+    const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
     if (!resolved) return;
-    projectDir = resolved.standalone ? null : resolve(resolved.assignmentDir, '..', '..');
-    changedSlug = resolved.assignmentSlug;
+    projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+    changedSlug = resolved.ticketSlug;
   }
   if (projectDir) {
     const { context, workflowResolver } = await resolveRecomputeContext();

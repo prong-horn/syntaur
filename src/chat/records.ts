@@ -145,8 +145,8 @@ function commentLabel(type: 'note' | 'feedback' | 'question'): string {
 }
 
 export async function fileChatRecord(input: {
-  assignmentDir: string;
-  assignmentRef: string;
+  ticketDir: string;
+  ticketRef: string;
   record: FileChatRecordInput;
   source: { agentId: string; ts: string };
 }): Promise<FiledChatRecord> {
@@ -158,8 +158,8 @@ export async function fileChatRecord(input: {
     if (!title) throw new Error('Decision title is required');
     const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
     const { number } = await appendDecisionEntry({
-      assignmentDir: input.assignmentDir,
-      assignmentRef: input.assignmentRef,
+      ticketDir: input.ticketDir,
+      ticketRef: input.ticketRef,
       title,
       body,
     });
@@ -173,8 +173,8 @@ export async function fileChatRecord(input: {
   if (record.kind === 'progress') {
     const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
     const { timestamp } = await appendProgressLog({
-      assignmentDir: input.assignmentDir,
-      assignmentRef: input.assignmentRef,
+      ticketDir: input.ticketDir,
+      ticketRef: input.ticketRef,
       text: body,
     });
     return {
@@ -186,8 +186,8 @@ export async function fileChatRecord(input: {
 
   const commentType = record.commentType ?? 'note';
   const id = await appendComment({
-    assignmentDir: input.assignmentDir,
-    assignmentRef: input.assignmentRef,
+    ticketDir: input.ticketDir,
+    ticketRef: input.ticketRef,
     author: HUMAN_AGENT_ID,
     type: commentType,
     body: trimmed,

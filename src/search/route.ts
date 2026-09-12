@@ -9,10 +9,10 @@
 import type { FileKind, SearchHit } from './types.js';
 
 /**
- * Content kind → the `AssignmentDetail` `?tab=` pane that renders it.
+ * Content kind → the `TicketDetail` `?tab=` pane that renders it.
  */
 export const FILE_KIND_TO_TAB: Record<FileKind, string> = {
-  assignment: 'summary',
+  ticket: 'summary',
   plan: 'plan',
   scratchpad: 'scratchpad',
   handoff: 'handoff',
@@ -43,7 +43,7 @@ export function slugifyHeading(text: string): string {
  *   - `comments` / `progress` — render structured components (CommentsThread /
  *     progress `<li>` rows), NOT markdown headings.
  *   - `assignment` — the `summary` pane transforms `## Acceptance Criteria` into
- *     `SectionCard`s WITHOUT ids (AssignmentDetail.tsx), so its headings never
+ *     `SectionCard`s WITHOUT ids (TicketDetail.tsx), so its headings never
  *     become element ids.
  * These all get the `?tab=` pane WITHOUT a hash.
  */
@@ -57,23 +57,23 @@ const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
 /**
  * Build the UNPREFIXED deep-link for a hit:
  *   - assignment-scoped kinds → `<base>?tab=<pane>` + optional `#<slug(section)>`,
- *     where base is `/assignments/<id>` (standalone) or
- *     `/projects/<projectSlug>/assignments/<assignmentSlug>` (nested).
+ *     where base is `/tickets/<id>` (standalone) or
+ *     `/projects/<projectSlug>/tickets/<ticketSlug>` (nested).
  */
 export function routeForHit(
   hit: Pick<
     SearchHit,
     | 'fileKind'
     | 'projectSlug'
-    | 'assignmentSlug'
-    | 'assignmentId'
+    | 'ticketSlug'
+    | 'ticketId'
     | 'standalone'
     | 'section'
   >,
 ): string {
   const base = hit.standalone
-    ? `/assignments/${hit.assignmentId}`
-    : `/projects/${hit.projectSlug}/assignments/${hit.assignmentSlug}`;
+    ? `/tickets/${hit.ticketId}`
+    : `/projects/${hit.projectSlug}/tickets/${hit.ticketSlug}`;
 
   const tab = FILE_KIND_TO_TAB[hit.fileKind];
   let route = `${base}?tab=${tab}`;

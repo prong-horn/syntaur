@@ -9,7 +9,7 @@ const REQUIRED_PROJECT_FILES = [
   'project.md',
   'manifest.md',
   '_status.md',
-  '_index-assignments.md',
+  '_index-tickets.md',
   '_index-plans.md',
   '_index-decisions.md',
 ] as const;
@@ -18,12 +18,12 @@ const KNOWN_PROJECT_TOP_LEVEL = new Set<string>([
   'project.md',
   'manifest.md',
   '_status.md',
-  'assignments',
+  'tickets',
   'resources',
   'memories',
 ]);
 
-const PROJECT_MARKERS = ['project.md', 'manifest.md', 'assignments'] as const;
+const PROJECT_MARKERS = ['project.md', 'manifest.md', 'tickets'] as const;
 
 async function listProjects(ctx: { config: { defaultProjectDir: string } }): Promise<string[]> {
   const dir = ctx.config.defaultProjectDir;
@@ -85,7 +85,7 @@ const requiredFiles: Check = {
 const manifestStale: Check = {
   id: 'project.manifest-stale',
   category: CATEGORY,
-  title: 'manifest.md is not older than any assignment change',
+  title: 'manifest.md is not older than any ticket change',
   async run(ctx) {
     const projects = await listProjects(ctx);
     const results: CheckResult[] = [];
@@ -101,7 +101,7 @@ const manifestStale: Check = {
           category: this.category,
           title: this.title,
           status: 'warn',
-          detail: `manifest.md in ${projectDir} is older than the newest assignment.md`,
+          detail: `manifest.md in ${projectDir} is older than the newest ticket.md`,
           affected: [manifestPath],
           remediation: {
             kind: 'manual',
@@ -152,7 +152,7 @@ const orphanFiles: Check = {
 export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles];
 
 async function newestAssignmentMtime(projectDir: string): Promise<number> {
-  const assignmentsRoot = resolve(projectDir, 'assignments');
+  const assignmentsRoot = resolve(projectDir, 'tickets');
   if (!(await fileExists(assignmentsRoot))) return 0;
   let newest = 0;
   let entries;
@@ -163,12 +163,12 @@ async function newestAssignmentMtime(projectDir: string): Promise<number> {
   }
   for (const e of entries) {
     if (!e.isDirectory()) continue;
-    const assignmentMd = resolve(assignmentsRoot, e.name, 'assignment.md');
+    const assignmentMd = resolve(assignmentsRoot, e.name, 'ticket.md');
     try {
       const s = await stat(assignmentMd);
       if (s.mtimeMs > newest) newest = s.mtimeMs;
     } catch {
-      // no assignment.md — skip (orphan check covers that)
+      // no ticket.md — skip (orphan check covers that)
     }
   }
   return newest;

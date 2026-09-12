@@ -72,7 +72,7 @@ describe('installSkills', () => {
       targetDir,
     });
 
-    const edited = join(targetDir, 'grab-assignment', 'SKILL.md');
+    const edited = join(targetDir, 'grab-ticket', 'SKILL.md');
     const original = await readFile(edited, 'utf-8');
     await writeFile(edited, original + '\n# user-local edit\n', 'utf-8');
 
@@ -82,13 +82,13 @@ describe('installSkills', () => {
       targetDir,
     });
 
-    const grab = results.find((r) => r.skill === 'grab-assignment');
+    const grab = results.find((r) => r.skill === 'grab-ticket');
     expect(grab?.status).toBe('differs-preserved');
 
     const after = await readFile(edited, 'utf-8');
     expect(after).toContain('# user-local edit');
 
-    const others = results.filter((r) => r.skill !== 'grab-assignment');
+    const others = results.filter((r) => r.skill !== 'grab-ticket');
     for (const r of others) {
       expect(r.status).toBe('already-current');
     }
@@ -101,7 +101,7 @@ describe('installSkills', () => {
       targetDir,
     });
 
-    const edited = join(targetDir, 'grab-assignment', 'SKILL.md');
+    const edited = join(targetDir, 'grab-ticket', 'SKILL.md');
     const original = await readFile(edited, 'utf-8');
     await writeFile(edited, original + '\n# user-local edit\n', 'utf-8');
 
@@ -112,7 +112,7 @@ describe('installSkills', () => {
       force: true,
     });
 
-    const grab = results.find((r) => r.skill === 'grab-assignment');
+    const grab = results.find((r) => r.skill === 'grab-ticket');
     expect(grab?.status).toBe('overwritten');
 
     const after = await readFile(edited, 'utf-8');
@@ -215,25 +215,25 @@ describe('installSkills', () => {
     // Pre-create a symlink at one of the skill targets — installSkills
     // must NOT overwrite it.
     const customSource = join(sandbox, 'one-skill');
-    const skillSrc = join(customSource, 'grab-assignment');
+    const skillSrc = join(customSource, 'grab-ticket');
     await mkdir(skillSrc, { recursive: true });
     await writeFile(
       join(skillSrc, 'SKILL.md'),
-      '---\nname: grab-assignment\ndescription: from syntaur\n---\n',
+      '---\nname: grab-ticket\ndescription: from syntaur\n---\n',
       'utf-8',
     );
 
     // Simulate skills.sh symlink target — point to some unrelated dir.
-    const externalCanonical = join(sandbox, 'skills-sh-cache', 'grab-assignment');
+    const externalCanonical = join(sandbox, 'skills-sh-cache', 'grab-ticket');
     await mkdir(externalCanonical, { recursive: true });
     await writeFile(
       join(externalCanonical, 'SKILL.md'),
-      '---\nname: grab-assignment\ndescription: from skills.sh\n---\n',
+      '---\nname: grab-ticket\ndescription: from skills.sh\n---\n',
       'utf-8',
     );
 
     await mkdir(targetDir, { recursive: true });
-    await symlink(externalCanonical, join(targetDir, 'grab-assignment'));
+    await symlink(externalCanonical, join(targetDir, 'grab-ticket'));
 
     const results = await installSkills({
       target: 'claude',
@@ -241,12 +241,12 @@ describe('installSkills', () => {
       targetDir,
     });
 
-    const grab = results.find((r) => r.skill === 'grab-assignment');
+    const grab = results.find((r) => r.skill === 'grab-ticket');
     expect(grab?.status).toBe('skipped-symlink');
 
     // Verify the symlink was not touched.
     const fromSymlink = await readFile(
-      join(targetDir, 'grab-assignment', 'SKILL.md'),
+      join(targetDir, 'grab-ticket', 'SKILL.md'),
       'utf-8',
     );
     expect(fromSymlink).toContain('description: from skills.sh');
@@ -287,7 +287,7 @@ describe('uninstallSkills', () => {
   });
 
   it('does not remove a user-authored skill with a matching directory name', async () => {
-    const imposter = join(targetDir, 'grab-assignment');
+    const imposter = join(targetDir, 'grab-ticket');
     await mkdir(imposter, { recursive: true });
     await writeFile(
       join(imposter, 'SKILL.md'),
@@ -307,26 +307,26 @@ describe('uninstallSkills', () => {
   });
 
   it('does not remove a skills.sh-managed symlink', async () => {
-    const externalCanonical = join(sandbox, 'skills-sh-cache', 'grab-assignment');
+    const externalCanonical = join(sandbox, 'skills-sh-cache', 'grab-ticket');
     await mkdir(externalCanonical, { recursive: true });
     await writeFile(
       join(externalCanonical, 'SKILL.md'),
-      '---\nname: grab-assignment\ndescription: external\n---\n',
+      '---\nname: grab-ticket\ndescription: external\n---\n',
       'utf-8',
     );
     await mkdir(targetDir, { recursive: true });
-    await symlink(externalCanonical, join(targetDir, 'grab-assignment'));
+    await symlink(externalCanonical, join(targetDir, 'grab-ticket'));
 
     const removed = await uninstallSkills({
       target: 'claude',
       targetDir,
       sourceDir: realSourceDir,
     });
-    expect(removed).not.toContain(join(targetDir, 'grab-assignment'));
+    expect(removed).not.toContain(join(targetDir, 'grab-ticket'));
 
     // Symlink and target should still exist.
     const fromSymlink = await readFile(
-      join(targetDir, 'grab-assignment', 'SKILL.md'),
+      join(targetDir, 'grab-ticket', 'SKILL.md'),
       'utf-8',
     );
     expect(fromSymlink).toContain('description: external');

@@ -1,5 +1,5 @@
 /**
- * The chat event log — `<assignmentDir>/chat/events.jsonl`, the source of truth
+ * The chat event log — `<ticketDir>/chat/events.jsonl`, the source of truth
  * (Decision 2).
  *
  * Append-only, one JSON object per line, with the same discipline as
@@ -19,16 +19,18 @@ import { ChatNormalizer } from './normalizer.js';
 import { applyChatPatch, countChatItems, deleteChatItems } from '../db/chat-db.js';
 import type { ChatEvent, ChatEventKind, ChatItem } from './types.js';
 
-export function chatDir(assignmentDir: string): string {
-  return resolve(assignmentDir, 'chat');
+export function chatDir(ticketDir: string): string {
+  return resolve(ticketDir, 'chat');
 }
 
-export function chatLogPath(assignmentDir: string): string {
-  return resolve(chatDir(assignmentDir), 'events.jsonl');
+export function chatLogPath(ticketDir: string): string {
+  return resolve(chatDir(ticketDir), 'events.jsonl');
 }
 
 export interface AppendEventInput {
-  assignmentId: string;
+  ticketId?: string;
+  /** @deprecated test compat until Phase A settles */
+  assignmentId?: string;
   agentId: string;
   sessionKey: string;
   turnId: string | null;
@@ -48,13 +50,13 @@ export interface ChatLog {
 }
 
 /**
- * Open (or create) an assignment's chat log. Appends are serialised through an
+ * Open (or create) a ticket's chat log. Appends are serialised through an
  * internal promise chain so two concurrent turns cannot interleave a partial
  * line or reuse a `seq`.
  */
-export async function openChatLog(assignmentDir: string): Promise<ChatLog> {
-  const path = chatLogPath(assignmentDir);
-  await mkdir(chatDir(assignmentDir), { recursive: true });
+export async function openChatLog(ticketDir: string): Promise<ChatLog> {
+  const path = chatLogPath(ticketDir);
+  await mkdir(chatDir(ticketDir), { recursive: true });
 
   // Repair a torn final line before appending anything: a crash mid-write leaves
   // a fragment with no newline, and appending onto it would splice the next
@@ -75,7 +77,7 @@ export async function openChatLog(assignmentDir: string): Promise<ChatLog> {
       const event: ChatEvent = {
         seq: seq++,
         ts: input.ts ?? new Date().toISOString(),
-        assignmentId: input.assignmentId,
+        ticketId: input.ticketId ?? input.assignmentId ?? '',
         agentId: input.agentId,
         sessionKey: input.sessionKey,
         turnId: input.turnId,
@@ -143,22 +145,22 @@ export interface RebuildResult {
 }
 
 /**
- * Replay the log through a fresh normalizer and rewrite the assignment's index.
+ * Replay the log through a fresh normalizer and rewrite the ticket's index.
  * The recovery path AND the `rebuild == live` invariant.
  */
 export async function rebuildChatIndex(
-  assignmentDir: string,
-  assignmentId: string,
+  ticketDir: string,
+  ticketId: string,
 ): Promise<RebuildResult> {
-  const events = await readEvents(chatLogPath(assignmentDir));
-  const deleted = deleteChatItems(assignmentId);
+  const events = await readEvents(chatLogPath(ticketDir));
+  const deleted = deleteChatItems(ticketId);
 
   const bySession = new Map<string, ChatNormalizer>();
   for (const event of events) {
     let normalizer = bySession.get(event.sessionKey);
     if (!normalizer) {
       normalizer = new ChatNormalizer({
-        assignmentId,
+        ticketId,
         agentId: event.agentId,
         sessionKey: event.sessionKey,
       });
@@ -166,18 +168,18 @@ export async function rebuildChatIndex(
     }
     for (const patch of normalizer.ingest(event)) applyChatPatch(event.sessionKey, patch);
   }
-  return { events: events.length, items: countChatItems(assignmentId), deleted };
+  return { events: events.length, items: countChatItems(ticketId), deleted };
 }
 
 /** Convenience for callers that want the items straight from a rebuild. */
-export function replayItems(events: ChatEvent[], assignmentId: string): ChatItem[] {
+export function replayItems(events: ChatEvent[], ticketId: string): ChatItem[] {
   const bySession = new Map<string, ChatNormalizer>();
   const items = new Map<string, ChatItem>();
   for (const event of events) {
     let normalizer = bySession.get(event.sessionKey);
     if (!normalizer) {
       normalizer = new ChatNormalizer({
-        assignmentId,
+        ticketId,
         agentId: event.agentId,
         sessionKey: event.sessionKey,
       });

@@ -53,9 +53,9 @@ describe('syntaur workflow', () => {
   }
 
   async function seedAssignment(project: string, slug: string, workflow: string): Promise<string> {
-    const dir = resolve(home, 'projects', project, 'assignments', slug);
+    const dir = resolve(home, 'projects', project, 'tickets', slug);
     await mkdir(dir, { recursive: true });
-    const path = resolve(dir, 'assignment.md');
+    const path = resolve(dir, 'ticket.md');
     await writeFile(
       path,
       `---\nid: 4444-${slug}\nslug: ${slug}\ntitle: ${slug}\nproject: ${project}\nstatus: in_progress\nworkflow: ${workflow}\n---\n# ${slug}\n`,
@@ -118,7 +118,7 @@ describe('syntaur workflow', () => {
     expect(blocked.code).toBe(1);
     expect(blocked.stderr).toMatch(/reassign|resolve to it/);
 
-    await rm(resolve(home, 'projects', 'p', 'assignments', 'a1'), { recursive: true, force: true });
+    await rm(resolve(home, 'projects', 'p', 'tickets', 'a1'), { recursive: true, force: true });
     expect((await runCli(['workflow', 'delete', 'bug'], home)).code).toBe(0);
     expect((await list()).workflows.map((w) => w.id)).toEqual(['default']);
   });
@@ -129,19 +129,19 @@ describe('syntaur workflow', () => {
     expect(res.stderr).toMatch(/cannot be deleted/);
   });
 
-  it('create-assignment --workflow writes the workflow field', async () => {
+  it('new --workflow writes the workflow field', async () => {
     await seedProject('p');
     await runCli(['workflow', 'new', 'bug'], home);
     const res = await runCli(
-      ['create-assignment', 'Fix the thing', '--project', 'p', '--workflow', 'bug'],
+      ['new', 'Fix the thing', '--project', 'p', '--workflow', 'bug'],
       home,
     );
     expect(res.code).toBe(0);
-    // Find the created assignment.md and assert its workflow field.
-    const assignmentsRoot = resolve(home, 'projects', 'p', 'assignments');
+    // Find the created ticket.md and assert its workflow field.
+    const assignmentsRoot = resolve(home, 'projects', 'p', 'tickets');
     const { readdir } = await import('node:fs/promises');
     const slugs = await readdir(assignmentsRoot);
-    const md = await readFile(resolve(assignmentsRoot, slugs[0], 'assignment.md'), 'utf-8');
+    const md = await readFile(resolve(assignmentsRoot, slugs[0], 'ticket.md'), 'utf-8');
     expect(md).toMatch(/^workflow: bug$/m);
   });
 });

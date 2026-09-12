@@ -70,7 +70,7 @@ export function readFrames(path: string): FixtureFrame[] {
 }
 
 export interface FixtureEventOptions {
-  assignmentId?: string;
+  ticketId?: string;
   agentId?: string;
   sessionKey?: string;
 }
@@ -81,9 +81,9 @@ export interface FixtureEventOptions {
  * transcript.
  */
 export function fixtureEvents(path: string, options: FixtureEventOptions = {}): ChatEvent[] {
-  const assignmentId = options.assignmentId ?? 'assignment-fixture';
+  const ticketId = options.ticketId ?? 'assignment-fixture';
   const agentId = options.agentId ?? 'claude';
-  const sessionKey = options.sessionKey ?? `${assignmentId}:${agentId}`;
+  const sessionKey = options.sessionKey ?? `${ticketId}:${agentId}`;
 
   const frames = readFrames(path);
   /** Outbound request id → what its response means. */
@@ -98,7 +98,7 @@ export function fixtureEvents(path: string, options: FixtureEventOptions = {}): 
     events.push({
       seq: frame.seq,
       ts: frame.ts,
-      assignmentId,
+      ticketId,
       agentId,
       sessionKey,
       turnId,

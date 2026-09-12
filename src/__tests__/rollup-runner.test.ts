@@ -41,7 +41,7 @@ function event(overrides: Partial<UsageEventInput> = {}): UsageEventInput {
     totalCost: 0.5,
     cwd: '/Users/dev/proj',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     rawJson: null,
     ...overrides,
   };
@@ -134,9 +134,9 @@ describe('runRollup', () => {
 
   it('groups by attribution dimensions', () => {
     initUsageDb(dbPath);
-    upsertEvent(event({ sessionId: 'a', projectSlug: 'p1', assignmentSlug: 'a1', totalTokens: 100 }));
-    upsertEvent(event({ sessionId: 'b', projectSlug: 'p1', assignmentSlug: 'a2', totalTokens: 200 }));
-    upsertEvent(event({ sessionId: 'c', projectSlug: 'p2', assignmentSlug: 'a1', totalTokens: 300 }));
+    upsertEvent(event({ sessionId: 'a', projectSlug: 'p1', ticketSlug: 'a1', totalTokens: 100 }));
+    upsertEvent(event({ sessionId: 'b', projectSlug: 'p1', ticketSlug: 'a2', totalTokens: 200 }));
+    upsertEvent(event({ sessionId: 'c', projectSlug: 'p2', ticketSlug: 'a1', totalTokens: 300 }));
 
     runRollup();
     const daily = listDaily();

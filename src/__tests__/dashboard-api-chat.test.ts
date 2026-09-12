@@ -19,13 +19,13 @@ import { parseDecisionRecord } from '../dashboard/parser.js';
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
  * express app on port 0, on-disk fixtures under a temp SYNTAUR_HOME) plus one
  * real-`ws` test that `chat-item` frames reach a browser client carrying the
- * assignment id.
+ * ticket id.
  */
 
 let sandbox: string;
 let projectsDir: string;
-let assignmentsDir: string;
-let assignmentDir: string;
+let ticketsDir: string;
+let ticketDir: string;
 let worktree: string;
 let server: Server;
 let baseUrl: string;
@@ -52,7 +52,7 @@ async function uploadChatAttachment(
     'x-attachment-filename': encodeURIComponent(filename),
   };
   if (mime !== undefined) headers['x-attachment-mime'] = mime;
-  return fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments`), {
+  return fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments`), {
     method: 'POST',
     headers,
     body: new Uint8Array(bytes),
@@ -87,7 +87,7 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
 
   broker = createChatBroker({
     projectsDir,
-    assignmentsDir,
+    ticketsDir,
     syntaurHome: sandbox,
     broadcast: (message) => broadcast(message as WsMessage),
     clientFactory: (input) => {
@@ -102,7 +102,7 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
     },
     timeouts: { flushMs: 1, permissionMs: 500, sessionIdleMs: 60_000 },
   });
-  app.use('/api', createChatRouter(projectsDir, assignmentsDir, { broker }));
+  app.use('/api', createChatRouter(projectsDir, ticketsDir, { broker }));
 
   server = http;
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -123,14 +123,14 @@ const url = (path: string) => `${baseUrl}/api${path}`;
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-chat-'));
   projectsDir = join(sandbox, 'projects');
-  assignmentsDir = join(sandbox, 'assignments');
-  assignmentDir = join(projectsDir, 'syntaur-meta', 'assignments', 'chat-demo');
+  ticketsDir = join(sandbox, 'tickets');
+  ticketDir = join(projectsDir, 'syntaur-meta', 'tickets', 'chat-demo');
   worktree = join(sandbox, 'worktree');
-  await mkdir(assignmentDir, { recursive: true });
-  await mkdir(assignmentsDir, { recursive: true });
+  await mkdir(ticketDir, { recursive: true });
+  await mkdir(ticketsDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
   await writeFile(
-    join(assignmentDir, 'assignment.md'),
+    join(ticketDir, 'ticket.md'),
     [
       '---',
       `id: ${ASSIGNMENT_ID}`,
@@ -186,9 +186,9 @@ describe('assignment resolution', () => {
   it('404s on an unknown assignment', async () => {
     await boot();
     for (const path of [
-      '/assignments/nope/chat/items',
-      '/assignments/nope/chat/session',
-      '/assignments/nope/chat/reindex',
+      '/tickets/nope/chat/items',
+      '/tickets/nope/chat/session',
+      '/tickets/nope/chat/reindex',
     ]) {
       const res = await fetch(url(path), { method: path.endsWith('reindex') ? 'POST' : 'GET' });
       expect(res.status, path).toBe(404);
@@ -196,10 +196,10 @@ describe('assignment resolution', () => {
   });
 });
 
-describe('POST /assignments/:id/chat/messages', () => {
+describe('POST /tickets/:id/chat/messages', () => {
   it('accepts a message, streams a reply and records it', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -214,7 +214,7 @@ describe('POST /assignments/:id/chat/messages', () => {
       'the reply item',
     );
 
-    const items = (await (await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
       items: Array<{ type: string; text?: string }>;
       oldestSeq: number | null;
     };
@@ -226,7 +226,7 @@ describe('POST /assignments/:id/chat/messages', () => {
   it('rejects an empty message with 400', async () => {
     await boot();
     for (const body of [{}, { text: '' }, { text: '   ' }]) {
-      const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -239,7 +239,7 @@ describe('POST /assignments/:id/chat/messages', () => {
     await boot();
     const up = await uploadChatAttachment('solo.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: '', attachmentIds: [att.id] }),
@@ -251,7 +251,7 @@ describe('POST /assignments/:id/chat/messages', () => {
     await boot();
     const up = await uploadChatAttachment('dim.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -271,7 +271,7 @@ describe('POST /assignments/:id/chat/messages', () => {
 
   it('rejects unknown and excess attachment ids', async () => {
     await boot();
-    const unknown = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const unknown = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', attachmentIds: ['00000000-0000-4000-8000-000000000099'] }),
@@ -281,7 +281,7 @@ describe('POST /assignments/:id/chat/messages', () => {
     const up = await uploadChatAttachment('a.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
     const ids = Array.from({ length: 5 }, (_, i) => (i === 0 ? att.id : `00000000-0000-4000-8000-00000000000${i}`));
-    const tooMany = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const tooMany = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', attachmentIds: ids }),
@@ -292,7 +292,7 @@ describe('POST /assignments/:id/chat/messages', () => {
   it('falls back to homedir when the workspace has no valid cwd', async () => {
     await boot();
     await writeFile(
-      join(assignmentDir, 'assignment.md'),
+      join(ticketDir, 'ticket.md'),
       [
         '---',
         `id: ${ASSIGNMENT_ID}`,
@@ -306,7 +306,7 @@ describe('POST /assignments/:id/chat/messages', () => {
       ].join('\n'),
       'utf-8',
     );
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -317,7 +317,7 @@ describe('POST /assignments/:id/chat/messages', () => {
 
   it('404s for an unknown agent id', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', agentId: 'nobody' }),
@@ -326,13 +326,13 @@ describe('POST /assignments/:id/chat/messages', () => {
   });
 });
 
-describe('GET /assignments/:id/chat/messages/:messageId (Task 1, Decision 3)', () => {
+describe('GET /tickets/:id/chat/messages/:messageId (Task 1, Decision 3)', () => {
   const state = async (messageId: string) =>
-    fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${encodeURIComponent(messageId)}`));
+    fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${encodeURIComponent(messageId)}`));
 
   it('reports `ended` once the message’s turn has finished', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -359,7 +359,7 @@ describe('GET /assignments/:id/chat/messages/:messageId (Task 1, Decision 3)', (
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }]);
 
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hold' }),
@@ -376,13 +376,13 @@ describe('GET /assignments/:id/chat/messages/:messageId (Task 1, Decision 3)', (
   });
 });
 
-describe('DELETE /assignments/:id/chat/messages/:messageId', () => {
+describe('DELETE /tickets/:id/chat/messages/:messageId', () => {
   it('withdraws a queued message and 409s once it is gone', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }, { steps: [] }]);
 
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'A' }),
@@ -390,20 +390,20 @@ describe('DELETE /assignments/:id/chat/messages/:messageId', () => {
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
 
     const queued = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: 'B' }),
       })
     ).json()) as { messageId: string };
 
-    const del = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const del = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ withdrawn: true });
 
-    const again = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const again = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(again.status).toBe(409);
@@ -411,25 +411,25 @@ describe('DELETE /assignments/:id/chat/messages/:messageId', () => {
   });
 });
 
-describe('POST /assignments/:id/chat/cancel', () => {
+describe('POST /tickets/:id/chat/cancel', () => {
   it('cancels the running turn and reports false when nothing is running', async () => {
     await boot([{ steps: [{ kind: 'awaitCancel' }] }]);
-    const idle = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
+    const idle = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
     expect(await idle.json()).toEqual({ cancelled: false });
 
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'essay' }),
     });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
 
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
     expect(await res.json()).toEqual({ cancelled: true });
   });
 });
 
-describe('POST /assignments/:id/chat/permissions/:requestId', () => {
+describe('POST /tickets/:id/chat/permissions/:requestId', () => {
   it('answers a pending request and 409s an unknown one', async () => {
     await boot([
       {
@@ -447,7 +447,7 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
         ],
       },
     ]);
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'run it' }),
@@ -462,13 +462,13 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
     }, 'the permission item');
 
     const bad = await fetch(
-      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) },
     );
     expect(bad.status).toBe(400);
 
     const ok = await fetch(
-      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -478,7 +478,7 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
     expect(ok.status).toBe(200);
     expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
 
-    const gone = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/nope`), {
+    const gone = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/nope`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ optionId: 'allow' }),
@@ -513,7 +513,7 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
         ],
       },
     ]);
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'run both' }),
@@ -528,7 +528,7 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
     }, 'the permission item');
 
     const bad = await fetch(
-      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -538,7 +538,7 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
     expect(bad.status).toBe(400);
 
     const ok = await fetch(
-      url(`/assignments/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -551,15 +551,15 @@ describe('POST /assignments/:id/chat/permissions/:requestId', () => {
   });
 });
 
-describe('GET /assignments/:id/chat/session and POST reindex', () => {
+describe('GET /tickets/:id/chat/session and POST reindex', () => {
   it('reports the session and rebuilds the index from the log', async () => {
     await boot();
     const before = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/session`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/session`))
     ).json()) as { session: { state: string; harness: string; acpSessionId: string | null } };
     expect(before.session).toMatchObject({ state: 'none', harness: 'claude', acpSessionId: null });
 
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi' }),
@@ -571,21 +571,21 @@ describe('GET /assignments/:id/chat/session and POST reindex', () => {
     );
 
     const after = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/session`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/session`))
     ).json()) as { session: { acpSessionId: string | null; model: string | null } };
     expect(after.session.acpSessionId).toBe('acp-1');
 
-    const items = (await (await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
       items: unknown[];
     };
     const rebuilt = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/reindex`), { method: 'POST' })
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/reindex`), { method: 'POST' })
     ).json()) as { events: number; items: number };
     expect(rebuilt.events).toBeGreaterThan(0);
     expect(rebuilt.items).toBe(items.items.length);
 
     const afterRebuild = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))
     ).json()) as { items: unknown[] };
     expect(afterRebuild.items).toEqual(items.items);
   });
@@ -593,7 +593,7 @@ describe('GET /assignments/:id/chat/session and POST reindex', () => {
   it('pages items with ?before and ?limit', async () => {
     await boot([{ steps: [] }, { steps: [] }, { steps: [] }]);
     for (const text of ['one', 'two', 'three']) {
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -610,25 +610,25 @@ describe('GET /assignments/:id/chat/session and POST reindex', () => {
     );
 
     const page = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items?limit=2`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items?limit=2`))
     ).json()) as { items: Array<{ seqFirst: number }>; oldestSeq: number };
     expect(page.items).toHaveLength(2);
     const older = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items?limit=2&before=${page.oldestSeq}`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items?limit=2&before=${page.oldestSeq}`))
     ).json()) as { items: Array<{ seqFirst: number }> };
     expect(older.items.every((i) => i.seqFirst < page.oldestSeq)).toBe(true);
   });
 });
 
 describe('/ws chat frames', () => {
-  it('delivers chat-item frames carrying the assignment id to a real client', async () => {
+  it('delivers chat-item frames carrying the ticket id to a real client', async () => {
     await boot();
     const ws = new WebSocket(`${baseUrl.replace('http', 'ws')}/ws`);
     const received: WsMessage[] = [];
     ws.on('message', (data) => received.push(JSON.parse(String(data)) as WsMessage));
     await new Promise<void>((r) => ws.on('open', () => r()));
 
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi' }),
@@ -646,10 +646,10 @@ describe('/ws chat frames', () => {
 
     const itemFrames = received.filter((m) => m.type === 'chat-item');
     for (const frame of itemFrames) {
-      const payload = frame.payload as { assignmentId: string; patch: { op: string } };
-      expect(payload.assignmentId).toBe(ASSIGNMENT_ID);
+      const payload = frame.payload as { ticketId: string; patch: { op: string } };
+      expect(payload.ticketId).toBe(ASSIGNMENT_ID);
       expect(payload.patch.op).toMatch(/^(upsert|retract)$/);
-      expect(frame.assignmentSlug).toBe('chat-demo');
+      expect(frame.ticketSlug).toBe('chat-demo');
     }
     const sessionFrames = received.filter((m) => m.type === 'chat-session');
     expect(sessionFrames.length).toBeGreaterThan(0);
@@ -670,11 +670,11 @@ describe('chat attachment routes (Task 1)', () => {
     expect(att.name).toBe('dot.png');
     expect(att.id).toMatch(/^[0-9a-f-]{36}$/);
 
-    const stored = await readdir(join(assignmentDir, 'chat', 'attachments'));
+    const stored = await readdir(join(ticketDir, 'chat', 'attachments'));
     expect(stored).toHaveLength(1);
     expect(stored[0]).toBe(`${att.id}__dot.png.png`);
 
-    const fileRes = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/${att.id}`));
+    const fileRes = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/${att.id}`));
     expect(fileRes.status).toBe(200);
     expect(fileRes.headers.get('content-type')).toBe('image/png');
     expect(fileRes.headers.get('x-content-type-options')).toBe('nosniff');
@@ -704,16 +704,16 @@ describe('chat attachment routes (Task 1)', () => {
     expect(up.status).toBe(201);
     const att = (await up.json()) as { id: string; name: string };
     expect(att.name).toBe('photo.jpg');
-    const stored = await readdir(join(assignmentDir, 'chat', 'attachments'));
+    const stored = await readdir(join(ticketDir, 'chat', 'attachments'));
     expect(stored[0]).toBe(`${att.id}__photo.jpg.png`);
   });
 
   it('404s malformed and unknown attachment ids', async () => {
     await boot();
-    const bad = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/not-a-uuid`));
+    const bad = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/not-a-uuid`));
     expect(bad.status).toBe(404);
     const missing = await fetch(
-      url(`/assignments/${ASSIGNMENT_ID}/chat/attachments/00000000-0000-4000-8000-000000000099`),
+      url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/00000000-0000-4000-8000-000000000099`),
     );
     expect(missing.status).toBe(404);
   });
@@ -722,7 +722,7 @@ describe('chat attachment routes (Task 1)', () => {
 describe('participants routes (Task 1, Decision 1)', () => {
   it('reports the derived default and every definition', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`));
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       participants: { agents: string[]; defaultAgent: string | null };
@@ -745,7 +745,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
     await new Promise<void>((r) => ws.on('open', () => r()));
     ws.on('message', (data) => frames.push(JSON.parse(String(data))));
 
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['codex'], defaultAgent: 'codex', hopBudget: 2 }),
@@ -759,13 +759,13 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
     await waitUntil(() => frames.some((f) => f.type === 'chat-participants'), 'a chat-participants frame');
     const frame = frames.find((f) => f.type === 'chat-participants')!;
-    expect((frame.payload as { assignmentId: string }).assignmentId).toBe(ASSIGNMENT_ID);
+    expect((frame.payload as { ticketId: string }).ticketId).toBe(ASSIGNMENT_ID);
     expect((frame.payload as { participants: { defaultAgent: string } }).participants.defaultAgent).toBe(
       'codex',
     );
 
     const reread = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`))
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`))
     ).json()) as { participants: { agents: string[] } };
     expect(reread.participants.agents).toEqual(['codex']);
     ws.close();
@@ -773,7 +773,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
   it('rejects an unknown id with 400', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['ghost'], defaultAgent: null }),
@@ -784,7 +784,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
   it('rejects a default that is not attached with 400', async () => {
     await boot();
-    const res = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['claude'], defaultAgent: 'codex' }),
@@ -792,17 +792,17 @@ describe('participants routes (Task 1, Decision 1)', () => {
     expect(res.status).toBe(400);
   });
 
-  it('404s for an assignment that does not exist', async () => {
+  it('404s for a ticket that does not exist', async () => {
     await boot();
-    const res = await fetch(url('/assignments/00000000-0000-4000-8000-000000000999/chat/participants'));
+    const res = await fetch(url('/tickets/00000000-0000-4000-8000-000000000999/chat/participants'));
     expect(res.status).toBe(404);
   });
 });
 
-describe('POST /assignments/:id/chat/items/:itemId/file', () => {
+describe('POST /tickets/:id/chat/items/:itemId/file', () => {
   async function replyItemId(): Promise<string> {
     await boot();
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -822,7 +822,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
   }
 
   async function fileItem(itemId: string, body: Record<string, unknown>) {
-    return fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items/${encodeURIComponent(itemId)}/file`), {
+    return fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items/${encodeURIComponent(itemId)}/file`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -837,13 +837,13 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     expect(record.ref).toBe('Decision 1');
     expect(record.label).toBe('Decision 1: Use X');
 
-    const decisionMd = await readFile(join(assignmentDir, 'decision-record.md'), 'utf-8');
+    const decisionMd = await readFile(join(ticketDir, 'decision-record.md'), 'utf-8');
     expect(decisionMd).toContain('## Use X');
     expect(decisionMd).toContain('**Recorded:**');
     expect(decisionMd).toContain('_Filed from chat (@claude,');
     expect(parseDecisionRecord(decisionMd).decisionCount).toBe(1);
 
-    const items = (await (await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
       items: Array<{ type: string; text?: string }>;
     };
     const filed = items.items.find((i) => i.type === 'system' && i.text?.startsWith('Filed '));
@@ -854,7 +854,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     const itemId = await replyItemId();
     const res = await fileItem(itemId, { kind: 'progress', body: 'Filed manually.' });
     expect(res.status).toBe(201);
-    const progressMd = await readFile(join(assignmentDir, 'progress.md'), 'utf-8');
+    const progressMd = await readFile(join(ticketDir, 'progress.md'), 'utf-8');
     expect(progressMd).toMatch(/entryCount: 1/);
   });
 
@@ -862,14 +862,14 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     const itemId = await replyItemId();
     const res = await fileItem(itemId, { kind: 'comment', body: 'A note.' });
     expect(res.status).toBe(201);
-    const commentsMd = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
+    const commentsMd = await readFile(join(ticketDir, 'comments.md'), 'utf-8');
     expect(commentsMd).toContain('**Author:** human');
     expect(commentsMd).toContain('**Type:** note');
   });
 
   it('uses (you, …) provenance for the humans own message filed as progress', async () => {
     await boot();
-    const send = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    const send = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'my thought' }),
@@ -888,7 +888,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
       .find((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)!;
     const res = await fileItem(userItem.itemId, { kind: 'progress', body: 'mine' });
     expect(res.status).toBe(201);
-    const progressMd = await readFile(join(assignmentDir, 'progress.md'), 'utf-8');
+    const progressMd = await readFile(join(ticketDir, 'progress.md'), 'utf-8');
     expect(progressMd).toContain('_Filed from chat (you,');
   });
 
@@ -903,7 +903,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }, { steps: [] }]);
 
-    await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'busy turn' }),
@@ -911,14 +911,14 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
 
     const queued = (await (
-      await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: 'withdraw me' }),
       })
     ).json()) as { messageId: string };
 
-    const del = await fetch(url(`/assignments/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const del = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(del.status).toBe(200);
@@ -988,12 +988,12 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
     expect((await fileItem(status.itemId, { kind: 'progress', body: 'x' })).status).toBe(400);
   });
 
-  it('files a decision on a standalone assignment', async () => {
+  it('files a decision on a standalone ticket', async () => {
     const standaloneId = '00000000-0000-4000-8000-0000000000ab';
-    const standaloneDir = join(assignmentsDir, standaloneId);
+    const standaloneDir = join(ticketsDir, standaloneId);
     await mkdir(standaloneDir, { recursive: true });
     await writeFile(
-      join(standaloneDir, 'assignment.md'),
+      join(standaloneDir, 'ticket.md'),
       [
         '---',
         `id: ${standaloneId}`,
@@ -1011,7 +1011,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
 
     await boot([{ steps: [{ kind: 'update', update: textChunk('standalone ok', 'm1') }] }]);
 
-    await fetch(url(`/assignments/${standaloneId}/chat/messages`), {
+    await fetch(url(`/tickets/${standaloneId}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'standalone first' }),
@@ -1029,7 +1029,7 @@ describe('POST /assignments/:id/chat/items/:itemId/file', () => {
       .find((i) => i.type === 'agent.message' && i.sealed)!;
 
     const res = await fetch(
-      url(`/assignments/${standaloneId}/chat/items/${encodeURIComponent(standaloneReply.itemId)}/file`),
+      url(`/tickets/${standaloneId}/chat/items/${encodeURIComponent(standaloneReply.itemId)}/file`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

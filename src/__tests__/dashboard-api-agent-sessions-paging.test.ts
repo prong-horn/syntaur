@@ -48,7 +48,7 @@ afterEach(async () => {
 async function seedSession(sessionId: string, overrides: Record<string, unknown> = {}): Promise<void> {
   await appendSession('', {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: 'claude',
     sessionId,
     started: '2026-07-01T10:00:00.000Z',
@@ -72,7 +72,7 @@ function seedUsage(sessionId: string, opts: { cost: number; totalTokens?: number
     totalCost: opts.cost,
     cwd: opts.cwd ?? '/Users/test/repo',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     rawJson: null,
   } as Parameters<typeof upsertEvent>[0]);
 }
@@ -214,10 +214,10 @@ describe('paged filtering spans the whole set, not the page', () => {
 
   it('matches a query spanning two fields, as the old concatenated search did', async () => {
     // The client joined every searchable field with spaces and ran one
-    // includes(), so "alpha task" matched project 'alpha' + assignment 'task'.
+    // includes(), so "alpha task" matched project 'alpha' + ticket 'task'.
     // Per-column ORs would match neither.
-    await seedSession('cross-field', { projectSlug: 'alpha', assignmentSlug: 'task' });
-    await seedSession('unrelated', { projectSlug: 'beta', assignmentSlug: 'other' });
+    await seedSession('cross-field', { projectSlug: 'alpha', ticketSlug: 'task' });
+    await seedSession('unrelated', { projectSlug: 'beta', ticketSlug: 'other' });
 
     const body = await get(`?pageSize=10&search=${encodeURIComponent('alpha task')}`);
     expect(body.sessions.map((s) => s.sessionId)).toEqual(['cross-field']);
@@ -280,7 +280,7 @@ describe('usage-only rows in the paged union', () => {
 
 describe('attribution filtering', () => {
   async function seedMixed(): Promise<void> {
-    await seedSession('with-assignment', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    await seedSession('with-assignment', { projectSlug: 'alpha', ticketSlug: 'task' });
     await seedSession('adhoc-1');
     await seedSession('adhoc-2');
     seedUsage('spend-orphan-1', { cost: 1 });
@@ -296,7 +296,7 @@ describe('attribution filtering', () => {
     expect(body.page?.totalCount).toBe(3);
   });
 
-  it('isolates ad-hoc sessions — the ones with no assignment', async () => {
+  it('isolates ad-hoc sessions — the ones with no ticket', async () => {
     await seedMixed();
     const body = await get('?pageSize=50&attribution=unassigned');
     expect(body.sessions.map((s) => s.sessionId).sort()).toEqual(['adhoc-1', 'adhoc-2']);
@@ -367,7 +367,7 @@ describe('attribution filtering', () => {
 
   it('composes with paging, search, and sort', async () => {
     await seedMany(12, 'adhoc');
-    await seedSession('bound', { projectSlug: 'alpha', assignmentSlug: 'task' });
+    await seedSession('bound', { projectSlug: 'alpha', ticketSlug: 'task' });
     seedUsage('orphan-x', { cost: 5 });
 
     const p0 = await get('?pageSize=5&page=0&attribution=unassigned&sort=started_desc');

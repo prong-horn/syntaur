@@ -49,7 +49,7 @@ afterEach(async () => {
 async function seedSession(sessionId: string, overrides: Record<string, unknown> = {}): Promise<void> {
   await appendSession('', {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: 'claude',
     sessionId,
     started: '2026-07-01T10:00:00.000Z',
@@ -86,7 +86,7 @@ function seedUsage(
     // `??` would swallow an explicit null, which some cases need to assert.
     cwd: 'cwd' in opts ? opts.cwd ?? null : '/Users/test/repo',
     projectSlug: '',
-    assignmentSlug: '',
+    ticketSlug: '',
     rawJson: null,
   });
 }
@@ -199,7 +199,7 @@ describe('usage-only (orphan) rows', () => {
     expect(orphan!.status).toBe('stopped');
     expect(orphan!.isLive).toBe(false);
     expect(orphan!.projectSlug).toBeNull();
-    expect(orphan!.assignmentSlug).toBeNull();
+    expect(orphan!.ticketSlug).toBeNull();
     expect(orphan!.transcriptPath).toBeNull();
     expect(orphan!.usage?.totalCost).toBeCloseTo(3, 6);
 

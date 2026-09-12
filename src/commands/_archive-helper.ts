@@ -1,12 +1,12 @@
 import { resolve } from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
-import { expandHome, assignmentsDir as assignmentsDirFn } from '../utils/paths.js';
+import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
-import { updateAssignmentFile, parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { updateTicketFile, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveAssignmentById } from '../utils/assignment-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 
 export interface ArchiveOptions {
@@ -20,11 +20,11 @@ export interface ArchiveResult {
   message: string;
 }
 
-type TargetKind = 'assignment' | 'project';
+type TargetKind = 'ticket' | 'project';
 
 interface ResolvedTarget {
   kind: TargetKind;
-  /** Path to the frontmatter file to mutate (assignment.md or project.md). */
+  /** Path to the frontmatter file to mutate (ticket.md or project.md). */
   filePath: string;
   /** Human-readable label for messages. */
   label: string;
@@ -32,38 +32,38 @@ interface ResolvedTarget {
 
 /**
  * Resolve an `archive`/`restore` target to a concrete frontmatter file.
- * Order (see plan D4): `--project <slug>` → project-scoped assignment; else a
- * UUID/standalone via resolveAssignmentById; else treat `target` as a project
+ * Order (see plan D4): `--project <slug>` → project-scoped ticket; else a
+ * UUID/standalone via resolveTicketById; else treat `target` as a project
  * slug; else `null`.
  */
 async function resolveTarget(target: string, options: ArchiveOptions): Promise<ResolvedTarget | null> {
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
-  // 1. Project-scoped assignment via --project.
+  // 1. Project-scoped ticket via --project.
   if (options.project) {
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
     if (!isValidSlug(target)) {
-      throw new Error(`Invalid assignment slug "${target}".`);
+      throw new Error(`Invalid ticket slug "${target}".`);
     }
-    const assignmentMd = resolve(baseDir, options.project, 'assignments', target, 'assignment.md');
+    const assignmentMd = resolve(baseDir, options.project, 'tickets', target, 'ticket.md');
     if (!(await fileExists(assignmentMd))) {
-      throw new Error(`Assignment "${target}" not found in project "${options.project}".`);
+      throw new Error(`Ticket "${target}" not found in project "${options.project}".`);
     }
-    return { kind: 'assignment', filePath: assignmentMd, label: `assignment "${options.project}/${target}"` };
+    return { kind: 'ticket', filePath: assignmentMd, label: `ticket "${options.project}/${target}"` };
   }
 
   // 2. Assignment by UUID (standalone or project-nested).
-  const resolved = await resolveAssignmentById(baseDir, assignmentsDirFn(), target);
+  const resolved = await resolveTicketById(baseDir, ticketsDirFn(), target);
   if (resolved) {
     return {
-      kind: 'assignment',
-      filePath: resolve(resolved.assignmentDir, 'assignment.md'),
+      kind: 'ticket',
+      filePath: resolve(resolved.ticketDir, 'ticket.md'),
       label: resolved.projectSlug
-        ? `assignment "${resolved.projectSlug}/${resolved.assignmentSlug}"`
-        : `assignment "${target}"`,
+        ? `ticket "${resolved.projectSlug}/${resolved.ticketSlug}"`
+        : `ticket "${target}"`,
     };
   }
 
@@ -82,7 +82,7 @@ async function writeArchiveState(
   reason: string | null,
 ): Promise<void> {
   const content = await readFile(filePath, 'utf-8');
-  const updated = updateAssignmentFile(content, {
+  const updated = updateTicketFile(content, {
     archived,
     archivedAt: archived ? nowTimestamp() : null,
     archivedReason: archived ? reason : null,
@@ -93,7 +93,7 @@ async function writeArchiveState(
 
 /**
  * Emit an `archived`/`restored` audit event for an ASSIGNMENT target only
- * (project archives have no assignment id and are out of v1 scope). Reads the
+ * (project archives have no ticket id and are out of v1 scope). Reads the
  * id + project slug off the freshly-written frontmatter. Best-effort.
  */
 async function emitArchiveEvent(
@@ -101,11 +101,11 @@ async function emitArchiveEvent(
   type: 'archived' | 'restored',
   reason: string | null,
 ): Promise<void> {
-  if (resolved.kind !== 'assignment') return;
+  if (resolved.kind !== 'ticket') return;
   try {
-    const fm = parseAssignmentFrontmatter(await readFile(resolved.filePath, 'utf-8'));
+    const fm = parseTicketFrontmatter(await readFile(resolved.filePath, 'utf-8'));
     emitEvent({
-      assignmentId: fm.id,
+      ticketId: fm.id,
       projectSlug: fm.project,
       type,
       actor: 'human',
@@ -119,7 +119,7 @@ async function emitArchiveEvent(
 export async function runArchive(target: string, options: ArchiveOptions = {}): Promise<ArchiveResult> {
   const resolved = await resolveTarget(target, options);
   if (!resolved) {
-    return { success: false, message: `No assignment or project matched "${target}".` };
+    return { success: false, message: `No ticket or project matched "${target}".` };
   }
   await writeArchiveState(resolved.filePath, true, options.reason ?? null);
   await emitArchiveEvent(resolved, 'archived', options.reason ?? null);
@@ -129,7 +129,7 @@ export async function runArchive(target: string, options: ArchiveOptions = {}): 
 export async function runRestore(target: string, options: ArchiveOptions = {}): Promise<ArchiveResult> {
   const resolved = await resolveTarget(target, options);
   if (!resolved) {
-    return { success: false, message: `No assignment or project matched "${target}".` };
+    return { success: false, message: `No ticket or project matched "${target}".` };
   }
   await writeArchiveState(resolved.filePath, false, null);
   await emitArchiveEvent(resolved, 'restored', null);

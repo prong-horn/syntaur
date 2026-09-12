@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { readConfig } from '../utils/config.js';
-import { assignmentsDir as getAssignmentsDir } from '../utils/paths.js';
+import { ticketsDir as getTicketsDir } from '../utils/paths.js';
 import {
   getIndex,
   resolveProvider,
@@ -27,7 +27,7 @@ export interface SearchOptions {
 interface JsonHit {
   path: string;
   project: string | null;
-  assignment: string | null;
+  ticket: string | null;
   fileKind: FileKind;
   score: number;
   snippet: string;
@@ -41,14 +41,14 @@ const DEFAULT_LIMIT = 20;
 /**
  * Resolve the CONFIGURED content dirs (mirrors `dashboard.ts`), build/get the
  * cached index, run the resolved provider, and return typed hits. Dirs are
- * resolved from `readConfig().defaultProjectDir` + `getAssignmentsDir()` — never
+ * resolved from `readConfig().defaultProjectDir` + `getTicketsDir()` — never
  * the hardcoded `defaultProjectDir()` path helper — so a CLI search indexes the
  * same tree the dashboard displays.
  */
 export async function runSearch(query: string, options: SearchOptions): Promise<SearchHit[]> {
   const config = await readConfig();
   const projectsDir = config.defaultProjectDir;
-  const assignmentsDir = getAssignmentsDir();
+  const ticketsDir = getTicketsDir();
 
   const limit = parseLimit(options.limit);
   // Parse `--in` INSIDE the command's error path (not as a Commander coercion)
@@ -57,7 +57,7 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
 
   const docs = await getIndex({
     projectsDir,
-    assignmentsDir,
+    ticketsDir,
     includeArchived: options.all,
   });
 
@@ -91,7 +91,7 @@ function toJsonHit(hit: SearchHit): JsonHit {
   const json: JsonHit = {
     path: hit.path,
     project: hit.projectSlug,
-    assignment: hit.assignmentSlug,
+    ticket: hit.ticketSlug,
     fileKind: hit.fileKind,
     score: hit.score,
     snippet: hit.snippet,
@@ -149,7 +149,7 @@ function renderTable(hits: SearchHit[]): string {
   if (hits.length === 0) return 'No matches.';
   const rows: string[][] = hits.map((hit) => [
     hit.projectSlug ?? '(standalone)',
-    hit.assignmentSlug ?? '—',
+    hit.ticketSlug ?? '—',
     sourceLabel(hit),
     highlight(hit.snippet, hit.matches).replace(/\s*\n\s*/g, ' ').trim(),
   ]);
@@ -176,13 +176,13 @@ export const searchCommand = new Command('search')
   )
   .argument('<query>', 'Search query')
   .option('--project <slug>', 'Restrict to one project')
-  .option('--type <list>', 'Comma-separated assignment type filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
-  .option('--status <list>', 'Comma-separated assignment status filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+  .option('--type <list>', 'Comma-separated ticket type filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+  .option('--status <list>', 'Comma-separated ticket status filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
   .option(
     '--in <fileKinds>',
     'Comma-separated file-kind filter (e.g. comments,plans). Accepts singular or plural names.',
   )
-  .option('--all', 'Include archived assignments/projects (excluded by default)')
+  .option('--all', 'Include archived tickets/projects (excluded by default)')
   .option('--limit <n>', 'Maximum number of results', String(DEFAULT_LIMIT))
   .option('--semantic', 'Use the semantic provider when available (falls back to full-text)')
   .option('--json', 'Emit JSON instead of a table')

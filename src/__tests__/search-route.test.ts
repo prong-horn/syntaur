@@ -32,10 +32,10 @@ function hit(partial: Partial<SearchHit>): SearchHit {
   return {
     path: '/x',
     projectSlug: null,
-    assignmentSlug: null,
-    assignmentId: null,
+    ticketSlug: null,
+    ticketId: null,
     standalone: false,
-    fileKind: 'assignment',
+    fileKind: 'ticket',
     title: 't',
     score: 0,
     snippet: '',
@@ -47,17 +47,17 @@ function hit(partial: Partial<SearchHit>): SearchHit {
 }
 
 describe('routeForHit', () => {
-  it('builds a nested assignment route with tab + section anchor for a markdown-rendered kind', () => {
+  it('builds a nested ticket route with tab + section anchor for a markdown-rendered kind', () => {
     const route = routeForHit(
       hit({
         fileKind: 'plan',
         projectSlug: 'proj',
-        assignmentSlug: 'my-assignment',
+        ticketSlug: 'my-assignment',
         standalone: false,
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=plan#open-questions');
+    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=plan#open-questions');
   });
 
   it('keeps a section anchor for a decision-record hit (markdown-rendered pane)', () => {
@@ -65,25 +65,25 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'decision-record',
         projectSlug: 'proj',
-        assignmentSlug: 'a1',
+        ticketSlug: 'a1',
         standalone: false,
         section: 'Why Postgres',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/a1?tab=decisions#why-postgres');
+    expect(route).toBe('/projects/proj/tickets/a1?tab=decisions#why-postgres');
   });
 
-  it('omits the section anchor for assignment (summary pane builds SectionCards, no heading ids)', () => {
+  it('omits the section anchor for ticket (summary pane builds SectionCards, no heading ids)', () => {
     const route = routeForHit(
       hit({
-        fileKind: 'assignment',
+        fileKind: 'ticket',
         projectSlug: 'proj',
-        assignmentSlug: 'my-assignment',
+        ticketSlug: 'my-assignment',
         standalone: false,
         section: 'Acceptance Criteria',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=summary');
+    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=summary');
     expect(route).not.toContain('#');
   });
 
@@ -92,12 +92,12 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'comments',
         projectSlug: 'proj',
-        assignmentSlug: 'my-assignment',
+        ticketSlug: 'my-assignment',
         standalone: false,
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=comments');
+    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=comments');
     expect(route).not.toContain('#');
   });
 
@@ -106,12 +106,12 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'progress',
         projectSlug: 'proj',
-        assignmentSlug: 'my-assignment',
+        ticketSlug: 'my-assignment',
         standalone: false,
         section: 'Day 1',
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/my-assignment?tab=progress');
+    expect(route).toBe('/projects/proj/tickets/my-assignment?tab=progress');
     expect(route).not.toContain('#');
   });
 
@@ -120,25 +120,25 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'plan',
         projectSlug: 'proj',
-        assignmentSlug: 'a1',
+        ticketSlug: 'a1',
         standalone: false,
       }),
     );
-    expect(route).toBe('/projects/proj/assignments/a1?tab=plan');
+    expect(route).toBe('/projects/proj/tickets/a1?tab=plan');
   });
 
-  it('builds a standalone route off the assignment id', () => {
+  it('builds a standalone route off the ticket id', () => {
     const route = routeForHit(
       hit({
         fileKind: 'plan',
-        assignmentId: 'uuid-123',
+        ticketId: 'uuid-123',
         standalone: true,
       }),
     );
-    expect(route).toBe('/assignments/uuid-123?tab=plan');
+    expect(route).toBe('/tickets/uuid-123?tab=plan');
   });
 
-  it('maps each FileKind to an existing AssignmentDetail tab', () => {
+  it('maps each FileKind to an existing TicketDetail tab', () => {
     expect(FILE_KIND_TO_TAB.assignment).toBe('summary');
     expect(FILE_KIND_TO_TAB.plan).toBe('plan');
     expect(FILE_KIND_TO_TAB['decision-record']).toBe('decisions');

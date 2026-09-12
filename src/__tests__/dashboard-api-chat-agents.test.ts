@@ -67,7 +67,7 @@ async function boot() {
 
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'assignments'),
+    ticketsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: (message) => {
       const data = JSON.stringify(message as WsMessage);
@@ -89,7 +89,7 @@ async function boot() {
     authProber: authOk,
     timeouts: { flushMs: 1 },
   });
-  app.use('/api', createChatRouter(join(sandbox, 'projects'), join(sandbox, 'assignments'), { broker }));
+  app.use('/api', createChatRouter(join(sandbox, 'projects'), join(sandbox, 'tickets'), { broker }));
   app.use('/api', createChatAgentsRouter({ broker, syntaurHome: sandbox }));
 
   server = http;
@@ -303,7 +303,7 @@ describe('chat agents API', () => {
     await broker.stopAll();
     const missing = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      ticketsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: () => {},
       commandResolver: () => ({ path: null, installHint: HARNESSES.claude.installHint }),

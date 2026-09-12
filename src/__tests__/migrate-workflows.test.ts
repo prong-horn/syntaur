@@ -35,7 +35,7 @@ import {
   resolveRecomputeContext,
   contentHash,
 } from '../lifecycle/recompute.js';
-import { parseAssignmentFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
 import type { AssignmentFacts } from '../lifecycle/derive.js';
 
@@ -413,14 +413,14 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     await mkdir(join(trap, 'projects'), { recursive: true });
     await writeFile(join(home, 'config.md'), liveShapedConfig(join(trap, 'projects')), 'utf-8');
     for (const t of tickets) {
-      const dir = join(home, 'projects', 'proj', 'assignments', t.slug);
+      const dir = join(home, 'projects', 'proj', 'tickets', t.slug);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, 'assignment.md'), ticketMd(t), 'utf-8');
+      await writeFile(join(dir, 'ticket.md'), ticketMd(t), 'utf-8');
     }
     for (const t of standalone) {
-      const dir = join(home, 'assignments', t.slug);
+      const dir = join(home, 'tickets', t.slug);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, 'assignment.md'), ticketMd({ ...t }), 'utf-8');
+      await writeFile(join(dir, 'ticket.md'), ticketMd({ ...t }), 'utf-8');
     }
   }
 
@@ -466,8 +466,8 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   ];
 
   const asg = (slug: string): string =>
-    join(home, 'projects', 'proj', 'assignments', slug, 'assignment.md');
-  const fmOf = async (path: string) => parseAssignmentFrontmatter(await readFile(path, 'utf-8'));
+    join(home, 'projects', 'proj', 'tickets', slug, 'ticket.md');
+  const fmOf = async (path: string) => parseTicketFrontmatter(await readFile(path, 'utf-8'));
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'migrate-wf-home-'));
@@ -487,11 +487,11 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
 
   // ── T3: --root / SYNTAUR_HOME isolation ───────────────────────────────────
   it('dry-run writes NOTHING — not under the root, and never under the copied defaultProjectDir trap', async () => {
-    // Put a trap assignment where the copied config's absolute defaultProjectDir
+    // Put a trap ticket where the copied config's absolute defaultProjectDir
     // points (the REAL root in the live scenario) — it must never be touched.
-    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const homeBefore = await snapshotTree(home);
@@ -503,9 +503,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   });
 
   it('apply migrates ONLY under --root; the trap root is untouched', async () => {
-    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const trapBefore = await snapshotTree(trap);
@@ -685,10 +685,10 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
       'id: pauselike\nstages:\n  - id: draft\n  - id: blocked\n  - id: done\n    terminal: true\n',
       'utf-8',
     );
-    const dir = join(home, 'projects', 'proj', 'assignments', 'stage-named-blocked');
+    const dir = join(home, 'projects', 'proj', 'tickets', 'stage-named-blocked');
     await mkdir(dir, { recursive: true });
     await writeFile(
-      join(dir, 'assignment.md'),
+      join(dir, 'ticket.md'),
       ticketMd({
         slug: 'stage-named-blocked',
         status: 'blocked',
@@ -746,8 +746,8 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(orphan.status).toBe('review');
     expect(orphan.phase).toBe('review');
     // Fresh standalone (no phase, no history) → placeTicket() → draft.
-    const fresh = parseAssignmentFrontmatter(
-      await readFile(join(home, 'assignments', 'fresh-standalone-0001', 'assignment.md'), 'utf-8'),
+    const fresh = parseTicketFrontmatter(
+      await readFile(join(home, 'tickets', 'fresh-standalone-0001', 'ticket.md'), 'utf-8'),
     );
     expect(fresh.status).toBe('draft');
   });
@@ -762,8 +762,8 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(fm.blockedReason).toBe('waiting on upstream');
     // History relabeled — `blocked` is no longer a status id anywhere in it.
     expect(fm.statusHistory.some((h) => h.to === 'blocked' || h.from === 'blocked')).toBe(false);
-    // The assignment directory still exists (never deleted).
-    expect((await readdir(join(home, 'projects', 'proj', 'assignments'))).sort()).toContain('blocked-one');
+    // The ticket directory still exists (never deleted).
+    expect((await readdir(join(home, 'projects', 'proj', 'tickets'))).sort()).toContain('blocked-one');
   });
 
   it('CONTROL (round-2 M4): pre-marker recomputeAndWrite WOULD re-derive the seeded stage back to blocked', async () => {
@@ -771,14 +771,14 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     // Manually seed the stage the way the migration would — but through the
     // LADDER writer instead of the migration-only writer.
     const { context, workflowResolver } = await resolveRecomputeContext();
-    const { updateAssignmentFile } = await import('../lifecycle/frontmatter.js');
+    const { updateTicketFile } = await import('../lifecycle/frontmatter.js');
     const result = await recomputeAndWrite(asg('blocked-one'), {
       cause: 'migrate',
       by: 'system',
       projectDir: join(home, 'projects', 'proj'),
       context,
       workflowResolver,
-      mutate: (c) => updateAssignmentFile(c, { status: 'ready_for_planning' }),
+      mutate: (c) => updateTicketFile(c, { status: 'ready_for_planning' }),
     });
     // The pre-marker ladder branch derives facts.blocked (blockedReason is
     // preserved) → the headline projection rewrites status straight back.

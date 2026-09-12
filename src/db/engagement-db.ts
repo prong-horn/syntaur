@@ -38,8 +38,12 @@ export interface EngagementRow {
 
 export interface OpenEngagementInput {
   sessionId: string;
+  ticketId?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentId?: string | null;
   projectSlug?: string | null;
+  ticketSlug?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
@@ -75,19 +79,19 @@ export function getLatestEngagement(sessionId: string): EngagementRow | null {
 }
 
 /**
- * All engagement rows for an assignment, oldest first. Powers the assignment
+ * All engagement rows for a ticket, oldest first. Powers the ticket
  * details "Session Activity" attribution view — the full per-session stage
  * history, distinct from the single *chosen* engagement the agent-sessions
  * endpoint returns. Ordered by `started_at` (then `id` to tie-break rows that
  * share a timestamp); the `idx_engagement_assignment` index covers the filter.
  */
-export function getEngagementsByAssignmentId(assignmentId: string): EngagementRow[] {
+export function getEngagementsByAssignmentId(ticketId: string): EngagementRow[] {
   return getSessionDb()
     .prepare(
       `SELECT * FROM engagement WHERE assignment_id = ?
         ORDER BY started_at ASC, id ASC`,
     )
-    .all(assignmentId) as EngagementRow[];
+    .all(ticketId) as EngagementRow[];
 }
 
 /** True if the session has any engagement row at all (open or closed). */
@@ -101,8 +105,12 @@ export function hasAnyEngagement(sessionId: string): boolean {
 
 export interface ClosedEngagementInput {
   sessionId: string;
+  ticketId?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentId?: string | null;
   projectSlug?: string | null;
+  ticketSlug?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
@@ -121,13 +129,13 @@ export function insertClosedEngagement(input: ClosedEngagementInput): Engagement
     .prepare(
       `INSERT INTO engagement
          (session_id, assignment_id, project_slug, assignment_slug, stage, started_at, ended_at, close_reason)
-       VALUES (@sessionId, @assignmentId, @projectSlug, @assignmentSlug, @stage, @startedAt, @endedAt, @closeReason)`,
+       VALUES (@sessionId, @ticketId, @projectSlug, @ticketSlug, @stage, @startedAt, @endedAt, @closeReason)`,
     )
     .run({
       sessionId: input.sessionId,
-      assignmentId: input.assignmentId ?? null,
+      ticketId: input.ticketId ?? input.assignmentId ?? null,
       projectSlug: input.projectSlug ?? null,
-      assignmentSlug: input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
@@ -154,13 +162,13 @@ export function openEngagement(input: OpenEngagementInput): EngagementRow {
     .prepare(
       `INSERT INTO engagement
          (session_id, assignment_id, project_slug, assignment_slug, stage, started_at, tokens_at_open)
-       VALUES (@sessionId, @assignmentId, @projectSlug, @assignmentSlug, @stage, @startedAt, @tokensAtOpen)`,
+       VALUES (@sessionId, @ticketId, @projectSlug, @ticketSlug, @stage, @startedAt, @tokensAtOpen)`,
     )
     .run({
       sessionId: input.sessionId,
-      assignmentId: input.assignmentId ?? null,
+      ticketId: input.ticketId ?? input.assignmentId ?? null,
       projectSlug: input.projectSlug ?? null,
-      assignmentSlug: input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       tokensAtOpen: serializeSnapshot(input.tokensAtOpen ?? null),
@@ -225,7 +233,7 @@ export function closeOpenEngagement(
 /**
  * Idempotent ensure-open: if the session already has an open engagement, do
  * nothing (preserve "don't clobber" — no auto-switch; semantics belong to the
- * attribution-rewiring assignment) and return null. Otherwise open one and
+ * attribution-rewiring ticket) and return null. Otherwise open one and
  * return it. Tolerates a concurrent open winning the race (unique conflict ⇒
  * treated as "already open").
  */
@@ -243,8 +251,12 @@ export function ensureOpenEngagement(input: OpenEngagementInput): EngagementRow 
 
 export interface SwitchEngagementInput {
   sessionId: string;
+  ticketId?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentId?: string | null;
   projectSlug?: string | null;
+  ticketSlug?: string | null;
+  /** @deprecated Dashboard compat until Task 2 */
   assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
@@ -253,7 +265,7 @@ export interface SwitchEngagementInput {
 }
 
 /**
- * Switch the session to a new (assignment, stage): close the current open
+ * Switch the session to a new (ticket, stage): close the current open
  * interval and open a new one in ONE synchronous IMMEDIATE transaction, using
  * the SAME pre-captured snapshot as tokens_at_close(old) = tokens_at_open(new).
  */
@@ -273,9 +285,9 @@ export function switchEngagement(input: SwitchEngagementInput): EngagementRow {
     }
     return openEngagement({
       sessionId: input.sessionId,
-      assignmentId: input.assignmentId ?? null,
+      ticketId: input.ticketId ?? input.assignmentId ?? null,
       projectSlug: input.projectSlug ?? null,
-      assignmentSlug: input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
       stage: input.stage,
       startedAt: input.startedAt,
       tokensAtOpen: snapshot,

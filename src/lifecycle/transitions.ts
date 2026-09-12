@@ -3,27 +3,27 @@ import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
-import { appendStatusHistoryEntry, parseAssignmentFrontmatter, updateAssignmentFile } from './frontmatter.js';
+import { appendStatusHistoryEntry, parseTicketFrontmatter, updateTicketFile } from './frontmatter.js';
 import { recordStatusEvent, resolveActor, emitEvent } from './event-emit.js';
-import type { TransitionCommand, TransitionResult, AssignmentFrontmatter } from './types.js';
+import type { TransitionCommand, TransitionResult, TicketFrontmatter } from './types.js';
 
-function resolveAssignmentPath(projectDir: string, assignmentSlug: string): string {
-  return resolve(projectDir, 'assignments', assignmentSlug, 'assignment.md');
+function resolveTicketPath(projectDir: string, ticketSlug: string): string {
+  return resolve(projectDir, 'tickets', ticketSlug, 'ticket.md');
 }
 
-async function readAssignment(
+async function readTicket(
   filePath: string,
-): Promise<{ content: string; frontmatter: AssignmentFrontmatter }> {
+): Promise<{ content: string; frontmatter: TicketFrontmatter }> {
   if (!(await fileExists(filePath))) {
-    throw new Error(`Assignment file not found: ${filePath}`);
+    throw new Error(`Ticket file not found: ${filePath}`);
   }
   const content = await readFile(filePath, 'utf-8');
-  const frontmatter = parseAssignmentFrontmatter(content);
+  const frontmatter = parseTicketFrontmatter(content);
   return { content, frontmatter };
 }
 
 /**
- * Resolve which of an assignment's `dependsOn` targets are not yet terminal.
+ * Resolve which of a ticket's `dependsOn` targets are not yet terminal.
  * Exported so derive verbs (`start`/`implement`) can surface the same
  * non-blocking unmet-dependency warning the legacy transition path emits.
  */
@@ -35,13 +35,13 @@ export async function checkDependencies(
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
   for (const depSlug of dependsOn) {
-    const depPath = resolveAssignmentPath(projectDir, depSlug);
+    const depPath = resolveTicketPath(projectDir, depSlug);
     if (!(await fileExists(depPath))) {
       unmet.push(`${depSlug} (file not found)`);
       continue;
     }
     const depContent = await readFile(depPath, 'utf-8');
-    const depFrontmatter = parseAssignmentFrontmatter(depContent);
+    const depFrontmatter = parseTicketFrontmatter(depContent);
     if (!terminals.has(depFrontmatter.status)) {
       unmet.push(`${depSlug} (status: ${depFrontmatter.status})`);
     }
@@ -63,7 +63,7 @@ export interface TransitionOptions {
   /** Guard-free custom targets: when provided (and no transitionTable), the
    * command resolves to this map's target regardless of the current status —
    * preserving a CUSTOM terminal target (e.g. complete -> done) without the
-   * from:command guard, even for assignments on legacy/undefined statuses. */
+   * from:command guard, even for tickets on legacy/undefined statuses. */
   commandTargets?: Map<string, string>;
   terminalStatuses?: ReadonlySet<string>;
 }
@@ -72,12 +72,12 @@ const ASSIGNEE_SETTING_COMMANDS = new Set(['start', 'shape', 'plan-ready', 'impl
 
 export async function executeTransition(
   projectDir: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   command: Exclude<TransitionCommand, 'assign'>,
   options: TransitionOptions = {},
 ): Promise<TransitionResult> {
-  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const { content, frontmatter } = await readTicket(filePath);
 
   // Resolution order: a from-specific custom mapping wins; the guard-free
   // commandTargets fallback covers legacy/undefined statuses; built-ins last
@@ -97,7 +97,7 @@ export async function executeTransition(
   if (!targetStatus) {
     return {
       success: false,
-      message: `Unknown command '${command}' for assignment "${assignmentSlug}".`,
+      message: `Unknown command '${command}' for ticket "${ticketSlug}".`,
       fromStatus: frontmatter.status,
     };
   }
@@ -113,7 +113,7 @@ export async function executeTransition(
 
   const now = nowTimestamp();
   const updates: Partial<
-    Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
+    Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
   > = {
     status: targetStatus,
     updated: now,
@@ -143,11 +143,11 @@ export async function executeTransition(
     updates.disposition = 'terminal';
   }
 
-  let updatedContent = updateAssignmentFile(content, updates);
+  let updatedContent = updateTicketFile(content, updates);
   // Only record a history entry on an ACTUAL status change. CLI commands are
   // guard-free (getTargetStatus returns the canonical target regardless of the
   // current status), so re-running e.g. `complete` on an already-completed
-  // assignment must not append a from===to entry and reset statusAge.
+  // ticket must not append a from===to entry and reset statusAge.
   if (targetStatus !== frontmatter.status) {
     updatedContent = appendStatusHistoryEntry(updatedContent, {
       at: now,
@@ -168,7 +168,7 @@ export async function executeTransition(
   // routes pass `auditActor: 'human'` so a click is not recorded as the
   // assignee (FIX 1).
   recordStatusEvent({
-    assignmentId: frontmatter.id,
+    ticketId: frontmatter.id,
     projectSlug: frontmatter.project,
     at: now,
     actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
@@ -179,7 +179,7 @@ export async function executeTransition(
 
   return {
     success: true,
-    message: `Assignment "${assignmentSlug}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
+    message: `Ticket "${ticketSlug}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
     fromStatus: frontmatter.status,
     toStatus: targetStatus,
     warnings: warnings.length > 0 ? warnings : undefined,
@@ -188,24 +188,24 @@ export async function executeTransition(
 
 export async function executeAssign(
   projectDir: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   agent: string,
 ): Promise<TransitionResult> {
-  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const { content, frontmatter } = await readTicket(filePath);
 
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     assignee: agent,
     updated: nowTimestamp(),
   };
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  const updatedContent = updateTicketFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
   // Audit event (best-effort): assignee changed from prior to `agent`.
   if (frontmatter.assignee !== agent) {
     emitEvent({
-      assignmentId: frontmatter.id,
+      ticketId: frontmatter.id,
       projectSlug: frontmatter.project,
       type: 'assignee-change',
       actor: resolveActor(agent ?? frontmatter.assignee ?? null),
@@ -215,7 +215,7 @@ export async function executeAssign(
 
   return {
     success: true,
-    message: `Assignment "${assignmentSlug}" assigned to '${agent}'.`,
+    message: `Ticket "${ticketSlug}" assigned to '${agent}'.`,
     fromStatus: frontmatter.status,
   };
 }
@@ -225,12 +225,12 @@ export interface TransitionByDirOptions extends TransitionOptions {
 }
 
 export async function executeTransitionByDir(
-  assignmentDir: string,
+  ticketDir: string,
   command: Exclude<TransitionCommand, 'assign'>,
   options: TransitionByDirOptions = {},
 ): Promise<TransitionResult> {
-  const filePath = resolve(assignmentDir, 'assignment.md');
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolve(ticketDir, 'ticket.md');
+  const { content, frontmatter } = await readTicket(filePath);
 
   // See executeTransition: from-specific mapping wins, commandTargets is the
   // guard-free fallback, built-ins only when no custom mechanism supplied.
@@ -248,7 +248,7 @@ export async function executeTransitionByDir(
   if (!targetStatus) {
     return {
       success: false,
-      message: `Unknown command '${command}' for assignment "${frontmatter.slug || assignmentDir}".`,
+      message: `Unknown command '${command}' for ticket "${frontmatter.slug || ticketDir}".`,
       fromStatus: frontmatter.status,
     };
   }
@@ -257,7 +257,7 @@ export async function executeTransitionByDir(
 
   if (command === 'start' && !options.standalone && frontmatter.dependsOn.length > 0) {
     // Dependency check requires a project context — skip for standalone
-    const projectDir = resolve(assignmentDir, '..', '..');
+    const projectDir = resolve(ticketDir, '..', '..');
     const depCheck = await checkDependencies(
       projectDir,
       frontmatter.dependsOn,
@@ -270,7 +270,7 @@ export async function executeTransitionByDir(
 
   const now = nowTimestamp();
   const updates: Partial<
-    Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
+    Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated' | 'disposition'>
   > = {
     status: targetStatus,
     updated: now,
@@ -297,7 +297,7 @@ export async function executeTransitionByDir(
     updates.disposition = 'terminal';
   }
 
-  let updatedContent = updateAssignmentFile(content, updates);
+  let updatedContent = updateTicketFile(content, updates);
   // Only record a history entry on an ACTUAL status change (see executeTransition).
   if (targetStatus !== frontmatter.status) {
     updatedContent = appendStatusHistoryEntry(updatedContent, {
@@ -317,7 +317,7 @@ export async function executeTransitionByDir(
   // Audit event (best-effort): self-guards on from===to (R5). The audit actor
   // is independent of `agent` (see executeTransition / FIX 1).
   recordStatusEvent({
-    assignmentId: frontmatter.id,
+    ticketId: frontmatter.id,
     projectSlug: frontmatter.project,
     at: now,
     actor: resolveActor(options.auditActor ?? options.agent ?? frontmatter.assignee ?? null),
@@ -328,7 +328,7 @@ export async function executeTransitionByDir(
 
   return {
     success: true,
-    message: `Assignment "${frontmatter.slug || assignmentDir}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
+    message: `Ticket "${frontmatter.slug || ticketDir}" transitioned: ${frontmatter.status} -> ${targetStatus}`,
     fromStatus: frontmatter.status,
     toStatus: targetStatus,
     warnings: warnings.length > 0 ? warnings : undefined,
@@ -336,23 +336,23 @@ export async function executeTransitionByDir(
 }
 
 export async function executeAssignByDir(
-  assignmentDir: string,
+  ticketDir: string,
   agent: string,
 ): Promise<TransitionResult> {
-  const filePath = resolve(assignmentDir, 'assignment.md');
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolve(ticketDir, 'ticket.md');
+  const { content, frontmatter } = await readTicket(filePath);
 
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     assignee: agent,
     updated: nowTimestamp(),
   };
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  const updatedContent = updateTicketFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
   if (frontmatter.assignee !== agent) {
     emitEvent({
-      assignmentId: frontmatter.id,
+      ticketId: frontmatter.id,
       projectSlug: frontmatter.project,
       type: 'assignee-change',
       actor: resolveActor(agent ?? frontmatter.assignee ?? null),
@@ -362,29 +362,29 @@ export async function executeAssignByDir(
 
   return {
     success: true,
-    message: `Assignment "${frontmatter.slug || assignmentDir}" assigned to '${agent}'.`,
+    message: `Ticket "${frontmatter.slug || ticketDir}" assigned to '${agent}'.`,
     fromStatus: frontmatter.status,
   };
 }
 
 export async function executeUnassign(
   projectDir: string,
-  assignmentSlug: string,
+  ticketSlug: string,
 ): Promise<TransitionResult> {
-  const filePath = resolveAssignmentPath(projectDir, assignmentSlug);
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const { content, frontmatter } = await readTicket(filePath);
 
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     assignee: null,
     updated: nowTimestamp(),
   };
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  const updatedContent = updateTicketFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
   if (frontmatter.assignee !== null) {
     emitEvent({
-      assignmentId: frontmatter.id,
+      ticketId: frontmatter.id,
       projectSlug: frontmatter.project,
       type: 'assignee-change',
       actor: resolveActor(frontmatter.assignee),
@@ -394,28 +394,28 @@ export async function executeUnassign(
 
   return {
     success: true,
-    message: `Assignment "${assignmentSlug}" unassigned (assignee cleared).`,
+    message: `Ticket "${ticketSlug}" unassigned (assignee cleared).`,
     fromStatus: frontmatter.status,
   };
 }
 
 export async function executeUnassignByDir(
-  assignmentDir: string,
+  ticketDir: string,
 ): Promise<TransitionResult> {
-  const filePath = resolve(assignmentDir, 'assignment.md');
-  const { content, frontmatter } = await readAssignment(filePath);
+  const filePath = resolve(ticketDir, 'ticket.md');
+  const { content, frontmatter } = await readTicket(filePath);
 
-  const updates: Partial<Pick<AssignmentFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
+  const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
     assignee: null,
     updated: nowTimestamp(),
   };
 
-  const updatedContent = updateAssignmentFile(content, updates);
+  const updatedContent = updateTicketFile(content, updates);
   await writeFileForce(filePath, updatedContent);
 
   if (frontmatter.assignee !== null) {
     emitEvent({
-      assignmentId: frontmatter.id,
+      ticketId: frontmatter.id,
       projectSlug: frontmatter.project,
       type: 'assignee-change',
       actor: resolveActor(frontmatter.assignee),
@@ -425,7 +425,7 @@ export async function executeUnassignByDir(
 
   return {
     success: true,
-    message: `Assignment "${frontmatter.slug || assignmentDir}" unassigned (assignee cleared).`,
+    message: `Ticket "${frontmatter.slug || ticketDir}" unassigned (assignee cleared).`,
     fromStatus: frontmatter.status,
   };
 }

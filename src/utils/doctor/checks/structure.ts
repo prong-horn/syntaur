@@ -8,7 +8,7 @@ const CATEGORY = 'structure';
 /** Top-level names the code may write directly under the Syntaur home. */
 export const KNOWN_TOP_LEVEL = new Set<string>([
   'agents', // agents.ts
-  'assignments', // paths.ts
+  'tickets', // paths.ts
   'config.md', // config.ts
   'dashboard-port', // server.ts
   'derive-migrated', // recompute.ts

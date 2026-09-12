@@ -10,7 +10,7 @@
  * The rules, in one place:
  *
  *  - **Human message.** Every mentioned attached agent gets one turn. With no
- *    resolvable mention the message goes to the assignment's default agent plus
+ *    resolvable mention the message goes to the ticket's default agent plus
  *    every attached `respondsTo: 'all-human'` agent — `all-human` is opt-in
  *    fan-out, not the builtin behaviour (Decision 2). A `respondsTo: 'none'`
  *    agent is never a target, mentioned or not.
@@ -108,7 +108,7 @@ export interface RouteHumanInput {
 export interface RouteHumanResult {
   /** One turn per id, in order. */
   targets: string[];
-  /** Lines that become `system` rows in the assignment scope. */
+  /** Lines that become `system` rows in the ticket scope. */
   notices: string[];
 }
 
@@ -214,7 +214,7 @@ function canBeTriggered(id: string, attached: Map<string, AgentDefinition>): boo
 }
 
 function unknownNotice(token: string): string {
-  return `No agent @${token} is attached to this assignment, so nothing was routed to it.`;
+  return `No agent @${token} is attached to this ticket, so nothing was routed to it.`;
 }
 
 function dedupe(ids: readonly string[]): string[] {

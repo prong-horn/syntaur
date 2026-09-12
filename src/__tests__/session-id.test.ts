@@ -252,7 +252,7 @@ describe('gate helpers', () => {
       expect(() => assertMayMutate({ id: 'x', provenance: 'EXPLICIT' }, { hasSelector: true })).not.toThrow();
     });
     it('throws for WEAK with no selector', () => {
-      expect(() => assertMayMutate({ id: 'x', provenance: 'WEAK' }, { hasSelector: false })).toThrow(/--assignment/);
+      expect(() => assertMayMutate({ id: 'x', provenance: 'WEAK' }, { hasSelector: false })).toThrow(/--ticket/);
     });
     it('passes for WEAK with a selector', () => {
       expect(() => assertMayMutate({ id: 'x', provenance: 'WEAK' }, { hasSelector: true })).not.toThrow();

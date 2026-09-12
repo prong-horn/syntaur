@@ -16,57 +16,57 @@ import {
 import { confirmPrompt, isInteractiveTerminal } from '../utils/prompt.js';
 import { SyntaurError, formatCliError, exitCodeFor } from '../errors.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { assignmentsDir, syntaurRoot } from '../utils/paths.js';
+import { ticketsDir, syntaurRoot } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
-import { listAssignmentsByProject } from '../utils/assignment-walk.js';
+import { listTicketsByProject } from '../utils/ticket-walk.js';
 import { isTerminalStatus } from '../lifecycle/state-machine.js';
 import { canonicalPath } from '../utils/path-canon.js';
 import { countSessionsByPath } from '../utils/session-count.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import {
-  parseAssignmentFrontmatter,
-  updateAssignmentWorkspace,
-  updateAssignmentFile,
+  parseTicketFrontmatter,
+  updateTicketWorkspace,
+  updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
 
-async function resolveAssignmentPath(opts: {
-  assignment?: string;
+async function resolveTicketPath(opts: {
+  ticket?: string;
   project?: string;
   cwd: string;
 }): Promise<string> {
-  if (opts.assignment) {
+  if (opts.ticket) {
     if (opts.project) {
       const projectsDir = (await readConfig()).defaultProjectDir;
-      return resolve(projectsDir, opts.project, 'assignments', opts.assignment, 'assignment.md');
+      return resolve(projectsDir, opts.project, 'tickets', opts.ticket, 'ticket.md');
     }
-    return resolve(assignmentsDir(), opts.assignment, 'assignment.md');
+    return resolve(ticketsDir(), opts.ticket, 'ticket.md');
   }
   // No explicit target → resolve from the session's OPEN engagement and gate the
-  // mutation (worktree create/remove edit the assignment's workspace.* block).
-  // context.json's assignment scalar (assignmentDir) is no longer a resolution
+  // mutation (worktree create/remove edit the ticket's workspace.* block).
+  // context.json's ticket scalar (ticketDir) is no longer a resolution
   // source — context.json is a workspace marker only.
   initSessionDb(); // idempotent; the engagement edge lives in the sessions DB
   const se = await resolveSessionEngagement(opts.cwd);
   if (se) {
     assertMayMutate(se.session, { hasSelector: false });
   }
-  const target = await resolveAssignmentTarget(undefined, {
+  const target = await resolveTicketTarget(undefined, {
     project: opts.project,
     cwd: opts.cwd,
     resolveEngagement: async () => se?.open ?? null,
   });
-  return resolve(target.assignmentDir, 'assignment.md');
+  return resolve(target.ticketDir, 'ticket.md');
 }
 
 interface WorktreeCreateOptions {
   repository?: string;
   branch: string;
   parentBranch?: string;
-  assignment?: string;
+  ticket?: string;
   project?: string;
   worktreePath?: string;
 }
@@ -74,23 +74,23 @@ interface WorktreeCreateOptions {
 export async function runWorktreeCreate(
   options: WorktreeCreateOptions,
   cwd: string = process.cwd(),
-): Promise<{ worktreePath: string; assignmentPath: string }> {
+): Promise<{ worktreePath: string; ticketPath: string }> {
   if (!options.branch) {
     throw new Error('--branch is required.');
   }
   const repository = options.repository ?? cwd;
   const parentBranch = options.parentBranch ?? 'main';
-  // Repo-local convention per assignment: <repo>/.worktrees/<branch>
+  // Repo-local convention per ticket: <repo>/.worktrees/<branch>
   const worktreePath =
     options.worktreePath ?? resolve(repository, '.worktrees', options.branch);
 
-  const assignmentPath = await resolveAssignmentPath({
-    assignment: options.assignment,
+  const ticketPath = await resolveTicketPath({
+    ticket: options.ticket,
     project: options.project,
     cwd,
   });
-  if (!(await fileExists(assignmentPath))) {
-    throw new Error(`Assignment file not found: ${assignmentPath}`);
+  if (!(await fileExists(ticketPath))) {
+    throw new Error(`Ticket file not found: ${ticketPath}`);
   }
 
   await createWorktreeAndRecord({
@@ -98,10 +98,10 @@ export async function runWorktreeCreate(
     branch: options.branch,
     worktreePath,
     parentBranch,
-    assignmentPath,
+    ticketPath,
   });
 
-  return { worktreePath, assignmentPath };
+  return { worktreePath, ticketPath };
 }
 
 export async function runWorktreeList(
@@ -111,7 +111,7 @@ export async function runWorktreeList(
 }
 
 export interface WorktreeRemoveOptions {
-  assignment?: string;
+  ticket?: string;
   project?: string;
   repository?: string;
   deleteBranch?: boolean;
@@ -124,27 +124,27 @@ export async function runWorktreeRemove(
   options: WorktreeRemoveOptions,
   cwd: string = process.cwd(),
 ): Promise<{ worktreePath: string; branchDeleted: boolean; workspaceCleared: boolean }> {
-  const assignmentPath = await resolveAssignmentPath({
-    assignment: options.assignment,
+  const ticketPath = await resolveTicketPath({
+    ticket: options.ticket,
     project: options.project,
     cwd,
   });
-  if (!(await fileExists(assignmentPath))) {
-    throw new Error(`Assignment file not found: ${assignmentPath}`);
+  if (!(await fileExists(ticketPath))) {
+    throw new Error(`Ticket file not found: ${ticketPath}`);
   }
-  const original = await readFile(assignmentPath, 'utf-8');
-  const fm = parseAssignmentFrontmatter(original);
+  const original = await readFile(ticketPath, 'utf-8');
+  const fm = parseTicketFrontmatter(original);
   const repository = options.repository ?? fm.workspace.repository ?? undefined;
   const worktreePath = fm.workspace.worktreePath ?? undefined;
   const branch = fm.workspace.branch ?? undefined;
 
   if (!repository) {
     throw new Error(
-      'No repository recorded in the assignment workspace. Pass --repository <path>.',
+      'No repository recorded in the ticket workspace. Pass --repository <path>.',
     );
   }
   if (!worktreePath) {
-    throw new Error('No worktreePath recorded in the assignment workspace — nothing to remove.');
+    throw new Error('No worktreePath recorded in the ticket workspace — nothing to remove.');
   }
 
   // 1. Git teardown first. On failure, leave the frontmatter untouched. If the
@@ -193,18 +193,18 @@ export async function runWorktreeRemove(
   // git teardown, report it — a re-run is idempotent (worktree already gone).
   let workspaceCleared = false;
   try {
-    let next = updateAssignmentWorkspace(original, {
+    let next = updateTicketWorkspace(original, {
       repository: null,
       worktreePath: null,
       branch: null,
       parentBranch: null,
     });
-    next = updateAssignmentFile(next, { updated: nowTimestamp() });
-    await writeFileForce(assignmentPath, next);
+    next = updateTicketFile(next, { updated: nowTimestamp() });
+    await writeFileForce(ticketPath, next);
     workspaceCleared = true;
   } catch (err) {
     console.error(
-      `Warning: worktree removed but failed to clear workspace fields in ${assignmentPath}: ${
+      `Warning: worktree removed but failed to clear workspace fields in ${ticketPath}: ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
@@ -227,7 +227,7 @@ export type GcReason =
 export interface GcCandidate {
   worktreePath: string;
   reason: GcReason;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   projectSlug: string | null;
   status: string | null;
   branch: string | null;
@@ -255,7 +255,7 @@ export interface WorktreeGcResult {
 }
 
 interface GcOwner {
-  assignmentSlug: string;
+  ticketSlug: string;
   projectSlug: string | null;
   status: string;
   terminal: boolean;
@@ -264,11 +264,11 @@ interface GcOwner {
 
 /**
  * Classify every worktree of `repository` and, when `options.apply`, remove the
- * safe ones. A worktree is `removable` only when it is linked to an assignment
+ * safe ones. A worktree is `removable` only when it is linked to a ticket
  * whose status is terminal (completed/archived), its branch is merged into
  * `base`, and its working tree is clean. `--force` also clears linked+terminal
  * worktrees that are dirty or unmerged. Removal calls `removeWorktree` /
- * `deleteBranch` DIRECTLY and never edits the assignment file, so `workspace.*`
+ * `deleteBranch` DIRECTLY and never edits the ticket file, so `workspace.*`
  * is preserved and the worktree stays recoverable via `syntaur open ... --recreate`.
  */
 export async function runWorktreeGc(
@@ -280,21 +280,21 @@ export async function runWorktreeGc(
   const entries = await listWorktrees(repository);
 
   // Reverse map: canonical worktree path -> owning assignment(s). A path can be
-  // claimed by more than one assignment record; we keep ALL owners so a single
+  // claimed by more than one ticket record; we keep ALL owners so a single
   // completed record can never mask a still-active one (see classification).
   const config = await readConfig();
-  const walk = await listAssignmentsByProject(config.defaultProjectDir, assignmentsDir());
+  const walk = await listTicketsByProject(config.defaultProjectDir, ticketsDir());
   const owners = new Map<string, GcOwner[]>();
   for (const entry of walk.withAssignmentMd) {
     try {
-      const content = await readFile(resolve(entry.assignmentDir, 'assignment.md'), 'utf-8');
-      const fm = parseAssignmentFrontmatter(content);
+      const content = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
+      const fm = parseTicketFrontmatter(content);
       const wp = fm.workspace?.worktreePath;
-      if (!wp) continue; // common case: assignment never got a worktree
+      if (!wp) continue; // common case: ticket never got a worktree
       const key = canonicalPath(wp);
       const list = owners.get(key) ?? [];
       list.push({
-        assignmentSlug: entry.assignmentSlug,
+        ticketSlug: entry.ticketSlug,
         projectSlug: entry.projectSlug,
         status: fm.status,
         terminal: isTerminalStatus(fm.status) || fm.archived === true,
@@ -302,7 +302,7 @@ export async function runWorktreeGc(
       });
       owners.set(key, list);
     } catch {
-      // Unreadable/malformed assignment.md -> skip; never let one abort gc.
+      // Unreadable/malformed ticket.md -> skip; never let one abort gc.
     }
   }
 
@@ -366,7 +366,7 @@ export async function runWorktreeGc(
     candidates.push({
       worktreePath: entry.worktreePath,
       reason,
-      assignmentSlug: primary?.assignmentSlug ?? null,
+      ticketSlug: primary?.ticketSlug ?? null,
       projectSlug: primary?.projectSlug ?? null,
       status: primary?.status ?? null,
       branch: entry.branch,
@@ -406,8 +406,8 @@ export async function runWorktreeGc(
           );
         }
       }
-      // Deliberately NOT touching the assignment file: workspace.* is preserved
-      // so `syntaur open <assignment> --recreate` can rebuild the worktree.
+      // Deliberately NOT touching the ticket file: workspace.* is preserved
+      // so `syntaur open <ticket> --recreate` can rebuild the worktree.
     }
     applied = true;
   }
@@ -434,12 +434,12 @@ function printGcReport(result: WorktreeGcResult): void {
   for (const c of candidates) byReason[c.reason].push(c);
 
   const label = (c: GcCandidate): string => {
-    const who = c.assignmentSlug
-      ? `${c.projectSlug ?? '—'}/${c.assignmentSlug}${c.status ? ` (${c.status})` : ''}`
-      : '(no assignment)';
+    const who = c.ticketSlug
+      ? `${c.projectSlug ?? '—'}/${c.ticketSlug}${c.status ? ` (${c.status})` : ''}`
+      : '(no ticket)';
     const sess =
       c.sessions > 0
-        ? `  [${c.sessions} session${c.sessions === 1 ? '' : 's'} recorded — recoverable via \`syntaur open ${c.assignmentSlug ?? '<assignment>'} --recreate\`]`
+        ? `  [${c.sessions} session${c.sessions === 1 ? '' : 's'} recorded — recoverable via \`syntaur open ${c.ticketSlug ?? '<ticket>'} --recreate\`]`
         : '';
     return `  ${c.worktreePath}  ${c.branch ?? '(detached)'}  ${who}${sess}`;
   };
@@ -454,8 +454,8 @@ function printGcReport(result: WorktreeGcResult): void {
   section(applied ? 'Removed' : `Removable — merged into ${base} + terminal + clean`, 'removable');
   section('Dirty — linked + terminal but uncommitted changes (use --force)', 'dirty');
   section(`Unmerged — linked + terminal but not in ${base} (use --force)`, 'unmerged');
-  section('Skipped — assignment not terminal', 'non-terminal');
-  section('Skipped — no owning assignment (orphan)', 'orphan');
+  section('Skipped — ticket not terminal', 'non-terminal');
+  section('Skipped — no owning ticket (orphan)', 'orphan');
   section('Skipped — detached / no branch', 'detached');
   section('Skipped — current / main worktree', 'current');
 
@@ -475,19 +475,19 @@ export const worktreeCommand = new Command('worktree')
 worktreeCommand
   .command('create')
   .description(
-    'Create a worktree at <repository>/.worktrees/<branch> and record it in the assignment workspace block. Atomic — rolls back the worktree if writing assignment.md fails.',
+    'Create a worktree at <repository>/.worktrees/<branch> and record it in the ticket workspace block. Atomic — rolls back the worktree if writing ticket.md fails.',
   )
   .requiredOption('--branch <name>', 'Branch name to create (also used as worktree dir name)')
   .option('--repository <path>', 'Repository root (defaults to current working directory)')
   .option('--parent-branch <name>', 'Parent branch to fork from', 'main')
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to the session open engagement')
-  .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
+  .option('--ticket <slug>', 'Ticket slug (UUID for standalone). Defaults to the session open engagement')
+  .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--worktree-path <path>', 'Override the computed <repository>/.worktrees/<branch> path')
   .action(async (options: WorktreeCreateOptions) => {
     try {
-      const { worktreePath, assignmentPath } = await runWorktreeCreate(options);
+      const { worktreePath, ticketPath } = await runWorktreeCreate(options);
       console.log(`Created worktree at ${worktreePath}`);
-      console.log(`Recorded workspace fields in ${assignmentPath}`);
+      console.log(`Recorded workspace fields in ${ticketPath}`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -522,10 +522,10 @@ worktreeCommand
   .command('remove')
   .alias('prune')
   .description(
-    "Remove an assignment's git worktree and clear its workspace.* fields. Branch deletion is opt-in.",
+    "Remove a ticket's git worktree and clear its workspace.* fields. Branch deletion is opt-in.",
   )
-  .option('--assignment <slug>', 'Assignment slug (UUID for standalone). Defaults to the session open engagement')
-  .option('--project <slug>', 'Project slug. Required when --assignment is given for a project-nested assignment')
+  .option('--ticket <slug>', 'Ticket slug (UUID for standalone). Defaults to the session open engagement')
+  .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--repository <path>', 'Repository root (defaults to the recorded workspace.repository)')
   .option('--delete-branch', 'Also delete the branch after removing the worktree')
   .option('--force', 'Discard a dirty/locked worktree (passes --force to git)')
@@ -554,7 +554,7 @@ worktreeCommand
       const { worktreePath, branchDeleted, workspaceCleared } = await runWorktreeRemove(options);
       console.log(`Removed worktree at ${worktreePath}`);
       if (branchDeleted) console.log('Deleted the branch.');
-      if (workspaceCleared) console.log('Cleared the assignment workspace fields.');
+      if (workspaceCleared) console.log('Cleared the ticket workspace fields.');
     } catch (error) {
       // Surface the SyntaurError remediation hint (e.g. "re-run with --yes").
       console.error(formatCliError(error));
@@ -565,7 +565,7 @@ worktreeCommand
 worktreeCommand
   .command('gc')
   .description(
-    "Find worktrees safe to clean up (branch merged into <base> AND linked assignment completed/archived AND clean) and, with --apply, remove them. Dry-run by default. Agent-session history is never deleted — removed worktrees stay recoverable via `syntaur open <assignment> --recreate`. (Uses built-in terminal statuses + the archived flag.)",
+    "Find worktrees safe to clean up (branch merged into <base> AND linked ticket completed/archived AND clean) and, with --apply, remove them. Dry-run by default. Agent-session history is never deleted — removed worktrees stay recoverable via `syntaur open <ticket> --recreate`. (Uses built-in terminal statuses + the archived flag.)",
   )
   .option('--repository <path>', 'Repository root (defaults to the current worktree)')
   .option('--base <branch>', 'Base branch to test "merged into"', 'main')
@@ -607,5 +607,5 @@ worktreeCommand
   });
 
 export const _internal = {
-  resolveAssignmentPath,
+  resolveTicketPath,
 };

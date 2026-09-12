@@ -27,9 +27,13 @@ import type {
 
 export interface UpsertChatSessionInput {
   sessionKey: string;
-  assignmentId: string;
+  ticketId?: string;
+  /** @deprecated test compat */
+  assignmentId?: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug?: string | null;
+  /** @deprecated test compat */
+  assignmentSlug?: string | null;
   agentId: string;
   harness: string;
   acpSessionId?: string | null;
@@ -59,7 +63,7 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
          acp_session_id, adapter_version, cwd, pid, profile_json, usage_snapshot_json,
          state, created_at, last_turn_at, last_delivered_seq, commands_json, standing_fingerprint
        ) VALUES (
-         @sessionKey, @assignmentId, @projectSlug, @assignmentSlug, @agentId, @harness,
+         @sessionKey, @ticketId, @projectSlug, @ticketSlug, @agentId, @harness,
          @acpSessionId, @adapterVersion, @cwd, @pid, @profileJson, @usageSnapshotJson,
          @state, @now, @lastTurnAt, @lastDeliveredSeq, @commandsJson, @standingFingerprint
        )
@@ -85,9 +89,9 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
     )
     .run({
       sessionKey: input.sessionKey,
-      assignmentId: input.assignmentId,
+      ticketId: input.ticketId ?? input.assignmentId ?? '',
       projectSlug: input.projectSlug,
-      assignmentSlug: input.assignmentSlug,
+      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
       agentId: input.agentId,
       harness: input.harness,
       acpSessionId: input.acpSessionId ?? null,
@@ -182,10 +186,10 @@ export function deleteChatSessionsForAgent(agentId: string): void {
   getSessionDb().prepare('DELETE FROM chat_sessions WHERE agent_id = ?').run(agentId);
 }
 
-export function getChatSession(assignmentId: string, agentId: string): ChatSessionRow | null {
+export function getChatSession(ticketId: string, agentId: string): ChatSessionRow | null {
   const row = getSessionDb()
     .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? AND agent_id = ? LIMIT 1')
-    .get(assignmentId, agentId) as ChatSessionRow | undefined;
+    .get(ticketId, agentId) as ChatSessionRow | undefined;
   return row ?? null;
 }
 
@@ -196,10 +200,10 @@ export function getChatSessionByKey(sessionKey: string): ChatSessionRow | null {
   return row ?? null;
 }
 
-export function listChatSessions(assignmentId: string): ChatSessionRow[] {
+export function listChatSessions(ticketId: string): ChatSessionRow[] {
   return getSessionDb()
     .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? ORDER BY agent_id')
-    .all(assignmentId) as ChatSessionRow[];
+    .all(ticketId) as ChatSessionRow[];
 }
 
 // --- items -----------------------------------------------------------------
@@ -211,7 +215,7 @@ export function upsertChatItem(sessionKey: string, item: ChatItem): void {
          item_id, assignment_id, session_key, turn_id, agent_id, type, ts,
          seq_first, seq_last, sealed, json
        ) VALUES (
-         @itemId, @assignmentId, @sessionKey, @turnId, @agentId, @type, @ts,
+         @itemId, @ticketId, @sessionKey, @turnId, @agentId, @type, @ts,
          @seqFirst, @seqLast, @sealed, @json
        )
        ON CONFLICT(item_id) DO UPDATE SET
@@ -225,7 +229,7 @@ export function upsertChatItem(sessionKey: string, item: ChatItem): void {
     )
     .run({
       itemId: item.itemId,
-      assignmentId: item.assignmentId,
+      ticketId: item.ticketId,
       sessionKey,
       turnId: item.turnId,
       agentId: item.agentId,
@@ -261,10 +265,10 @@ const DEFAULT_PAGE = 200;
  * A page of items, oldest-first. Paging runs newest-first under the hood (the
  * chat opens at the bottom), then flips, so `beforeSeq` walks history backwards.
  */
-export function listChatItems(assignmentId: string, options: ListChatItemsOptions = {}): ChatItem[] {
+export function listChatItems(ticketId: string, options: ListChatItemsOptions = {}): ChatItem[] {
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_PAGE, 1000));
   const clauses = ['assignment_id = ?'];
-  const params: unknown[] = [assignmentId];
+  const params: unknown[] = [ticketId];
   if (typeof options.beforeSeq === 'number') {
     clauses.push('seq_first < ?');
     params.push(options.beforeSeq);
@@ -292,7 +296,7 @@ export function getChatItem(itemId: string): ChatItem | null {
  * newest `limit` are considered, which is far above the 12-item prompt cap and
  * keeps a very long chat from scanning its whole history every turn.
  */
-export function listChatItemsSince(assignmentId: string, afterSeq: number, limit = 500): ChatItem[] {
+export function listChatItemsSince(ticketId: string, afterSeq: number, limit = 500): ChatItem[] {
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
@@ -300,24 +304,24 @@ export function listChatItemsSince(assignmentId: string, afterSeq: number, limit
         ORDER BY seq_first DESC, item_id DESC
         LIMIT ?`,
     )
-    .all(assignmentId, afterSeq, Math.max(1, limit)) as Array<{ json: string }>;
+    .all(ticketId, afterSeq, Math.max(1, limit)) as Array<{ json: string }>;
   return rows.reverse().map((r) => JSON.parse(r.json) as ChatItem);
 }
 
 /** Every item a turn produced, oldest first — what `finishTurn` routes on. */
-export function listChatItemsByTurn(assignmentId: string, turnId: string): ChatItem[] {
+export function listChatItemsByTurn(ticketId: string, turnId: string): ChatItem[] {
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
         WHERE assignment_id = ? AND turn_id = ?
         ORDER BY seq_first, item_id`,
     )
-    .all(assignmentId, turnId) as Array<{ json: string }>;
+    .all(ticketId, turnId) as Array<{ json: string }>;
   return rows.map((r) => JSON.parse(r.json) as ChatItem);
 }
 
 /** Look up a permission or question card by its ACP request id. */
-export function findChatItemByRequestId(assignmentId: string, requestId: string): ChatItem | null {
+export function findChatItemByRequestId(ticketId: string, requestId: string): ChatItem | null {
   const row = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
@@ -326,33 +330,33 @@ export function findChatItemByRequestId(assignmentId: string, requestId: string)
         ORDER BY seq_first DESC
         LIMIT 1`,
     )
-    .get(assignmentId, requestId) as { json: string } | undefined;
+    .get(ticketId, requestId) as { json: string } | undefined;
   if (!row) return null;
   const item = JSON.parse(row.json) as ChatItem;
   if (item.type !== 'permission.request' && item.type !== 'question') return null;
   return item;
 }
 
-export function countChatItems(assignmentId: string): number {
+export function countChatItems(ticketId: string): number {
   const row = getSessionDb()
     .prepare('SELECT COUNT(*) AS n FROM chat_items WHERE assignment_id = ?')
-    .get(assignmentId) as { n: number };
+    .get(ticketId) as { n: number };
   return row.n;
 }
 
-export function deleteChatItems(assignmentId: string): number {
+export function deleteChatItems(ticketId: string): number {
   return getSessionDb()
     .prepare('DELETE FROM chat_items WHERE assignment_id = ?')
-    .run(assignmentId).changes;
+    .run(ticketId).changes;
 }
 
 /** Raw rows — the reindex test's equality check compares these. */
-export function listChatItemRows(assignmentId: string): ChatItemRow[] {
+export function listChatItemRows(ticketId: string): ChatItemRow[] {
   return getSessionDb()
     .prepare(
       'SELECT * FROM chat_items WHERE assignment_id = ? ORDER BY seq_first, item_id',
     )
-    .all(assignmentId) as ChatItemRow[];
+    .all(ticketId) as ChatItemRow[];
 }
 
 // --- one message and the turns it triggered ---------------------------------
@@ -362,7 +366,7 @@ export function listChatItemRows(assignmentId: string): ChatItemRow[] {
  * never seen it. Filtered in SQL (`json_extract`) rather than by paging the
  * whole history: a scheduled dispatch's message may be arbitrarily far back.
  */
-export function getUserMessageItem(assignmentId: string, messageId: string): ChatItem | null {
+export function getUserMessageItem(ticketId: string, messageId: string): ChatItem | null {
   const row = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
@@ -370,12 +374,12 @@ export function getUserMessageItem(assignmentId: string, messageId: string): Cha
           AND json_extract(json, '$.messageId') = ?
         LIMIT 1`,
     )
-    .get(assignmentId, messageId) as { json: string } | undefined;
+    .get(ticketId, messageId) as { json: string } | undefined;
   return row ? (JSON.parse(row.json) as ChatItem) : null;
 }
 
 /** Every `turn.status` whose trigger is this human message, oldest first. */
-export function listTurnsForMessage(assignmentId: string, messageId: string): ChatItem[] {
+export function listTurnsForMessage(ticketId: string, messageId: string): ChatItem[] {
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
@@ -384,7 +388,7 @@ export function listTurnsForMessage(assignmentId: string, messageId: string): Ch
           AND json_extract(json, '$.trigger.messageId') = ?
         ORDER BY seq_first, item_id`,
     )
-    .all(assignmentId, messageId) as Array<{ json: string }>;
+    .all(ticketId, messageId) as Array<{ json: string }>;
   return rows.map((r) => JSON.parse(r.json) as ChatItem);
 }
 

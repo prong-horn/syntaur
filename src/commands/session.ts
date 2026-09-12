@@ -14,7 +14,7 @@ import {
   touchSession,
 } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
-import { resolveAssignmentTarget } from '../utils/assignment-target.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 import {
   resolveSessionEngagement,
   type EngagementBinding,
@@ -26,9 +26,9 @@ interface ContextFile {
   sessionId?: string;
   transcriptPath?: string | null;
   projectSlug?: string;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   projectDir?: string;
-  assignmentDir?: string;
+  ticketDir?: string;
   workspaceRoot?: string;
   title?: string;
   branch?: string;
@@ -48,18 +48,18 @@ async function readContext(cwd: string): Promise<ContextFile | null> {
   }
 }
 
-async function findOpenHandoff(assignmentDir: string): Promise<string | null> {
-  // The Syntaur protocol uses a single root handoff.md per assignment (managed
+async function findOpenHandoff(ticketDir: string): Promise<string | null> {
+  // The Syntaur protocol uses a single root handoff.md per ticket (managed
   // by complete-assignment). Surface it whenever it exists and has any body
   // content beyond the placeholder so the resuming agent reads the latest
   // outbound baton. We treat any non-empty handoff.md as a signal — there is
   // currently no per-handoff `status: open` flag in the canonical schema.
-  const handoffPath = resolve(assignmentDir, 'handoff.md');
+  const handoffPath = resolve(ticketDir, 'handoff.md');
   if (!(await fileExists(handoffPath))) return null;
   const content = await readFile(handoffPath, 'utf-8');
   const body = content.replace(/^---[\s\S]*?\n---\n?/, '').trim();
   if (body.length === 0) return null;
-  // Skip the placeholder body that create-assignment scaffolds.
+  // Skip the placeholder body that new scaffolds.
   if (/^<!--[\s\S]*-->$/.test(body)) return null;
   return handoffPath;
 }
@@ -68,11 +68,11 @@ interface ResumeOptions {
   json?: boolean;
 }
 
-/** The active assignment resolved from the session's OPEN engagement. */
-interface ResolvedAssignmentView {
-  assignmentDir: string;
+/** The active ticket resolved from the session's OPEN engagement. */
+interface ResolvedTicketView {
+  ticketDir: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   id: string;
   standalone: boolean;
   title: string | null;
@@ -82,15 +82,15 @@ interface ResumeOutput {
   ok: boolean;
   /** Workspace markers (branch/workspaceRoot) read from .syntaur/context.json. */
   context: ContextFile | null;
-  /** The active assignment, resolved from the session's OPEN engagement. */
-  assignment: ResolvedAssignmentView | null;
+  /** The active ticket, resolved from the session's OPEN engagement. */
+  ticket: ResolvedTicketView | null;
   openHandoff: string | null;
   warnings: string[];
 }
 
-/** Read the `title:` frontmatter field from a resolved assignment's assignment.md. */
-async function readAssignmentTitle(assignmentDir: string): Promise<string | null> {
-  const path = resolve(assignmentDir, 'assignment.md');
+/** Read the `title:` frontmatter field from a resolved assignment's ticket.md. */
+async function readTicketTitle(ticketDir: string): Promise<string | null> {
+  const path = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(path))) return null;
   try {
     const content = await readFile(path, 'utf-8');
@@ -104,11 +104,11 @@ async function readAssignmentTitle(assignmentDir: string): Promise<string | null
 async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
   const warnings: string[] = [];
   // context.json is still read — but ONLY for workspace markers (branch /
-  // workspaceRoot) to display. The active assignment is resolved from the
-  // session's OPEN engagement, NOT the demoted context.json assignment scalar.
+  // workspaceRoot) to display. The active ticket is resolved from the
+  // session's OPEN engagement, NOT the demoted context.json ticket scalar.
   const context = await readContext(cwd);
 
-  // Resolve the active assignment from the session's open engagement. READ-ONLY:
+  // Resolve the active ticket from the session's open engagement. READ-ONLY:
   // no assertMayMutate. initSessionDb is idempotent — the engagement edge lives
   // in the sessions DB, which must be open before resolveSessionEngagement reads.
   initSessionDb();
@@ -117,44 +117,44 @@ async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
     return {
       ok: false,
       context,
-      assignment: null,
+      ticket: null,
       openHandoff: null,
       warnings: [
-        'No active assignment for this session. Run /grab-assignment to bind one, then resume.',
+        'No active ticket for this session. Run /grab-ticket to bind one, then resume.',
       ],
     };
   }
 
-  let assignment: ResolvedAssignmentView;
+  let ticket: ResolvedTicketView;
   try {
-    const target = await resolveAssignmentTarget(undefined, {
+    const target = await resolveTicketTarget(undefined, {
       cwd,
       resolveEngagement: async () => se.open,
     });
-    assignment = {
-      assignmentDir: target.assignmentDir,
+    ticket = {
+      ticketDir: target.ticketDir,
       projectSlug: target.projectSlug,
-      assignmentSlug: target.assignmentSlug,
+      ticketSlug: target.ticketSlug,
       id: target.id,
       standalone: target.standalone,
-      title: await readAssignmentTitle(target.assignmentDir),
+      title: await readTicketTitle(target.ticketDir),
     };
   } catch (error) {
     return {
       ok: false,
       context,
-      assignment: null,
+      ticket: null,
       openHandoff: null,
       warnings: [error instanceof Error ? error.message : String(error)],
     };
   }
 
-  const openHandoff = await findOpenHandoff(assignment.assignmentDir);
+  const openHandoff = await findOpenHandoff(ticket.ticketDir);
 
   return {
     ok: true,
     context,
-    assignment,
+    ticket,
     openHandoff,
     warnings,
   };
@@ -169,16 +169,16 @@ function renderHumanOutput(out: ResumeOutput): string {
   }
   // Assignment dir/slugs come from the RESOLVED engagement target; branch and
   // workspace-root are workspace markers still read from context.json.
-  const asg = out.assignment!;
+  const asg = out.ticket!;
   const ctx = out.context;
   lines.push('Resuming Syntaur session');
   lines.push('');
   lines.push(`  Project:        ${asg.projectSlug ?? '(standalone)'}`);
-  lines.push(`  Assignment:     ${asg.assignmentSlug ?? asg.id}`);
+  lines.push(`  Assignment:     ${asg.ticketSlug ?? asg.id}`);
   if (asg.title) lines.push(`  Title:          ${asg.title}`);
   if (ctx?.branch) lines.push(`  Branch:         ${ctx.branch}`);
   if (ctx?.workspaceRoot) lines.push(`  Workspace root: ${ctx.workspaceRoot}`);
-  lines.push(`  Assignment dir: ${asg.assignmentDir}`);
+  lines.push(`  Assignment dir: ${asg.ticketDir}`);
   if (out.openHandoff) {
     lines.push('');
     lines.push(`Open handoff: ${out.openHandoff}`);
@@ -215,9 +215,9 @@ export interface SessionBoundaryOptions {
 
 /** The write-boundary the enforcer hooks allow, resolved from the OPEN engagement. */
 export interface SessionBoundaryResult {
-  /** The active assignment dir (engagement-resolved), or null when none resolves. */
-  assignmentDir: string | null;
-  /** The project root (parent of `assignments/<slug>`), or null for standalone / none. */
+  /** The active ticket dir (engagement-resolved), or null when none resolves. */
+  ticketDir: string | null;
+  /** The project root (parent of `tickets/<slug>`), or null for standalone / none. */
   projectDir: string | null;
   /** Workspace marker read from `.syntaur/context.json`, or null. */
   workspaceRoot: string | null;
@@ -226,14 +226,14 @@ export interface SessionBoundaryResult {
 /**
  * Resolve the write boundary for the calling session from its OPEN engagement.
  * The write-boundary enforcer hooks (claude-code / codex / pi) call this to learn
- * the allowlist — `context.json`'s assignment scalars were demoted, so the hooks
- * can no longer read `assignmentDir`/`projectDir` from disk.
+ * the allowlist — `context.json`'s ticket scalars were demoted, so the hooks
+ * can no longer read `ticketDir`/`projectDir` from disk.
  *
  * Resolution:
  *  - session id: explicit `options.sessionId` (EXPLICIT), else self-resolve from cwd.
- *  - open engagement → reconstruct `assignmentDir` via `resolveAssignmentTarget`.
- *  - `projectDir` = the project root (parent of `assignments/<slug>`,
- *    i.e. `resolve(assignmentDir, '..', '..')`) for project-nested; null for standalone.
+ *  - open engagement → reconstruct `ticketDir` via `resolveTicketTarget`.
+ *  - `projectDir` = the project root (parent of `tickets/<slug>`,
+ *    i.e. `resolve(ticketDir, '..', '..')`) for project-nested; null for standalone.
  *  - `workspaceRoot` is read from `<cwd>/.syntaur/context.json` (a workspace marker).
  *
  * NEVER throws to the caller: on ANY failure it returns all-null. Read-only and
@@ -245,13 +245,13 @@ export async function runSessionBoundary(
 ): Promise<SessionBoundaryResult> {
   const cwd = options.cwd ?? process.cwd();
   const empty: SessionBoundaryResult = {
-    assignmentDir: null,
+    ticketDir: null,
     projectDir: null,
     workspaceRoot: null,
   };
 
   // Workspace marker is independent of the engagement — read it best-effort so we
-  // can still enforce workspace-only when no assignment resolves.
+  // can still enforce workspace-only when no ticket resolves.
   let workspaceRoot: string | null = null;
   try {
     const ctx = await readContext(cwd);
@@ -269,20 +269,20 @@ export async function runSessionBoundary(
     if (!row) return { ...empty, workspaceRoot };
 
     const binding: EngagementBinding = {
-      assignmentId: row.assignment_id,
+      ticketId: row.assignment_id,
       projectSlug: row.project_slug,
-      assignmentSlug: row.assignment_slug,
+      ticketSlug: row.assignment_slug,
       stage: row.stage,
     };
-    const target = await resolveAssignmentTarget(undefined, {
+    const target = await resolveTicketTarget(undefined, {
       cwd,
       resolveEngagement: async () => binding,
     });
-    const assignmentDir = target.assignmentDir;
-    // Project root = parent of `assignments/<slug>`: resolve(dir,'..','..').
-    // Standalone assignments are not project-nested → no project resources dir.
-    const projectDir = target.standalone ? null : resolve(assignmentDir, '..', '..');
-    return { assignmentDir, projectDir, workspaceRoot };
+    const ticketDir = target.ticketDir;
+    // Project root = parent of `tickets/<slug>`: resolve(dir,'..','..').
+    // Standalone tickets are not project-nested → no project resources dir.
+    const projectDir = target.standalone ? null : resolve(ticketDir, '..', '..');
+    return { ticketDir, projectDir, workspaceRoot };
   } catch {
     return { ...empty, workspaceRoot };
   }
@@ -398,10 +398,10 @@ export async function runSessionRegister(
     '',
     {
       // UNATTRIBUTED on register. The SessionStart hook no longer auto-binds the
-      // assignment from the cwd context.json scalar — that cwd-scalar auto-bind is
+      // ticket from the cwd context.json scalar — that cwd-scalar auto-bind is
       // the multi-assignment-in-one-worktree clobber being eliminated. A session
-      // binds its assignment explicitly via `syntaur track-session --project
-      // --assignment` (the grab flow); on a resume/revive `appendSession` recovers
+      // binds its ticket explicitly via `syntaur track-session --project
+      // --ticket` (the grab flow); on a resume/revive `appendSession` recovers
       // the binding from the session's OWN latest engagement (reviveStopped below).
       projectSlug: null,
       assignmentSlug: null,
@@ -454,7 +454,7 @@ export async function runSessionStop(rawStdin: string): Promise<SessionStopResul
 }
 
 export const sessionCommand = new Command('session')
-  .description('Manage agent sessions for the active assignment');
+  .description('Manage agent sessions for the active ticket');
 
 sessionCommand
   .command('register')
@@ -685,7 +685,7 @@ sessionCommand
 sessionCommand
   .command('resume')
   .description(
-    'Re-orient a fresh session: print active assignment context and any open handoff. Idempotent — does not mutate state.',
+    'Re-orient a fresh session: print active ticket context and any open handoff. Idempotent — does not mutate state.',
   )
   .option('--json', 'Emit machine-readable JSON instead of human-readable text')
   .action(async (options: ResumeOptions) => {
@@ -718,7 +718,7 @@ sessionCommand
 sessionCommand
   .command('boundary')
   .description(
-    "Resolve the calling session's write boundary from its OPEN engagement (for the write-boundary enforcer hooks). Prints { assignmentDir, projectDir, workspaceRoot } as JSON. NEVER throws — prints {} and exits 0 on any failure.",
+    "Resolve the calling session's write boundary from its OPEN engagement (for the write-boundary enforcer hooks). Prints { ticketDir, projectDir, workspaceRoot } as JSON. NEVER throws — prints {} and exits 0 on any failure.",
   )
   .option('--session-id <id>', "The calling session's id (else self-resolved from the process / cwd)")
   .option('--cwd <path>', 'Working directory holding .syntaur/context.json', process.cwd())

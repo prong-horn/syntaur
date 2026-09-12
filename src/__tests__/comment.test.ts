@@ -3,7 +3,7 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
-import { createAssignmentCommand } from '../commands/create-assignment.js';
+import { newCommand } from '../commands/new.js';
 import { commentCommand } from '../commands/comment.js';
 
 let testDir: string;
@@ -24,12 +24,12 @@ afterEach(async () => {
 describe('commentCommand', () => {
   it('appends a question, bumps entryCount, replaces the "No comments yet." sentinel', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('A', { project: 'p', dir: testDir });
+    await newCommand('A', { project: 'p', dir: testDir });
 
     const commentsPath = resolve(
       testDir,
       'p',
-      'assignments',
+      'tickets',
       'a',
       'comments.md',
     );
@@ -55,7 +55,7 @@ describe('commentCommand', () => {
 
   it('rejects empty text', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('A', { project: 'p', dir: testDir });
+    await newCommand('A', { project: 'p', dir: testDir });
 
     await expect(
       commentCommand('a', '   ', { project: 'p', dir: testDir }),
@@ -64,7 +64,7 @@ describe('commentCommand', () => {
 
   it('rejects an invalid type', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('A', { project: 'p', dir: testDir });
+    await newCommand('A', { project: 'p', dir: testDir });
 
     await expect(
       commentCommand('a', 'body', {
@@ -78,13 +78,13 @@ describe('commentCommand', () => {
 
   it('records the reply-to pointer when set', async () => {
     await createProjectCommand('P', { dir: testDir });
-    await createAssignmentCommand('A', { project: 'p', dir: testDir });
+    await newCommand('A', { project: 'p', dir: testDir });
 
     await commentCommand('a', 'parent', { project: 'p', type: 'question', author: 'a', dir: testDir });
     await commentCommand('a', 'child', { project: 'p', type: 'note', replyTo: 'abc12345', author: 'b', dir: testDir });
 
     const content = await readFile(
-      resolve(testDir, 'p', 'assignments', 'a', 'comments.md'),
+      resolve(testDir, 'p', 'tickets', 'a', 'comments.md'),
       'utf-8',
     );
     expect(content).toContain('**Reply to:** abc12345');

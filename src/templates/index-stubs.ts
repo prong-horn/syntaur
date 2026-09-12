@@ -79,7 +79,7 @@ needsAttention:
 
 ## Assignments
 
-No assignments yet.
+No tickets yet.
 
 ## Dependency Graph
 

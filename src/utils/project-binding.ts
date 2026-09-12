@@ -9,7 +9,7 @@ import { fileExists } from './fs.js';
  * Lifecycle / CLI / doctor code cannot import the dashboard parser (`dashboard/`
  * is unreachable from there), so this is a small self-contained parser — no
  * `dashboard/` imports, independently tested — used by recompute/doctor/CLI and
- * the central `resolveAssignmentWorkflowContext` helper.
+ * the central `resolveTicketWorkflowContext` helper.
  */
 export interface ProjectWorkflowBinding {
   defaultWorkflow: string | null;
