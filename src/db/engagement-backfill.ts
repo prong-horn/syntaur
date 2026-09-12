@@ -119,11 +119,9 @@ export function backfillEngagements(db: Database.Database): BackfillCounts {
 
   const insert = db.prepare(
     `INSERT INTO engagement
-       (session_id, assignment_id, project_slug, assignment_slug, stage,
-        started_at, ended_at, tokens_at_open, tokens_at_close, close_reason)
+       (session_id, ticket_id, stage, started_at, ended_at, tokens_at_open, tokens_at_close, close_reason)
      VALUES
-       (@session_id, @assignment_id, @project_slug, @assignment_slug, 'implement',
-        @started_at, @ended_at, NULL, NULL, @close_reason)`,
+       (@session_id, @ticket_id, 'implement', @started_at, @ended_at, NULL, NULL, @close_reason)`,
   );
 
   const counts: BackfillCounts = { backfilled: 0, attributed: 0, unattributed: 0 };
@@ -147,9 +145,7 @@ export function backfillEngagements(db: Database.Database): BackfillCounts {
 
     insert.run({
       session_id: s.session_id,
-      assignment_id: ticketId,
-      project_slug: s.project_slug,
-      assignment_slug: s.assignment_slug,
+      ticket_id: ticketId,
       started_at: s.started,
       ended_at: endedAt,
       close_reason: closeReason,

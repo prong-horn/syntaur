@@ -2,7 +2,7 @@
  * Daily rollup runner (v1: recompute-from-scratch).
  *
  * Aggregates `usage_events` into `usage_daily`, grouped by
- * `(date(event_ts), tool, model, project_slug, assignment_slug)`. Inside one
+ * `(date(event_ts), tool, model, project_slug, ticket_id)`. Inside one
  * `BEGIN IMMEDIATE` transaction:
  *   1. DELETE all `frozen = 0` rows (v1 always writes frozen=0).
  *   2. INSERT current aggregates.
@@ -44,7 +44,7 @@ export function runRollup(): RollupResult {
                 tool,
                 model,
                 project_slug,
-                assignment_slug,
+                ticket_id,
                 SUM(input_tokens)             AS input_tokens,
                 SUM(output_tokens)            AS output_tokens,
                 SUM(cache_creation_tokens)    AS cache_creation_tokens,
@@ -59,7 +59,7 @@ export function runRollup(): RollupResult {
       tool: string;
       model: string;
       project_slug: string;
-      assignment_slug: string;
+      ticket_id: string;
       input_tokens: number;
       output_tokens: number;
       cache_creation_tokens: number;
@@ -72,7 +72,7 @@ export function runRollup(): RollupResult {
 
     const insert = database.prepare(
       `INSERT INTO usage_daily (
-         day, tool, model, project_slug, assignment_slug,
+         day, tool, model, project_slug, ticket_id,
          input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
          total_tokens, total_cost, frozen, computed_at
        ) VALUES (
@@ -90,7 +90,7 @@ export function runRollup(): RollupResult {
         tool: r.tool,
         model: r.model,
         projectSlug: r.project_slug,
-        ticketSlug: r.assignment_slug,
+        ticketSlug: r.ticket_id,
         inputTokens: r.input_tokens,
         outputTokens: r.output_tokens,
         cacheCreationTokens: r.cache_creation_tokens,

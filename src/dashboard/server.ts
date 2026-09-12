@@ -585,10 +585,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         return;
       }
       await reconcileActiveSessions(projectsDir, ticketsDir);
-      const sessions = await listSessionsByTicket(
-        resolved.standalone ? null : resolved.projectSlug,
-        resolved.standalone ? resolved.id : resolved.ticketSlug,
-      );
+      const sessions = await listSessionsByTicket(resolved.id);
       res.json({
         sessions: withLiveness(sessions),
         generatedAt: new Date().toISOString(),

@@ -86,7 +86,7 @@ describe('initUsageDb', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'usage_schema_version'")
       .get() as { value: string } | undefined;
-    expect(version?.value).toBe('1');
+    expect(version?.value).toBe('3');
   });
 
   it('is idempotent on repeat init calls', () => {
@@ -270,7 +270,7 @@ describe('upsertEvent monotonic guards (codex-review CRITICAL/HIGH fixes)', () =
     );
     const rows = listEvents();
     expect(rows[0].project_slug).toBe('p1');
-    expect(rows[0].assignment_slug).toBe('a1');
+    expect(rows[0].ticket_id).toBe('a1');
     expect(rows[0].cwd).toBe('/proj');
     // Token totals DO advance since event_ts is newer.
     expect(rows[0].total_tokens).toBe(9999);
@@ -289,7 +289,7 @@ describe('upsertEvent monotonic guards (codex-review CRITICAL/HIGH fixes)', () =
     );
     const rows = listEvents();
     expect(rows[0].project_slug).toBe('newproj');
-    expect(rows[0].assignment_slug).toBe('newasgn');
+    expect(rows[0].ticket_id).toBe('newasgn');
     expect(rows[0].cwd).toBe('/Users/dev/newproj');
   });
 
@@ -361,9 +361,9 @@ describe('listDaily / listEvents workspaceMembers filter', () => {
     });
     expect(rows.length).toBe(2);
     expect(rows.some((r) => r.project_slug === 'p1')).toBe(true);
-    expect(rows.some((r) => r.project_slug === '' && r.assignment_slug === 's1')).toBe(true);
+    expect(rows.some((r) => r.project_slug === '' && r.ticket_id === 's1')).toBe(true);
     // unattributed ('','') must NOT be included
-    expect(rows.some((r) => r.project_slug === '' && r.assignment_slug === '')).toBe(false);
+    expect(rows.some((r) => r.project_slug === '' && r.ticket_id === '')).toBe(false);
   });
 
   it('empty membership matches no rows (never all)', () => {

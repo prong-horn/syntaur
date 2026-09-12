@@ -29,16 +29,17 @@
  * `chat_sessions.standing_fingerprint`: a sha256 of the roster lines and this
  * agent's system prompt as `buildStanding` would produce them, so a restart can
  * tell when the standing block needs to be re-sent.
+ *
+ * v5 renames `assignment_id` → `ticket_id` and drops `project_slug` /
+ * `assignment_slug` from `chat_sessions` (Decision 7).
  */
 
-export const CHAT_SCHEMA_VERSION = '4';
+export const CHAT_SCHEMA_VERSION = '5';
 
 export const CHAT_DDL = `
 CREATE TABLE IF NOT EXISTS chat_sessions (
   session_key         TEXT PRIMARY KEY,
-  assignment_id       TEXT NOT NULL,
-  project_slug        TEXT,
-  assignment_slug     TEXT,
+  ticket_id           TEXT NOT NULL,
   agent_id            TEXT NOT NULL,
   harness             TEXT NOT NULL,
   acp_session_id      TEXT,
@@ -54,12 +55,12 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   commands_json       TEXT,
   standing_fingerprint TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_ticket ON chat_sessions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_ticket ON chat_sessions(ticket_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_acp ON chat_sessions(acp_session_id);
 
 CREATE TABLE IF NOT EXISTS chat_items (
   item_id       TEXT PRIMARY KEY,
-  assignment_id TEXT NOT NULL,
+  ticket_id     TEXT NOT NULL,
   session_key   TEXT NOT NULL,
   turn_id       TEXT,
   agent_id      TEXT NOT NULL,
@@ -70,8 +71,8 @@ CREATE TABLE IF NOT EXISTS chat_items (
   sealed        INTEGER NOT NULL DEFAULT 0,
   json          TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_seq ON chat_items(assignment_id, seq_first);
-CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_turn ON chat_items(assignment_id, turn_id);
+CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_seq ON chat_items(ticket_id, seq_first);
+CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_turn ON chat_items(ticket_id, turn_id);
 
 CREATE TABLE IF NOT EXISTS chat_harness_options (
   harness         TEXT PRIMARY KEY,

@@ -40,7 +40,7 @@ describe('initEventsDb', () => {
     const version = db
       .prepare("SELECT value FROM meta WHERE key = 'events_schema_version'")
       .get() as { value: string } | undefined;
-    expect(version?.value).toBe('1');
+    expect(version?.value).toBe('2');
   });
 
   it('creates the expected indexes', () => {
@@ -110,8 +110,7 @@ describe('recordEvent + listEventsByTicket', () => {
 
     const rows = listEventsByTicket('asn-1');
     expect(rows).toHaveLength(1);
-    expect(rows[0].assignment_id).toBe('asn-1');
-    expect(rows[0].project_slug).toBe('proj');
+    expect(rows[0].ticket_id).toBe('asn-1');
     expect(rows[0].type).toBe('status-change');
     expect(rows[0].actor).toBe('agent:abcd1234');
     expect(rows[0].source_key).toBeNull();
@@ -124,7 +123,6 @@ describe('recordEvent + listEventsByTicket', () => {
     recordEvent({ ticketId: 'asn-s', type: 'archived', actor: 'human' });
     const rows = listEventsByTicket('asn-s');
     expect(rows).toHaveLength(1);
-    expect(rows[0].project_slug).toBeNull();
     expect(rows[0].details).toBeNull();
   });
 
@@ -145,15 +143,15 @@ describe('recordEvent + listEventsByTicket', () => {
       type: 'status-change',
       actor: 'system',
       at: '2020-01-01T00:00:00.000Z',
-      sourceKey: 'backfill:asn-bf:status:0',
+      sourceKey: 'backfill~asn-bf~status~0',
     });
     const rows = listEventsByTicket('asn-bf');
     expect(rows[0].at).toBe('2020-01-01T00:00:00.000Z');
     expect(rows[0].actor).toBe('system');
-    expect(rows[0].source_key).toBe('backfill:asn-bf:status:0');
+    expect(rows[0].source_key).toBe('backfill~asn-bf~status~0');
   });
 
-  it('isolates events by assignment_id', () => {
+  it('isolates events by ticket_id', () => {
     recordEvent({ ticketId: 'x', type: 'archived', actor: 'human' });
     recordEvent({ ticketId: 'y', type: 'archived', actor: 'human' });
     expect(listEventsByTicket('x')).toHaveLength(1);
@@ -170,14 +168,14 @@ describe('source_key idempotency (INSERT OR IGNORE)', () => {
       type: 'status-change',
       actor: 'system',
       at: '2020-01-01T00:00:00.000Z',
-      sourceKey: 'backfill:asn-1:status:0',
+      sourceKey: 'backfill~asn-1~status~0',
     });
     recordEvent({
       ticketId: 'asn-1',
       type: 'status-change',
       actor: 'system',
       at: '2021-06-06T00:00:00.000Z',
-      sourceKey: 'backfill:asn-1:status:0',
+      sourceKey: 'backfill~asn-1~status~0',
     });
     expect(listEventsByTicket('asn-1')).toHaveLength(1);
   });

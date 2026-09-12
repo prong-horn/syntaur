@@ -269,9 +269,9 @@ export async function runSessionBoundary(
     if (!row) return { ...empty, workspaceRoot };
 
     const binding: EngagementBinding = {
-      ticketId: row.assignment_id,
-      projectSlug: row.project_slug,
-      ticketSlug: row.assignment_slug,
+      ticketId: row.ticket_id,
+      projectSlug: null,
+      ticketSlug: null,
       stage: row.stage,
     };
     const target = await resolveTicketTarget(undefined, {

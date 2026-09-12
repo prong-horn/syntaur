@@ -9,7 +9,41 @@ import {
   resetSessionDb,
   getSessionDb,
 } from '../dashboard/session-db.js';
-import { CHAT_DDL } from '../db/chat-schema.js';
+
+const LEGACY_CHAT_V3_DDL = `
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  session_key         TEXT PRIMARY KEY,
+  assignment_id       TEXT NOT NULL,
+  project_slug        TEXT,
+  assignment_slug     TEXT,
+  agent_id            TEXT NOT NULL,
+  harness             TEXT NOT NULL,
+  acp_session_id      TEXT,
+  adapter_version     TEXT,
+  cwd                 TEXT,
+  pid                 INTEGER,
+  profile_json        TEXT,
+  usage_snapshot_json TEXT,
+  state               TEXT NOT NULL DEFAULT 'none',
+  created_at          TEXT NOT NULL,
+  last_turn_at        TEXT,
+  last_delivered_seq  INTEGER NOT NULL DEFAULT 0,
+  commands_json       TEXT
+);
+CREATE TABLE IF NOT EXISTS chat_items (
+  item_id       TEXT PRIMARY KEY,
+  assignment_id TEXT NOT NULL,
+  session_key   TEXT NOT NULL,
+  turn_id       TEXT,
+  agent_id      TEXT NOT NULL,
+  type          TEXT NOT NULL,
+  ts            TEXT NOT NULL,
+  seq_first     INTEGER NOT NULL,
+  seq_last      INTEGER NOT NULL,
+  sealed        INTEGER NOT NULL DEFAULT 0,
+  json          TEXT NOT NULL
+);
+`;
 
 let testDir: string;
 let dbPath: string;
@@ -30,21 +64,9 @@ function buildV3ChatDb(path: string): void {
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     INSERT INTO meta (key, value) VALUES ('chat_schema_version', '3');
     INSERT INTO meta (key, value) VALUES ('schema_version', '11');
-    INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '1');
+    INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '2');
   `);
-  db.exec(CHAT_DDL.replace(
-    `CREATE TABLE IF NOT EXISTS chat_harness_options (
-  harness         TEXT PRIMARY KEY,
-  adapter_version TEXT,
-  captured_at     TEXT,
-  record_json     TEXT,
-  auth_state      TEXT NOT NULL DEFAULT 'unknown',
-  auth_detail     TEXT,
-  auth_at         TEXT
-);
-`,
-    '',
-  ));
+  db.exec(LEGACY_CHAT_V3_DDL);
   db.close();
 }
 
@@ -72,7 +94,7 @@ describe('chat schema v3 → v4 migration', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='chat_harness_options'")
       .get() as { name: string } | undefined;
     expect(table?.name).toBe('chat_harness_options');
-    expect(chatSchemaVersion()).toBe('4');
+    expect(chatSchemaVersion()).toBe('5');
     const columns = (
       getSessionDb().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
     ).map((c) => c.name);
@@ -85,16 +107,49 @@ describe('chat schema v3 → v4 migration', () => {
       CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
       INSERT INTO meta (key, value) VALUES ('chat_schema_version', '4');
       INSERT INTO meta (key, value) VALUES ('schema_version', '11');
-      INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '1');
+      INSERT INTO meta (key, value) VALUES ('engagement_schema_version', '2');
     `);
-    db.exec(CHAT_DDL.replace(',\n  standing_fingerprint TEXT', ''));
+    db.exec(`
+    CREATE TABLE chat_sessions (
+      session_key TEXT PRIMARY KEY,
+      assignment_id TEXT NOT NULL,
+      project_slug TEXT,
+      assignment_slug TEXT,
+      agent_id TEXT NOT NULL,
+      harness TEXT NOT NULL,
+      acp_session_id TEXT,
+      adapter_version TEXT,
+      cwd TEXT,
+      pid INTEGER,
+      profile_json TEXT,
+      usage_snapshot_json TEXT,
+      state TEXT NOT NULL DEFAULT 'none',
+      created_at TEXT NOT NULL,
+      last_turn_at TEXT,
+      last_delivered_seq INTEGER NOT NULL DEFAULT 0,
+      commands_json TEXT
+    );
+      CREATE TABLE chat_items (
+        item_id TEXT PRIMARY KEY,
+        assignment_id TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        turn_id TEXT,
+        agent_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        seq_first INTEGER NOT NULL,
+        seq_last INTEGER NOT NULL,
+        sealed INTEGER NOT NULL DEFAULT 0,
+        json TEXT NOT NULL
+      );
+    `);
     db.close();
     initSessionDb(dbPath);
     const columns = (
       getSessionDb().prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>
     ).map((c) => c.name);
     expect(columns).toContain('standing_fingerprint');
-    expect(chatSchemaVersion()).toBe('4');
+    expect(chatSchemaVersion()).toBe('5');
   });
 
   it('is idempotent across reopens', () => {
@@ -102,6 +157,6 @@ describe('chat schema v3 → v4 migration', () => {
     initSessionDb(dbPath);
     closeSessionDb();
     expect(() => initSessionDb(dbPath)).not.toThrow();
-    expect(chatSchemaVersion()).toBe('4');
+    expect(chatSchemaVersion()).toBe('5');
   });
 });

@@ -30,12 +30,10 @@ import type {
 
 interface SessionRow {
   session_id: string;
-  // project_slug / assignment_slug / assignment_id are NOT columns on `sessions`
-  // (v6 moved the scalar binding onto `engagement`). They are PROJECTED here
-  // from the session's chosen engagement via SESSION_SELECT_WITH_BINDING below.
-  project_slug: string | null;
-  assignment_slug: string | null;
-  assignment_id: string | null;
+  // `ticket_id` is NOT a column on `sessions` (v6 moved the scalar binding
+  // onto `engagement`). It is PROJECTED from the session's chosen engagement
+  // via SESSION_SELECT_WITH_BINDING below.
+  ticket_id: string | null;
   agent: string;
   started: string;
   ended: string | null;
@@ -61,9 +59,7 @@ interface SessionRow {
 // `listAllSessions` keep populated bindings for `recreate-target` / `launch`.
 const SESSION_SELECT_WITH_BINDING = `
 SELECT s.*,
-       e.project_slug    AS project_slug,
-       e.assignment_slug AS assignment_slug,
-       e.assignment_id   AS assignment_id
+       e.ticket_id AS ticket_id
   FROM sessions s
   LEFT JOIN engagement e ON e.id = (
     SELECT e2.id FROM engagement e2
@@ -121,9 +117,9 @@ const SESSION_LIST_ORDER_BY =
 function rowToSession(row: SessionRow): AgentSession {
   return {
     sessionId: row.session_id,
-    projectSlug: row.project_slug ?? null,
-    ticketSlug: row.assignment_slug ?? null,
-    ticketId: row.assignment_id ?? null,
+    projectSlug: null,
+    ticketSlug: null,
+    ticketId: row.ticket_id ?? null,
     agent: row.agent,
     started: row.started,
     ended: row.ended ?? null,
@@ -175,13 +171,23 @@ export function touchSession(sessionId: string): boolean {
 }
 
 export async function parseSessionsIndex(
-  _projectDir: string,
+  projectsDir: string,
   projectSlug: string,
 ): Promise<AgentSession[]> {
+  const { listTicketsByProject } = await import('../utils/ticket-walk.js');
+  const walk = await listTicketsByProject(projectsDir, null);
+  const ticketIds = walk.withTicketMd
+    .filter((t) => t.projectSlug === projectSlug && t.ticketId)
+    .map((t) => t.ticketId as string);
+  if (ticketIds.length === 0) return [];
+
   const db = getSessionDb();
+  const placeholders = ticketIds.map(() => '?').join(', ');
   const rows = db
-    .prepare(`${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? ORDER BY s.started DESC`)
-    .all(projectSlug) as SessionRow[];
+    .prepare(
+      `${SESSION_SELECT_WITH_BINDING} WHERE e.ticket_id IN (${placeholders}) ORDER BY s.started DESC`,
+    )
+    .all(...ticketIds) as SessionRow[];
   return rows.map(rowToSession);
 }
 
@@ -219,12 +225,12 @@ function reopenEngagementIfMissing(
     return;
   }
   const latest = getLatestEngagement(sessionId);
-  if (latest && (latest.project_slug || latest.assignment_slug)) {
+  if (latest?.ticket_id) {
     ensureOpenEngagement({
       sessionId,
-      ticketId: latest.assignment_id,
-      projectSlug: latest.project_slug,
-      ticketSlug: latest.assignment_slug,
+      ticketId: latest.ticket_id,
+      projectSlug: null,
+      ticketSlug: null,
       stage: 'implement',
       startedAt: new Date().toISOString(),
       tokensAtOpen: tokensAtOpen ?? null,
@@ -626,8 +632,7 @@ export interface SessionPageResult {
  * it did before.
  */
 const SEARCH_HAYSTACK = [
-  'e.project_slug',
-  'e.assignment_slug',
+  'e.ticket_id',
   's.agent',
   's.session_id',
   's.path',
@@ -669,9 +674,9 @@ const ORDER_BY: Record<SqlSort, string> = {
   // COLLATE NOCASE: the client sorted with localeCompare (case-insensitive),
   // while SQLite's default BINARY collation puts all uppercase before lowercase.
   ticket_asc:
-    `${PINNED_FIRST} COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
+    `${PINNED_FIRST} COALESCE(e.ticket_id, '') COLLATE NOCASE ASC, s.session_id ASC`,
   agent_asc:
-    `${PINNED_FIRST} s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
+    `${PINNED_FIRST} s.agent COLLATE NOCASE ASC, COALESCE(e.ticket_id, '') COLLATE NOCASE ASC, s.session_id ASC`,
 };
 
 /**
@@ -705,9 +710,9 @@ function buildSessionFilters(q: SessionPageQuery): { sql: string; params: unknow
   // row to filter (see pageSessions).
   const attribution = q.attribution ?? DEFAULT_SESSION_ATTRIBUTION;
   if (attribution === 'assigned') {
-    clauses.push('e.assignment_slug IS NOT NULL');
+    clauses.push('e.ticket_id IS NOT NULL');
   } else if (attribution === 'unassigned') {
-    clauses.push('e.assignment_slug IS NULL');
+    clauses.push('e.ticket_id IS NULL');
   } else if (!includesTrackedRows(attribution)) {
     // 'usage-only': no tracked row qualifies.
     clauses.push('0');
@@ -798,7 +803,7 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     .prepare(
       `SELECT s.session_id AS session_id, s.started AS started, s.ended AS ended, s.agent AS agent,
               s.pinned_at AS pinned_at,
-              e.assignment_slug AS assignment_slug, e.project_slug AS project_slug
+              e.ticket_id AS ticket_id
          FROM sessions s
          LEFT JOIN engagement e ON e.id = (
            SELECT e2.id FROM engagement e2
@@ -814,15 +819,14 @@ export function listSessionSortKeys(q: SessionPageQuery): SessionSortKey[] {
     ended: string | null;
     agent: string;
     pinned_at: string | null;
-    assignment_slug: string | null;
-    project_slug: string | null;
+    ticket_id: string | null;
   }>;
   return rows.map((r) => ({
     sessionId: r.session_id,
     started: r.started,
     ended: r.ended ?? null,
-    ticketSlug: r.assignment_slug ?? null,
-    projectSlug: r.project_slug ?? null,
+    ticketSlug: null,
+    projectSlug: null,
     agent: r.agent,
     pinnedAt: r.pinned_at ?? null,
   }));
@@ -870,28 +874,32 @@ export function getSessionById(sessionId: string): AgentSession | null {
  * List sessions for a specific project, optionally filtered by ticket.
  */
 export async function listProjectSessions(
-  _projectsDir: string,
+  projectsDir: string,
   projectSlug: string,
   ticketSlug?: string,
   opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
   const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
-
+  const { listTicketsByProject } = await import('../utils/ticket-walk.js');
+  const walk = await listTicketsByProject(projectsDir, null);
+  let ticketIds = walk.withTicketMd
+    .filter((t) => t.projectSlug === projectSlug && t.ticketId)
+    .map((t) => t.ticketId as string);
   if (ticketSlug) {
-    const rows = db
-      .prepare(
-        `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
-      )
-      .all(projectSlug, ticketSlug) as SessionRow[];
-    return rows.map(rowToSession);
+    const match = walk.withTicketMd.find(
+      (t) => t.projectSlug === projectSlug && t.ticketSlug === ticketSlug && t.ticketId,
+    );
+    ticketIds = match?.ticketId ? [match.ticketId] : [];
   }
+  if (ticketIds.length === 0) return [];
 
+  const placeholders = ticketIds.map(() => '?').join(', ');
   const rows = db
     .prepare(
-      `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
+      `${SESSION_SELECT_WITH_BINDING} WHERE e.ticket_id IN (${placeholders})${archived} ${SESSION_LIST_ORDER_BY}`,
     )
-    .all(projectSlug) as SessionRow[];
+    .all(...ticketIds) as SessionRow[];
   return rows.map(rowToSession);
 }
 
@@ -1008,47 +1016,37 @@ export async function reconcileActiveSessions(
   // Standalone bindings carry project_slug IS NULL on the engagement.
   const activeSessions = db
     .prepare(
-      `SELECT s.*, e.project_slug AS project_slug, e.assignment_slug AS assignment_slug
+      `SELECT s.*, e.ticket_id AS ticket_id
          FROM sessions s
          JOIN engagement e ON e.session_id = s.session_id AND e.ended_at IS NULL
-        WHERE s.status = 'active' AND e.assignment_slug IS NOT NULL`,
+        WHERE s.status = 'active' AND e.ticket_id IS NOT NULL`,
     )
     .all() as SessionRow[];
 
   if (activeSessions.length === 0) return 0;
 
-  // Read ticket statuses from disk. Key is `${projectSlug ?? '__standalone__'}/${slug}`.
+  const { resolveTicketById } = await import('../utils/ticket-resolver.js');
   const ticketStatuses = new Map<string, string>();
   const seen = new Set<string>();
   for (const session of activeSessions) {
-    const aslug = session.assignment_slug;
-    if (!aslug) continue;
+    const ticketId = session.ticket_id;
+    if (!ticketId || seen.has(ticketId)) continue;
+    seen.add(ticketId);
 
-    const projectKey = session.project_slug ?? '__standalone__';
-    const key = `${projectKey}/${aslug}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-
-    if (session.project_slug) {
-      const status = await readTicketStatus(
-        resolve(projectsDir, session.project_slug),
-        aslug,
-      );
-      if (status) ticketStatuses.set(key, status);
-    } else if (ticketsDir) {
-      const status = await readTicketStatusFromPath(
-        resolve(ticketsDir, aslug, 'ticket.md'),
-      );
-      if (status) ticketStatuses.set(key, status);
-    }
+    const resolved = await resolveTicketById(projectsDir, ticketsDir, ticketId);
+    if (!resolved) continue;
+    const status = await readTicketStatus(
+      resolve(projectsDir, resolved.projectSlug),
+      resolved.ticketSlug,
+    );
+    if (status) ticketStatuses.set(ticketId, status);
   }
 
-  // Update stale sessions
   let totalUpdated = 0;
   for (const session of activeSessions) {
-    const projectKey = session.project_slug ?? '__standalone__';
-    const key = `${projectKey}/${session.assignment_slug}`;
-    const ticketStatus = ticketStatuses.get(key);
+    const ticketId = session.ticket_id;
+    if (!ticketId) continue;
+    const ticketStatus = ticketStatuses.get(ticketId);
     if (!ticketStatus || !DONE_TICKET_STATUSES.has(ticketStatus)) continue;
 
     const newStatus: AgentSessionStatus =
@@ -1061,28 +1059,19 @@ export async function reconcileActiveSessions(
 }
 
 /**
- * List sessions for a resolved ticket (standalone or project-nested).
- * Standalone: filter by assignment_slug = id AND project_slug IS NULL.
- * Project-nested: filter by project_slug + assignment_slug.
+ * List sessions bound to a ticket id.
  */
 export async function listSessionsByTicket(
-  projectSlug: string | null,
-  ticketSlug: string,
+  ticketId: string,
   opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
   const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
-  const rows = projectSlug === null
-    ? (db
-        .prepare(
-          `${SESSION_SELECT_WITH_BINDING} WHERE e.assignment_slug = ? AND e.project_slug IS NULL${archived} ${SESSION_LIST_ORDER_BY}`,
-        )
-        .all(ticketSlug) as SessionRow[])
-    : (db
-        .prepare(
-          `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
-        )
-        .all(projectSlug, ticketSlug) as SessionRow[]);
+  const rows = db
+    .prepare(
+      `${SESSION_SELECT_WITH_BINDING} WHERE e.ticket_id = ?${archived} ${SESSION_LIST_ORDER_BY}`,
+    )
+    .all(ticketId) as SessionRow[];
   return rows.map(rowToSession);
 }
 

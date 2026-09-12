@@ -19,9 +19,7 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
-// v6: the binding lives on the engagement edge. Seed a session row (no slugs)
-// plus one engagement spanning the session window [started, ended) that carries
-// the project/ticket slugs — attribution is now interval-aware.
+// v6+: binding lives on engagement.ticket_id only (Decision 7).
 function seedSession(
   db: ReturnType<typeof initSessionDb>,
   row: {
@@ -43,15 +41,14 @@ function seedSession(
     ended: row.ended ?? null,
     path: row.path ?? null,
   });
-  if (row.projectSlug != null || row.ticketSlug != null) {
+  if (row.ticketSlug != null) {
     db.prepare(
       `INSERT INTO engagement
-         (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
-       VALUES (@sessionId, @projectSlug, @ticketSlug, 'implement', @started, @ended)`,
+         (session_id, ticket_id, stage, started_at, ended_at)
+       VALUES (@sessionId, @ticketId, 'implement', @started, @ended)`,
     ).run({
       sessionId: row.sessionId,
-      projectSlug: row.projectSlug ?? null,
-      ticketSlug: row.ticketSlug ?? null,
+      ticketId: row.ticketSlug,
       started: row.started,
       ended: row.ended ?? null,
     });
@@ -73,7 +70,7 @@ describe('resolveAttribution', () => {
       cwd: null,
       eventTs: '2026-05-21T13:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'myproj', ticketSlug: 'myasgn' });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: 'myasgn' });
   });
 
   it('fuzzy match by path + time window when PK misses', () => {
@@ -91,7 +88,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T12:30:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'myproj', ticketSlug: 'myasgn' });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: 'myasgn' });
   });
 
   it('fuzzy match handles open-ended (ended IS NULL) sessions', () => {
@@ -109,7 +106,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T13:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'p', ticketSlug: 'a' });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: 'a' });
   });
 
   it('julianday() handles ISO/SQLite-datetime mixed format correctly', () => {
@@ -129,14 +126,14 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T12:00:00.000Z',
     });
-    expect(inside.projectSlug).toBe('p');
+    expect(inside.ticketSlug).toBe('a');
     // Event after the window should NOT match
     const outside = resolveAttribution({
       sessionId: 'other',
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T18:00:00.000Z',
     });
-    expect(outside.projectSlug).toBeNull();
+    expect(outside.ticketSlug).toBeNull();
   });
 
   it('most-recently-started wins when multiple sessions share path', () => {
@@ -162,7 +159,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-05-21T12:00:00.000Z',
     });
-    expect(result.projectSlug).toBe('new-project');
+    expect(result.ticketSlug).toBe('new-asgn');
   });
 
   it('returns nulls when neither PK nor fuzzy matches', () => {
@@ -204,7 +201,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/test/proj',
       eventTs: '2026-06-05T12:00:00.000Z',
     });
-    expect(result).toEqual({ projectSlug: 'pi-proj', ticketSlug: 'pi-asgn' });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: 'pi-asgn' });
   });
 
   it('stage-2 fuzzy join returns nulls when cwd does not match', () => {
@@ -243,7 +240,7 @@ describe('resolveAttribution', () => {
       cwd: '/Users/dev/proj',
       eventTs: '2026-06-10T00:00:00.000Z', // date-only snap
     });
-    expect(result).toEqual({ projectSlug: 'claude-proj', ticketSlug: 'claude-asgn' });
+    expect(result).toEqual({ projectSlug: null, ticketSlug: 'claude-asgn' });
   });
 
   // AC1 ambiguity guard: two same-cwd same-day sessions for DIFFERENT projects →
@@ -305,12 +302,12 @@ describe('resolveAttribution', () => {
     ).run();
     // ticket switched at exactly 12:00 — old closes, new opens at the same instant
     db.prepare(
-      `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
-       VALUES ('tracked', 'proj', 'old-asg', 'plan', '2026-05-21T10:00:00.000Z', '2026-05-21T12:00:00.000Z')`,
+      `INSERT INTO engagement (session_id, ticket_id, stage, started_at, ended_at)
+       VALUES ('tracked', 'old-asg', 'plan', '2026-05-21T10:00:00.000Z', '2026-05-21T12:00:00.000Z')`,
     ).run();
     db.prepare(
-      `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at)
-       VALUES ('tracked', 'proj', 'new-asg', 'implement', '2026-05-21T12:00:00.000Z', NULL)`,
+      `INSERT INTO engagement (session_id, ticket_id, stage, started_at, ended_at)
+       VALUES ('tracked', 'new-asg', 'implement', '2026-05-21T12:00:00.000Z', NULL)`,
     ).run();
 
     // Stage-1 PK path: boundary event → new engagement.

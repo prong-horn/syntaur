@@ -61,16 +61,21 @@ export function createUsageRouter(
     }
   });
 
-  router.get('/projects/:projectSlug', (req, res) => {
+  router.get('/projects/:projectSlug', async (req, res) => {
     try {
       initUsageDb();
       const projectSlug = req.params.projectSlug;
       const common = extractCommonFilter(req.query);
       const rows = listDaily({ ...common, projectSlug });
+      const { listTicketsByProject } = await import('../utils/ticket-walk.js');
+      const walk = await listTicketsByProject(projectsDir, ticketsDir ?? null);
+      const ticketIds = walk.withTicketMd
+        .filter((t) => t.projectSlug === projectSlug && t.ticketId)
+        .map((t) => t.ticketId as string);
       res.json({
         projectSlug,
         daily: rows,
-        summary: projectTicketRollup(projectSlug, rows, common),
+        summary: projectTicketRollup(projectSlug, rows, common, ticketIds),
       });
     } catch (error) {
       res.status(500).json({
@@ -287,7 +292,7 @@ function summarize(
     const key =
       mode === 'project'
         ? r.project_slug
-        : `${r.project_slug}\x00${r.assignment_slug}`;
+        : `${r.project_slug}\x00${r.ticket_id}`;
     const existing = map.get(key);
     if (existing) {
       existing.totalTokens += r.total_tokens;
@@ -296,7 +301,7 @@ function summarize(
     } else {
       map.set(key, {
         projectSlug: r.project_slug,
-        ticketSlug: mode === 'project' ? '' : r.assignment_slug,
+        ticketSlug: mode === 'project' ? '' : r.ticket_id,
         totalTokens: r.total_tokens,
         totalCost: r.total_cost,
         lastEventDay: r.day,
@@ -319,6 +324,7 @@ function projectTicketRollup(
   projectSlug: string,
   rows: ReturnType<typeof listDaily>,
   common: CommonFilter,
+  ticketIds: string[],
 ): SummaryRow[] {
   // Start from the usage_daily groups but RESET cost to 0 — per-ticket cost
   // is snapshot-derived (overlaid below), never the cumulative usage_events row.
@@ -338,7 +344,7 @@ function projectTicketRollup(
   }
 
   const windows = projectWindowCosts({
-    projectSlug,
+    ticketIds,
     since: common.since,
     until: common.until,
     model: common.model,

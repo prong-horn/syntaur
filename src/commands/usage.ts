@@ -90,7 +90,7 @@ function groupByProjectTicket(
 ): GroupedRow[] {
   const map = new Map<string, GroupedRow>();
   for (const r of rows) {
-    const key = `${r.project_slug}\x00${r.assignment_slug}`;
+    const key = `${r.project_slug}\x00${r.ticket_id}`;
     const existing = map.get(key);
     if (existing) {
       existing.totalTokens += r.total_tokens;
@@ -99,7 +99,7 @@ function groupByProjectTicket(
     } else {
       map.set(key, {
         projectSlug: r.project_slug,
-        ticketSlug: r.assignment_slug,
+        ticketSlug: r.ticket_id,
         totalTokens: r.total_tokens,
         totalCost: r.total_cost,
         lastEventDay: r.day,

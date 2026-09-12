@@ -15,15 +15,13 @@
  * `meta` table, mirroring `usage-db.ts`.
  */
 
-export const ENGAGEMENT_SCHEMA_VERSION = '1';
+export const ENGAGEMENT_SCHEMA_VERSION = '2';
 
 export const ENGAGEMENT_DDL = `
 CREATE TABLE IF NOT EXISTS engagement (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   session_id      TEXT    NOT NULL,
-  assignment_id   TEXT,
-  project_slug    TEXT,
-  assignment_slug TEXT,
+  ticket_id       TEXT,
   stage           TEXT    NOT NULL DEFAULT 'implement',
   started_at      TEXT    NOT NULL,
   ended_at        TEXT,
@@ -34,6 +32,5 @@ CREATE TABLE IF NOT EXISTS engagement (
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_per_session
   ON engagement(session_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_engagement_session ON engagement(session_id);
-CREATE INDEX IF NOT EXISTS idx_engagement_ticket ON engagement(assignment_id);
-CREATE INDEX IF NOT EXISTS idx_engagement_slug ON engagement(project_slug, assignment_slug);
+CREATE INDEX IF NOT EXISTS idx_engagement_ticket ON engagement(ticket_id);
 `;

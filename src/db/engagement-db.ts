@@ -25,9 +25,7 @@ import {
 export interface EngagementRow {
   id: number;
   session_id: string;
-  assignment_id: string | null;
-  project_slug: string | null;
-  assignment_slug: string | null;
+  ticket_id: string | null;
   stage: string;
   started_at: string;
   ended_at: string | null;
@@ -84,7 +82,7 @@ export function getLatestEngagement(sessionId: string): EngagementRow | null {
 export function getEngagementsByTicketId(ticketId: string): EngagementRow[] {
   return getSessionDb()
     .prepare(
-      `SELECT * FROM engagement WHERE assignment_id = ?
+      `SELECT * FROM engagement WHERE ticket_id = ?
         ORDER BY started_at ASC, id ASC`,
     )
     .all(ticketId) as EngagementRow[];
@@ -120,14 +118,12 @@ export function insertClosedEngagement(input: ClosedEngagementInput): Engagement
   const res = getSessionDb()
     .prepare(
       `INSERT INTO engagement
-         (session_id, assignment_id, project_slug, assignment_slug, stage, started_at, ended_at, close_reason)
-       VALUES (@sessionId, @ticketId, @projectSlug, @ticketSlug, @stage, @startedAt, @endedAt, @closeReason)`,
+         (session_id, ticket_id, stage, started_at, ended_at, close_reason)
+       VALUES (@sessionId, @ticketId, @stage, @startedAt, @endedAt, @closeReason)`,
     )
     .run({
       sessionId: input.sessionId,
       ticketId: input.ticketId ?? null,
-      projectSlug: input.projectSlug ?? null,
-      ticketSlug: input.ticketSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
@@ -153,14 +149,12 @@ export function openEngagement(input: OpenEngagementInput): EngagementRow {
   const res = getSessionDb()
     .prepare(
       `INSERT INTO engagement
-         (session_id, assignment_id, project_slug, assignment_slug, stage, started_at, tokens_at_open)
-       VALUES (@sessionId, @ticketId, @projectSlug, @ticketSlug, @stage, @startedAt, @tokensAtOpen)`,
+         (session_id, ticket_id, stage, started_at, tokens_at_open)
+       VALUES (@sessionId, @ticketId, @stage, @startedAt, @tokensAtOpen)`,
     )
     .run({
       sessionId: input.sessionId,
       ticketId: input.ticketId ?? null,
-      projectSlug: input.projectSlug ?? null,
-      ticketSlug: input.ticketSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       tokensAtOpen: serializeSnapshot(input.tokensAtOpen ?? null),

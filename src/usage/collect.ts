@@ -215,7 +215,7 @@ export function reattributeOrphanEvents(): number {
   const select = db.prepare(
     `SELECT session_id, model, cwd, event_ts
        FROM usage_events
-      WHERE project_slug = '' AND assignment_slug = ''`,
+      WHERE project_slug = '' AND ticket_id = ''`,
   );
   // The UPDATE re-asserts the empty-attribution state: a concurrent collector
   // that attributed the row between read and write must not be overwritten. The
@@ -223,9 +223,9 @@ export function reattributeOrphanEvents(): number {
   // other writers); the guard is belt-and-suspenders and yields an accurate count.
   const update = db.prepare(
     `UPDATE usage_events
-        SET project_slug = @projectSlug, assignment_slug = @ticketSlug, updated_at = @updatedAt
+        SET project_slug = @projectSlug, ticket_id = @ticketSlug, updated_at = @updatedAt
       WHERE session_id = @sessionId AND model = @model
-        AND project_slug = '' AND assignment_slug = ''`,
+        AND project_slug = '' AND ticket_id = ''`,
   );
   let updated = 0;
   const tx = db.transaction(() => {

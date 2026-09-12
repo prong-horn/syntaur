@@ -55,18 +55,16 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
   getSessionDb()
     .prepare(
       `INSERT INTO chat_sessions (
-         session_key, assignment_id, project_slug, assignment_slug, agent_id, harness,
+         session_key, ticket_id, agent_id, harness,
          acp_session_id, adapter_version, cwd, pid, profile_json, usage_snapshot_json,
          state, created_at, last_turn_at, last_delivered_seq, commands_json, standing_fingerprint
        ) VALUES (
-         @sessionKey, @ticketId, @projectSlug, @ticketSlug, @agentId, @harness,
+         @sessionKey, @ticketId, @agentId, @harness,
          @acpSessionId, @adapterVersion, @cwd, @pid, @profileJson, @usageSnapshotJson,
          @state, @now, @lastTurnAt, @lastDeliveredSeq, @commandsJson, @standingFingerprint
        )
        ON CONFLICT(session_key) DO UPDATE SET
-         assignment_id       = excluded.assignment_id,
-         project_slug        = COALESCE(excluded.project_slug,        chat_sessions.project_slug),
-         assignment_slug     = COALESCE(excluded.assignment_slug,     chat_sessions.assignment_slug),
+         ticket_id           = excluded.ticket_id,
          agent_id            = excluded.agent_id,
          harness             = excluded.harness,
          acp_session_id      = COALESCE(excluded.acp_session_id,      chat_sessions.acp_session_id),
@@ -86,8 +84,6 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
     .run({
       sessionKey: input.sessionKey,
       ticketId: input.ticketId ?? '',
-      projectSlug: input.projectSlug,
-      ticketSlug: input.ticketSlug ?? null,
       agentId: input.agentId,
       harness: input.harness,
       acpSessionId: input.acpSessionId ?? null,
@@ -184,7 +180,7 @@ export function deleteChatSessionsForAgent(agentId: string): void {
 
 export function getChatSession(ticketId: string, agentId: string): ChatSessionRow | null {
   const row = getSessionDb()
-    .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? AND agent_id = ? LIMIT 1')
+    .prepare('SELECT * FROM chat_sessions WHERE ticket_id = ? AND agent_id = ? LIMIT 1')
     .get(ticketId, agentId) as ChatSessionRow | undefined;
   return row ?? null;
 }
@@ -198,7 +194,7 @@ export function getChatSessionByKey(sessionKey: string): ChatSessionRow | null {
 
 export function listChatSessions(ticketId: string): ChatSessionRow[] {
   return getSessionDb()
-    .prepare('SELECT * FROM chat_sessions WHERE assignment_id = ? ORDER BY agent_id')
+    .prepare('SELECT * FROM chat_sessions WHERE ticket_id = ? ORDER BY agent_id')
     .all(ticketId) as ChatSessionRow[];
 }
 
@@ -208,7 +204,7 @@ export function upsertChatItem(sessionKey: string, item: ChatItem): void {
   getSessionDb()
     .prepare(
       `INSERT INTO chat_items (
-         item_id, assignment_id, session_key, turn_id, agent_id, type, ts,
+         item_id, ticket_id, session_key, turn_id, agent_id, type, ts,
          seq_first, seq_last, sealed, json
        ) VALUES (
          @itemId, @ticketId, @sessionKey, @turnId, @agentId, @type, @ts,
@@ -263,7 +259,7 @@ const DEFAULT_PAGE = 200;
  */
 export function listChatItems(ticketId: string, options: ListChatItemsOptions = {}): ChatItem[] {
   const limit = Math.max(1, Math.min(options.limit ?? DEFAULT_PAGE, 1000));
-  const clauses = ['assignment_id = ?'];
+  const clauses = ['ticket_id = ?'];
   const params: unknown[] = [ticketId];
   if (typeof options.beforeSeq === 'number') {
     clauses.push('seq_first < ?');
@@ -296,7 +292,7 @@ export function listChatItemsSince(ticketId: string, afterSeq: number, limit = 5
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
-        WHERE assignment_id = ? AND seq_first > ?
+        WHERE ticket_id = ? AND seq_first > ?
         ORDER BY seq_first DESC, item_id DESC
         LIMIT ?`,
     )
@@ -309,7 +305,7 @@ export function listChatItemsByTurn(ticketId: string, turnId: string): ChatItem[
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
-        WHERE assignment_id = ? AND turn_id = ?
+        WHERE ticket_id = ? AND turn_id = ?
         ORDER BY seq_first, item_id`,
     )
     .all(ticketId, turnId) as Array<{ json: string }>;
@@ -321,7 +317,7 @@ export function findChatItemByRequestId(ticketId: string, requestId: string): Ch
   const row = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
-        WHERE assignment_id = ?
+        WHERE ticket_id = ?
           AND json_extract(json, '$.requestId') = ?
         ORDER BY seq_first DESC
         LIMIT 1`,
@@ -335,14 +331,14 @@ export function findChatItemByRequestId(ticketId: string, requestId: string): Ch
 
 export function countChatItems(ticketId: string): number {
   const row = getSessionDb()
-    .prepare('SELECT COUNT(*) AS n FROM chat_items WHERE assignment_id = ?')
+    .prepare('SELECT COUNT(*) AS n FROM chat_items WHERE ticket_id = ?')
     .get(ticketId) as { n: number };
   return row.n;
 }
 
 export function deleteChatItems(ticketId: string): number {
   return getSessionDb()
-    .prepare('DELETE FROM chat_items WHERE assignment_id = ?')
+    .prepare('DELETE FROM chat_items WHERE ticket_id = ?')
     .run(ticketId).changes;
 }
 
@@ -350,7 +346,7 @@ export function deleteChatItems(ticketId: string): number {
 export function listChatItemRows(ticketId: string): ChatItemRow[] {
   return getSessionDb()
     .prepare(
-      'SELECT * FROM chat_items WHERE assignment_id = ? ORDER BY seq_first, item_id',
+      'SELECT * FROM chat_items WHERE ticket_id = ? ORDER BY seq_first, item_id',
     )
     .all(ticketId) as ChatItemRow[];
 }
@@ -366,7 +362,7 @@ export function getUserMessageItem(ticketId: string, messageId: string): ChatIte
   const row = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
-        WHERE assignment_id = ? AND type = 'user.message'
+        WHERE ticket_id = ? AND type = 'user.message'
           AND json_extract(json, '$.messageId') = ?
         LIMIT 1`,
     )
@@ -379,7 +375,7 @@ export function listTurnsForMessage(ticketId: string, messageId: string): ChatIt
   const rows = getSessionDb()
     .prepare(
       `SELECT json FROM chat_items
-        WHERE assignment_id = ? AND type = 'turn.status'
+        WHERE ticket_id = ? AND type = 'turn.status'
           AND json_extract(json, '$.trigger.kind') = 'human'
           AND json_extract(json, '$.trigger.messageId') = ?
         ORDER BY seq_first, item_id`,

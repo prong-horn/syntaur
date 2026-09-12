@@ -107,7 +107,7 @@ describe('v5 → v6 migration shape', () => {
     ).toBe('12');
     expect(
       (db.prepare("SELECT value FROM meta WHERE key='engagement_schema_version'").get() as { value: string }).value,
-    ).toBe('1');
+    ).toBe('2');
   });
 
   it('fresh install has the v6 shape directly (no slug columns, has engagement)', () => {
@@ -132,9 +132,7 @@ describe('backfill', () => {
       .prepare('SELECT * FROM engagement ORDER BY session_id')
       .all() as Array<{
       session_id: string;
-      assignment_id: string | null;
-      project_slug: string | null;
-      assignment_slug: string | null;
+      ticket_id: string | null;
       ended_at: string | null;
       close_reason: string | null;
     }>;
@@ -143,25 +141,24 @@ describe('backfill', () => {
     const bySession = Object.fromEntries(rows.map((r) => [r.session_id, r]));
 
     // project-nested, active → open, resolved id
-    expect(bySession['s-proj'].assignment_id).toBe(PROJ_ASG_ID);
-    expect(bySession['s-proj'].project_slug).toBe('proj-a');
+    expect(bySession['s-proj'].ticket_id).toBe(PROJ_ASG_ID);
     expect(bySession['s-proj'].ended_at).toBeNull();
 
     // standalone completed → closed 'completed', resolved by UUID, ended preserved
-    expect(bySession['s-standalone'].assignment_id).toBe(STANDALONE_UUID);
+    expect(bySession['s-standalone'].ticket_id).toBe(STANDALONE_UUID);
     expect(bySession['s-standalone'].ended_at).toBe('2026-03-26 14:00:00');
     expect(bySession['s-standalone'].close_reason).toBe('completed');
 
     // slug present but unresolved → unattributed, stopped → closed 'abandoned',
     // ended falls back to updated_at (ended + transcript both absent)
-    expect(bySession['s-unresolved'].assignment_id).toBeNull();
+    expect(bySession['s-unresolved'].ticket_id).toBeNull();
     expect(bySession['s-unresolved'].close_reason).toBe('abandoned');
     expect(bySession['s-unresolved'].ended_at).toBe('2026-03-26T12:00:00.000Z');
 
     // no slug → unattributed
-    expect(bySession['s-noslug'].assignment_id).toBeNull();
+    expect(bySession['s-noslug'].ticket_id).toBeNull();
 
-    const attributed = rows.filter((r) => r.assignment_id !== null).length;
+    const attributed = rows.filter((r) => r.ticket_id !== null).length;
     expect(attributed).toBe(2);
 
     // counts logged

@@ -37,9 +37,9 @@ export interface SessionEngagement {
 
 function rowToBinding(row: EngagementRow): EngagementBinding {
   return {
-    ticketId: row.assignment_id,
-    projectSlug: row.project_slug,
-    ticketSlug: row.assignment_slug,
+    ticketId: row.ticket_id,
+    projectSlug: null,
+    ticketSlug: null,
     stage: row.stage,
   };
 }
@@ -123,18 +123,13 @@ export interface SwitchSessionStageInput {
 
 /**
  * Whether the open engagement already points at the input's target. Compares by
- * `assignment_id` when BOTH sides carry one (the authoritative identity), else by
- * `(project_slug, assignment_slug)`. This keeps a slug-only open interval from
- * being split just to backfill a now-resolved id (M1).
+ * `ticket_id` when BOTH sides carry one (the authoritative identity).
  */
 function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): boolean {
-  if (open.assignment_id && input.ticketId) {
-    return open.assignment_id === input.ticketId;
+  if (open.ticket_id && input.ticketId) {
+    return open.ticket_id === input.ticketId;
   }
-  return (
-    open.project_slug === input.projectSlug &&
-    open.assignment_slug === input.ticketSlug
-  );
+  return false;
 }
 
 /**
@@ -146,13 +141,6 @@ function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): bool
  *   makes no switch (no cost-window split / no spurious stage-open event) and
  *   returns `switched:false`. The stage-fact bridge still runs at the call site,
  *   so a half-applied fact still repairs (Decision 7/8).
- * - **id-else-slugs target match (M1):** the skip compares by `assignment_id`
- *   only when BOTH the open row and the input carry one; otherwise it falls back
- *   to `(project_slug, assignment_slug)`. So a slug-only interval (e.g. a freshly
- *   grabbed/tracked ticket whose `assignment_id` was not yet resolved) is NOT
- *   split merely to write the id when the first resolved-id stage assertion
- *   arrives for the SAME (ticket, stage) — splitting the cost window is worse
- *   than a null id, and per-ticket attribution falls back to slugs anyway.
  */
 export async function switchSessionStage(
   input: SwitchSessionStageInput,

@@ -26,7 +26,7 @@ import { priceForModel } from '../usage/pricing.js';
 
 let db: Database.Database | null = null;
 
-const USAGE_SCHEMA_VERSION = '1';
+const USAGE_SCHEMA_VERSION = '3';
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta (
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   total_cost              REAL    NOT NULL DEFAULT 0,
   cwd                     TEXT,
   project_slug            TEXT    NOT NULL DEFAULT '',
-  assignment_slug         TEXT    NOT NULL DEFAULT '',
+  ticket_id               TEXT    NOT NULL DEFAULT '',
   raw_json                TEXT,
   updated_at              TEXT    NOT NULL,
   PRIMARY KEY (session_id, model)
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE INDEX IF NOT EXISTS idx_usage_events_ts
   ON usage_events (event_ts);
 CREATE INDEX IF NOT EXISTS idx_usage_events_attribution
-  ON usage_events (project_slug, assignment_slug);
+  ON usage_events (project_slug, ticket_id);
 CREATE INDEX IF NOT EXISTS idx_usage_events_cwd
   ON usage_events (cwd, event_ts);
 
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS usage_daily (
   tool                    TEXT    NOT NULL,
   model                   TEXT    NOT NULL,
   project_slug            TEXT    NOT NULL DEFAULT '',
-  assignment_slug         TEXT    NOT NULL DEFAULT '',
+  ticket_id               TEXT    NOT NULL DEFAULT '',
   input_tokens            INTEGER NOT NULL DEFAULT 0,
   output_tokens           INTEGER NOT NULL DEFAULT 0,
   cache_creation_tokens   INTEGER NOT NULL DEFAULT 0,
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS usage_daily (
   total_cost              REAL    NOT NULL DEFAULT 0,
   frozen                  INTEGER NOT NULL DEFAULT 0,
   computed_at             TEXT    NOT NULL,
-  PRIMARY KEY (day, tool, model, project_slug, assignment_slug)
+  PRIMARY KEY (day, tool, model, project_slug, ticket_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_usage_daily_day
@@ -113,7 +113,7 @@ export interface UsageEventRow {
   total_cost: number;
   cwd: string | null;
   project_slug: string;
-  assignment_slug: string;
+  ticket_id: string;
   raw_json: string | null;
   updated_at: string;
 }
@@ -137,7 +137,7 @@ export interface UsageDailyRow {
   tool: string;
   model: string;
   project_slug: string;
-  assignment_slug: string;
+  ticket_id: string;
   input_tokens: number;
   output_tokens: number;
   cache_creation_tokens: number;
@@ -151,10 +151,10 @@ export interface UsageDailyRow {
 /**
  * A workspace expanded to the rows it owns. The resulting WHERE clause is the
  * disjoint union of project-scoped rows (`project_slug IN projectSlugs`) and
- * standalone-scoped rows (`project_slug = '' AND assignment_slug IN
+ * standalone-scoped rows (`project_slug = '' AND ticket_id IN
  * standaloneTicketIds`). The two branches are disjoint because project rows
  * have a non-empty `project_slug` and standalone rows have an empty one.
- * Unattributed rows (`project_slug = '' AND assignment_slug = ''`) are never
+ * Unattributed rows (`project_slug = '' AND ticket_id = ''`) are never
  * members, so they are excluded. Empty membership matches NO rows.
  */
 export interface WorkspaceMembers {
@@ -194,7 +194,7 @@ function pushWorkspaceClause(members: WorkspaceMembers, where: string[], params:
   }
   if (members.standaloneTicketIds.length > 0) {
     disjuncts.push(
-      `(project_slug = '' AND assignment_slug IN (${members.standaloneTicketIds
+      `(project_slug = '' AND ticket_id IN (${members.standaloneTicketIds
         .map(() => '?')
         .join(', ')}))`,
     );
@@ -229,10 +229,90 @@ export function initUsageDb(dbPath?: string): Database.Database {
 
   const database = db;
   const runMigrations = database.transaction(() => {
-    database.exec(SCHEMA_SQL);
+    database.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
     database
       .prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)')
       .run('usage_schema_version', USAGE_SCHEMA_VERSION);
+
+    const usageVersion = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'usage_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (usageVersion === '1') {
+      database.exec(`
+        CREATE TABLE usage_events_v2 (
+          session_id              TEXT    NOT NULL,
+          model                   TEXT    NOT NULL,
+          tool                    TEXT    NOT NULL,
+          event_ts                TEXT    NOT NULL,
+          input_tokens            INTEGER NOT NULL DEFAULT 0,
+          output_tokens           INTEGER NOT NULL DEFAULT 0,
+          cache_creation_tokens   INTEGER NOT NULL DEFAULT 0,
+          cache_read_tokens       INTEGER NOT NULL DEFAULT 0,
+          total_tokens            INTEGER NOT NULL DEFAULT 0,
+          total_cost              REAL    NOT NULL DEFAULT 0,
+          cwd                     TEXT,
+          project_slug            TEXT    NOT NULL DEFAULT '',
+          ticket_id               TEXT    NOT NULL DEFAULT '',
+          raw_json                TEXT,
+          updated_at              TEXT    NOT NULL,
+          PRIMARY KEY (session_id, model)
+        );
+        INSERT INTO usage_events_v2
+          SELECT session_id, model, tool, event_ts,
+                 input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                 total_tokens, total_cost, cwd, project_slug, assignment_slug,
+                 raw_json, updated_at
+          FROM usage_events;
+        DROP TABLE usage_events;
+        ALTER TABLE usage_events_v2 RENAME TO usage_events;
+        CREATE INDEX IF NOT EXISTS idx_usage_events_ts ON usage_events (event_ts);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_attribution
+          ON usage_events (project_slug, ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_usage_events_cwd ON usage_events (cwd, event_ts);
+        UPDATE meta SET value = '2' WHERE key = 'usage_schema_version';
+      `);
+    }
+
+    const usageVersionAfterV2 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'usage_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (usageVersionAfterV2 === '2') {
+      database.exec(`
+        CREATE TABLE usage_daily_v3 (
+          day                     TEXT    NOT NULL,
+          tool                    TEXT    NOT NULL,
+          model                   TEXT    NOT NULL,
+          project_slug            TEXT    NOT NULL DEFAULT '',
+          ticket_id               TEXT    NOT NULL DEFAULT '',
+          input_tokens            INTEGER NOT NULL DEFAULT 0,
+          output_tokens           INTEGER NOT NULL DEFAULT 0,
+          cache_creation_tokens   INTEGER NOT NULL DEFAULT 0,
+          cache_read_tokens       INTEGER NOT NULL DEFAULT 0,
+          total_tokens            INTEGER NOT NULL DEFAULT 0,
+          total_cost              REAL    NOT NULL DEFAULT 0,
+          frozen                  INTEGER NOT NULL DEFAULT 0,
+          computed_at             TEXT    NOT NULL,
+          PRIMARY KEY (day, tool, model, project_slug, ticket_id)
+        );
+        INSERT INTO usage_daily_v3
+          SELECT day, tool, model, project_slug, assignment_slug,
+                 input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
+                 total_tokens, total_cost, frozen, computed_at
+          FROM usage_daily;
+        DROP TABLE usage_daily;
+        ALTER TABLE usage_daily_v3 RENAME TO usage_daily;
+        CREATE INDEX IF NOT EXISTS idx_usage_daily_day ON usage_daily (day);
+        UPDATE meta SET value = '3' WHERE key = 'usage_schema_version';
+      `);
+    }
+
+    database.exec(SCHEMA_SQL);
   });
   runMigrations.exclusive();
 
@@ -317,7 +397,7 @@ export function advanceMetaIso(key: string, value: string): boolean {
  *   - `tool` and `raw_json` advance only when `excluded.event_ts > existing`
  *     so out-of-order finishes don't overwrite a fresher snapshot's
  *     metadata.
- *   - Attribution columns (`cwd`, `project_slug`, `assignment_slug`) are
+ *   - Attribution columns (`cwd`, `project_slug`, `ticket_id`) are
  *     preserved when incoming is empty. This protects the same-day re-collect
  *     path where the JSONL cwd-walk skipped a session whose mtime predates
  *     the cutoff: without this guard the UPSERT would erase the attribution
@@ -331,7 +411,7 @@ export function upsertEvent(input: UsageEventInput): void {
          session_id, model, tool, event_ts,
          input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
          total_tokens, total_cost,
-         cwd, project_slug, assignment_slug, raw_json, updated_at
+         cwd, project_slug, ticket_id, raw_json, updated_at
        ) VALUES (
          @sessionId, @model, @tool, @eventTs,
          @inputTokens, @outputTokens, @cacheCreationTokens, @cacheReadTokens,
@@ -349,7 +429,7 @@ export function upsertEvent(input: UsageEventInput): void {
          total_cost            = MAX(excluded.total_cost,            usage_events.total_cost),
          cwd                   = COALESCE(NULLIF(excluded.cwd, ''), usage_events.cwd),
          project_slug          = CASE WHEN excluded.project_slug    != '' THEN excluded.project_slug    ELSE usage_events.project_slug    END,
-         assignment_slug       = CASE WHEN excluded.assignment_slug != '' THEN excluded.assignment_slug ELSE usage_events.assignment_slug END,
+         ticket_id             = CASE WHEN excluded.ticket_id       != '' THEN excluded.ticket_id       ELSE usage_events.ticket_id       END,
          raw_json              = CASE WHEN excluded.event_ts >  usage_events.event_ts THEN excluded.raw_json ELSE usage_events.raw_json END,
          updated_at            = excluded.updated_at`,
     )
@@ -390,7 +470,7 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
   }
   const ticketSlug = filter.ticketSlug;
   if (ticketSlug !== undefined) {
-    where.push('assignment_slug = ?');
+    where.push('ticket_id = ?');
     params.push(ticketSlug);
   }
   if (filter.tool) {
@@ -410,7 +490,7 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
       `SELECT session_id, model, tool, event_ts,
               input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
               total_tokens, total_cost,
-              cwd, project_slug, assignment_slug, raw_json, updated_at
+              cwd, project_slug, ticket_id, raw_json, updated_at
          FROM usage_events ${whereSql}
         ORDER BY event_ts DESC`,
     )
@@ -534,7 +614,7 @@ export function insertDailyBatch(rows: UsageDailyInput[]): void {
 
   const insert = database.prepare(
     `INSERT INTO usage_daily (
-       day, tool, model, project_slug, assignment_slug,
+       day, tool, model, project_slug, ticket_id,
        input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
        total_tokens, total_cost, frozen, computed_at
      ) VALUES (
@@ -585,7 +665,7 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
   }
   const ticketSlug = filter.ticketSlug;
   if (ticketSlug !== undefined) {
-    where.push('assignment_slug = ?');
+    where.push('ticket_id = ?');
     params.push(ticketSlug);
   }
   if (filter.tool) {
@@ -602,11 +682,11 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   return database
     .prepare(
-      `SELECT day, tool, model, project_slug, assignment_slug,
+      `SELECT day, tool, model, project_slug, ticket_id,
               input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
               total_tokens, total_cost, frozen, computed_at
          FROM usage_daily ${whereSql}
-        ORDER BY day DESC, project_slug, assignment_slug, tool, model`,
+        ORDER BY day DESC, project_slug, ticket_id, tool, model`,
     )
     .all(...params) as UsageDailyRow[];
 }

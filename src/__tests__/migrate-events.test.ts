@@ -13,7 +13,6 @@ import { migrateEventsCommand } from '../commands/migrate-events.js';
 
 let home: string;
 let projectsDir: string;
-let standaloneDir: string;
 let dbPath: string;
 let prevHome: string | undefined;
 
@@ -79,15 +78,9 @@ async function seedProject(
   history: HistoryEntry[],
   opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
 ): Promise<void> {
-  const dir = resolve(projectsDir, project, 'tickets', slug);
+  const dir = resolve(projectsDir, project, 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
   await writeFile(resolve(dir, 'ticket.md'), ticketMd(slug, id, history, opts), 'utf-8');
-}
-
-async function seedStandalone(uuid: string, history: HistoryEntry[]): Promise<void> {
-  const dir = resolve(standaloneDir, uuid);
-  await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), ticketMd(uuid, uuid, history), 'utf-8');
 }
 
 function countAllEvents(): number {
@@ -98,7 +91,6 @@ function countAllEvents(): number {
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-migrate-events-'));
   projectsDir = resolve(home, 'projects');
-  standaloneDir = resolve(home, 'tickets');
   dbPath = resolve(home, 'syntaur.db');
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
@@ -145,8 +137,6 @@ describe('migrateEventsCommand', () => {
     // deterministic source_key per index
     expect(newest.source_key).toBe('backfill~a1-id~status~1');
     expect(oldest.source_key).toBe('backfill~a1-id~status~0');
-    // project_slug from the scan
-    expect(newest.project_slug).toBe('p1');
   });
 
   it('re-running --apply inserts 0 (idempotent via source_key)', async () => {
@@ -186,16 +176,6 @@ describe('migrateEventsCommand', () => {
     expect(pe.source_key).toBe('backfill~a1-id~plan-approval');
     // status-change + plan-approval = 3 total for this ticket
     expect(listEventsByTicket('a1-id')).toHaveLength(3);
-  });
-
-  it('backfills standalone tickets (uuid dir, project_slug null)', async () => {
-    const uuid = '11111111-2222-3333-4444-555555555555';
-    await seedStandalone(uuid, HISTORY);
-    await migrateEventsCommand({ dir: projectsDir, apply: true });
-
-    const events = listEventsByTicket(uuid);
-    expect(events).toHaveLength(2);
-    expect(events.every((e) => e.project_slug === null)).toBe(true);
   });
 
   it('skips same-status statusHistory entries (from===to yields no event)', async () => {

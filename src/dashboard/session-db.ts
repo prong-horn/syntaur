@@ -153,20 +153,9 @@ export function initSessionDb(dbPath?: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA_SQL);
-  // The engagement edge table (session↔ticket M:N). Idempotent
-  // `CREATE TABLE IF NOT EXISTS`, so it is safe to run here — outside the
-  // migration transaction — on the same footing as the base session tables.
-  // The v5→v6 migration also runs this (harmlessly) before backfilling.
-  db.exec(ENGAGEMENT_DDL);
-  // Same footing as ENGAGEMENT_DDL: idempotent CREATE TABLE IF NOT EXISTS, so
-  // it is safe here (outside the migration transaction). The v7→v8 step re-runs
-  // it harmlessly for databases that upgrade rather than install fresh.
+  // ENGAGEMENT_DDL / CHAT_DDL run AFTER migrations (below) so a pre-migration
+  // table with assignment_id is not indexed on ticket_id before the rebuild.
   db.exec(SUMMARIZE_STATE_DDL);
-  // Ticket chat (`chat_sessions` / `chat_items`). Same footing again:
-  // idempotent CREATE TABLE IF NOT EXISTS, executed outside the migration
-  // transaction. Both tables are a rebuildable index over
-  // `<ticketDir>/chat/events.jsonl`, never a source of truth.
-  db.exec(CHAT_DDL);
 
   // Track schema versions. Each subsystem owns its own row in `meta`
   // (mirrors usage-db.ts) so init order is irrelevant.
@@ -273,6 +262,101 @@ export function initSessionDb(dbPath?: string): Database.Database {
       if (!chatColumns.includes('standing_fingerprint')) {
         database.exec('ALTER TABLE chat_sessions ADD COLUMN standing_fingerprint TEXT');
       }
+    }
+
+    const chatVersionAfterV4ForV5 = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (chatVersionAfterV4ForV5 === '4') {
+      database.exec(`
+        CREATE TABLE chat_sessions_v5 (
+          session_key         TEXT PRIMARY KEY,
+          ticket_id           TEXT NOT NULL,
+          agent_id            TEXT NOT NULL,
+          harness             TEXT NOT NULL,
+          acp_session_id      TEXT,
+          adapter_version     TEXT,
+          cwd                 TEXT,
+          pid                 INTEGER,
+          profile_json        TEXT,
+          usage_snapshot_json TEXT,
+          state               TEXT NOT NULL DEFAULT 'none',
+          created_at          TEXT NOT NULL,
+          last_turn_at        TEXT,
+          last_delivered_seq  INTEGER NOT NULL DEFAULT 0,
+          commands_json       TEXT,
+          standing_fingerprint TEXT
+        );
+        INSERT INTO chat_sessions_v5
+          SELECT session_key, assignment_id, agent_id, harness,
+                 acp_session_id, adapter_version, cwd, pid, profile_json,
+                 usage_snapshot_json, state, created_at, last_turn_at,
+                 last_delivered_seq, commands_json, standing_fingerprint
+          FROM chat_sessions;
+        DROP TABLE chat_sessions;
+        ALTER TABLE chat_sessions_v5 RENAME TO chat_sessions;
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_ticket ON chat_sessions(ticket_id);
+        CREATE INDEX IF NOT EXISTS idx_chat_sessions_acp ON chat_sessions(acp_session_id);
+
+        CREATE TABLE chat_items_v5 (
+          item_id       TEXT PRIMARY KEY,
+          ticket_id     TEXT NOT NULL,
+          session_key   TEXT NOT NULL,
+          turn_id       TEXT,
+          agent_id      TEXT NOT NULL,
+          type          TEXT NOT NULL,
+          ts            TEXT NOT NULL,
+          seq_first     INTEGER NOT NULL,
+          seq_last      INTEGER NOT NULL,
+          sealed        INTEGER NOT NULL DEFAULT 0,
+          json          TEXT NOT NULL
+        );
+        INSERT INTO chat_items_v5
+          SELECT item_id, assignment_id, session_key, turn_id, agent_id, type, ts,
+                 seq_first, seq_last, sealed, json
+          FROM chat_items;
+        DROP TABLE chat_items;
+        ALTER TABLE chat_items_v5 RENAME TO chat_items;
+        CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_seq ON chat_items(ticket_id, seq_first);
+        CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_turn ON chat_items(ticket_id, turn_id);
+        UPDATE meta SET value = '5' WHERE key = 'chat_schema_version';
+      `);
+    }
+
+    const engagementVersion = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'engagement_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (engagementVersion === '1') {
+      database.exec(`
+        CREATE TABLE engagement_v2 (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          session_id      TEXT    NOT NULL,
+          ticket_id       TEXT,
+          stage           TEXT    NOT NULL DEFAULT 'implement',
+          started_at      TEXT    NOT NULL,
+          ended_at        TEXT,
+          tokens_at_open  TEXT,
+          tokens_at_close TEXT,
+          close_reason    TEXT
+        );
+        INSERT INTO engagement_v2
+          SELECT id, session_id, assignment_id, stage, started_at, ended_at,
+                 tokens_at_open, tokens_at_close, close_reason
+          FROM engagement;
+        DROP TABLE engagement;
+        ALTER TABLE engagement_v2 RENAME TO engagement;
+        CREATE UNIQUE INDEX IF NOT EXISTS one_active_per_session
+          ON engagement(session_id) WHERE ended_at IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_engagement_session ON engagement(session_id);
+        CREATE INDEX IF NOT EXISTS idx_engagement_ticket ON engagement(ticket_id);
+        UPDATE meta SET value = '2' WHERE key = 'engagement_schema_version';
+      `);
     }
 
     // --- v1 → v2: make project/ticket nullable, add description ---
@@ -746,6 +830,9 @@ export function initSessionDb(dbPath?: string): Database.Database {
   });
   runMigrations.exclusive();
 
+  db.exec(ENGAGEMENT_DDL);
+  db.exec(CHAT_DDL);
+
   dropRetiredTables(db);
 
   // Indexes, re-ensured AFTER migrations. SCHEMA_SQL runs before them, and the
@@ -879,8 +966,8 @@ export async function migrateFromMarkdown(projectsDir: string): Promise<number> 
     VALUES (?, ?, ?, ?, ?)
   `);
   const insertEngagement = database.prepare(`
-    INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at, ended_at, close_reason)
-    SELECT @sid, @ps, @as, 'implement', @started, @ended, @reason
+    INSERT INTO engagement (session_id, ticket_id, stage, started_at, ended_at, close_reason)
+    SELECT @sid, @ticketId, 'implement', @started, @ended, @reason
      WHERE NOT EXISTS (
        SELECT 1 FROM engagement WHERE session_id = @sid AND ended_at IS NULL
      )
@@ -901,14 +988,13 @@ export async function migrateFromMarkdown(projectsDir: string): Promise<number> 
         s.status,
         sanitizeSessionPath(s.path) ?? '',
       );
-      if (res.changes > 0 && (s.projectSlug || s.ticketSlug)) {
+      if (res.changes > 0 && (s.ticketId || s.ticketSlug)) {
         // Terminal imports become CLOSED engagements (no leaked open interval);
         // markdown has no `ended` timestamp, so fall back to `started`.
         const terminal = s.status === 'completed' || s.status === 'stopped';
         insertEngagement.run({
           sid: s.sessionId,
-          ps: s.projectSlug ?? null,
-          as: s.ticketSlug ?? null,
+          ticketId: s.ticketId ?? s.ticketSlug ?? null,
           started: s.started,
           ended: terminal ? s.started : null,
           reason: terminal ? (s.status === 'completed' ? 'completed' : 'abandoned') : null,

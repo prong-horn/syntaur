@@ -5,28 +5,26 @@ import { generateId } from '../utils/uuid.js';
 
 let db: Database.Database | null = null;
 
-const EVENTS_SCHEMA_VERSION = '1';
+const EVENTS_SCHEMA_VERSION = '2';
 
 const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS events (
   event_id TEXT PRIMARY KEY,
-  assignment_id TEXT NOT NULL,
-  project_slug TEXT,
+  ticket_id TEXT NOT NULL,
   at TEXT NOT NULL,
   actor TEXT NOT NULL,
   type TEXT NOT NULL,
   details TEXT,
   source_key TEXT UNIQUE
 );
-CREATE INDEX IF NOT EXISTS idx_events_ticket_at ON events(assignment_id, at);
+CREATE INDEX IF NOT EXISTS idx_events_ticket_at ON events(ticket_id, at);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;
 
 export interface EventRow {
   event_id: string;
-  assignment_id: string;
-  project_slug: string | null;
+  ticket_id: string;
   at: string;
   actor: string;
   type: string;
@@ -37,8 +35,7 @@ export interface EventRow {
 /** Raw row shape for the module-private INSERT. */
 interface InsertEventRow {
   event_id: string;
-  assignment_id: string;
-  project_slug: string | null;
+  ticket_id: string;
   at: string;
   actor: string;
   type: string;
@@ -81,30 +78,41 @@ export function initEventsDb(dbPath?: string): Database.Database {
   const finalPath = dbPath ?? resolve(syntaurRoot(), 'syntaur.db');
   db = new Database(finalPath);
   db.pragma('journal_mode = WAL');
-  db.exec(SCHEMA_SQL);
 
-  db.prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)').run(
-    'events_schema_version',
-    EVENTS_SCHEMA_VERSION,
-  );
-
-  // No migrations yet for v1, but run an exclusive transaction to set the
-  // pattern for v2+ (mirrors session-db.ts). Each future
-  // versioned step re-reads `events_schema_version` inside the transaction and
-  // gates on the prior version, then bumps it — e.g.:
-  //
-  //   const vBeforeV2 = (database
-  //     .prepare("SELECT value FROM meta WHERE key = 'events_schema_version'")
-  //     .get() as { value: string } | undefined)?.value;
-  //   if (vBeforeV2 === '1') {
-  //     database.exec(`... ; UPDATE meta SET value = '2' WHERE key = 'events_schema_version';`);
-  //   }
-  //
-  // EXCLUSIVE serializes concurrent initEventsDb() calls (CLI + dashboard) and
-  // rolls back a half-applied upgrade on crash.
   const database = db;
   const runMigrations = database.transaction(() => {
-    // future migrations go here
+    database.exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`);
+    database
+      .prepare('INSERT OR IGNORE INTO meta (key, value) VALUES (?, ?)')
+      .run('events_schema_version', EVENTS_SCHEMA_VERSION);
+
+    const eventsVersion = (
+      database
+        .prepare("SELECT value FROM meta WHERE key = 'events_schema_version'")
+        .get() as { value: string } | undefined
+    )?.value;
+
+    if (eventsVersion === '1') {
+      database.exec(`
+        CREATE TABLE events_v2 (
+          event_id TEXT PRIMARY KEY,
+          ticket_id TEXT NOT NULL,
+          at TEXT NOT NULL,
+          actor TEXT NOT NULL,
+          type TEXT NOT NULL,
+          details TEXT,
+          source_key TEXT UNIQUE
+        );
+        INSERT INTO events_v2
+          SELECT event_id, assignment_id, at, actor, type, details, source_key
+          FROM events;
+        DROP TABLE events;
+        ALTER TABLE events_v2 RENAME TO events;
+        UPDATE meta SET value = '2' WHERE key = 'events_schema_version';
+      `);
+    }
+
+    database.exec(SCHEMA_SQL);
   });
   runMigrations.exclusive();
 
@@ -138,13 +146,12 @@ function insertEvent(row: InsertEventRow): void {
   const database = getEventsDb();
   database
     .prepare(
-      `INSERT OR IGNORE INTO events (event_id, assignment_id, project_slug, at, actor, type, details, source_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT OR IGNORE INTO events (event_id, ticket_id, at, actor, type, details, source_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       row.event_id,
-      row.assignment_id,
-      row.project_slug,
+      row.ticket_id,
       row.at,
       row.actor,
       row.type,
@@ -176,8 +183,7 @@ export function recordEvent(input: RecordEventInput): void {
 
     insertEvent({
       event_id: generateId(),
-      assignment_id: ticketId,
-      project_slug: input.projectSlug ?? null,
+      ticket_id: ticketId,
       at: input.at ?? new Date().toISOString(),
       actor: input.actor,
       type: input.type,
@@ -199,7 +205,7 @@ export function listEventsByTicket(
 ): EventRow[] {
   const database = getEventsDb();
 
-  const clauses: string[] = ['assignment_id = ?'];
+  const clauses: string[] = ['ticket_id = ?'];
   const params: Array<string | number> = [ticketId];
 
   if (filters?.since) {
@@ -213,7 +219,7 @@ export function listEventsByTicket(
     params.push(...filters.types);
   }
 
-  let sql = `SELECT event_id, assignment_id, project_slug, at, actor, type, details, source_key
+  let sql = `SELECT event_id, ticket_id, at, actor, type, details, source_key
        FROM events
        WHERE ${clauses.join(' AND ')}
        ORDER BY at DESC`;
@@ -234,7 +240,7 @@ export function listEventsByTicket(
 export function hasEventsForTicket(ticketId: string): boolean {
   const database = getEventsDb();
   const row = database
-    .prepare('SELECT 1 FROM events WHERE assignment_id = ? LIMIT 1')
+    .prepare('SELECT 1 FROM events WHERE ticket_id = ? LIMIT 1')
     .get(ticketId);
   return row !== undefined;
 }

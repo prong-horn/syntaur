@@ -39,11 +39,9 @@ export interface WindowCostResult {
 }
 
 export interface TicketWindowCostOpts {
-  /** Preferred match key — the engagement's `assignment_id`, when known. */
+  /** Match key — the engagement's `ticket_id`. */
   ticketId?: string | null;
-  /** Fallback match: project-nested slug; empty/null ⇒ standalone (NULL match). */
-  projectSlug?: string | null;
-  /** Fallback match: the ticket slug. Required when `ticketId` is absent. */
+  /** Legacy slug/id fallback when `ticketId` is absent. */
   ticketSlug?: string | null;
   /** Inclusive `since` (YYYY-MM-DD) — filters windows by `ended_at`. */
   since?: string;
@@ -54,7 +52,8 @@ export interface TicketWindowCostOpts {
 }
 
 export interface ProjectWindowCostsOpts {
-  projectSlug: string;
+  /** Ticket ids belonging to the project — engagement rows are scoped to these. */
+  ticketIds: string[];
   since?: string;
   until?: string;
   model?: string;
@@ -66,8 +65,7 @@ export interface TicketWindowCost extends WindowCostResult {
 }
 
 interface EngagementCostRow {
-  assignment_id: string | null;
-  assignment_slug: string | null;
+  ticket_id: string | null;
   tokens_at_open: string | null;
   tokens_at_close: string | null;
 }
@@ -180,30 +178,16 @@ function rollupWindows(rows: EngagementCostRow[], modelFilter: string | undefine
 }
 
 /**
- * Per-ticket cost from its closed engagement windows. Matches by
- * `assignment_id` when supplied, else by `(project_slug, assignment_slug)` —
- * standalone (`projectSlug` empty/null) matches `project_slug IS NULL`.
+ * Per-ticket cost from its closed engagement windows. Matches by `ticket_id`.
  */
 export function ticketWindowCost(opts: TicketWindowCostOpts): WindowCostResult {
   const db = engagementDb();
   if (!db) return { ...EMPTY };
-  const clauses = ['ended_at IS NOT NULL'];
-  const params: unknown[] = [];
+  const ticketId = opts.ticketId ?? opts.ticketSlug;
+  if (!ticketId) return { ...EMPTY };
 
-  if (opts.ticketId) {
-    clauses.push('assignment_id = ?');
-    params.push(opts.ticketId);
-  } else {
-    const proj = opts.projectSlug && opts.projectSlug.length > 0 ? opts.projectSlug : null;
-    if (proj === null) {
-      clauses.push('project_slug IS NULL');
-    } else {
-      clauses.push('project_slug = ?');
-      params.push(proj);
-    }
-    clauses.push('assignment_slug = ?');
-    params.push(opts.ticketSlug ?? null);
-  }
+  const clauses = ['ended_at IS NOT NULL', 'ticket_id = ?'];
+  const params: unknown[] = [ticketId];
 
   const since = sinceBound(opts.since);
   const until = untilBound(opts.until);
@@ -218,7 +202,7 @@ export function ticketWindowCost(opts: TicketWindowCostOpts): WindowCostResult {
 
   const rows = db
     .prepare(
-      `SELECT assignment_id, assignment_slug, tokens_at_open, tokens_at_close
+      `SELECT ticket_id, tokens_at_open, tokens_at_close
          FROM engagement
         WHERE ${clauses.join(' AND ')}`,
     )
@@ -227,19 +211,17 @@ export function ticketWindowCost(opts: TicketWindowCostOpts): WindowCostResult {
 }
 
 /**
- * Per-ticket cost for EVERY ticket that has at least one closed
- * engagement window in the project, keyed by `assignment_slug`. The project
- * rollup endpoint unions these keys with its `usage_daily` keys so a ticket
- * with a snapshot window but no `usage_daily` row (the A-then-B cumulative-row
- * case) still appears with its cost.
+ * Per-ticket cost for EVERY ticket in `ticketIds` that has at least one closed
+ * engagement window, keyed by `ticket_id`.
  */
 export function projectWindowCosts(
   opts: ProjectWindowCostsOpts,
 ): Map<string, TicketWindowCost> {
   const db = engagementDb();
-  if (!db) return new Map();
-  const clauses = ['ended_at IS NOT NULL', 'project_slug = ?', 'assignment_slug IS NOT NULL'];
-  const params: unknown[] = [opts.projectSlug];
+  if (!db || opts.ticketIds.length === 0) return new Map();
+  const placeholders = opts.ticketIds.map(() => '?').join(', ');
+  const clauses = ['ended_at IS NOT NULL', `ticket_id IN (${placeholders})`];
+  const params: unknown[] = [...opts.ticketIds];
   const since = sinceBound(opts.since);
   const until = untilBound(opts.until);
   if (since) {
@@ -253,27 +235,25 @@ export function projectWindowCosts(
 
   const rows = db
     .prepare(
-      `SELECT assignment_id, assignment_slug, tokens_at_open, tokens_at_close
+      `SELECT ticket_id, tokens_at_open, tokens_at_close
          FROM engagement
         WHERE ${clauses.join(' AND ')}`,
     )
     .all(...params) as EngagementCostRow[];
 
   const grouped = new Map<string, EngagementCostRow[]>();
-  const idForSlug = new Map<string, string | null>();
   for (const row of rows) {
-    const slug = row.assignment_slug as string; // non-null by the WHERE clause
-    const bucket = grouped.get(slug);
+    const id = row.ticket_id as string;
+    const bucket = grouped.get(id);
     if (bucket) bucket.push(row);
-    else grouped.set(slug, [row]);
-    if (row.assignment_id && !idForSlug.get(slug)) idForSlug.set(slug, row.assignment_id);
+    else grouped.set(id, [row]);
   }
 
   const out = new Map<string, TicketWindowCost>();
-  for (const [slug, bucket] of grouped) {
-    out.set(slug, {
-      ticketSlug: slug,
-      ticketId: idForSlug.get(slug) ?? null,
+  for (const [id, bucket] of grouped) {
+    out.set(id, {
+      ticketSlug: id,
+      ticketId: id,
       ...rollupWindows(bucket, opts.model),
     });
   }
