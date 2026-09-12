@@ -57,13 +57,13 @@ Do NOT filter by status — every ticket is grabbable. If a slug was provided, v
 
 ```bash
 # Always safe at any status; does not transition state:
-syntaur assign <ticket-slug> --agent <your-agent-name> --project <project-slug>
+syntaur assign <ticket-id> --agent <your-agent-name> --project <project-slug>
 ```
 
 If the current status is `pending`, also run:
 
 ```bash
-syntaur start <ticket-slug> --project <project-slug>
+syntaur start <ticket-id> --project <project-slug>
 ```
 
 Skip `start` for any non-`pending` status — grabbing must never rewind a `review`, `completed`, or `failed` ticket.
@@ -127,13 +127,13 @@ Use absolute paths (expand `~` to the home directory). If `workspace.repository`
    - **Codex**: the most-recently-modified file under `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` whose first-line `session_meta.payload.cwd` matches `$(pwd)`. Use `payload.id` as the session id and the full rollout path as the transcript path.
    - **Other agents**: use whatever real session identifier the runtime exposes. Do not invent one.
 3. Only as a last resort, fall back to the `sessionId` scalar already in `.syntaur/context.json` (and the companion `transcriptPath` if present). That scalar is a shared, legacy hint a co-tenant sharing this workspace can clobber — never treat it as authoritative.
-4. If no real id can be resolved, stop and tell the user to restart the session so the platform hook can populate it, or to run `/rename <ticket-slug>` (Claude Code) and retry.
+4. If no real id can be resolved, stop and tell the user to restart the session so the platform hook can populate it, or to run `/rename <ticket-id>` (Claude Code) and retry.
 
 After resolving, merge `sessionId` + `transcriptPath` back into context.json. Then register:
 
 ```bash
 syntaur track-session \
-  --project <project-slug> --ticket <ticket-slug> \
+  --project <project-slug> --ticket <ticket-id> \
   --agent <your-agent-name> \
   --session-id <real-id> \
   --transcript-path <path-if-known> \

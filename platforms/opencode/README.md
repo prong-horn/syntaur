@@ -11,7 +11,7 @@ OpenCode discovers skills from `SKILL.md` files in several directories and reads
 Generate adapter files for a specific ticket:
 
 ```bash
-syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-slug>
+syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-id>
 ```
 
 This creates:

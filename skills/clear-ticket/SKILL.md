@@ -59,7 +59,7 @@ If lifecycle status is `in_progress` and the user has not passed `--complete-ins
 If the user passed `--unassign`, run:
 
 ```bash
-syntaur unassign <ticket-slug> --project <project-slug>
+syntaur unassign <ticket-id> --project <project-slug>
 ```
 
 For standalone tickets use the UUID (the folder name) in place of the slug, and omit `--project`.

@@ -16,7 +16,7 @@ Protocol version: **2.0**
       _index-decisions.md    # Derived (read-only)
       _status.md             # Derived (read-only)
       tickets/
-        <ticket-slug>/
+        <ticket-id>/
           ticket.md      # Agent-writable: source of truth for state
           plan*.md           # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md        # Agent-writable, append-only: timestamped progress log

@@ -53,7 +53,7 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       _index-decisions.md            # Derived: decision record summary
       _status.md                     # Derived: project status rollup
       tickets/
-        <ticket-slug>/
+        <ticket-id>/
           ticket.md              # Agent-writable: source of truth for state
           plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
           progress.md                # Agent-writable, append-only: timestamped progress log

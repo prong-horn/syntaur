@@ -112,13 +112,13 @@ If this fails (e.g., dashboard not running), it is non-critical — the session 
 If the user requested `--complete` and all criteria are met:
 
 ```bash
-syntaur complete <ticket-slug> --project <project-slug>
+syntaur complete <ticket-id> --project <project-slug>
 ```
 
 Otherwise, transition to review:
 
 ```bash
-syntaur review <ticket-slug> --project <project-slug>
+syntaur review <ticket-id> --project <project-slug>
 ```
 
 If the command fails, report the error. Common failures:

@@ -90,13 +90,13 @@ Two equivalent Tier-1 sources resolve the same 30 skills:
 
 ```bash
 # Generate Cursor adapter files in the current directory
-syntaur setup-adapter cursor --project <project-slug> --ticket <ticket-slug>
+syntaur setup-adapter cursor --project <project-slug> --ticket <ticket-id>
 
 # Generate Codex adapter files
-syntaur setup-adapter codex --project <project-slug> --ticket <ticket-slug>
+syntaur setup-adapter codex --project <project-slug> --ticket <ticket-id>
 
 # Generate OpenCode adapter files
-syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-slug>
+syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-id>
 
 # Overwrite existing files
 syntaur setup-adapter cursor --project my-project --ticket my-task --force

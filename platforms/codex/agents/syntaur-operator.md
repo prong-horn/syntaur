@@ -83,17 +83,17 @@ Use these commands directly when needed:
 - `syntaur new "<title>" --project <slug> [--slug <slug>] [--priority <level>] [--depends-on <slugs>] [--type <type>] [--dir <path>]`
 - `syntaur new "<title>" [--project <slug>] [--slug <slug>] ...` — omit `--project` to create in `scratch` (`SCR-<n>`)
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
-- `syntaur assign <ticket-slug> --agent codex --project <project-slug>`
-- `syntaur start <ticket-slug> --project <project-slug>`
-- `syntaur review <ticket-slug> --project <project-slug>`
-- `syntaur complete <ticket-slug> --project <project-slug>`
-- `syntaur block <ticket-slug> --project <project-slug> --reason <text>`
-- `syntaur unblock <ticket-slug> --project <project-slug>`
-- `syntaur fail <ticket-slug> --project <project-slug>`
+- `syntaur assign <ticket-id> --agent codex --project <project-slug>`
+- `syntaur start <ticket-id> --project <project-slug>`
+- `syntaur review <ticket-id> --project <project-slug>`
+- `syntaur complete <ticket-id> --project <project-slug>`
+- `syntaur block <ticket-id> --project <project-slug> --reason <text>`
+- `syntaur unblock <ticket-id> --project <project-slug>`
+- `syntaur fail <ticket-id> --project <project-slug>`
 - `syntaur comment <ticket-slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
 - `syntaur uninstall [--all] [--yes]`
-- `syntaur track-session --project <project-slug> --ticket <ticket-slug> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
-- `syntaur setup-adapter codex --project <project-slug> --ticket <ticket-slug>`
+- `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
+- `syntaur setup-adapter codex --project <project-slug> --ticket <ticket-id>`
 - `syntaur plan version --ticket <slug> [--project <slug>]` — bump to `plan-v<N>.md` per Plan Versioning playbook
 - `syntaur session resume [--json]` — re-orient on the active ticket from context.json + open handoff (idempotent)
 - `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <slug>] [--project <slug>]` — repo-local `<repository>/.worktrees/<branch>` convention
