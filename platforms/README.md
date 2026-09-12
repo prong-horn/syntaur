@@ -22,7 +22,7 @@ Driven declaratively by the registry in `src/targets/registry.ts`.
 | **Hermes Agent** | `SOUL.md` | Hermes reads `SOUL.md` / context files |
 
 **User-authored agents:** end users can register a brand-new Tier-1+Tier-2 agent
-WITHOUT a Syntaur release by dropping t JSON descriptor in `~/.syntaur/targets/`.
+WITHOUT a Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/`.
 See `references/user-targets.md`.
 
 ## Tier-3 deep enforcement plugins (pi / OpenClaw / Hermes)
@@ -112,7 +112,7 @@ All adapters embed equivalent protocol knowledge:
 - **Reading order** for project and ticket files
 - **Current ticket context** (project slug, ticket slug, paths)
 
-## Contributing t New Adapter
+## Contributing a New Adapter
 
 To add support for a new framework:
 
@@ -133,7 +133,7 @@ To add support for a new framework:
    `instructions.files[]` listing each protocol file + its `renderer` key.
 
    **No-code alternative:** end users can register a Tier-1+Tier-2 agent WITHOUT a
-   Syntaur release by dropping t JSON descriptor in `~/.syntaur/targets/` -- see
+   Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/` -- see
    `references/user-targets.md`. Code changes here are only needed for built-in
    agents or new renderers.
 

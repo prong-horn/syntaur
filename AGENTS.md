@@ -12,7 +12,7 @@ This repo contains the Syntaur CLI, dashboard, protocol skills, and platform-spe
 - `platforms/opencode/` - OpenCode integration reference and adapter templates
 - `platforms/<kind>/skills/` - **build artifact** (gitignored) populated by `npm run mirror-skills` from `<repo>/skills/`. The plugin manifests' `./skills/<name>` paths resolve to these.
 - `src/templates/` - generated adapter content
-- `.syntaur/context.json` - a WORKSPACE MARKER (repository/branch/worktree) identifying t Syntaur workspace directory. It is NOT the active-ticket source of truth — the active ticket resolves from the session's open engagement, not from context.json.
+- `.syntaur/context.json` - a WORKSPACE MARKER (repository/branch/worktree) identifying a Syntaur workspace directory. It is NOT the active-ticket source of truth — the active ticket resolves from the session's open engagement, not from context.json.
 
 ## Skill distribution
 

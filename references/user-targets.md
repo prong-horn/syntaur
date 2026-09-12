@@ -1,6 +1,6 @@
 # User-authored agent target descriptors
 
-Register an arbitrary coding agent with Syntaur — **without a Syntaur release** — by dropping t JSON
+Register an arbitrary coding agent with Syntaur — **without a Syntaur release** — by dropping a JSON
 descriptor in `~/.syntaur/targets/`. The loader validates each file, merges valid descriptors into the
 built-in registry, and the merged target then flows through `syntaur setup --target <id>` (Tier 1
 skills + Tier 2 protocol files) exactly like a built-in agent.
