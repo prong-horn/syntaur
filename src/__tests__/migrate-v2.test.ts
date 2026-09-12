@@ -10,6 +10,7 @@ import {
   migrateSessionKey,
   migrateItemId,
   migrateSnoozeKey,
+  migrateBackfillSourceKey,
 } from '../commands/migrate-v2.js';
 import {
   closeSessionDb,
@@ -111,10 +112,10 @@ async function buildFixture(root: string): Promise<void> {
     ticketWithMeta(UUID_P2A, 'gamma-ticket', 'p2', TS_P2A),
   );
 
-  const legacyStandalonePath = resolve(root, 'tickets', UUID_STANDALONE);
-  await mkdir(legacyStandalonePath, { recursive: true });
+  const standaloneDir = resolve(root, 'assignments', UUID_STANDALONE);
+  await mkdir(standaloneDir, { recursive: true });
   await writeFile(
-    resolve(legacyStandalonePath, 'assignment.md'),
+    resolve(standaloneDir, 'assignment.md'),
     ticketWithMeta(UUID_STANDALONE, 'orphan', null, TS_STANDALONE),
   );
 
@@ -300,9 +301,58 @@ async function buildFixture(root: string): Promise<void> {
   ).run('sess-empty', '', 'p1', 'beta-ticket', 'implement', TS_P1B);
 
   db.prepare(
-    `INSERT INTO events (event_id, assignment_id, project_slug, at, actor, type)
+    `INSERT INTO events (event_id, assignment_id, project_slug, at, actor, type, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('evt-1', UUID_P1A, 'p1', TS_P1A, 'human', 'logged', null);
+
+  db.prepare(
+    `INSERT INTO events (event_id, assignment_id, project_slug, at, actor, type, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'evt-bf-status',
+    UUID_P1A,
+    'p1',
+    TS_P1A,
+    'system',
+    'status-change',
+    `backfill:${UUID_P1A}:status:0`,
+  );
+
+  db.prepare(
+    `INSERT INTO events (event_id, assignment_id, project_slug, at, actor, type, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'evt-bf-plan',
+    UUID_P1A,
+    'p1',
+    TS_P1A,
+    'system',
+    'plan-approval',
+    `backfill:${UUID_P1A}:plan-approval`,
+  );
+
+  db.prepare(
+    `INSERT INTO usage_events (session_id, model, tool, event_ts, project_slug, assignment_slug, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run('sess-standalone', 'claude-opus', 'claude', TS_STANDALONE, '', UUID_STANDALONE, TS_STANDALONE);
+
+  db.prepare(
+    `INSERT INTO usage_events (session_id, model, tool, event_ts, project_slug, assignment_slug, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'sess-orphan',
+    'claude-opus',
+    'claude',
+    TS_P1A,
+    'p1',
+    'deleted-ticket',
+    TS_P1A,
+  );
+
+  db.prepare(
+    `INSERT INTO usage_daily (day, tool, model, project_slug, assignment_slug, computed_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-  ).run('evt-1', UUID_P1A, 'p1', TS_P1A, 'human', 'logged');
+  ).run('2026-01-02', 'claude', 'claude-opus', 'p1', 'deleted-ticket', TS_P1B);
 
   db.prepare(
     `INSERT INTO chat_sessions (session_key, assignment_id, project_slug, assignment_slug, agent_id, harness, state, created_at)
@@ -380,6 +430,16 @@ describe('migrate v2 key helpers', () => {
     expect(migrateSnoozeKey(`${UUID_P1A}:review`, uuidToId, itemMap)).toBe('P1-1~review');
     expect(migrateSnoozeKey(`review:${UUID_P1B}`, uuidToId, itemMap)).toBe('P1-2~review');
   });
+
+  it('migrates backfill source keys from colon to tilde form', () => {
+    const uuidToId = new Map([[UUID_P1A, 'P1-1']]);
+    expect(migrateBackfillSourceKey(`backfill:${UUID_P1A}:status:0`, uuidToId)).toBe(
+      'backfill~P1-1~status~0',
+    );
+    expect(migrateBackfillSourceKey(`backfill:${UUID_P1A}:plan-approval`, uuidToId)).toBe(
+      'backfill~P1-1~plan-approval',
+    );
+  });
 });
 
 const MIGRATION_TABLES = [
@@ -411,6 +471,19 @@ describe('migrateV2Command', () => {
     expect(lines.some((l) => l.includes('alpha-ticket → P1-1-alpha-ticket'))).toBe(true);
     expect(lines.some((l) => l === `[dry-run] UUID ${UUID_P1A} → P1-1`)).toBe(true);
     expect(lines.some((l) => l.includes('standalone: 1 tickets → scratch'))).toBe(true);
+    expect(lines.some((l) => l.includes(`${UUID_STANDALONE} → SCR-1-orphan`))).toBe(true);
+    expect(
+      lines.some((l) =>
+        l.includes('unmatched usage_events rows: 1 (slugs without a ticket folder: deleted-ticket)'),
+      ),
+    ).toBe(true);
+    expect(
+      lines.some((l) =>
+        l.includes('unmatched usage_daily rows: 1 (slugs without a ticket folder: deleted-ticket)'),
+      ),
+    ).toBe(true);
+    expect(lines.some((l) => l.includes('re-keyed events.source_key: 2'))).toBe(true);
+    expect(lines.some((l) => l.includes('totals: 3 projects, 4 tickets'))).toBe(true);
     expect(lines.every((l) => l.startsWith('[dry-run]'))).toBe(true);
   });
 
@@ -430,6 +503,13 @@ describe('migrateV2Command', () => {
     expect(
       await fileExists(resolve(home, 'projects', 'scratch', 'tickets', 'SCR-1-orphan', 'ticket.md')),
     ).toBe(true);
+    expect(await fileExists(resolve(home, 'projects', 'scratch', 'project.md'))).toBe(true);
+    const scratchProject = await readFile(resolve(home, 'projects', 'scratch', 'project.md'), 'utf-8');
+    expect(scratchProject).toContain('prefix: SCR');
+    expect(scratchProject).toContain('nextTicket:');
+    expect(scratchProject).toContain('defaultTemplate: feature');
+    expect(await fileExists(resolve(home, 'assignments'))).toBe(false);
+    expect(await fileExists(resolve(home, 'tickets'))).toBe(false);
 
     const ticketMd = await readFile(
       resolve(home, 'projects', 'p1', 'tickets', 'P1-1-alpha-ticket', 'ticket.md'),
@@ -486,6 +566,22 @@ describe('migrateV2Command', () => {
       .get('evt-1') as { ticket_id: string };
     expect(event.ticket_id).toBe('P1-1');
 
+    const backfillStatus = eventsDb
+      .prepare('SELECT source_key FROM events WHERE event_id = ?')
+      .get('evt-bf-status') as { source_key: string };
+    expect(backfillStatus.source_key).toBe('backfill~P1-1~status~0');
+
+    const backfillPlan = eventsDb
+      .prepare('SELECT source_key FROM events WHERE event_id = ?')
+      .get('evt-bf-plan') as { source_key: string };
+    expect(backfillPlan.source_key).toBe('backfill~P1-1~plan-approval');
+
+    expect(
+      (eventsDb.prepare("SELECT count(*) AS n FROM events WHERE source_key LIKE '%:%'").get() as {
+        n: number;
+      }).n,
+    ).toBe(0);
+
     const chatSession = sessionDb
       .prepare('SELECT ticket_id, session_key FROM chat_sessions WHERE session_key = ?')
       .get('P1-1~claude') as { ticket_id: string; session_key: string };
@@ -496,6 +592,32 @@ describe('migrateV2Command', () => {
       .prepare('SELECT ticket_id FROM usage_events WHERE session_id = ?')
       .get('sess-1') as { ticket_id: string };
     expect(usage.ticket_id).toBe('P1-1');
+
+    const standaloneUsage = usageDb
+      .prepare('SELECT ticket_id FROM usage_events WHERE session_id = ?')
+      .get('sess-standalone') as { ticket_id: string };
+    expect(standaloneUsage.ticket_id).toBe('SCR-1');
+
+    const orphanUsage = usageDb
+      .prepare('SELECT ticket_id FROM usage_events WHERE session_id = ?')
+      .get('sess-orphan') as { ticket_id: string };
+    expect(orphanUsage.ticket_id).toBe('deleted-ticket');
+
+    expect(
+      (sessionDb
+        .prepare("SELECT count(*) AS n FROM chat_sessions WHERE session_key LIKE '%:%'")
+        .get() as { n: number }).n,
+    ).toBe(0);
+    expect(
+      (sessionDb
+        .prepare("SELECT count(*) AS n FROM chat_items WHERE item_id LIKE '%:%'")
+        .get() as { n: number }).n,
+    ).toBe(0);
+    expect(
+      (sessionDb
+        .prepare("SELECT count(*) AS n FROM chat_items WHERE session_key LIKE '%:%'")
+        .get() as { n: number }).n,
+    ).toBe(0);
 
     closeSessionDb();
     closeEventsDb();

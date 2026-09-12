@@ -7,7 +7,7 @@
  */
 
 import { Command } from 'commander';
-import { cp, readFile, readdir, rename } from 'node:fs/promises';
+import { cp, readFile, readdir, rename, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 import Database from 'better-sqlite3';
@@ -200,6 +200,24 @@ export function migrateItemId(
   return itemId;
 }
 
+/** `backfill:<uuid>:status:<n>` → `backfill~<ID>~status~<n>`; same for plan-approval. */
+export function migrateBackfillSourceKey(
+  sourceKey: string,
+  uuidToId: Map<string, string>,
+): string | null {
+  const statusMatch = sourceKey.match(/^backfill:([^:]+):status:(\d+)$/);
+  if (statusMatch) {
+    const id = uuidToId.get(statusMatch[1]);
+    return id ? `backfill~${id}~status~${statusMatch[2]}` : null;
+  }
+  const planMatch = sourceKey.match(/^backfill:([^:]+):plan-approval$/);
+  if (planMatch) {
+    const id = uuidToId.get(planMatch[1]);
+    return id ? `backfill~${id}~plan-approval` : null;
+  }
+  return null;
+}
+
 export function migrateSnoozeKey(
   key: string,
   uuidToId: Map<string, string>,
@@ -352,33 +370,45 @@ async function discoverProjectTickets(
 }
 
 async function discoverStandaloneTickets(home: string): Promise<DiscoveredTicket[]> {
-  const base = resolve(home, 'tickets');
-  if (!(await fileExists(base))) return [];
   const tickets: DiscoveredTicket[] = [];
-  const entries = await readdir(base, { withFileTypes: true });
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
-    if (parseTicketFolderName(entry.name)) continue;
-    const md = await discoverTicketMd(base, entry.name);
-    if (!md) continue;
-    const content = await readFile(md.path, 'utf-8');
-    const fm = parseTicketFrontmatter(content);
-    if (!fm.id || !fm.slug) continue;
-    tickets.push({
-      uuid: fm.id,
-      slug: fm.slug,
-      status: fm.status,
-      created: fm.created || '',
-      oldFolder: entry.name,
-      ticketMdRel: md.rel,
-      ticketDir: resolve(base, entry.name),
-      ticketMdPath: md.path,
-      isStandalone: true,
-      projectSlug: null,
-      newId: '',
-      newFolder: '',
-    });
+  const seen = new Set<string>();
+
+  async function scanRoot(base: string): Promise<void> {
+    if (!(await fileExists(base))) return;
+    const entries = await readdir(base, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) {
+        continue;
+      }
+      if (parseTicketFolderName(entry.name)) continue;
+      const md = await discoverTicketMd(base, entry.name);
+      if (!md) continue;
+      const content = await readFile(md.path, 'utf-8');
+      const fm = parseTicketFrontmatter(content);
+      if (!fm.id || !fm.slug) continue;
+      if (seen.has(fm.id)) continue;
+      seen.add(fm.id);
+      tickets.push({
+        uuid: fm.id,
+        slug: fm.slug,
+        status: fm.status,
+        created: fm.created || '',
+        oldFolder: entry.name,
+        ticketMdRel: md.rel,
+        ticketDir: resolve(base, entry.name),
+        ticketMdPath: md.path,
+        isStandalone: true,
+        projectSlug: null,
+        newId: '',
+        newFolder: '',
+      });
+    }
   }
+
+  // v1 real home: `<home>/assignments/<uuid>/assignment.md`
+  await scanRoot(resolve(home, 'assignments'));
+  // Phase-A-era home: `<home>/tickets/<folder>/`
+  await scanRoot(resolve(home, 'tickets'));
   return tickets;
 }
 
@@ -486,11 +516,189 @@ async function migrateChatEventsFile(
   return true;
 }
 
+interface UnmatchedTableReport {
+  count: number;
+  slugs: string[];
+}
+
+interface UnmatchedReport {
+  usageEvents: UnmatchedTableReport;
+  usageDaily: UnmatchedTableReport;
+  engagement: UnmatchedTableReport;
+}
+
+function ticketRefMappable(
+  ticketVal: string | null | undefined,
+  projectSlug: string | null | undefined,
+  slugVal: string | null | undefined,
+  maps: MigrationMaps,
+): boolean {
+  if (ticketVal && maps.uuidToId.has(ticketVal)) return true;
+  if (ticketVal && /^[A-Z]{2,5}-\d+$/.test(ticketVal)) return true;
+  if (projectSlug && slugVal && maps.slugToId.has(`${projectSlug}:${slugVal}`)) return true;
+  if (slugVal && maps.slugToId.has(`scratch:${slugVal}`)) return true;
+  if (slugVal) {
+    for (const key of maps.slugToId.keys()) {
+      if (key.endsWith(`:${slugVal}`)) return true;
+    }
+  }
+  if (ticketVal && !UUID_RE.test(ticketVal)) {
+    for (const key of maps.slugToId.keys()) {
+      if (key.split(':')[1] === ticketVal) return true;
+    }
+  }
+  return false;
+}
+
+export function analyzeUnmatched(
+  database: Database.Database,
+  maps: MigrationMaps,
+): UnmatchedReport {
+  const empty = (): UnmatchedTableReport => ({ count: 0, slugs: [] });
+
+  const tally = (
+    ticketVal: string | null | undefined,
+    projectSlug: string | null | undefined,
+    slugVal: string | null | undefined,
+    report: UnmatchedTableReport,
+  ): void => {
+    if (ticketRefMappable(ticketVal, projectSlug, slugVal, maps)) return;
+    report.count += 1;
+    if (slugVal) report.slugs.push(slugVal);
+  };
+
+  const usageEvents = empty();
+  const usageDaily = empty();
+  const engagement = empty();
+
+  const engagementCols = tableColumns(database, 'engagement');
+  const engTicketCol = engagementCols.has('ticket_id') ? 'ticket_id' : 'assignment_id';
+  if (engagementCols.has(engTicketCol)) {
+    const rows = database
+      .prepare(
+        `SELECT ${engTicketCol} AS ticket_val, project_slug, assignment_slug FROM engagement`,
+      )
+      .all() as Array<{
+      ticket_val: string | null;
+      project_slug: string | null;
+      assignment_slug: string | null;
+    }>;
+    for (const row of rows) {
+      tally(row.ticket_val, row.project_slug, row.assignment_slug, engagement);
+    }
+  }
+
+  const usageEventCols = tableColumns(database, 'usage_events');
+  const usageEventTicketCol = usageEventCols.has('ticket_id')
+    ? 'ticket_id'
+    : usageEventCols.has('assignment_id')
+      ? 'assignment_id'
+      : usageEventCols.has('assignment_slug')
+        ? 'assignment_slug'
+        : null;
+  if (usageEventTicketCol) {
+    const slugCol = usageEventCols.has('assignment_slug') ? 'assignment_slug' : null;
+    const rows = database
+      .prepare(
+        `SELECT ${usageEventTicketCol} AS ticket_val, project_slug${
+          slugCol ? `, ${slugCol}` : ', NULL AS assignment_slug'
+        } FROM usage_events`,
+      )
+      .all() as Array<{
+      ticket_val: string | null;
+      project_slug: string | null;
+      assignment_slug: string | null;
+    }>;
+    for (const row of rows) {
+      tally(row.ticket_val, row.project_slug, row.assignment_slug, usageEvents);
+    }
+  }
+
+  const usageDailyCols = tableColumns(database, 'usage_daily');
+  const usageDailyTicketCol = usageDailyCols.has('ticket_id')
+    ? 'ticket_id'
+    : usageDailyCols.has('assignment_slug')
+      ? 'assignment_slug'
+      : null;
+  if (usageDailyTicketCol) {
+    const slugCol = usageDailyCols.has('assignment_slug') ? 'assignment_slug' : null;
+    const rows = database
+      .prepare(
+        `SELECT ${usageDailyTicketCol} AS ticket_val, project_slug${
+          slugCol ? `, ${slugCol}` : ', NULL AS assignment_slug'
+        } FROM usage_daily`,
+      )
+      .all() as Array<{
+      ticket_val: string | null;
+      project_slug: string | null;
+      assignment_slug: string | null;
+    }>;
+    for (const row of rows) {
+      tally(row.ticket_val, row.project_slug, row.assignment_slug, usageDaily);
+    }
+  }
+
+  const dedupeSlugs = (r: UnmatchedTableReport): UnmatchedTableReport => ({
+    count: r.count,
+    slugs: [...new Set(r.slugs)].sort(),
+  });
+
+  return {
+    usageEvents: dedupeSlugs(usageEvents),
+    usageDaily: dedupeSlugs(usageDaily),
+    engagement: dedupeSlugs(engagement),
+  };
+}
+
+function formatUnmatchedLine(
+  kind: 'usage_events' | 'usage_daily' | 'engagement',
+  report: UnmatchedTableReport,
+): string | null {
+  if (report.count === 0) return null;
+  const slugHint =
+    report.slugs.length > 0
+      ? ` (slugs without a ticket folder: ${report.slugs.join(', ')})`
+      : '';
+  return `unmatched ${kind} rows: ${report.count}${slugHint}`;
+}
+
+function logUnmatchedReport(
+  lines: string[],
+  mode: string,
+  report: UnmatchedReport,
+): void {
+  for (const line of [
+    formatUnmatchedLine('usage_events', report.usageEvents),
+    formatUnmatchedLine('usage_daily', report.usageDaily),
+    formatUnmatchedLine('engagement', report.engagement),
+  ]) {
+    if (line) logLine(lines, mode, line);
+  }
+}
+
+function countBackfillSourceKeyRewrites(
+  database: Database.Database,
+  maps: MigrationMaps,
+): number {
+  const eventsCols = tableColumns(database, 'events');
+  if (!eventsCols.has('source_key')) return 0;
+  const rows = database
+    .prepare('SELECT source_key FROM events WHERE source_key IS NOT NULL')
+    .all() as Array<{ source_key: string }>;
+  let count = 0;
+  for (const row of rows) {
+    const next = migrateBackfillSourceKey(row.source_key, maps.uuidToId);
+    if (next && next !== row.source_key) count += 1;
+  }
+  return count;
+}
+
 function rekeyDatabase(
   dbPath: string,
   maps: MigrationMaps,
 ): {
   events: number;
+  eventsSourceKey: number;
   engagementByUuid: number;
   engagementBySlug: number;
   chatSessionsTicket: number;
@@ -504,6 +712,7 @@ function rekeyDatabase(
   database.pragma('journal_mode = WAL');
   const counts = {
     events: 0,
+    eventsSourceKey: 0,
     engagementByUuid: 0,
     engagementBySlug: 0,
     chatSessionsTicket: 0,
@@ -522,6 +731,19 @@ function rekeyDatabase(
         .prepare(`UPDATE events SET ${ticketCol} = ? WHERE ${ticketCol} = ?`)
         .run(id, uuid);
       counts.events += r.changes;
+    }
+    if (eventsCols.has('source_key')) {
+      const rows = database
+        .prepare('SELECT source_key FROM events WHERE source_key IS NOT NULL')
+        .all() as Array<{ source_key: string }>;
+      for (const row of rows) {
+        const next = migrateBackfillSourceKey(row.source_key, maps.uuidToId);
+        if (next && next !== row.source_key) {
+          counts.eventsSourceKey += database
+            .prepare('UPDATE events SET source_key = ? WHERE source_key = ?')
+            .run(next, row.source_key).changes;
+        }
+      }
     }
   }
 
@@ -775,6 +997,15 @@ async function applyFilesystemMigration(
       }
       await rewriteCommentsItemMarkers(resolve(ticket.ticketDir, 'comments.md'), maps);
     }
+
+    for (const sub of ['assignments', 'tickets'] as const) {
+      const base = resolve(home, sub);
+      if (!(await fileExists(base))) continue;
+      const remaining = (await readdir(base)).filter((e) => !e.startsWith('.'));
+      if (remaining.length === 0) {
+        await rm(base, { recursive: true, force: true });
+      }
+    }
   }
 }
 
@@ -927,6 +1158,13 @@ export async function migrateV2Command(
 
   if (standalone.length > 0) {
     logLine(lines, mode, `standalone: ${standalone.length} tickets → scratch`);
+    for (const t of standalone) {
+      logLine(
+        lines,
+        mode,
+        `${t.oldFolder} → ${t.newFolder} · ${t.newId} · ${t.status}→${t.status}`,
+      );
+    }
   }
 
   for (const t of allTickets) {
@@ -937,6 +1175,20 @@ export async function migrateV2Command(
     logLine(lines, mode, `(${project}, ${slug}) → ${id}`);
   }
 
+  const dbPath = resolve(home, 'syntaur.db');
+  if (await fileExists(dbPath)) {
+    const database = new Database(dbPath, { readonly: true });
+    const unmatched = analyzeUnmatched(database, maps);
+    logUnmatchedReport(lines, mode, unmatched);
+    const backfillKeys = countBackfillSourceKeyRewrites(database, maps);
+    if (backfillKeys > 0) {
+      logLine(lines, mode, `re-keyed events.source_key: ${backfillKeys}`);
+    }
+    database.close();
+  }
+
+  const projectCount = plans.length + (standalone.length > 0 ? 1 : 0);
+
   if (!options.apply) {
     logLine(
       lines,
@@ -946,7 +1198,7 @@ export async function migrateV2Command(
     logLine(
       lines,
       mode,
-      `totals: ${plans.length} projects, ${allTickets.length} tickets`,
+      `totals: ${projectCount} projects, ${allTickets.length} tickets`,
     );
     return { lines };
   }
@@ -962,10 +1214,12 @@ export async function migrateV2Command(
 
     await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
 
-    const dbPath = resolve(home, 'syntaur.db');
     if (await fileExists(dbPath)) {
       const counts = rekeyDatabase(dbPath, maps);
       logLine(lines, mode, `re-keyed events.ticket_id: ${counts.events}  (project_slug dropped)`);
+      if (counts.eventsSourceKey > 0) {
+        logLine(lines, mode, `re-keyed events.source_key: ${counts.eventsSourceKey}`);
+      }
       logLine(
         lines,
         mode,
@@ -1010,7 +1264,7 @@ export async function migrateV2Command(
     logLine(
       lines,
       mode,
-      `totals: ${plans.length} projects, ${allTickets.length} tickets`,
+      `totals: ${projectCount} projects, ${allTickets.length} tickets`,
     );
     return { lines };
   } catch (err) {
