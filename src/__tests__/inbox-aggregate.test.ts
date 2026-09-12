@@ -888,7 +888,7 @@ describe('computeInbox — chat questions', () => {
     expect(q.body).toBe('Which name?');
     expect(q.action).toEqual({
       verb: 'Open chat',
-      command: 'http://localhost:4888/projects/demo/tickets/chat-q?tab=chat#item-9',
+      command: 'http://localhost:4888/t/a-chat?tab=chat#item-9',
     });
   });
 
@@ -935,7 +935,7 @@ describe('computeInbox — chat questions', () => {
     const r = await run({ dashboardUrl: 'http://test.local:4800' });
     const q = r.items.find((i) => i.category === 'question')!;
     expect(q.action.command).toBe(
-      'http://test.local:4800/tickets/uuid-standalone?tab=chat#perm-1',
+      'http://test.local:4800/t/uuid-standalone?tab=chat#perm-1',
     );
   });
 
