@@ -58,7 +58,7 @@ is complete.)" Stop unless the user confirms.
 ## Step 3: Run `syntaur plan version`
 
 ```bash
-syntaur plan version --ticket <ticketSlug> [--project <projectSlug>]
+syntaur plan version --ticket <id> [--project <projectSlug>]
 ```
 
 This is the only file-mutating step the skill performs through the CLI. It:

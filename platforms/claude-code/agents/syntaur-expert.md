@@ -178,14 +178,14 @@ Only the assigned agent may write to its own ticket folder.
 ### State Transitions
 | Command | Description |
 |---------|-------------|
-| `syntaur assign <slug> --agent <name> --project <project>` | Set assignee |
-| `syntaur start <slug> --project <project>` | pending → in_progress |
-| `syntaur review <slug> --project <project>` | in_progress → review |
-| `syntaur complete <slug> --project <project>` | in_progress/review → completed |
-| `syntaur block <slug> --project <project> --reason <text>` | → blocked |
-| `syntaur unblock <slug> --project <project>` | blocked → in_progress |
-| `syntaur fail <slug> --project <project>` | → failed |
-| `syntaur reopen <slug> --project <project>` | completed/failed → in_progress |
+| `syntaur assign <id> --agent <name> --project <project>` | Set assignee |
+| `syntaur start <id> --project <project>` | pending → in_progress |
+| `syntaur review <id> --project <project>` | in_progress → review |
+| `syntaur complete <id> --project <project>` | in_progress/review → completed |
+| `syntaur block <id> --project <project> --reason <text>` | → blocked |
+| `syntaur unblock <id> --project <project>` | blocked → in_progress |
+| `syntaur fail <id> --project <project>` | → failed |
+| `syntaur reopen <id> --project <project>` | completed/failed → in_progress |
 
 ### Session Tracking
 | Command | Description |
@@ -301,9 +301,9 @@ syntaur                    # Dashboard is the default command
 Syntaur supports Cursor, Codex, and OpenCode via generated adapter files.
 
 ```bash
-syntaur setup-adapter cursor --project <slug> --ticket <slug>
-syntaur setup-adapter codex --project <slug> --ticket <slug>
-syntaur setup-adapter opencode --project <slug> --ticket <slug>
+syntaur setup-adapter cursor --project <slug> --ticket <id>
+syntaur setup-adapter codex --project <slug> --ticket <id>
+syntaur setup-adapter opencode --project <slug> --ticket <id>
 ```
 
 | Framework | Generated Files | Discovery |
@@ -406,7 +406,7 @@ A: Use `/grab-ticket <project-slug>` — it lists pending tickets. Or check the 
 A: No. Single-writer guarantee — one agent per ticket folder. Use separate tickets for parallel work.
 
 **Q: What if I need to ask the human a question?**
-A: Run `syntaur comment <slug> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
+A: Run `syntaur comment <id> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
 
 **Q: What goes in `progress.md` vs `handoff.md`?**
 A: Two distinct artifacts.

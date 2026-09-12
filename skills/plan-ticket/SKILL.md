@@ -84,7 +84,7 @@ Remember this `planFilename` and `versionLabel` for Step 5b.
   syntaur plan create
   ```
 
-  (or `--ticket <slug> [--project <slug>]` to target one explicitly). This
+  (or `--ticket <id> [--project <slug>]` to target one explicitly). This
   writes `plan.md` with the standard `draft` frontmatter.
 
 - **New version** (`planFilename` is `plan-v<N>.md`): run `syntaur plan version`,
@@ -95,7 +95,7 @@ The scaffolded frontmatter is:
 
 ```yaml
 ---
-ticket: <ticketSlug>
+ticket: <ticketId>
 status: draft
 created: "<nowTimestamp>"
 updated: "<nowTimestamp>"

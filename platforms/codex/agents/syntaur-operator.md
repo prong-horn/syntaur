@@ -94,9 +94,9 @@ Use these commands directly when needed:
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
 - `syntaur setup-adapter codex --project <project-slug> --ticket <ticket-id>`
-- `syntaur plan version --ticket <slug> [--project <slug>]` — bump to `plan-v<N>.md` per Plan Versioning playbook
+- `syntaur plan version --ticket <id> [--project <slug>]` — bump to `plan-v<N>.md` per Plan Versioning playbook
 - `syntaur session resume [--json]` — re-orient on the active ticket from context.json + open handoff (idempotent)
-- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <slug>] [--project <slug>]` — repo-local `<repository>/.worktrees/<branch>` convention
+- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <id>] [--project <slug>]` — repo-local `<repository>/.worktrees/<branch>` convention
 - `syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--json]` — cross-project filtered listing (non-interactive; scriptable output)
 - `syntaur doctor --ticket <path> --json` — validate a single ticket.md frontmatter and emit `{ok, errors[], warnings[]}` (used by the `set-workspace` skill before writing)
 
@@ -110,8 +110,8 @@ Use these commands directly when needed:
 4. Create (or merge into) `.syntaur/context.json` in the working directory. If a prior context file exists, preserve its fields.
 5. Resolve the real Codex session id and rollout path: `bash ./scripts/resolve-session.sh "$(pwd)"` (relative to the plugin root). Parse `session_id=<id>` and `transcript_path=<abs path>`. If the helper exits non-zero, there is no matching Codex rollout in this cwd — start the Codex session first, then retry. Never `uuidgen`.
 6. Merge `sessionId` + `transcriptPath` into `.syntaur/context.json`.
-7. Register the session: `syntaur track-session --project <slug> --ticket <slug> --agent codex --session-id <id> --transcript-path <path> --path "$(pwd)" --pid "$$"` (passing `--pid "$$"` lets the dashboard show Resume disabled while this session is still running).
-8. If needed, run `syntaur setup-adapter codex --project <slug> --ticket <slug>`.
+7. Register the session: `syntaur track-session --project <slug> --ticket <id> --agent codex --session-id <id> --transcript-path <path> --path "$(pwd)" --pid "$$"` (passing `--pid "$$"` lets the dashboard show Resume disabled while this session is still running).
+8. If needed, run `syntaur setup-adapter codex --project <slug> --ticket <id>`.
 
 ### Plan a ticket
 

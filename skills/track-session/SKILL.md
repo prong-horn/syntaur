@@ -15,8 +15,8 @@ User arguments: `$ARGUMENTS`
 
 - (no args) — upsert the session row as-is (rarely needed; the hook already did this)
 - `--description "<text>"` — attach a description
-- `--project <slug> --ticket <slug>` — link to a project ticket
-- `--description "<text>" --project <slug> --ticket <slug>` — both
+- `--project <slug> --ticket <id>` — link to a project ticket
+- `--description "<text>" --project <slug> --ticket <id>` — both
 
 ## Workflow
 
@@ -25,7 +25,7 @@ Run one Bash call (use `dangerouslyDisableSandbox: true` since it writes to `~/.
 ```bash
 syntaur track-session --agent claude \
   [--description "<text>"] \
-  [--project <slug>] [--ticket <slug>]
+  [--project <slug>] [--ticket <id>]
 ```
 
 The CLI resolves the session id, transcript-derived path, owning pid, and HEAD sha itself, and prints one of:

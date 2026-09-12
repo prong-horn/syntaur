@@ -12,8 +12,8 @@ Only real agent-runtime session IDs are accepted — no synthesis. Source the id
 
 - `/track-session` — register a standalone session
 - `/track-session --description "exploring auth patterns"` — with a description
-- `/track-session --project <slug> --ticket <slug>` — linked to a project
-- `/track-session --description "auth work" --project <slug> --ticket <slug>` — both
+- `/track-session --project <slug> --ticket <id>` — linked to a project
+- `/track-session --description "auth work" --project <slug> --ticket <id>` — both
 
 ## Workflow
 
@@ -26,7 +26,7 @@ syntaur track-session --agent codex \
   --path "$(pwd)" \
   --pid "$$" \
   [--description "<text>"] \
-  [--project <slug>] [--ticket <slug>]
+  [--project <slug>] [--ticket <id>]
 ```
 
 Both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize.

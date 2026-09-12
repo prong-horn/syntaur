@@ -76,16 +76,16 @@ When starting work on an existing ticket, read these in order:
 
 ## Lifecycle Commands
 
-- `syntaur assign <slug> --agent <name> --project <project>` — set assignee
-- `syntaur start <slug> --project <project>` — pending → in_progress
-- `syntaur review <slug> --project <project>` — in_progress → review
-- `syntaur complete <slug> --project <project>` — in_progress/review → completed
-- `syntaur block <slug> --project <project> --reason <text>` — block
-- `syntaur unblock <slug> --project <project>` — unblock
-- `syntaur fail <slug> --project <project>` — mark as failed
+- `syntaur assign <id> --agent <name> --project <project>` — set assignee
+- `syntaur start <id> --project <project>` — pending → in_progress
+- `syntaur review <id> --project <project>` — in_progress → review
+- `syntaur complete <id> --project <project>` — in_progress/review → completed
+- `syntaur block <id> --project <project> --reason <text>` — block
+- `syntaur unblock <id> --project <project>` — unblock
+- `syntaur fail <id> --project <project>` — mark as failed
 - `syntaur new "<title>" [--type <type>] [--project <slug>]` — create in a project (defaults to `scratch` / `SCR-<n>` when `--project` is omitted)
 - `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]` — append to `comments.md`
-- `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--ticket <a>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
+- `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--ticket <id>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
 
 ## Agent Sessions
 

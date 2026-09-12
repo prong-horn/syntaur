@@ -83,5 +83,5 @@ Protocol version: **2.0**
 6. A ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `ticket.md`.
-9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
+9. **Comments** are appended to `comments.md` via `syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
 10. On resume, read any open `handoff.md` (ticket-level cross-ticket outbound) plus `ticket.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.

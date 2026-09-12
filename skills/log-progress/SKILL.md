@@ -72,7 +72,7 @@ syntaur progress log "<your composed entry body>"
 ```
 
 The command resolves the active ticket from the session's open engagement
-(or pass `--ticket <slug> [--project <slug>]` to target one explicitly),
+(or pass `--ticket <id> [--project <slug>]` to target one explicitly),
 then atomically:
 
 - Inserts the entry immediately after the `# Progress` H1 (newest first,

@@ -3,7 +3,7 @@ name: replan
 description: Bump the active Syntaur ticket to a new plan version (plan-vN.md) per the Plan Versioning playbook
 arguments:
   - name: args
-    description: "Optional --ticket <slug> --project <slug>. Defaults to active ticket."
+    description: "Optional --ticket <id> --project <slug>. Defaults to active ticket."
     required: false
 ---
 

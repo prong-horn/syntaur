@@ -3,7 +3,7 @@ name: syntaur-worktree
 description: Create a repo-local worktree for the active Syntaur ticket and bind the session to it (atomic create + grab)
 arguments:
   - name: args
-    description: "--branch <name> [--repository <path>] [--parent-branch <name>] [--project <slug>] [--ticket <slug>]"
+    description: "--branch <name> [--repository <path>] [--parent-branch <name>] [--project <slug>] [--ticket <id>]"
     required: false
 ---
 

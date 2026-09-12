@@ -76,5 +76,5 @@ Protocol version: **2.0**
 6. A ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read them before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do NOT add a `## Progress` section to `ticket.md` — protocol v2.0 moved progress to its own file.
-9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag toggled in the dashboard.
+9. **Comments** are appended to `comments.md` via `syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag toggled in the dashboard.
 10. **Agent sessions** in `syntaur.db` must use real agent-runtime session IDs. Synthesized UUIDs are rejected. Plugins for Claude Code / Codex populate `.syntaur/context.json` with the real id via a SessionStart hook; other agents should source it from their runtime and pass `--session-id` explicitly.

@@ -28,7 +28,7 @@ If the ticket is actually done, use `complete-ticket` instead so a handoff is re
 
 Optional flags from the user:
 
-- `--unassign` — also run `syntaur unassign <slug> --project <project>` so the ticket is no longer claimed by this agent. Default: leave the claim in place (only the session's engagement is closed).
+- `--unassign` — also run `syntaur unassign <id> --project <project>` so the ticket is no longer claimed by this agent. Default: leave the claim in place (only the session's engagement is closed).
 
 ## Step 1: Load Context
 
@@ -43,7 +43,7 @@ From the resolved engagement, note: `projectSlug`, `ticketSlug`, `ticketDir`, `t
 Show the user what is about to be cleared and confirm before touching anything:
 
 > About to clear active ticket context:
-> - Ticket: `<ticketSlug>` — <title>
+> - Ticket: `<ticketId>` — <title>
 > - Project: `<projectSlug>` (or "standalone" if null)
 > - The ticket itself will NOT be transitioned. Its lifecycle status stays as-is.
 > - Proceed?

@@ -21,7 +21,7 @@ tags:
 - Do not batch these up -- mark them as you go
 
 ## When you have a question, note, or piece of feedback:
-- Run `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`
+- Run `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`
 - Never edit `comments.md` directly — all writes are CLI-mediated
 - Questions carry a `resolved` flag that can be toggled from the dashboard
 

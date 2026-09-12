@@ -12,5 +12,5 @@ The generated file now does two things:
 2. points Codex at the reusable Syntaur Codex plugin workflows (`syntaur-protocol`, `grab-ticket`, `plan-ticket`, `complete-ticket`, and related helpers) when that plugin is installed globally
 
 See the rendered output by running:
-  syntaur setup-adapter codex --project <slug> --ticket <slug>
-  syntaur setup-adapter opencode --project <slug> --ticket <slug>
+  syntaur setup-adapter codex --project <slug> --ticket <id>
+  syntaur setup-adapter opencode --project <slug> --ticket <id>

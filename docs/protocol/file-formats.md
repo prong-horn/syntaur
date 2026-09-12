@@ -828,7 +828,7 @@ Sources of truth by agent:
 ### CLI
 
 ```bash
-syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <slug>] [--ticket <slug>] [--path <cwd>] [--description <text>]
+syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>]
 ```
 
 `--session-id` is required; it must be the real id from the agent runtime. `--transcript-path` is optional but strongly preferred.

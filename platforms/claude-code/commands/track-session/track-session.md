@@ -17,8 +17,8 @@ Only real Claude Code session IDs are accepted — no synthesis. The real id is 
 
 - `/track-session` — register a standalone session
 - `/track-session --description "exploring auth patterns"` — with a description
-- `/track-session --project <slug> --ticket <slug>` — linked to a project
-- `/track-session --description "auth work" --project <slug> --ticket <slug>` — both
+- `/track-session --project <slug> --ticket <id>` — linked to a project
+- `/track-session --description "auth work" --project <slug> --ticket <id>` — both
 
 ## Instructions
 
@@ -29,7 +29,7 @@ When the user runs this command:
 Extract optional flags from the argument string:
 - `--description "<text>"` or `--description <text>` — session description
 - `--project <slug>` — project to link to
-- `--ticket <slug>` — ticket to link to
+- `--ticket <id>` — ticket to link to
 
 ### Step 2: Source the real session id + transcript path
 
@@ -55,7 +55,7 @@ syntaur track-session \
   --pid "$(ps -o ppid= -p $$ | tr -d ' ')" \
   [--description "<text>"] \
   [--project <slug>] \
-  [--ticket <slug>]
+  [--ticket <id>]
 ```
 
 Omit `--transcript-path` entirely (don't pass an empty string) if no transcript path could be resolved. The `--pid` value is the shell PID that owns the Claude process — the dashboard uses it to disable Resume while this session may still be writing the transcript, forcing users to Fork instead. If `ps` is unavailable, omit `--pid` too.

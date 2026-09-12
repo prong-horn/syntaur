@@ -41,7 +41,7 @@ only a workspace marker; do not read the ticket from it.
 
 If there is no open engagement (no active ticket), the CLI aborts with "No
 active ticket for this session — grab one first." Run `grab-ticket`
-first, or pass `--ticket <slug> [--project <slug>]` to target one
+first, or pass `--ticket <id> [--project <slug>]` to target one
 explicitly.
 
 ## Step 2: Gather inputs
@@ -72,7 +72,7 @@ syntaur workspace set \
 ```
 
 Targets the active ticket from the session's open engagement by default;
-pass `--ticket <slug> [--project <slug>]` to target one explicitly. The command
+pass `--ticket <id> [--project <slug>]` to target one explicitly. The command
 does the whole safe write in one atomic step:
 
 - **Pre-write validation** — runs the same checks as `syntaur doctor
