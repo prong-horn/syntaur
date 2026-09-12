@@ -56,9 +56,9 @@ export function getField(frontmatter: string, key: string): string | null {
   return parseSimpleValue(match[1]);
 }
 
-/** Sidecar files use `ticket:` (Phase A); accept legacy `assignment:` too. */
+/** Sidecar files use `ticket:` (Phase A); accept legacy `ticket:` too. */
 function sidecarTicketSlug(frontmatter: string): string {
-  return getField(frontmatter, 'ticket') ?? getField(frontmatter, 'assignment') ?? '';
+  return getField(frontmatter, 'ticket') ?? getField(frontmatter, '__LEGACY_TICKET_KEY__') ?? '';
 }
 
 /**
@@ -75,7 +75,7 @@ export function getNestedField(frontmatter: string, parent: string, key: string)
 }
 
 /**
- * Parse a YAML list field (e.g., tags, dependsOn, relatedAssignments).
+ * Parse a YAML list field (e.g., tags, dependsOn, relatedTickets).
  *
  * Supports the empty inline form `field: []` and the block-list form
  * `field:\n  - a\n  - b`. Does NOT support populated inline arrays
@@ -237,9 +237,9 @@ export function parseStatus(fileContent: string): ParsedStatus {
   };
 }
 
-// --- Assignment Summary Parser ---
+// --- Ticket Summary Parser ---
 
-export interface ParsedAssignmentSummary {
+export interface ParsedTicketSummary {
   id: string;
   slug: string;
   title: string;
@@ -251,7 +251,7 @@ export interface ParsedAssignmentSummary {
   updated: string;
 }
 
-export function parseAssignmentSummary(fileContent: string): ParsedAssignmentSummary {
+export function parseTicketSummary(fileContent: string): ParsedTicketSummary {
   const [fm] = extractFrontmatter(fileContent);
   return {
     id: getField(fm, 'id') ?? '',
@@ -266,9 +266,9 @@ export function parseAssignmentSummary(fileContent: string): ParsedAssignmentSum
   };
 }
 
-// --- Full Assignment Parser ---
+// --- Full Ticket Parser ---
 
-export interface ParsedAssignmentFull {
+export interface ParsedTicketFull {
   id: string;
   slug: string;
   title: string;
@@ -575,7 +575,7 @@ function parseFrozenChecksD(fm: string): FrozenCheck[] | null {
   return out;
 }
 
-export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
+export function parseTicketFull(fileContent: string): ParsedTicketFull {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
     id: getField(fm, 'id') ?? '',
@@ -652,7 +652,7 @@ export function parseAssignmentFull(fileContent: string): ParsedAssignmentFull {
 // --- Plan Parser ---
 
 export interface ParsedPlan {
-  assignment: string;
+  ticket: string;
   status: string;
   created: string;
   updated: string;
@@ -662,7 +662,7 @@ export interface ParsedPlan {
 export function parsePlan(fileContent: string): ParsedPlan {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     status: getField(fm, 'status') ?? '',
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
@@ -673,7 +673,7 @@ export function parsePlan(fileContent: string): ParsedPlan {
 // --- Scratchpad Parser ---
 
 export interface ParsedScratchpad {
-  assignment: string;
+  ticket: string;
   updated: string;
   body: string;
 }
@@ -681,7 +681,7 @@ export interface ParsedScratchpad {
 export function parseScratchpad(fileContent: string): ParsedScratchpad {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     updated: getField(fm, 'updated') ?? '',
     body,
   };
@@ -690,7 +690,7 @@ export function parseScratchpad(fileContent: string): ParsedScratchpad {
 // --- Handoff Parser ---
 
 export interface ParsedHandoff {
-  assignment: string;
+  ticket: string;
   handoffCount: number;
   updated: string;
   body: string;
@@ -699,7 +699,7 @@ export interface ParsedHandoff {
 export function parseHandoff(fileContent: string): ParsedHandoff {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     handoffCount: parseInt(getField(fm, 'handoffCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     body,
@@ -709,7 +709,7 @@ export function parseHandoff(fileContent: string): ParsedHandoff {
 // --- Decision Record Parser ---
 
 export interface ParsedDecisionRecord {
-  assignment: string;
+  ticket: string;
   decisionCount: number;
   updated: string;
   body: string;
@@ -718,7 +718,7 @@ export interface ParsedDecisionRecord {
 export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     decisionCount: parseInt(getField(fm, 'decisionCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     body,
@@ -738,7 +738,7 @@ export interface ParsedComment {
 }
 
 export interface ParsedComments {
-  assignment: string;
+  ticket: string;
   entryCount: number;
   updated: string;
   entries: ParsedComment[];
@@ -780,7 +780,7 @@ export function parseComments(fileContent: string): ParsedComments {
     entries.push(entry);
   }
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     entries,
@@ -796,7 +796,7 @@ export interface ProgressEntry {
 }
 
 export interface ParsedProgress {
-  assignment: string;
+  ticket: string;
   entryCount: number;
   updated: string;
   entries: ProgressEntry[];
@@ -815,7 +815,7 @@ export function parseProgress(fileContent: string): ParsedProgress {
     entries.push({ timestamp, body: entryBody });
   }
   return {
-    assignment: sidecarTicketSlug(fm),
+    ticket: sidecarTicketSlug(fm),
     entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     entries,
@@ -861,6 +861,3 @@ export function extractMermaidGraph(body: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-/** Core rename aliases — dashboard keeps `parseAssignment*` through Phase A. */
-export const parseTicketFull = parseAssignmentFull;
-export const parseTicketSummary = parseAssignmentSummary;

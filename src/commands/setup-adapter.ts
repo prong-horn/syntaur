@@ -69,10 +69,10 @@ export async function setupAdapterCommand(
   }
 
   // Verify ticket exists
-  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
   if (
     !(await fileExists(ticketDir)) ||
-    !(await fileExists(assignmentMdPath))
+    !(await fileExists(ticketMdPath))
   ) {
     throw new Error(
       `Ticket "${options.ticket}" not found at ${ticketDir}.`,

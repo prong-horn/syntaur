@@ -27,11 +27,11 @@ import type {
  * Run with: npx vitest run -c vitest.dashboard.config.ts
  */
 
-const ASSIGNMENT = 'ticket-1';
+const TICKET = 'ticket-1';
 
 function item(overrides: Partial<ChatItem> & { itemId: string }): ChatItem {
   return {
-    ticketId: ASSIGNMENT,
+    ticketId: TICKET,
     turnId: 't1',
     agentId: 'claude',
     type: 'system',
@@ -94,7 +94,7 @@ describe('applyPatch', () => {
 
 describe('applyFrame', () => {
   const session: ChatSessionSummary = {
-    ticketId: ASSIGNMENT,
+    ticketId: TICKET,
     agentId: 'claude',
     harness: 'claude',
     acpSessionId: 'acp-1',
@@ -112,8 +112,8 @@ describe('applyFrame', () => {
   };
 
   it('applies a chat-item patch for this ticket', () => {
-    const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-item', {
-      ticketId: ASSIGNMENT,
+    const state = applyFrame(emptyChatState(), TICKET, 'chat-item', {
+      ticketId: TICKET,
       patch: upsert(item({ itemId: 't1:0' })),
     });
     expect(state.items.size).toBe(1);
@@ -121,7 +121,7 @@ describe('applyFrame', () => {
 
   it('ignores frames for another ticket — /ws has no topics', () => {
     const before = emptyChatState();
-    const after = applyFrame(before, ASSIGNMENT, 'chat-item', {
+    const after = applyFrame(before, TICKET, 'chat-item', {
       ticketId: 'someone-else',
       patch: upsert(item({ itemId: 't1:0', ticketId: 'someone-else' })),
     });
@@ -129,8 +129,8 @@ describe('applyFrame', () => {
   });
 
   it('upserts a chat-session frame by agent id', () => {
-    const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
-      ticketId: ASSIGNMENT,
+    const state = applyFrame(emptyChatState(), TICKET, 'chat-session', {
+      ticketId: TICKET,
       agentId: 'claude',
       session,
     });
@@ -138,13 +138,13 @@ describe('applyFrame', () => {
   });
 
   it('keeps one session per agent — a second agent does not evict the first', () => {
-    let state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
-      ticketId: ASSIGNMENT,
+    let state = applyFrame(emptyChatState(), TICKET, 'chat-session', {
+      ticketId: TICKET,
       agentId: 'planner',
       session: { ...session, agentId: 'planner' },
     });
-    state = applyFrame(state, ASSIGNMENT, 'chat-session', {
-      ticketId: ASSIGNMENT,
+    state = applyFrame(state, TICKET, 'chat-session', {
+      ticketId: TICKET,
       agentId: 'implementer',
       session: { ...session, agentId: 'implementer', state: 'idle' },
     });
@@ -173,8 +173,8 @@ describe('applyFrame', () => {
         missing: null,
       },
     ];
-    const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-participants', {
-      ticketId: ASSIGNMENT,
+    const state = applyFrame(emptyChatState(), TICKET, 'chat-participants', {
+      ticketId: TICKET,
       participants: { agents: ['planner'], defaultAgent: 'planner', hopBudget: 3 },
       agents,
     });
@@ -184,9 +184,9 @@ describe('applyFrame', () => {
 
   it('tolerates a malformed or absent payload', () => {
     const before = emptyChatState();
-    expect(applyFrame(before, ASSIGNMENT, 'chat-item', undefined)).toBe(before);
-    expect(applyFrame(before, ASSIGNMENT, 'chat-item', 'nonsense')).toBe(before);
-    expect(applyFrame(before, ASSIGNMENT, 'chat-item', { ticketId: ASSIGNMENT })).toBe(before);
+    expect(applyFrame(before, TICKET, 'chat-item', undefined)).toBe(before);
+    expect(applyFrame(before, TICKET, 'chat-item', 'nonsense')).toBe(before);
+    expect(applyFrame(before, TICKET, 'chat-item', { ticketId: TICKET })).toBe(before);
   });
 });
 

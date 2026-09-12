@@ -43,7 +43,7 @@ import { parseComments } from '../dashboard/parser.js';
  */
 
 let sandbox: string;
-let assignmentDir: string;
+let ticketDir: string;
 let worktree: string;
 let broker: ChatBroker;
 let fake: FakeAgent;
@@ -51,13 +51,13 @@ let clients: AcpClient[];
 let spawns: Array<{ cwd: string; env: Record<string, string> | undefined }> = [];
 let frames: Array<{ type: string; payload: unknown }>;
 
-const ASSIGNMENT_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
+const TICKET_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
 
-const assignment = (): ResolvedTicket => ({
-  ticketDir: assignmentDir,
+const ticket = (): ResolvedTicket => ({
+  ticketDir: ticketDir,
   projectSlug: 'syntaur-meta',
   ticketSlug: 'chat-demo',
-  id: ASSIGNMENT_ID,
+  id: TICKET_ID,
   standalone: false,
 });
 
@@ -79,9 +79,9 @@ async function waitUntil(
   throw new Error(`timed out waiting for ${what}`);
 }
 
-const items = (): ChatItem[] => broker.items(assignment(), { limit: 500 });
+const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const itemsOfType = (type: ChatItem['type']) => items().filter((i) => i.type === type);
-const events = (): Promise<ChatEvent[]> => readEvents(join(assignmentDir, 'chat', 'events.jsonl'));
+const events = (): Promise<ChatEvent[]> => readEvents(join(ticketDir, 'chat', 'events.jsonl'));
 
 /**
  * Wait until `turns` turns have finished and the queue has drained. Polling the
@@ -143,10 +143,10 @@ function makeBroker(
   return broker;
 }
 
-async function writeAssignment(workspace: { worktreePath?: string; repository?: string } = {}): Promise<void> {
+async function writeTicket(workspace: { worktreePath?: string; repository?: string } = {}): Promise<void> {
   const lines = [
     '---',
-    `id: ${ASSIGNMENT_ID}`,
+    `id: ${TICKET_ID}`,
     'slug: chat-demo',
     'title: "Chat demo"',
     'status: ready_to_implement',
@@ -164,19 +164,19 @@ async function writeAssignment(workspace: { worktreePath?: string; repository?: 
     '',
     '- [ ] It chats',
   ];
-  await writeFile(join(assignmentDir, 'ticket.md'), lines.join('\n'), 'utf-8');
+  await writeFile(join(ticketDir, 'ticket.md'), lines.join('\n'), 'utf-8');
 }
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-'));
-  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
+  ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
   worktree = join(sandbox, 'worktree');
-  await mkdir(assignmentDir, { recursive: true });
+  await mkdir(ticketDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
-  await writeAssignment();
+  await writeTicket();
   await writeFile(
-    join(assignmentDir, 'progress.md'),
-    renderProgress({ assignment: 'chat-demo', timestamp: '2026-09-06T12:00:00Z' }),
+    join(ticketDir, 'progress.md'),
+    renderProgress({ ticket: 'chat-demo', timestamp: '2026-09-06T12:00:00Z' }),
     'utf-8',
   );
   clients = [];
@@ -207,7 +207,7 @@ describe('first message', () => {
       ],
     });
 
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
 
     expect(fake.calls.slice(0, 2)).toEqual(['initialize', 'session/new']);
@@ -221,7 +221,7 @@ describe('first message', () => {
     expect((first[first.length - 1] as { text: string }).text).toContain('<chat-event author="human"');
     expect((first[first.length - 1] as { text: string }).text).toContain('hello');
 
-    await broker.send({ assignment: assignment(), text: 'again' });
+    await broker.send({ ticket: ticket(), text: 'again' });
     await idle(2);
     // Second turn: only the new message, no standing context.
     expect(fake.prompts[1].prompt).toHaveLength(1);
@@ -241,7 +241,7 @@ describe('first message', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'hi' });
+    await broker.send({ ticket: ticket(), text: 'hi' });
     await idle();
 
     const messages = itemsOfType('agent.message');
@@ -265,24 +265,24 @@ describe('first message', () => {
   });
 
   it('falls back to homedir when the workspace has no valid cwd', async () => {
-    await writeAssignment({ worktreePath: '/nope/nowhere', repository: '/nope/nowhere' });
+    await writeTicket({ worktreePath: '/nope/nowhere', repository: '/nope/nowhere' });
     makeBroker();
-    await broker.send({ assignment: assignment(), text: 'hi' });
+    await broker.send({ ticket: ticket(), text: 'hi' });
     await idle();
     const { homedir } = await import('node:os');
     expect(fake.newSessionRequests[0].cwd).toBe(homedir());
     // The home tier is read-only unless the definition pins a mode: claude's
     // `ask` role id is `default`, applied through session/set_mode.
     expect(fake.calls).toContain('session/set_mode');
-    expect((await broker.getSession(assignment(), 'claude'))?.mode).toBe('default');
+    expect((await broker.getSession(ticket(), 'claude'))?.mode).toBe('default');
     // And the SessionStart hook is told not to merge into ~/.syntaur/context.json.
     expect(spawns[0]?.env?.SYNTAUR_SKIP_CONTEXT_MERGE).toBe('1');
   });
 
   it('falls back to the repository when the worktree is missing', async () => {
-    await writeAssignment({ worktreePath: '/nope/nowhere', repository: worktree });
+    await writeTicket({ worktreePath: '/nope/nowhere', repository: worktree });
     makeBroker();
-    await broker.send({ assignment: assignment(), text: 'hi' });
+    await broker.send({ ticket: ticket(), text: 'hi' });
     await idle();
     expect(fake.newSessionRequests[0].cwd).toBe(worktree);
     expect(spawns[0]?.env?.SYNTAUR_SKIP_CONTEXT_MERGE).toBeUndefined();
@@ -301,10 +301,10 @@ describe('the queue (Decision 6)', () => {
       ],
     });
 
-    await broker.send({ assignment: assignment(), text: 'A' });
+    await broker.send({ ticket: ticket(), text: 'A' });
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
 
-    const second = await broker.send({ assignment: assignment(), text: 'B' });
+    const second = await broker.send({ ticket: ticket(), text: 'B' });
     // Still one prompt in flight — the queue is Syntaur's.
     expect(fake.prompts).toHaveLength(1);
     await waitUntil(
@@ -338,12 +338,12 @@ describe('the queue (Decision 6)', () => {
     const gate = new Promise<void>((r) => (release = r));
     makeBroker({ turns: [{ steps: [{ kind: 'gate', gate }] }, { steps: [] }] });
 
-    await broker.send({ assignment: assignment(), text: 'A' });
+    await broker.send({ ticket: ticket(), text: 'A' });
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
-    const second = await broker.send({ assignment: assignment(), text: 'B' });
+    const second = await broker.send({ ticket: ticket(), text: 'B' });
 
-    expect(await broker.withdraw(assignment(), second.messageId)).toBe(true);
-    expect(await broker.withdraw(assignment(), 'not-a-message')).toBe(false);
+    expect(await broker.withdraw(ticket(), second.messageId)).toBe(true);
+    expect(await broker.withdraw(ticket(), 'not-a-message')).toBe(false);
 
     release();
     await idle();
@@ -359,10 +359,10 @@ describe('the queue (Decision 6)', () => {
 describe('cancel', () => {
   it('resolves the in-flight prompt as cancelled', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'awaitCancel' }] }] });
-    await broker.send({ assignment: assignment(), text: 'essay please' });
+    await broker.send({ ticket: ticket(), text: 'essay please' });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
 
-    expect(await broker.cancel(assignment(), null)).toBe(true);
+    expect(await broker.cancel(ticket(), null)).toBe(true);
     await idle();
 
     const status = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
@@ -390,10 +390,10 @@ describe('cancel', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'run it' });
+    await broker.send({ ticket: ticket(), text: 'run it' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'the permission item');
 
-    await broker.cancel(assignment(), null);
+    await broker.cancel(ticket(), null);
     await idle();
 
     expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'cancelled' } });
@@ -403,7 +403,7 @@ describe('cancel', () => {
 
   it('is a no-op when nothing is running', async () => {
     makeBroker();
-    expect(await broker.cancel(assignment(), null)).toBe(false);
+    expect(await broker.cancel(ticket(), null)).toBe(false);
   });
 });
 
@@ -426,24 +426,24 @@ describe('permissions (Decision 9)', () => {
 
   it('an answer reaches the agent and lands on the item', async () => {
     makeBroker({ turns: [permissionTurn] });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'the permission item');
 
     const perm = itemsOfType('permission.request')[0] as { requestId: string; options: unknown[] };
     expect(perm.options).toHaveLength(2);
-    expect(await broker.answerPermission(assignment(), perm.requestId, 'allow')).toBe(true);
+    expect(await broker.answerPermission(ticket(), perm.requestId, 'allow')).toBe(true);
     await idle();
 
     expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
     const answered = itemsOfType('permission.request')[0] as { answer?: string };
     expect(answered.answer).toBe('allow');
     // Answering an unknown request is a no-op, not a throw.
-    expect(await broker.answerPermission(assignment(), 'nope', 'allow')).toBe(false);
+    expect(await broker.answerPermission(ticket(), 'nope', 'allow')).toBe(false);
   });
 
   it('a timeout rejects, marks the item and files an Inbox question', async () => {
     makeBroker({ turns: [permissionTurn] });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'the permission item');
     await idle();
 
@@ -458,10 +458,10 @@ describe('permissions (Decision 9)', () => {
     // from the timeout callback, which nothing awaits, so poll for it rather
     // than assume it landed before the turn ended.
     await waitUntil(
-      () => existsSync(join(assignmentDir, 'comments.md')),
+      () => existsSync(join(ticketDir, 'comments.md')),
       'the Inbox question to be filed',
     );
-    const comments = await readFile(join(assignmentDir, 'comments.md'), 'utf-8');
+    const comments = await readFile(join(ticketDir, 'comments.md'), 'utf-8');
     expect(comments).toContain('**Type:** question');
     // Unresolved is what makes the Inbox pick it up (src/inbox/index.ts).
     expect(comments).toContain('**Resolved:** false');
@@ -510,7 +510,7 @@ describe('permissions auto-approve', () => {
   it('auto-answers when the definition has permissions: auto', async () => {
     await writeAgentFile('claude', 'permissions: auto\n');
     makeBroker({ turns: [permissionTurn] });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
 
     expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
@@ -518,7 +518,7 @@ describe('permissions auto-approve', () => {
     expect(perm.answer).toBe('allow');
     expect(perm.auto).toBe(true);
     expect(perm.sealed).toBe(true);
-    expect(existsSync(join(assignmentDir, 'comments.md'))).toBe(false);
+    expect(existsSync(join(ticketDir, 'comments.md'))).toBe(false);
   });
 
   it('prefers allow_once on the cursor option shape', async () => {
@@ -543,7 +543,7 @@ describe('permissions auto-approve', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
     expect(fake.permissionAnswers[0]).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow-once' },
@@ -571,7 +571,7 @@ describe('permissions auto-approve', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
     expect(fake.permissionAnswers[0]).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow_once' },
@@ -600,7 +600,7 @@ describe('permissions auto-approve', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
     expect(fake.permissionAnswers[0]).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow_once' },
@@ -628,7 +628,7 @@ describe('permissions auto-approve', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
     expect(fake.permissionAnswers[0]).toEqual({
       outcome: { outcome: 'selected', optionId: 'allow_always' },
@@ -666,12 +666,12 @@ describe('permissions auto-approve', () => {
         permissionTurn,
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'first permission');
 
     const first = itemsOfType('permission.request')[0] as { requestId: string };
     expect(
-      await broker.answerPermission(assignment(), first.requestId, 'allow', { allowAllSession: true }),
+      await broker.answerPermission(ticket(), first.requestId, 'allow', { allowAllSession: true }),
     ).toBe(true);
     await idle();
 
@@ -690,7 +690,7 @@ describe('permissions auto-approve', () => {
       'idle teardown',
     );
 
-    await broker.send({ assignment: assignment(), text: 'again' });
+    await broker.send({ ticket: ticket(), text: 'again' });
     await waitUntil(() => itemsOfType('permission.request').length === 3, 'third permission card');
     const third = itemsOfType('permission.request')[2] as { auto?: boolean; answer?: string };
     expect(third.auto).toBeUndefined();
@@ -719,9 +719,9 @@ describe('permissions auto-approve', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => fake.prompts.length === 1, 'prompt');
-    await broker.cancel(assignment(), null);
+    await broker.cancel(ticket(), null);
     await idle();
     const status = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
     expect(status.state).toBe('ended');
@@ -758,11 +758,11 @@ describe('permissions auto-approve', () => {
       ],
       agentOptions: { resumeSupported: false },
     });
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
-    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask me' });
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask me' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
     const question = itemsOfType('question')[0] as { requestId: string };
-    expect(await broker.answerQuestion(assignment(), question.requestId, { optionId: 'a' })).toBe(true);
+    expect(await broker.answerQuestion(ticket(), question.requestId, { optionId: 'a' })).toBe(true);
     await sendP;
     await idle();
     expect(itemsOfType('question')[0]).toMatchObject({ answer: 'A' });
@@ -781,9 +781,9 @@ describe('engagements and the sessions row (Decisions 1 and 10)', () => {
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
 
-    await broker.send({ assignment: assignment(), text: 'one' });
+    await broker.send({ ticket: ticket(), text: 'one' });
     await idle();
-    await broker.send({ assignment: assignment(), text: 'two' });
+    await broker.send({ ticket: ticket(), text: 'two' });
     await idle(2);
 
     const db = getSessionDb();
@@ -826,7 +826,7 @@ describe('engagements and the sessions row (Decisions 1 and 10)', () => {
     const second = JSON.parse(turns[1].tokens_at_close!) as { models: Record<string, { cost: number }> };
     const secondOpen = JSON.parse(turns[1].tokens_at_open!) as { models: Record<string, { cost: number }> };
     // The window delta is this turn's own cost — 0.18 cumulative minus the 0.11
-    // already spent — which is exactly what `assignmentWindowCost` prices.
+    // already spent — which is exactly what `ticketWindowCost` prices.
     expect(second.models[key].cost - secondOpen.models[key].cost).toBeCloseTo(0.07, 6);
 
     // claude writes NO usage_events — ccusage already records this session id.
@@ -838,13 +838,13 @@ describe('engagements and the sessions row (Decisions 1 and 10)', () => {
       expect(rows.n).toBe(0);
     }
 
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(row?.acp_session_id).toBe('acp-session-1');
     expect(row?.harness).toBe('claude');
     expect(row?.cwd).toBe(worktree);
     // The snapshot holds the adapter's cumulative figure verbatim, NOT the sum
     // of the per-turn deltas — adding a running total to itself would inflate
-    // the assignment's cost several-fold.
+    // the ticket's cost several-fold.
     expect(JSON.parse(row!.usage_snapshot_json!).models[key].cost).toBeCloseTo(0.18, 6);
   });
 });
@@ -856,7 +856,7 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
 
-    await broker.send({ assignment: assignment(), text: 'boom' });
+    await broker.send({ ticket: ticket(), text: 'boom' });
     await idle();
 
     const status = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
@@ -872,14 +872,14 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     // A second message on the same broker re-uses the live client; force a
     // fresh adapter by killing it first.
     for (const client of clients) await client.close();
-    await broker.send({ assignment: assignment(), text: 'again' });
+    await broker.send({ ticket: ticket(), text: 'again' });
     await idle(2);
     expect(fake.calls).toContain('session/resume');
   });
 
   it('falls back to session/new plus a system row when resume fails', async () => {
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1', 'acp-session-2'] } });
-    await broker.send({ assignment: assignment(), text: 'one' });
+    await broker.send({ ticket: ticket(), text: 'one' });
     await idle();
     for (const client of clients) await client.close();
 
@@ -901,8 +901,8 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
       timeouts: { flushMs: 1, sessionIdleMs: 60_000 },
     });
 
-    await secondBroker.send({ assignment: assignment(), text: 'two' });
-    const secondItems = () => secondBroker.items(assignment(), { limit: 500 });
+    await secondBroker.send({ ticket: ticket(), text: 'two' });
+    const secondItems = () => secondBroker.items(ticket(), { limit: 500 });
     await waitUntil(() => failing.prompts.length === 1, 'the second prompt');
     await waitUntil(
       () =>
@@ -921,7 +921,7 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
 describe('idle teardown', () => {
   it('closes the adapter after the idle window and resumes on the next message', async () => {
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
-    await broker.send({ assignment: assignment(), text: 'one' });
+    await broker.send({ ticket: ticket(), text: 'one' });
     await idle();
 
     await waitUntil(
@@ -933,7 +933,7 @@ describe('idle teardown', () => {
     const status = db.prepare('SELECT status FROM sessions').get() as { status: string };
     expect(status.status).toBe('stopped');
 
-    await broker.send({ assignment: assignment(), text: 'two' });
+    await broker.send({ ticket: ticket(), text: 'two' });
     await idle(2);
     expect(fake.calls).toContain('session/resume');
     const revived = db.prepare('SELECT status FROM sessions').get() as { status: string };
@@ -944,7 +944,7 @@ describe('idle teardown', () => {
 describe('stopAll', () => {
   it('cancels the in-flight turn, closes its engagement and leaves nothing running', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'awaitCancel' }] }] });
-    await broker.send({ assignment: assignment(), text: 'essay' });
+    await broker.send({ ticket: ticket(), text: 'essay' });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
 
     await broker.stopAll();
@@ -984,16 +984,16 @@ describe('history and reindex', () => {
         },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
 
     const live = items();
     expect(live.map((i) => i.type)).toContain('agent.work');
     expect(live.map((i) => i.type)).toContain('agent.plan');
 
-    const result = await broker.reindex(assignment());
+    const result = await broker.reindex(ticket());
     expect(result.events).toBeGreaterThan(0);
-    expect(broker.items(assignment(), { limit: 500 })).toEqual(live);
+    expect(broker.items(ticket(), { limit: 500 })).toEqual(live);
   });
 
   it('lists the builtin agent definitions', async () => {
@@ -1005,9 +1005,9 @@ describe('history and reindex', () => {
 
   it('reports the session summary before anything has been sent', async () => {
     makeBroker();
-    const summary = await broker.getSession(assignment(), null);
+    const summary = await broker.getSession(ticket(), null);
     expect(summary).toMatchObject({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       harness: 'claude',
       state: 'none',
@@ -1018,15 +1018,15 @@ describe('history and reindex', () => {
 });
 
 describe('WS frames (Decision 3)', () => {
-  it('emits chat-item patches scoped by assignment id and chat-session transitions', async () => {
+  it('emits chat-item patches scoped by ticket id and chat-session transitions', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'update', update: textChunk('hi', 'm1') }] }] });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
 
     const itemFrames = frames.filter((f) => f.type === 'chat-item');
     expect(itemFrames.length).toBeGreaterThan(0);
     for (const frame of itemFrames) {
-      expect((frame.payload as { ticketId: string }).ticketId).toBe(ASSIGNMENT_ID);
+      expect((frame.payload as { ticketId: string }).ticketId).toBe(TICKET_ID);
       expect((frame.payload as { patch: { op: string } }).patch.op).toMatch(/^(upsert|retract)$/);
     }
 
@@ -1065,7 +1065,7 @@ describe('cumulative cost (Decision 11)', () => {
     });
 
     for (const text of ['one', 'two', 'three']) {
-      await broker.send({ assignment: assignment(), text });
+      await broker.send({ ticket: ticket(), text });
       await idle(['one', 'two', 'three'].indexOf(text) + 1);
     }
 
@@ -1075,7 +1075,7 @@ describe('cumulative cost (Decision 11)', () => {
     expect(costs[2]).toBeCloseTo(0.33, 6);
 
     // The session's stored total is the adapter's own figure, not 0.34+0.42+0.75.
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     const models = JSON.parse(row!.usage_snapshot_json!).models as Record<string, { cost: number }>;
     expect(models[Object.keys(models)[0]].cost).toBeCloseTo(0.75, 6);
   });
@@ -1090,11 +1090,11 @@ describe('cumulative cost (Decision 11)', () => {
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
 
-    await broker.send({ assignment: assignment(), text: 'one' });
+    await broker.send({ ticket: ticket(), text: 'one' });
     await idle();
-    await broker.send({ assignment: assignment(), text: 'two' });
+    await broker.send({ ticket: ticket(), text: 'two' });
     await waitUntil(() => fake.prompts.length === 2, 'the second prompt');
-    await broker.cancel(assignment(), null);
+    await broker.cancel(ticket(), null);
     await idle(2);
 
     const costs = (itemsOfType('turn.status') as Array<{ cost?: number }>).map((s) => s.cost);
@@ -1121,16 +1121,16 @@ describe('resume keeps the cost snapshot on one key', () => {
       },
     });
 
-    await broker.send({ assignment: assignment(), text: 'one' });
+    await broker.send({ ticket: ticket(), text: 'one' });
     await idle();
     // Drop the client so the next send has to respawn and resume.
     for (const client of clients) await client.close();
 
-    await broker.send({ assignment: assignment(), text: 'two' });
+    await broker.send({ ticket: ticket(), text: 'two' });
     await idle(2);
     expect(fake.calls).toContain('session/resume');
 
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     const models = JSON.parse(row!.usage_snapshot_json!).models as Record<string, unknown>;
     expect(Object.keys(models)).toEqual(['opus[1m]']);
 
@@ -1159,7 +1159,7 @@ describe('resume keeps the cost snapshot on one key', () => {
  * seal its own turn, which is precisely NOT the case under test.
  */
 describe('startup repair after a crash (Decision 12)', () => {
-  const SESSION_KEY = `${ASSIGNMENT_ID}:claude`;
+  const SESSION_KEY = `${TICKET_ID}:claude`;
   const CRASH_SNAPSHOT = {
     models: { 'opus[1m]': { input: 1, output: 1, cacheCreation: 0, cacheRead: 0, total: 2, cost: 0.5 } },
     collectorRunAt: null,
@@ -1175,8 +1175,8 @@ describe('startup repair after a crash (Decision 12)', () => {
       answeredPermissionSeqs?: number[];
     } = {},
   ): Promise<void> {
-    const log = await openChatLog(assignmentDir);
-    const base = { ticketId: ASSIGNMENT_ID, agentId: 'claude', sessionKey: SESSION_KEY };
+    const log = await openChatLog(ticketDir);
+    const base = { ticketId: TICKET_ID, agentId: 'claude', sessionKey: SESSION_KEY };
 
     await log.append({
       ...base,
@@ -1235,9 +1235,9 @@ describe('startup repair after a crash (Decision 12)', () => {
 
     upsertChatSession({
       sessionKey: SESSION_KEY,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       agentId: 'claude',
       harness: 'claude',
       acpSessionId: 'acp-session-1',
@@ -1253,16 +1253,16 @@ describe('startup repair after a crash (Decision 12)', () => {
     // The engagement the crashed turn opened and never closed.
     openEngagement({
       sessionId: 'acp-session-1',
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       stage: 'chat',
       startedAt: '2026-09-02T12:00:00.000Z',
       tokensAtOpen: CRASH_SNAPSHOT,
     });
     upsertChatItem(SESSION_KEY, {
       itemId: 'turn-crashed:0',
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       turnId: 'turn-crashed',
       agentId: 'claude',
       type: 'turn.status',
@@ -1279,7 +1279,7 @@ describe('startup repair after a crash (Decision 12)', () => {
     await seedCrashedState();
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
 
-    await broker.send({ assignment: assignment(), text: 'after the restart' });
+    await broker.send({ ticket: ticket(), text: 'after the restart' });
     await waitUntil(() => fake.prompts.length === 1, 'the post-restart prompt');
     await waitUntil(
       () =>
@@ -1311,10 +1311,10 @@ describe('startup repair after a crash (Decision 12)', () => {
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
 
     // Finding 3 + 8: the queue is visible before anything new is sent.
-    const summary = await broker.getSession(assignment(), 'claude');
+    const summary = await broker.getSession(ticket(), 'claude');
     expect(summary?.queued.map((q) => q.text)).toEqual(['first waiting', 'second waiting']);
 
-    await broker.send({ assignment: assignment(), text: 'third' });
+    await broker.send({ ticket: ticket(), text: 'third' });
     await waitUntil(() => fake.prompts.length === 3, 'all three queued messages to be sent');
 
     const sent = fake.prompts.map((p) => (p.prompt[p.prompt.length - 1] as { text: string }).text);
@@ -1331,10 +1331,10 @@ describe('startup repair after a crash (Decision 12)', () => {
 
     // Nothing has been sent yet in this process, so the session only exists
     // because withdraw materialises it.
-    expect(await broker.withdraw(assignment(), 'm-queued-0')).toBe(true);
-    expect(await broker.withdraw(assignment(), 'm-queued-0')).toBe(false);
+    expect(await broker.withdraw(ticket(), 'm-queued-0')).toBe(true);
+    expect(await broker.withdraw(ticket(), 'm-queued-0')).toBe(false);
 
-    const summary = await broker.getSession(assignment(), 'claude');
+    const summary = await broker.getSession(ticket(), 'claude');
     expect(summary?.queued).toEqual([]);
   });
 
@@ -1345,7 +1345,7 @@ describe('startup repair after a crash (Decision 12)', () => {
     // Opening the Chat tab calls GET .../chat/session and nothing else. The
     // docs promise recovered messages are "re-queued and sent in order", so
     // this alone must drain them.
-    await broker.getSession(assignment(), 'claude');
+    await broker.getSession(ticket(), 'claude');
     await waitUntil(() => fake.prompts.length === 2, 'both recovered messages to be sent');
 
     const sent = fake.prompts.map((p) => (p.prompt[p.prompt.length - 1] as { text: string }).text);
@@ -1360,8 +1360,8 @@ describe('startup repair after a crash (Decision 12)', () => {
     // Two tabs hitting the broker at the same instant: one construction, one
     // repair, and nothing may drive a half-repaired session.
     const [a, b] = await Promise.all([
-      broker.getSession(assignment(), 'claude'),
-      broker.send({ assignment: assignment(), text: 'from the other tab' }),
+      broker.getSession(ticket(), 'claude'),
+      broker.send({ ticket: ticket(), text: 'from the other tab' }),
     ]);
     expect(a).not.toBeNull();
     expect(b.messageId).toBeTruthy();
@@ -1419,7 +1419,7 @@ describe('startup repair after a crash (Decision 12)', () => {
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
 
-    await broker.send({ assignment: assignment(), text: 'ask me' });
+    await broker.send({ ticket: ticket(), text: 'ask me' });
     await waitUntil(
       () => itemsOfType('permission.request').some((i) => (i as { requestId: string }).requestId.endsWith(':perm:2')),
       'a permission id that continues the sequence',
@@ -1439,14 +1439,14 @@ describe('startup repair after a crash (Decision 12)', () => {
     // `ensureSession` yields on `loadAgentDefinitions` before anything is
     // published, and `stopAll` runs to completion synchronously against an
     // empty session map — exactly the window the finding describes.
-    const loading = broker.getSession(assignment(), 'claude');
+    const loading = broker.getSession(ticket(), 'claude');
     await broker.stopAll();
     await loading;
 
     // The session must not have slipped into a map the shutdown already walked:
     // it is stopped either way, which is only true if stopAll joined the
     // construction (or the construction saw `stopping` and stood down).
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(row?.state).toBe('stopped');
     const db = getSessionDb();
     expect(
@@ -1465,7 +1465,7 @@ describe('startup repair after a crash (Decision 12)', () => {
   it('resolves a permission the crash orphaned instead of leaving live buttons', async () => {
     await seedCrashedState({ pendingPermission: true });
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
-    await broker.getSession(assignment(), 'claude');
+    await broker.getSession(ticket(), 'claude');
 
     await waitUntil(
       () =>
@@ -1476,12 +1476,12 @@ describe('startup repair after a crash (Decision 12)', () => {
     );
     // The ACP request died with the process that made it, so it cannot be
     // answered — it is cancelled, and answering now correctly reports false.
-    expect(await broker.answerPermission(assignment(), 'perm-crashed', 'allow')).toBe(false);
+    expect(await broker.answerPermission(ticket(), 'perm-crashed', 'allow')).toBe(false);
   });
 });
 
-describe('one event log per assignment (finding 4)', () => {
-  it('two agents on one assignment append to the same log with strictly increasing seq', async () => {
+describe('one event log per ticket (finding 4)', () => {
+  it('two agents on one ticket append to the same log with strictly increasing seq', async () => {
     // Each session gets its own fake agent: one `AgentApp` does not serve two
     // concurrent client connections. The assertion is about the shared LOG.
     const agents: FakeAgent[] = [];
@@ -1506,8 +1506,8 @@ describe('one event log per assignment (finding 4)', () => {
       timeouts: { flushMs: 1, sessionIdleMs: 60_000 },
     });
 
-    await broker.send({ assignment: assignment(), text: 'to claude', agentId: 'claude' });
-    await broker.send({ assignment: assignment(), text: 'to codex', agentId: 'codex' });
+    await broker.send({ ticket: ticket(), text: 'to claude', agentId: 'claude' });
+    await broker.send({ ticket: ticket(), text: 'to codex', agentId: 'codex' });
     await waitUntil(
       () => agents.length === 2 && agents.every((a) => a.prompts.length === 1),
       'both agents to receive their prompt',
@@ -1522,11 +1522,11 @@ describe('one event log per assignment (finding 4)', () => {
     expect(seqs[0]).toBe(0);
     expect(seqs[seqs.length - 1]).toBe(seqs.length - 1);
     // Both agents really did write to it — alongside the `human`-authored
-    // routing rows, which live in the assignment scope (Decision 3).
+    // routing rows, which live in the ticket scope (Decision 3).
     const authors = new Set(logged.map((e) => e.agentId));
     expect(authors).toEqual(new Set(['human', 'claude', 'codex']));
     expect(new Set(logged.map((e) => e.sessionKey))).toEqual(
-      new Set([`${ASSIGNMENT_ID}:@assignment`, `${ASSIGNMENT_ID}:claude`, `${ASSIGNMENT_ID}:codex`]),
+      new Set([`${TICKET_ID}:@assignment`, `${TICKET_ID}:claude`, `${TICKET_ID}:codex`]),
     );
   });
 });
@@ -1535,10 +1535,10 @@ describe('the drive loop never loses a message (finding 5)', () => {
   it('keeps a message queued when the adapter cannot start, and reports why', async () => {
     makeBroker();
     // No workspace ⇒ ensureAdapter throws before the turn is committed.
-    await writeAssignment({ worktreePath: '/nope/nowhere', repository: worktree });
+    await writeTicket({ worktreePath: '/nope/nowhere', repository: worktree });
     // `send` itself refuses on a bad cwd, so queue through a good one first and
     // then break the workspace under it.
-    const { messageId } = await broker.send({ assignment: assignment(), text: 'keep me' });
+    const { messageId } = await broker.send({ ticket: ticket(), text: 'keep me' });
     await idle();
     expect(messageId).toBeTruthy();
   });
@@ -1552,7 +1552,7 @@ describe('the drive loop never loses a message (finding 5)', () => {
       agentOptions: { sessionIds: ['acp-session-1'] },
     });
 
-    await broker.send({ assignment: assignment(), text: 'boom' });
+    await broker.send({ ticket: ticket(), text: 'boom' });
     await idle();
 
     const first = itemsOfType('turn.status')[0] as { state: string; stopReason?: string };
@@ -1564,7 +1564,7 @@ describe('the drive loop never loses a message (finding 5)', () => {
       (db.prepare('SELECT COUNT(*) AS n FROM engagement WHERE ended_at IS NULL').get() as { n: number }).n,
     ).toBe(0);
 
-    await broker.send({ assignment: assignment(), text: 'again' });
+    await broker.send({ ticket: ticket(), text: 'again' });
     await idle(2);
     expect(fake.prompts).toHaveLength(2);
   });
@@ -1585,7 +1585,7 @@ describe('codex usage_events write (finding 7)', () => {
       },
     });
 
-    await broker.send({ assignment: assignment(), text: 'one', agentId: 'codex' });
+    await broker.send({ ticket: ticket(), text: 'one', agentId: 'codex' });
     await idle();
     const afterOne = getSessionDb()
       .prepare('SELECT * FROM usage_events')
@@ -1601,7 +1601,7 @@ describe('codex usage_events write (finding 7)', () => {
       total_tokens: 120,
     });
 
-    await broker.send({ assignment: assignment(), text: 'two', agentId: 'codex' });
+    await broker.send({ ticket: ticket(), text: 'two', agentId: 'codex' });
     await idle(2);
     const afterTwo = getSessionDb()
       .prepare('SELECT total_tokens, input_tokens FROM usage_events')
@@ -1626,7 +1626,7 @@ describe('codex pricing (Task 6)', () => {
   /**
    * codex-acp reports token buckets but NO cost of its own, so a codex turn is
    * priced Syntaur-side from `MODEL_PRICING` (Decision 10). Before the OpenAI
-   * rates existed, every one of those turns booked at $0 and the assignment's
+   * rates existed, every one of those turns booked at $0 and the ticket's
    * usage rail read zero however much was spent.
    */
   async function runCodexTurn(model: string): Promise<void> {
@@ -1643,7 +1643,7 @@ describe('codex pricing (Task 6)', () => {
         configOptions: [{ id: 'model', currentValue: model }] as never,
       },
     });
-    await broker.send({ assignment: assignment(), agentId: 'codex', text: 'go' });
+    await broker.send({ ticket: ticket(), agentId: 'codex', text: 'go' });
     await idle();
   }
 
@@ -1697,24 +1697,24 @@ describe('chat image attachments', () => {
 
   it('rejects a /command with attachments', async () => {
     makeBroker();
-    const att = await writeChatAttachment(assignmentDir, {
+    const att = await writeChatAttachment(ticketDir, {
       name: 'dot.png',
       mime: 'image/png',
       bytes: PNG_1X1,
     });
     await expect(
-      broker.send({ assignment: assignment(), text: '/goal ship', attachments: [att] }),
+      broker.send({ ticket: ticket(), text: '/goal ship', attachments: [att] }),
     ).rejects.toThrow('A /command cannot carry attachments');
   });
 
   it('delivers an image block after the chat-event text', async () => {
     makeBroker();
-    const att = await writeChatAttachment(assignmentDir, {
+    const att = await writeChatAttachment(ticketDir, {
       name: 'dot.png',
       mime: 'image/png',
       bytes: PNG_1X1,
     });
-    await broker.send({ assignment: assignment(), text: 'look', attachments: [att] });
+    await broker.send({ ticket: ticket(), text: 'look', attachments: [att] });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
     const blocks = fake.prompts[0].prompt;
     const last = blocks[blocks.length - 1] as { type: string; data?: string; mimeType?: string };
@@ -1725,7 +1725,7 @@ describe('chat image attachments', () => {
 
   it('warns and omits a missing attachment file', async () => {
     makeBroker();
-    const att = await writeChatAttachment(assignmentDir, {
+    const att = await writeChatAttachment(ticketDir, {
       name: 'gone.png',
       mime: 'image/png',
       bytes: PNG_1X1,
@@ -1733,10 +1733,10 @@ describe('chat image attachments', () => {
     const { unlink } = await import('node:fs/promises');
     const { readdir } = await import('node:fs/promises');
     const { join } = await import('node:path');
-    const dir = join(assignmentDir, 'chat', 'attachments');
+    const dir = join(ticketDir, 'chat', 'attachments');
     const stored = (await readdir(dir)).find((n) => n.startsWith(`${att.id}__`))!;
     await unlink(join(dir, stored));
-    await broker.send({ assignment: assignment(), text: 'look', attachments: [att] });
+    await broker.send({ ticket: ticket(), text: 'look', attachments: [att] });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
     expect(itemsOfType('system').some((s) => (s as { text: string }).text.includes('missing on disk'))).toBe(
       true,
@@ -1745,15 +1745,15 @@ describe('chat image attachments', () => {
   });
 
   it('re-queues attachments after a crash repair', async () => {
-    const att = await writeChatAttachment(assignmentDir, {
+    const att = await writeChatAttachment(ticketDir, {
       name: 'dot.png',
       mime: 'image/png',
       bytes: PNG_1X1,
     });
-    const log = await openChatLog(assignmentDir);
-    const sessionKey = `${ASSIGNMENT_ID}:claude`;
+    const log = await openChatLog(ticketDir);
+    const sessionKey = `${TICKET_ID}:claude`;
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey,
       turnId: null,
@@ -1761,7 +1761,7 @@ describe('chat image attachments', () => {
       payload: { acpSessionId: 'acp-session-1', harness: 'claude', adapterVersion: 'x@1', cwd: worktree },
     });
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey,
       turnId: null,
@@ -1775,9 +1775,9 @@ describe('chat image attachments', () => {
     });
     upsertChatSession({
       sessionKey,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       agentId: 'claude',
       harness: 'claude',
       acpSessionId: 'acp-session-1',
@@ -1790,7 +1790,7 @@ describe('chat image attachments', () => {
       }),
     });
     makeBroker({ agentOptions: { sessionIds: ['acp-session-1'] } });
-    await broker.getSession(assignment(), 'claude');
+    await broker.getSession(ticket(), 'claude');
     await waitUntil(() => fake.prompts.length === 1, 'the recovered prompt');
     const last = fake.prompts[0].prompt[fake.prompts[0].prompt.length - 1] as {
       type: string;
@@ -1831,13 +1831,13 @@ describe('slash commands', () => {
       agentOptions: { availableCommands: sampleCommands },
     });
 
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
-    await broker.send({ assignment: assignment(), text: 'second' });
+    await broker.send({ ticket: ticket(), text: 'second' });
     await idle(2);
 
     expect(commandUpdateFrameCount()).toBe(1);
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(JSON.parse(row!.commands_json!)).toEqual([
       {
         name: 'context',
@@ -1853,7 +1853,7 @@ describe('slash commands', () => {
       },
     ]);
 
-    const summary = await broker.getSession(assignment(), 'claude');
+    const summary = await broker.getSession(ticket(), 'claude');
     expect(summary?.commandsSource).toBe('session');
     expect(summary?.commands).toHaveLength(2);
   });
@@ -1868,10 +1868,10 @@ describe('slash commands', () => {
       },
     ]);
     upsertChatSession({
-      sessionKey: `${ASSIGNMENT_ID}:claude`,
-      ticketId: ASSIGNMENT_ID,
+      sessionKey: `${TICKET_ID}:claude`,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       agentId: 'claude',
       harness: 'codex',
       state: 'idle',
@@ -1880,7 +1880,7 @@ describe('slash commands', () => {
     });
 
     makeBroker({ turns: [{ steps: [] }] });
-    const summary = await broker.getSession(assignment(), 'codex');
+    const summary = await broker.getSession(ticket(), 'codex');
     expect(summary?.commandsSource).toBe('harness-cache');
     expect(summary?.commands[0]?.name).toBe('status');
   });
@@ -1894,12 +1894,12 @@ describe('slash commands', () => {
       agentOptions: { availableCommands: sampleCommands },
     });
 
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
 
     getSessionDb()
       .prepare('UPDATE chat_sessions SET commands_json = NULL WHERE assignment_id = ? AND agent_id = ?')
-      .run(ASSIGNMENT_ID, 'claude');
+      .run(TICKET_ID, 'claude');
 
     await broker.stopAll();
     makeBroker({
@@ -1907,19 +1907,19 @@ describe('slash commands', () => {
       agentOptions: { availableCommands: sampleCommands },
     });
 
-    const summary = await broker.getSession(assignment(), 'claude');
+    const summary = await broker.getSession(ticket(), 'claude');
     expect(summary?.commandsSource).toBe('session');
     expect(summary?.commands).toHaveLength(2);
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(row?.commands_json).toBeTruthy();
   });
 
   it('does not backfill when the newest harness marker names another harness', async () => {
     makeBroker({ turns: [{ steps: [] }] });
-    const key = `${ASSIGNMENT_ID}:claude`;
-    const log = await openChatLog(assignmentDir);
+    const key = `${TICKET_ID}:claude`;
+    const log = await openChatLog(ticketDir);
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1927,7 +1927,7 @@ describe('slash commands', () => {
       payload: { harness: 'claude', acpSessionId: 's1', adapterVersion: null, cwd: worktree },
     });
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1935,7 +1935,7 @@ describe('slash commands', () => {
       payload: { sessionUpdate: 'available_commands_update', availableCommands: sampleCommands },
     });
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1945,9 +1945,9 @@ describe('slash commands', () => {
 
     upsertChatSession({
       sessionKey: key,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       agentId: 'claude',
       harness: 'claude',
       state: 'idle',
@@ -1955,9 +1955,9 @@ describe('slash commands', () => {
     });
     getSessionDb().prepare('DELETE FROM chat_harness_options').run();
 
-    const summary = await broker.getSession(assignment(), 'claude');
+    const summary = await broker.getSession(ticket(), 'claude');
     expect(summary?.commandsSource).not.toBe('session');
-    expect(getChatSession(ASSIGNMENT_ID, 'claude')?.commands_json).toBeNull();
+    expect(getChatSession(TICKET_ID, 'claude')?.commands_json).toBeNull();
   });
 
   it('ignores a later empty advertisement and keeps the harness record list', async () => {
@@ -1979,9 +1979,9 @@ describe('slash commands', () => {
       agentOptions: { availableCommands: sampleCommands },
     });
 
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
-    await broker.send({ assignment: assignment(), text: 'second' });
+    await broker.send({ ticket: ticket(), text: 'second' });
     await idle(2);
 
     expect(getHarnessOptions('claude').record?.commands).toEqual([
@@ -1998,7 +1998,7 @@ describe('slash commands', () => {
         action: { kind: 'prompt' },
       },
     ]);
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(JSON.parse(row!.commands_json!)).toHaveLength(2);
   });
 });
@@ -2030,7 +2030,7 @@ describe('command turns', () => {
       turns: [{ steps: [{ kind: 'update', update: textChunk('done', 'm1') }] }],
       agentOptions: { availableCommands: codexPlanCommand },
     });
-    await broker.send({ assignment: assignment(), agentId: 'codex', text: '@codex /goal ship it' });
+    await broker.send({ ticket: ticket(), agentId: 'codex', text: '@codex /goal ship it' });
     await idle();
 
     const commandPrompt = fake.prompts.find((p) =>
@@ -2049,13 +2049,13 @@ describe('command turns', () => {
       ],
       agentOptions: { availableCommands: [{ name: 'context', description: 'ctx', input: null }] },
     });
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
-    const before = (await broker.getSession(assignment(), 'claude'))!.lastDeliveredSeq;
+    const before = (await broker.getSession(ticket(), 'claude'))!.lastDeliveredSeq;
 
-    await broker.send({ assignment: assignment(), text: '/context' });
+    await broker.send({ ticket: ticket(), text: '/context' });
     await idle(2);
-    const afterCommand = (await broker.getSession(assignment(), 'claude'))!.lastDeliveredSeq;
+    const afterCommand = (await broker.getSession(ticket(), 'claude'))!.lastDeliveredSeq;
     expect(afterCommand).toBe(before);
   });
 
@@ -2070,13 +2070,13 @@ describe('command turns', () => {
         } as never,
       },
     });
-    await broker.send({ assignment: assignment(), agentId: 'codex', text: '/plan' });
+    await broker.send({ ticket: ticket(), agentId: 'codex', text: '/plan' });
     await idle();
 
     expect(fake.configCalls.some((c) => c.method === 'session/set_config_option')).toBe(true);
     const systems = itemsOfType('system') as Array<{ text: string }>;
     expect(systems.some((s) => s.text.includes('collaboration_mode = plan'))).toBe(true);
-    expect((await broker.getSession(assignment(), 'codex'))?.mode).toBe('plan');
+    expect((await broker.getSession(ticket(), 'codex'))?.mode).toBe('plan');
     expect(fake.prompts.some((p) => p.prompt.some((b) => (b as { text?: string }).text?.startsWith('/plan')))).toBe(
       false,
     );
@@ -2087,7 +2087,7 @@ describe('command turns', () => {
       turns: [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }],
       agentOptions: { availableCommands: [] },
     });
-    await broker.send({ assignment: assignment(), text: '/nope' });
+    await broker.send({ ticket: ticket(), text: '/nope' });
     await idle();
     const nopePrompt = fake.prompts.find((p) =>
       p.prompt.some((b) => b.type === 'text' && (b as { text: string }).text === '/nope'),
@@ -2098,7 +2098,7 @@ describe('command turns', () => {
 
 describe('cursor harness reattach and extensions', () => {
   async function attachCursor(): Promise<void> {
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
   }
 
   it('reattaches via session/load without duplicating replayed items', async () => {
@@ -2118,13 +2118,13 @@ describe('cursor harness reattach and extensions', () => {
       },
     });
     await attachCursor();
-    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'first' });
+    await broker.send({ ticket: ticket(), agentId: 'cursor', text: 'first' });
     await idle();
     const countAfterFirst = itemsOfType('agent.message').length;
     expect(fake.calls).toContain('session/new');
 
     await waitUntil(() => lastSessionFrame()?.state === 'idle', 'idle teardown', 2000);
-    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'second' });
+    await broker.send({ ticket: ticket(), agentId: 'cursor', text: 'second' });
     await idle(2);
 
     const logged = await events();
@@ -2133,8 +2133,8 @@ describe('cursor harness reattach and extensions', () => {
     expect(fake.calls.filter((c) => c === 'session/resume')).toHaveLength(0);
     expect(fake.calls.filter((c) => c === 'session/load')).toHaveLength(1);
     expect(itemsOfType('agent.message').length).toBeGreaterThanOrEqual(countAfterFirst);
-    expect((await broker.getSession(assignment(), 'cursor'))?.effort).toBeNull();
-    expect((await broker.getSession(assignment(), 'cursor'))?.model).toBe('composer-2.5[fast=true]');
+    expect((await broker.getSession(ticket(), 'cursor'))?.effort).toBeNull();
+    expect((await broker.getSession(ticket(), 'cursor'))?.model).toBe('composer-2.5[fast=true]');
   });
 
   it('accepts create_plan and renders the plan text', async () => {
@@ -2159,7 +2159,7 @@ describe('cursor harness reattach and extensions', () => {
       agentOptions: { resumeSupported: false },
     });
     await attachCursor();
-    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'plan this' });
+    await broker.send({ ticket: ticket(), agentId: 'cursor', text: 'plan this' });
     await idle();
     const planMessage = itemsOfType('agent.message').find((m) =>
       (m as { text: string }).text.includes('My plan'),
@@ -2198,10 +2198,10 @@ describe('cursor harness reattach and extensions', () => {
       agentOptions: { resumeSupported: false },
     });
     await attachCursor();
-    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask me' });
+    const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask me' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
     const question = itemsOfType('question')[0] as { requestId: string };
-    const answered = await broker.answerQuestion(assignment(), question.requestId, { optionId: 'a' });
+    const answered = await broker.answerQuestion(ticket(), question.requestId, { optionId: 'a' });
     expect(answered).toBe(true);
     await sendP;
     await idle();
@@ -2218,8 +2218,8 @@ describe('cursor harness reattach and extensions', () => {
       agentOptions: { resumeSupported: false },
     });
     await attachCursor();
-    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'one' });
-    await broker.send({ assignment: assignment(), agentId: 'cursor', text: 'two' });
+    await broker.send({ ticket: ticket(), agentId: 'cursor', text: 'one' });
+    await broker.send({ ticket: ticket(), agentId: 'cursor', text: 'two' });
     await idle(2);
     const notices = itemsOfType('system').filter((s) =>
       (s as { text: string }).text.includes('cursor reports no usage'),
@@ -2229,7 +2229,7 @@ describe('cursor harness reattach and extensions', () => {
 });
 
 describe('turn progress entries', () => {
-  const progressPath = () => join(assignmentDir, 'progress.md');
+  const progressPath = () => join(ticketDir, 'progress.md');
   const progressCount = async () => parseProgress(await readFile(progressPath(), 'utf-8')).entryCount;
 
   it('appends one entry when a turn edits a file', async () => {
@@ -2252,7 +2252,7 @@ describe('turn progress entries', () => {
       ],
     });
 
-    await broker.send({ assignment: assignment(), text: 'edit something' });
+    await broker.send({ ticket: ticket(), text: 'edit something' });
     await idle();
     await waitUntil(async () => (await progressCount()) === 1, 'the progress entry');
 
@@ -2269,7 +2269,7 @@ describe('turn progress entries', () => {
       turns: [{ steps: [{ kind: 'update', update: textChunk('Just chatting.') }] }],
     });
     const before = await progressCount();
-    await broker.send({ assignment: assignment(), text: 'hello' });
+    await broker.send({ ticket: ticket(), text: 'hello' });
     await idle();
     expect(await progressCount()).toBe(before);
   });
@@ -2277,9 +2277,9 @@ describe('turn progress entries', () => {
   it('leaves entryCount unchanged when a turn is cancelled', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'awaitCancel' }] }] });
     const before = await progressCount();
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
-    await broker.cancel(assignment());
+    await broker.cancel(ticket());
     await idle();
     expect(await progressCount()).toBe(before);
   });
@@ -2322,8 +2322,8 @@ describe('turn progress entries', () => {
       timeouts: { flushMs: 1, sessionIdleMs: 60_000 },
     });
 
-    await broker.send({ assignment: assignment(), text: 'claude work', agentId: 'claude' });
-    await broker.send({ assignment: assignment(), text: 'codex work', agentId: 'codex' });
+    await broker.send({ ticket: ticket(), text: 'claude work', agentId: 'claude' });
+    await broker.send({ ticket: ticket(), text: 'codex work', agentId: 'codex' });
     await idle(2);
     await waitUntil(async () => {
       const text = await readFile(progressPath(), 'utf-8');
@@ -2365,14 +2365,14 @@ describe('turn progress entries', () => {
         ],
       });
 
-      await broker.send({ assignment: assignment(), text: 'warm up' });
+      await broker.send({ ticket: ticket(), text: 'warm up' });
       await idle();
 
       const { chmod } = await import('node:fs/promises');
       try {
         await chmod(progressPath(), 0o444);
-        await chmod(assignmentDir, 0o555);
-        await broker.send({ assignment: assignment(), text: 'edit' });
+        await chmod(ticketDir, 0o555);
+        await broker.send({ ticket: ticket(), text: 'edit' });
         await idle(2);
         await waitUntil(
           () =>
@@ -2389,7 +2389,7 @@ describe('turn progress entries', () => {
         const status = itemsOfType('turn.status').at(-1) as { stopReason?: string } | undefined;
         expect(status?.stopReason).toBe('end_turn');
       } finally {
-        await chmod(assignmentDir, 0o755);
+        await chmod(ticketDir, 0o755);
         await chmod(progressPath(), 0o644);
       }
     },
@@ -2397,15 +2397,15 @@ describe('turn progress entries', () => {
 });
 
 describe('inbox questions (needs-me)', () => {
-  const commentsPath = () => join(assignmentDir, 'comments.md');
+  const commentsPath = () => join(ticketDir, 'comments.md');
 
-  async function parseAssignmentComments() {
+  async function parseTicketComments() {
     return parseComments(await readFile(commentsPath(), 'utf-8'));
   }
 
   async function readComments() {
     if (!existsSync(commentsPath())) return { entries: [] };
-    return parseAssignmentComments();
+    return parseTicketComments();
   }
 
   async function writeAgentFile(id: string, extra = ''): Promise<void> {
@@ -2449,10 +2449,10 @@ describe('inbox questions (needs-me)', () => {
     makeBroker({
       turns: [{ steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: 'pick a name' });
+    await broker.send({ ticket: ticket(), text: 'pick a name' });
     await idle();
     await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    const parsed = await parseAssignmentComments();
+    const parsed = await parseTicketComments();
     expect(parsed.entries).toHaveLength(1);
     expect(parsed.entries[0]).toMatchObject({ author: 'claude', type: 'question', resolved: false });
     expect(parsed.entries[0].body).toContain('Which name should I use: alpha or beta?');
@@ -2465,7 +2465,7 @@ describe('inbox questions (needs-me)', () => {
 
   it('does not file a reply question for a non-question ending', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'update', update: textChunk('Done.', 'm1') }] }] });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
     expect(existsSync(commentsPath())).toBe(false);
   });
@@ -2499,8 +2499,8 @@ describe('inbox questions (needs-me)', () => {
       },
       timeouts: { flushMs: 1, permissionMs: 200, sessionIdleMs: 120, shutdownGraceMs: 200, inboxGraceMs: 60_000 },
     });
-    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
-    await broker.send({ assignment: assignment(), text: 'pick' });
+    await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ ticket: ticket(), text: 'pick' });
     await idle(2);
     expect(existsSync(commentsPath())).toBe(false);
   });
@@ -2534,8 +2534,8 @@ describe('inbox questions (needs-me)', () => {
       },
       timeouts: { flushMs: 1, permissionMs: 200, sessionIdleMs: 120, shutdownGraceMs: 200, inboxGraceMs: 60_000 },
     });
-    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
-    await broker.send({ assignment: assignment(), text: 'pick' });
+    await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ ticket: ticket(), text: 'pick' });
     await idle(2);
     expect(existsSync(commentsPath())).toBe(false);
   });
@@ -2550,17 +2550,17 @@ describe('inbox questions (needs-me)', () => {
         { steps: [{ kind: 'update', update: textChunk('ok', 'm3') }] },
       ],
     });
-    await broker.setParticipants(assignment(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
-    await broker.send({ assignment: assignment(), text: 'pick' });
+    await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
+    await broker.send({ ticket: ticket(), text: 'pick' });
     await idle();
     await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
-    await broker.send({ assignment: assignment(), text: 'hi codex', agentId: 'codex' });
+    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    await broker.send({ ticket: ticket(), text: 'hi codex', agentId: 'codex' });
     await idle(2);
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
-    await broker.send({ assignment: assignment(), text: 'use alpha', agentId: 'claude' });
+    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    await broker.send({ ticket: ticket(), text: 'use alpha', agentId: 'claude' });
     await idle(2);
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(true);
+    expect((await parseTicketComments()).entries[0].resolved).toBe(true);
   });
 
   it('resolves a reply question when the human sends to that agent', async () => {
@@ -2570,45 +2570,45 @@ describe('inbox questions (needs-me)', () => {
         { steps: [{ kind: 'update', update: textChunk('alpha it is', 'm2') }] },
       ],
     });
-    await broker.send({ assignment: assignment(), text: 'pick' });
+    await broker.send({ ticket: ticket(), text: 'pick' });
     await idle();
     await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    const before = await parseAssignmentComments();
+    const before = await parseTicketComments();
     expect(before.entries[0].resolved).toBe(false);
-    await broker.send({ assignment: assignment(), text: 'use alpha' });
+    await broker.send({ ticket: ticket(), text: 'use alpha' });
     await idle(2);
-    const after = await parseAssignmentComments();
+    const after = await parseTicketComments();
     expect(after.entries[0].resolved).toBe(true);
   });
 
   it('files a permission grace comment and resolves it on answer', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
     const perm = itemsOfType('permission.request')[0] as { requestId: string; itemId: string };
-    const parsed = await parseAssignmentComments();
+    const parsed = await parseTicketComments();
     expect(parsed.entries[0].body).toContain('kind="permission"');
     expect(parsed.entries[0].body).toContain(`item="${perm.itemId}"`);
-    expect(await broker.answerPermission(assignment(), perm.requestId, 'allow')).toBe(true);
+    expect(await broker.answerPermission(ticket(), perm.requestId, 'allow')).toBe(true);
     await idle();
-    const after = await parseAssignmentComments();
+    const after = await parseTicketComments();
     expect(after.entries[0].resolved).toBe(true);
   });
 
   it('does not file a grace comment when permission is answered before the grace', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 60_000, permissionMs: 60_000 } });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
     const perm = itemsOfType('permission.request')[0] as { requestId: string };
-    expect(await broker.answerPermission(assignment(), perm.requestId, 'allow')).toBe(true);
+    expect(await broker.answerPermission(ticket(), perm.requestId, 'allow')).toBe(true);
     await idle();
     expect(existsSync(commentsPath())).toBe(false);
   });
 
   it('resolves the grace comment before filing the timeout denial question', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 5, permissionMs: 80 } });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
     await waitUntil(async () => {
       const parsed = await readComments();
@@ -2639,18 +2639,18 @@ describe('inbox questions (needs-me)', () => {
       agentOptions: { resumeSupported: false },
       timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
     });
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
-    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
     const card = itemsOfType('question')[0] as { requestId: string; itemId: string };
-    const parsed = await parseAssignmentComments();
+    const parsed = await parseTicketComments();
     expect(parsed.entries[0].body).toContain('kind="ask"');
     expect(parsed.entries[0].body).toContain('Which colour?');
-    expect(await broker.answerQuestion(assignment(), card.requestId, { optionId: 'a' })).toBe(true);
+    expect(await broker.answerQuestion(ticket(), card.requestId, { optionId: 'a' })).toBe(true);
     await sendP;
     await idle();
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(true);
+    expect((await parseTicketComments()).entries[0].resolved).toBe(true);
   });
 
   it('allow-all sweep resolves the other parked card grace comment', async () => {
@@ -2681,25 +2681,25 @@ describe('inbox questions (needs-me)', () => {
       ],
       timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
     });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 2, 'two permission cards');
     await waitUntil(async () => (await readComments()).entries.length === 2, 'two grace comments');
     const perms = itemsOfType('permission.request') as Array<{ requestId: string }>;
     expect(
-      await broker.answerPermission(assignment(), perms[0].requestId, 'allow', { allowAllSession: true }),
+      await broker.answerPermission(ticket(), perms[0].requestId, 'allow', { allowAllSession: true }),
     ).toBe(true);
     await idle();
-    const parsed = await parseAssignmentComments();
+    const parsed = await parseTicketComments();
     expect(parsed.entries.every((e) => e.resolved === true)).toBe(true);
   });
 
   it('resolves an orphan grace comment when the card settles during filing', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 5, permissionMs: 60_000 } });
-    const sendP = broker.send({ assignment: assignment(), text: 'go' });
+    const sendP = broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
     const perm = itemsOfType('permission.request')[0] as { requestId: string };
     await new Promise((r) => setTimeout(r, 6));
-    await broker.answerPermission(assignment(), perm.requestId, 'allow');
+    await broker.answerPermission(ticket(), perm.requestId, 'allow');
     await sendP;
     await idle();
     await waitUntil(async () => {
@@ -2710,11 +2710,11 @@ describe('inbox questions (needs-me)', () => {
 
   it('resolves grace comments during crash repair for open permissions', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
-    await broker.send({ assignment: assignment(), text: 'go' });
+    await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
     makeBroker({ turns: [{ steps: [] }] });
-    await broker.getSession(assignment(), 'claude');
+    await broker.getSession(ticket(), 'claude');
     await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
@@ -2744,15 +2744,15 @@ describe('inbox questions (needs-me)', () => {
       agentOptions: { resumeSupported: false },
       timeouts: { inboxGraceMs: 1, permissionMs: 60_000 },
     });
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
-    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
     await waitUntil(() => existsSync(commentsPath()), 'grace comment');
-    expect((await parseAssignmentComments()).entries[0].resolved).toBe(false);
+    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
     await sendP;
     makeBroker({ turns: [{ steps: [] }], agentOptions: { resumeSupported: false } });
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
-    await broker.getSession(assignment(), 'cursor');
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    await broker.getSession(ticket(), 'cursor');
     await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
@@ -2781,13 +2781,13 @@ describe('inbox questions (needs-me)', () => {
       ],
       agentOptions: { resumeSupported: false },
     });
-    await broker.setParticipants(assignment(), { agents: ['cursor'], defaultAgent: 'cursor' });
-    const sendP = broker.send({ assignment: assignment(), agentId: 'cursor', text: 'ask' });
+    await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
+    const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
     const card = itemsOfType('question')[0] as { requestId: string; answer: string | null };
-    expect(await broker.answerQuestion(assignment(), card.requestId, {})).toBe(false);
+    expect(await broker.answerQuestion(ticket(), card.requestId, {})).toBe(false);
     expect((itemsOfType('question')[0] as { answer: string | null }).answer).toBeNull();
-    expect(await broker.answerQuestion(assignment(), card.requestId, { optionId: 'a' })).toBe(true);
+    expect(await broker.answerQuestion(ticket(), card.requestId, { optionId: 'a' })).toBe(true);
     await sendP;
     await idle();
   });
@@ -2801,16 +2801,16 @@ describe('inbox questions (needs-me)', () => {
           { steps: [{ kind: 'update', update: textChunk('Which name should I use: alpha or beta?', 'm1') }] },
         ],
       });
-      await broker.send({ assignment: assignment(), text: 'warm up' });
+      await broker.send({ ticket: ticket(), text: 'warm up' });
       await idle();
       const { chmod } = await import('node:fs/promises');
       await writeFile(
         commentsPath(),
-        '---\nassignment: chat-demo\nentryCount: 0\nupdated: "x"\n---\n\n# Comments\n\nNo comments yet.\n',
+        '---\nticket: chat-demo\nentryCount: 0\nupdated: "x"\n---\n\n# Comments\n\nNo comments yet.\n',
       );
       try {
         await chmod(commentsPath(), 0o000);
-        await broker.send({ assignment: assignment(), text: 'pick' });
+        await broker.send({ ticket: ticket(), text: 'pick' });
         await idle(2);
         await waitUntil(
           () => systemTexts().some((t) => t.includes('Could not file the Inbox question')),

@@ -10,7 +10,7 @@
  * everything from here so no existing import path needs to change.
  */
 
-import { ASSIGNMENT_FIELDS, type FieldRegistry } from './query/index.js';
+import { TICKET_FIELDS, type FieldRegistry } from './query/index.js';
 
 // ── re-exported type (lives in config.ts; declared here for browser consumers) ──
 
@@ -157,7 +157,7 @@ export function normalizeFactDeclarations(
  * drop, so doctor reports nothing silently. Checks name format, type/binds, and
  * case-insensitive collision of EVERY exported key (the declared name and, for
  * attestations, all four generated names) against `DERIVE_FIELDS`,
- * `ASSIGNMENT_FIELDS`, or an earlier declaration's exported keys. Works with
+ * `TICKET_FIELDS`, or an earlier declaration's exported keys. Works with
  * `derive: null` — declarations validate independently of derive rules.
  *
  * KEPT IN LOCKSTEP with {@link acceptFactDeclarations} so doctor reports
@@ -174,7 +174,7 @@ export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
   // declaration the runtime accepts is not falsely flagged).
   const owners = new Map<string, string>(); // lowercased key → 'built-in' | <fact name>
   for (const key of Object.keys(DERIVE_FIELDS)) owners.set(key, 'built-in');
-  for (const key of Object.keys(ASSIGNMENT_FIELDS)) owners.set(key, 'built-in');
+  for (const key of Object.keys(TICKET_FIELDS)) owners.set(key, 'built-in');
 
   for (const row of raw ?? []) {
     const name = (row?.name ?? '').trim();
@@ -226,7 +226,7 @@ export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
 /**
  * THE one collision filter (Locked Decisions): drop any declaration whose
  * registry keys collide (case-insensitively) with a built-in field
- * (`DERIVE_FIELDS` ∪ `ASSIGNMENT_FIELDS`) or an earlier-accepted declaration.
+ * (`DERIVE_FIELDS` ∪ `TICKET_FIELDS`) or an earlier-accepted declaration.
  * Built-ins always win; first-declared wins among duplicates. Never throws — a
  * bad config can't brick recompute; doctor (Task 4) surfaces the same collisions
  * as errors. Returns the ACCEPTED list every consumer builds from.
@@ -234,10 +234,10 @@ export function validateFactDeclarations(raw: RawFactDeclaration[]): string[] {
  * KEPT IN LOCKSTEP with {@link validateFactDeclarations}.
  */
 export function acceptFactDeclarations(declarations: FactDeclaration[]): FactDeclaration[] {
-  // DERIVE_FIELDS / ASSIGNMENT_FIELDS keys are already lowercase.
+  // DERIVE_FIELDS / TICKET_FIELDS keys are already lowercase.
   const taken = new Set<string>([
     ...Object.keys(DERIVE_FIELDS),
-    ...Object.keys(ASSIGNMENT_FIELDS),
+    ...Object.keys(TICKET_FIELDS),
   ]);
   const accepted: FactDeclaration[] = [];
   for (const decl of declarations) {
@@ -295,11 +295,11 @@ export function buildDeriveRegistry(accepted: FactDeclaration[]): FieldRegistry 
 
 /**
  * Build the QUERY registry (full ticket vocabulary) from the ACCEPTED list —
- * custom entries merged over `ASSIGNMENT_FIELDS` for ls/dashboard query paths.
+ * custom entries merged over `TICKET_FIELDS` for ls/dashboard query paths.
  * Same accepted input, same entries as {@link buildDeriveRegistry}.
  */
 export function buildQueryRegistry(accepted: FactDeclaration[]): FieldRegistry {
-  const registry: FieldRegistry = { ...ASSIGNMENT_FIELDS };
+  const registry: FieldRegistry = { ...TICKET_FIELDS };
   for (const decl of accepted) addFactFields(registry, decl);
   return registry;
 }
@@ -312,12 +312,12 @@ export function buildQueryRegistry(accepted: FactDeclaration[]): FieldRegistry {
  * field names from `factFieldNames`.
  *
  * NOTE: the built-in list is a hand-maintained camelCase display mapping of the
- * `ASSIGNMENT_FIELDS` registry keys (which are lowercase, e.g. `completedat` →
+ * `TICKET_FIELDS` registry keys (which are lowercase, e.g. `completedat` →
  * `completedAt`). It is NOT derived at runtime, so it must be kept in sync with
  * `query/fields.ts` whenever a built-in queryable field is added or renamed.
  */
 export function queryFieldNames(declarations: FactDeclaration[]): string[] {
-  // Hand-maintained camelCase display names for the lowercase ASSIGNMENT_FIELDS
+  // Hand-maintained camelCase display names for the lowercase TICKET_FIELDS
   // registry keys (fields.ts). Keep in sync with that registry.
   const builtins: string[] = [
     'status',

@@ -53,7 +53,7 @@ interface SessionRow {
   updated_at: string | null;
 }
 
-// Project the session's binding (project/assignment slug) from its single
+// Project the session's binding (project/ticket slug) from its single
 // CHOSEN engagement — the OPEN one, else the LATEST by started_at — via a
 // correlated subquery (NOT a plain JOIN, which would duplicate rows per
 // historical engagement). See decision-record.md Decision 8. Every
@@ -76,9 +76,9 @@ SELECT s.*,
  * Options for the UNPAGED human-browsing list queries.
  *
  * D3 — WHO FILTERS AND WHO DOES NOT. `listAllSessions`, `listProjectSessions`,
- * and `listSessionsByAssignment` default to hiding archived sessions because
+ * and `listSessionsByTicket` default to hiding archived sessions because
  * every one of their callers is a human-browsing surface: the Overview
- * `recentSessions` rail and the assignment-detail list.
+ * `recentSessions` rail and the ticket-detail list.
  * (The PAGED Agent Sessions list filters separately, in `buildSessionFilters`.)
  *
  * Everything else MUST keep resolving archived sessions and is deliberately
@@ -222,7 +222,7 @@ function reopenEngagementIfMissing(
   if (latest && (latest.project_slug || latest.assignment_slug)) {
     ensureOpenEngagement({
       sessionId,
-      assignmentId: latest.assignment_id,
+      ticketId: latest.assignment_id,
       projectSlug: latest.project_slug,
       ticketSlug: latest.assignment_slug,
       stage: 'implement',
@@ -245,7 +245,7 @@ function reopenEngagementIfMissing(
  * `completed` always sticks.
  *
  * Makes registration idempotent across SessionStart hooks, `/track-session`,
- * and grab-assignment all touching the same real session ID.
+ * and grab-ticket all touching the same real session ID.
  */
 export async function appendSession(
   _projectDir: string,
@@ -381,9 +381,9 @@ export async function appendSession(
       // historical attribution survives — without occupying the one-open slot.
       insertClosedEngagement({
         sessionId: session.sessionId,
-        // assignmentId was being dropped here while the open path
+        // ticketId was being dropped here while the open path
         // (reopenEngagementIfMissing) carried it, so a session first seen in a
-        // terminal state lost its standalone-assignment binding entirely. That
+        // terminal state lost its standalone-ticket binding entirely. That
         // is the only link a standalone session has to a workspace, so those
         // rows could never match a named-workspace filter.
         ticketId: freshBinding.ticketId,
@@ -622,7 +622,7 @@ export interface SessionPageResult {
  * The free-text search haystack: every searchable column concatenated with
  * spaces, mirroring the client's old `[...].join(' ')` exactly. Concatenated
  * rather than OR-ed per column so a query spanning two fields ("alpha task",
- * where the project is `alpha` and the assignment is `task`) still matches, as
+ * where the project is `alpha` and the ticket is `task`) still matches, as
  * it did before.
  */
 const SEARCH_HAYSTACK = [
@@ -668,7 +668,7 @@ const ORDER_BY: Record<SqlSort, string> = {
 
   // COLLATE NOCASE: the client sorted with localeCompare (case-insensitive),
   // while SQLite's default BINARY collation puts all uppercase before lowercase.
-  assignment_asc:
+  ticket_asc:
     `${PINNED_FIRST} COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, COALESCE(e.project_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
   agent_asc:
     `${PINNED_FIRST} s.agent COLLATE NOCASE ASC, COALESCE(e.assignment_slug, '') COLLATE NOCASE ASC, s.session_id ASC`,
@@ -867,23 +867,23 @@ export function getSessionById(sessionId: string): AgentSession | null {
 }
 
 /**
- * List sessions for a specific project, optionally filtered by assignment.
+ * List sessions for a specific project, optionally filtered by ticket.
  */
 export async function listProjectSessions(
   _projectsDir: string,
   projectSlug: string,
-  assignmentSlug?: string,
+  ticketSlug?: string,
   opts?: SessionListOptions,
 ): Promise<AgentSession[]> {
   const db = getSessionDb();
   const archived = opts?.includeArchived ? '' : ' AND s.archived_at IS NULL';
 
-  if (assignmentSlug) {
+  if (ticketSlug) {
     const rows = db
       .prepare(
         `${SESSION_SELECT_WITH_BINDING} WHERE e.project_slug = ? AND e.assignment_slug = ?${archived} ${SESSION_LIST_ORDER_BY}`,
       )
-      .all(projectSlug, assignmentSlug) as SessionRow[];
+      .all(projectSlug, ticketSlug) as SessionRow[];
     return rows.map(rowToSession);
   }
 
@@ -921,33 +921,33 @@ export async function deleteSessions(sessionIds: string[]): Promise<number> {
 }
 
 // Statuses that imply the working session is done (review means agent finished)
-const DONE_ASSIGNMENT_STATUSES = new Set(['completed', 'failed', 'review']);
+const DONE_TICKET_STATUSES = new Set(['completed', 'failed', 'review']);
 
 /**
- * Read the status field from an assignment.md frontmatter without full parsing.
+ * Read the status field from an ticket.md frontmatter without full parsing.
  */
-async function readAssignmentStatusFromPath(
-  assignmentMdPath: string,
+async function readTicketStatusFromPath(
+  ticketMdPath: string,
 ): Promise<string | null> {
-  if (!(await fileExists(assignmentMdPath))) return null;
-  const raw = await readFile(assignmentMdPath, 'utf-8');
+  if (!(await fileExists(ticketMdPath))) return null;
+  const raw = await readFile(ticketMdPath, 'utf-8');
   const match = raw.match(/^status:\s*(.+)$/m);
   return match ? match[1].trim() : null;
 }
 
-async function readAssignmentStatus(
+async function readTicketStatus(
   projectDir: string,
   ticketSlug: string,
 ): Promise<string | null> {
-  return readAssignmentStatusFromPath(
+  return readTicketStatusFromPath(
     resolve(projectDir, 'tickets', ticketSlug, 'ticket.md'),
   );
 }
 
 /**
- * Reconcile active sessions against assignment statuses.
- * Sessions whose assignments have moved to completed/failed/review are
- * marked as completed (or stopped for failed assignments).
+ * Reconcile active sessions against ticket statuses.
+ * Sessions whose tickets have moved to completed/failed/review are
+ * marked as completed (or stopped for failed tickets).
  * Standalone sessions (project_slug NULL) are resolved via ticketsDir.
  * Returns the number of sessions that were updated.
  */
@@ -955,15 +955,15 @@ async function readAssignmentStatus(
  * The dashboard tick's session-maintenance pass: reconcile, THEN sweep.
  *
  * The order is load-bearing and is why this is one function rather than two
- * calls at the call site. A session bound to an assignment that has finished
- * must be reconciled to `completed` (or `stopped`, for a failed assignment)
- * from the assignment's own status; only a session nobody can account for that
+ * calls at the call site. A session bound to an ticket that has finished
+ * must be reconciled to `completed` (or `stopped`, for a failed ticket)
+ * from the ticket's own status; only a session nobody can account for that
  * way is a candidate for the time-based stale sweep. Run the other way round, a
- * finished assignment's long-idle session would be recorded as `stopped` —
+ * finished ticket's long-idle session would be recorded as `stopped` —
  * "we lost track of it" — instead of `completed`, which is a different and
  * wrong fact about the work.
  *
- * `reconcileActiveSessions` reads assignment.md files, so it is given the same
+ * `reconcileActiveSessions` reads ticket.md files, so it is given the same
  * `projectsDir` / `ticketsDir` the watcher already carries.
  */
 export interface SessionMaintenanceDeps {
@@ -982,7 +982,7 @@ export async function runSessionMaintenance(
   const reconcile = deps.reconcile ?? reconcileActiveSessions;
   const log = deps.log ?? ((message: string, err: unknown) => console.error(message, err));
 
-  // The reconcile reads `assignment.md` files, so a corrupt one or a transient
+  // The reconcile reads `ticket.md` files, so a corrupt one or a transient
   // FS error can throw. It must not cost the tick its sweep: before the
   // reconcile was added the tick ALWAYS swept, and adding a step in front of it
   // must not quietly take that away (review round 2, finding 2).
@@ -1017,8 +1017,8 @@ export async function reconcileActiveSessions(
 
   if (activeSessions.length === 0) return 0;
 
-  // Read assignment statuses from disk. Key is `${projectSlug ?? '__standalone__'}/${slug}`.
-  const assignmentStatuses = new Map<string, string>();
+  // Read ticket statuses from disk. Key is `${projectSlug ?? '__standalone__'}/${slug}`.
+  const ticketStatuses = new Map<string, string>();
   const seen = new Set<string>();
   for (const session of activeSessions) {
     const aslug = session.assignment_slug;
@@ -1030,16 +1030,16 @@ export async function reconcileActiveSessions(
     seen.add(key);
 
     if (session.project_slug) {
-      const status = await readAssignmentStatus(
+      const status = await readTicketStatus(
         resolve(projectsDir, session.project_slug),
         aslug,
       );
-      if (status) assignmentStatuses.set(key, status);
+      if (status) ticketStatuses.set(key, status);
     } else if (ticketsDir) {
-      const status = await readAssignmentStatusFromPath(
+      const status = await readTicketStatusFromPath(
         resolve(ticketsDir, aslug, 'ticket.md'),
       );
-      if (status) assignmentStatuses.set(key, status);
+      if (status) ticketStatuses.set(key, status);
     }
   }
 
@@ -1048,11 +1048,11 @@ export async function reconcileActiveSessions(
   for (const session of activeSessions) {
     const projectKey = session.project_slug ?? '__standalone__';
     const key = `${projectKey}/${session.assignment_slug}`;
-    const assignmentStatus = assignmentStatuses.get(key);
-    if (!assignmentStatus || !DONE_ASSIGNMENT_STATUSES.has(assignmentStatus)) continue;
+    const ticketStatus = ticketStatuses.get(key);
+    if (!ticketStatus || !DONE_TICKET_STATUSES.has(ticketStatus)) continue;
 
     const newStatus: AgentSessionStatus =
-      assignmentStatus === 'failed' ? 'stopped' : 'completed';
+      ticketStatus === 'failed' ? 'stopped' : 'completed';
     await updateSessionStatus('', session.session_id, newStatus);
     totalUpdated++;
   }
@@ -1061,7 +1061,7 @@ export async function reconcileActiveSessions(
 }
 
 /**
- * List sessions for a resolved assignment (standalone or project-nested).
+ * List sessions for a resolved ticket (standalone or project-nested).
  * Standalone: filter by assignment_slug = id AND project_slug IS NULL.
  * Project-nested: filter by project_slug + assignment_slug.
  */
@@ -1086,8 +1086,6 @@ export async function listSessionsByTicket(
   return rows.map(rowToSession);
 }
 
-/** @deprecated renamed in Task 2 */
-export const listSessionsByAssignment = listSessionsByTicket;
 
 // --- Summarizer lease + finalization --------------------------------------
 

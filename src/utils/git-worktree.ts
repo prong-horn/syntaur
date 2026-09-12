@@ -406,8 +406,6 @@ export async function recreateWorktree(
 
 export interface CreateWorktreeAndRecordOptions extends CreateWorktreeOptions {
   ticketPath?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentPath?: string;
 }
 
 /**
@@ -420,7 +418,7 @@ export interface CreateWorktreeAndRecordOptions extends CreateWorktreeOptions {
 export async function createWorktreeAndRecord(
   opts: CreateWorktreeAndRecordOptions,
 ): Promise<void> {
-  const ticketPath = opts.ticketPath ?? opts.assignmentPath;
+  const ticketPath = opts.ticketPath;
   if (!ticketPath) throw new Error('createWorktreeAndRecord requires ticketPath');
   const { repository, branch, worktreePath, parentBranch } = opts;
 
@@ -461,7 +459,7 @@ export function formatRollbackError(opts: {
   subject?: string;
 }): string {
   const { writeMsg, worktreePath, branch, worktreeCleanup, branchCleanup } = opts;
-  const subject = opts.subject ?? 'assignment frontmatter';
+  const subject = opts.subject ?? 'ticket frontmatter';
   const wtMsg = worktreeCleanup.stderr.trim() || '(no stderr)';
   const brMsg = branchCleanup.stderr.trim() || '(no stderr)';
   if (!worktreeCleanup.ok && !branchCleanup.ok) {

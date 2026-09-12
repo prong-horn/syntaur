@@ -60,7 +60,7 @@ const config: WorkflowConfigView = {
 };
 
 describe('resolveTicketWorkflowId — first-hit-wins precedence', () => {
-  it('assignment `workflow:` wins over everything', () => {
+  it('ticket `workflow:` wins over everything', () => {
     const binding: ProjectWorkflowBinding = {
       defaultWorkflow: 'feature',
       workflowByType: { bug: 'feature' },
@@ -217,7 +217,7 @@ describe('makeWorkflowContextResolver — sweep memoization', () => {
   it('forTicket resolves and returns the memoized context', async () => {
     const resolver = makeWorkflowContextResolver(config);
     const direct = resolver.context('bug');
-    const viaAssignment = await resolver.forTicket({ workflow: 'bug', type: null }, null);
-    expect(viaAssignment).toBe(direct);
+    const viaTicket = await resolver.forTicket({ workflow: 'bug', type: null }, null);
+    expect(viaTicket).toBe(direct);
   });
 });

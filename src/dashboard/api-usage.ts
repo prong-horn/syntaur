@@ -10,7 +10,7 @@ import {
   type ListEventsFilter,
 } from '../db/usage-db.js';
 import {
-  assignmentWindowCost,
+  ticketWindowCost,
   projectWindowCosts,
   type WindowCostResult,
 } from '../usage/engagement-cost.js';
@@ -21,7 +21,7 @@ import {
  *
  * Endpoints — all accept `?since=YYYY-MM-DD&until=YYYY-MM-DD&tool=&groupBy=`:
  *   GET /                                            — top-level summary
- *   GET /projects/:projectSlug                       — per-assignment rollup for a project
+ *   GET /projects/:projectSlug                       — per-ticket rollup for a project
  *
  * Per-ticket detail is served at `GET /api/tickets/:id/usage` (see
  * `getTicketUsageHandler`).
@@ -70,7 +70,7 @@ export function createUsageRouter(
       res.json({
         projectSlug,
         daily: rows,
-        summary: projectAssignmentRollup(projectSlug, rows, common),
+        summary: projectTicketRollup(projectSlug, rows, common),
       });
     } catch (error) {
       res.status(500).json({
@@ -150,7 +150,7 @@ function extractCommonFilter(query: Record<string, unknown>): CommonFilter {
   if (typeof query.tool === 'string') out.tool = query.tool;
   if (typeof query.model === 'string') out.model = query.model;
   if (typeof query.project === 'string') out.projectSlug = query.project;
-  if (typeof query.assignment === 'string') out.ticketSlug = query.assignment;
+  if (typeof query.ticket === 'string') out.ticketSlug = query.ticket;
   return out;
 }
 
@@ -171,10 +171,10 @@ function eventsFilterFromDaily(common: CommonFilter): ListEventsFilter {
   return out;
 }
 
-type GroupByMode = 'project' | 'assignment';
+type GroupByMode = 'project' | 'ticket';
 
 function groupByMode(q: unknown): GroupByMode {
-  return q === 'assignment' ? 'assignment' : 'project';
+  return q === 'ticket' ? 'ticket' : 'project';
 }
 
 interface SummaryRow {
@@ -183,13 +183,13 @@ interface SummaryRow {
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
-  /** Snapshot-window confidence counts (M2) — present on per-assignment rollups. */
+  /** Snapshot-window confidence counts (M2) — present on per-ticket rollups. */
   pricedWindowCount?: number;
   uncomputableWindowCount?: number;
   negativeDeltaCount?: number;
 }
 
-/** Per-model token/cost breakdown for one assignment. */
+/** Per-model token/cost breakdown for one ticket. */
 export interface ModelUsage {
   model: string;
   totalTokens: number;
@@ -197,15 +197,15 @@ export interface ModelUsage {
 }
 
 /**
- * Pre-aggregated usage totals for a single assignment, surfaced on the
- * assignment detail page. `lastEventDay` is `null` when there is no usage yet
+ * Pre-aggregated usage totals for a single ticket, surfaced on the
+ * ticket detail page. `lastEventDay` is `null` when there is no usage yet
  * (the panel renders a calm empty state in that case).
  */
-export interface AssignmentUsageSummary {
+export interface TicketUsageSummary {
   totalTokens: number;
   /**
-   * Per-assignment cost from engagement SNAPSHOT windows (M2 / Decision 1) — NOT
-   * the cumulative `usage_events` row, which can't split a multi-assignment
+   * Per-ticket cost from engagement SNAPSHOT windows (M2 / Decision 1) — NOT
+   * the cumulative `usage_events` row, which can't split a multi-ticket
    * session's cost. The window-count fields flag confidence.
    */
   totalCost: number;
@@ -216,8 +216,8 @@ export interface AssignmentUsageSummary {
   negativeDeltaCount: number;
 }
 
-/** The (id-or-slugs) key + filters identifying one assignment's cost windows. */
-interface AssignmentCostKey {
+/** The (id-or-slugs) key + filters identifying one ticket's cost windows. */
+interface TicketCostKey {
   ticketId?: string | null;
   projectSlug: string | null;
   ticketSlug: string;
@@ -246,20 +246,20 @@ function byModelBreakdown(rows: ReturnType<typeof listDaily>): ModelUsage[] {
 }
 
 /**
- * Roll a single assignment's daily rows into an {@link AssignmentUsageSummary}.
+ * Roll a single ticket's daily rows into an {@link TicketUsageSummary}.
  * Tokens/`lastEventDay`/`byModel` come from `usage_daily` (legitimately
- * cumulative), but `totalCost` is the SNAPSHOT-window cost for the assignment
- * (M2) — so a session that worked this assignment then another on the same model
+ * cumulative), but `totalCost` is the SNAPSHOT-window cost for the ticket
+ * (M2) — so a session that worked this ticket then another on the same model
  * is not over-attributed the whole cumulative.
  */
 function buildTicketSummary(
   rows: ReturnType<typeof listDaily>,
-  costKey: AssignmentCostKey,
-): AssignmentUsageSummary {
-  const totals = summarize(rows, 'assignment')[0];
-  const windows: WindowCostResult = assignmentWindowCost(costKey);
-  // When the assignment has NO computable engagement window (e.g. usage attributed
-  // by slug to an assignment that never registered an agent session), the window
+  costKey: TicketCostKey,
+): TicketUsageSummary {
+  const totals = summarize(rows, 'ticket')[0];
+  const windows: WindowCostResult = ticketWindowCost(costKey);
+  // When the ticket has NO computable engagement window (e.g. usage attributed
+  // by slug to an ticket that never registered an agent session), the window
   // ledger has nothing to attribute and `windows.cost` is 0 — but `byModel` still
   // sums the cumulative `usage_daily` cost. Showing $0 over a non-zero breakdown is
   // the reconciliation bug. With no window to split, the cumulative daily cost is
@@ -307,29 +307,29 @@ function summarize(
 }
 
 /**
- * Per-assignment rollup for a project's usage page (M2). The assignment SET is
- * the UNION of (the `usage_daily` assignment keys) ∪ (the assignments that have
+ * Per-ticket rollup for a project's usage page (M2). The ticket SET is
+ * the UNION of (the `usage_daily` ticket keys) ∪ (the tickets that have
  * a closed engagement snapshot window) — because in an A-then-B same-model
  * session the cumulative `usage_events` row attributes only to the latest
- * assignment, so an assignment with a real window but no `usage_daily` row would
+ * ticket, so an ticket with a real window but no `usage_daily` row would
  * otherwise be MISSING entirely. Each row's `totalCost` is the snapshot-window
- * cost (the per-assignment source of truth); tokens stay from `usage_daily`.
+ * cost (the per-ticket source of truth); tokens stay from `usage_daily`.
  */
-function projectAssignmentRollup(
+function projectTicketRollup(
   projectSlug: string,
   rows: ReturnType<typeof listDaily>,
   common: CommonFilter,
 ): SummaryRow[] {
-  // Start from the usage_daily groups but RESET cost to 0 — per-assignment cost
+  // Start from the usage_daily groups but RESET cost to 0 — per-ticket cost
   // is snapshot-derived (overlaid below), never the cumulative usage_events row.
-  // A daily-only assignment with no closed window stays at 0 (its window cost is
-  // not yet computable), consistent with the assignment-detail summary.
-  const byAssignment = new Map<string, SummaryRow>();
-  for (const row of summarize(rows, 'assignment')) {
-    byAssignment.set(row.ticketSlug, {
+  // A daily-only ticket with no closed window stays at 0 (its window cost is
+  // not yet computable), consistent with the ticket-detail summary.
+  const byTicket = new Map<string, SummaryRow>();
+  for (const row of summarize(rows, 'ticket')) {
+    byTicket.set(row.ticketSlug, {
       ...row,
       totalCost: 0,
-      // Counts present on EVERY per-assignment row (a daily-only assignment with
+      // Counts present on EVERY per-ticket row (a daily-only ticket with
       // no closed window stays at 0/0/0); window overlay below replaces them.
       pricedWindowCount: 0,
       uncomputableWindowCount: 0,
@@ -345,7 +345,7 @@ function projectAssignmentRollup(
   });
 
   for (const [ticketSlug, w] of windows) {
-    const existing = byAssignment.get(ticketSlug);
+    const existing = byTicket.get(ticketSlug);
     if (existing) {
       existing.totalCost = w.cost;
       existing.pricedWindowCount = w.pricedWindowCount;
@@ -354,7 +354,7 @@ function projectAssignmentRollup(
     } else {
       // Present ONLY in snapshot windows (no usage_daily row) — surface it with
       // its window cost so the A-then-B case can't drop it from the rollup.
-      byAssignment.set(ticketSlug, {
+      byTicket.set(ticketSlug, {
         projectSlug,
         ticketSlug,
         totalTokens: 0,
@@ -367,7 +367,7 @@ function projectAssignmentRollup(
     }
   }
 
-  return [...byAssignment.values()].sort(
+  return [...byTicket.values()].sort(
     (a, b) => b.totalCost - a.totalCost || b.totalTokens - a.totalTokens,
   );
 }

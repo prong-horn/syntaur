@@ -37,7 +37,7 @@ const codexPrefixPrompt = {
 };
 
 const cursorEntry = {
-  name: 'plan-assignment',
+  name: 'plan-ticket',
   description: 'Create a detailed implementation plan for the current ticket.',
 };
 
@@ -95,7 +95,7 @@ describe('parseAvailableCommands', () => {
       }),
     ).toEqual([
       {
-        name: 'plan-assignment',
+        name: 'plan-ticket',
         description: 'Create a detailed implementation plan for the current ticket.',
         inputHint: null,
         action: { kind: 'prompt' },

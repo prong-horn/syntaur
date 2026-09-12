@@ -1,5 +1,5 @@
 /**
- * The session broker — one ACP client per (assignment, agent), and the only
+ * The session broker — one ACP client per (ticket, agent), and the only
  * thing in Syntaur that owns an agent process.
  *
  * The rules it enforces, all settled by the spike:
@@ -13,14 +13,14 @@
  *    `session/cancel`, which resolves the prompt in ~11–19 ms either way.
  *  - **Lazy spawn, `session/resume` to re-attach** (spike Decisions 7 and 8).
  *    The adapter is spawned on the first message, from the dashboard server,
- *    `detached`, with `cwd` = the assignment worktree; a dashboard restart takes
+ *    `detached`, with `cwd` = the ticket worktree; a dashboard restart takes
  *    it with it (stdin EOF), and the next message resumes the ACP session. A
  *    failed resume falls back to `session/new` plus a `system` row and re-sends
  *    the standing context.
  *  - **Standing context once per adapter session** (§2.4). Later turns carry
  *    only the new user message; after a resume the agent still holds it.
  *  - **Engagement snapshots are built here, not read from the collector**
- *    (Decision 10). Assignment cost is the per-model `cost` delta between an
+ *    (Decision 10). Ticket cost is the per-model `cost` delta between an
  *    engagement's open and close snapshots, and the collector runs on its own
  *    schedule — a snapshot taken at turn close would usually predate the turn it
  *    closes. Both adapters return per-turn token buckets on `PromptResponse.usage`;
@@ -279,7 +279,7 @@ export interface ChatBroker {
   saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition>;
   deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }>;
   agentSummaries(): Promise<ChatAgentSummary[]>;
-  /** The assignment's attached agents, default and hop budget (Decision 1). */
+  /** The ticket's attached agents, default and hop budget (Decision 1). */
   getParticipants(
     ticket: ResolvedTicket,
   ): Promise<{ participants: Participants; agents: ChatAgentSummary[] }>;
@@ -442,7 +442,7 @@ export function ticketScopeKey(ticketId: string): string {
   return `${ticketId}:@assignment`;
 }
 
-/** The assignment scope's live normalizer, plus what the broker reads back. */
+/** The ticket scope's live normalizer, plus what the broker reads back. */
 interface TicketScope {
   key: string;
   log: ChatLog;
@@ -472,17 +472,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   const constructing = new Map<string, Promise<Session>>();
   /**
-   * One `ChatLog` per assignment DIRECTORY, not per session (finding 4). Every
-   * agent on an assignment appends to the same `events.jsonl`, and each log
+   * One `ChatLog` per ticket DIRECTORY, not per session (finding 4). Every
+   * agent on an ticket appends to the same `events.jsonl`, and each log
    * instance owns its own `seq` counter and append chain — two instances would
    * hand out duplicate `seq` values and interleave torn lines. The promise is
    * cached (not the resolved log) so concurrent `ensureSession` calls await the
    * same open rather than racing to create two.
    */
   const logs = new Map<string, Promise<ChatLog>>();
-  /** One assignment scope per assignment directory (Decision 3). */
+  /** One ticket scope per ticket directory (Decision 3). */
   const ticketScopes = new Map<string, Promise<TicketScope>>();
-  /** Serialize record writes per assignment directory (Decision 3). */
+  /** Serialize record writes per ticket directory (Decision 3). */
   const recordChains = new Map<string, Promise<void>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
@@ -716,18 +716,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   /** Standing context is per-session; roster edits must refresh every agent in the room. */
   async function invalidateStandingForParticipant(agentId: string): Promise<void> {
     const { definitions } = await loadDefs();
-    const assignmentsToInvalidate = new Set<string>();
+    const ticketsToInvalidate = new Set<string>();
     for (const session of sessions.values()) {
       const { participants } = await readParticipantsDetailed(
         session.ticket.ticketDir,
         definitions,
       );
       if (participants.agents.includes(agentId)) {
-        assignmentsToInvalidate.add(session.ticket.id);
+        ticketsToInvalidate.add(session.ticket.id);
       }
     }
     for (const session of sessions.values()) {
-      if (assignmentsToInvalidate.has(session.ticket.id)) {
+      if (ticketsToInvalidate.has(session.ticket.id)) {
         invalidateStanding(session);
       }
     }
@@ -927,7 +927,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   /**
-   * One assignment scope per assignment directory, cached like `sharedLog` and
+   * One ticket scope per ticket directory, cached like `sharedLog` and
    * for the same reason: its normalizer owns the per-scope ordinals that make
    * item ids stable, so two instances would hand out colliding ids. The cached
    * value is the PROMISE, so two concurrent callers share one replay.
@@ -970,7 +970,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   /**
-   * Append a routing-level event to the assignment scope (Decision 3). No agent
+   * Append a routing-level event to the ticket scope (Decision 3). No agent
    * session owns these rows, so there is no per-session flush window: each patch
    * is broadcast immediately.
    */
@@ -1318,7 +1318,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     // The normalizer must pick up where the persisted log left off, so a restart
     // does not restart the per-scope ordinals and collide item ids. Every agent
-    // on the assignment shares one log, so replay ONLY this session's events —
+    // on the ticket shares one log, so replay ONLY this session's events —
     // ingesting another agent's would consume this normalizer's ordinals and
     // re-attribute its items.
     const all = await log.readAll();
@@ -1338,7 +1338,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // Repair anything the previous process left mid-flight BEFORE the session is
     // reachable, so nothing can drive a half-repaired session (Decision 12).
     // Repair reads the whole log, not just this key: since Decision 3 a message
-    // routed to this agent and a handoff aimed at it live in the ASSIGNMENT
+    // routed to this agent and a handoff aimed at it live in the TICKET
     // scope, and neither is visible under its own key.
     await repairSession(session, events, all);
 
@@ -1778,7 +1778,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   /**
-   * Materialise every session this assignment has on disk, so `withdraw`,
+   * Materialise every session this ticket has on disk, so `withdraw`,
    * `cancel` and `answerPermission` see the rehydrated queue and permission
    * state after a restart instead of an empty in-memory map (finding 8).
    */
@@ -2098,8 +2098,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (session.cwdTier && session.cwdTier !== 'worktree') {
       const tierMessages: Record<string, string> = {
         repository: `Running in ${cwd} (repository fallback)`,
-        project: `Running in ${cwd} (project repository) — this assignment has no worktree; create one from the assignment header`,
-        home: `Running in ${cwd} — this assignment has no worktree; create one from the assignment header`,
+        project: `Running in ${cwd} (project repository) — this ticket has no worktree; create one from the ticket header`,
+        home: `Running in ${cwd} — this ticket has no worktree; create one from the ticket header`,
       };
       const text = tierMessages[session.cwdTier];
       if (text) await record(session, 'system', { level: 'info', text }, null);
@@ -2970,7 +2970,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
     // One `user.message.delivered` per target, right after its `turn.start`:
-    // the assignment-scope item's `deliveredTo` grows and its state moves
+    // the ticket-scope item's `deliveredTo` grows and its state moves
     // queued → partial → sent (Decision 3). The per-agent normalizer never
     // touches that row.
     if (next.trigger.kind === 'human') {
@@ -3371,7 +3371,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * Tokens always accumulate. Cost is different per harness (Decision 11): when
    * the adapter reports a cumulative figure (claude) it is authoritative and is
    * stored ABSOLUTELY — adding it would compound a running total and inflate the
-   * assignment's cost several-fold. Otherwise (codex) the priced per-turn value
+   * ticket's cost several-fold. Otherwise (codex) the priced per-turn value
    * accumulates.
    */
   function addUsage(
@@ -3647,7 +3647,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           'route.notice',
           {
             level: 'warn',
-            text: 'No agent is attached to this assignment, so nothing was started. Attach one from “Manage agents”.',
+            text: 'No agent is attached to this ticket, so nothing was started. Attach one from “Manage agents”.',
           },
           { agentId: SYSTEM_AGENT_ID },
         );

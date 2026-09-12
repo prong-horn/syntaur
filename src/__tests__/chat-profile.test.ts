@@ -190,7 +190,7 @@ describe('applyProfile', () => {
 });
 
 describe('prompt framing', () => {
-  async function seedAssignment(files: Record<string, string>): Promise<string> {
+  async function seedTicket(files: Record<string, string>): Promise<string> {
     const dir = join(sandbox, 'ticket');
     await mkdir(dir, { recursive: true });
     for (const [name, content] of Object.entries(files)) {
@@ -201,15 +201,15 @@ describe('prompt framing', () => {
 
   const context = {
     projectSlug: 'syntaur-meta',
-    ticketSlug: 'assignment-chat-single-agent',
+    ticketSlug: 'ticket-chat-single-agent',
     ticketTitle: 'Ticket chat',
     worktreePath: '/tmp/worktree',
     branch: 'feat/chat',
   };
 
   it('claude gets resource blocks and a <context> section, but no <system> block', async () => {
-    const dir = await seedAssignment({
-      'ticket.md': '# Assignment\n',
+    const dir = await seedTicket({
+      'ticket.md': '# Ticket\n',
       'plan.md': '# Plan v1\n',
       'progress.md': '# Progress\n',
     });
@@ -227,7 +227,7 @@ describe('prompt framing', () => {
   });
 
   it('codex gets a <system> block first', async () => {
-    const dir = await seedAssignment({ 'ticket.md': '# Assignment\n' });
+    const dir = await seedTicket({ 'ticket.md': '# Ticket\n' });
     const blocks = await buildStandingContext({
       definition: { ...BASE, harness: 'codex' },
       harness: HARNESSES.codex,
@@ -240,8 +240,8 @@ describe('prompt framing', () => {
   });
 
   it('picks the highest plan version', async () => {
-    const dir = await seedAssignment({
-      'ticket.md': '# Assignment\n',
+    const dir = await seedTicket({
+      'ticket.md': '# Ticket\n',
       'plan.md': '# Plan v1\n',
       'plan-v2.md': '# Plan v2\n',
       'plan-v10.md': '# Plan v10\n',
@@ -265,8 +265,8 @@ describe('prompt framing', () => {
   });
 
   it('truncates a long progress.md to its newest entries', async () => {
-    const dir = await seedAssignment({
-      'ticket.md': '# Assignment\n',
+    const dir = await seedTicket({
+      'ticket.md': '# Ticket\n',
       'progress.md': Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n'),
     });
     const blocks = await buildStandingContext({
@@ -287,7 +287,7 @@ describe('prompt framing', () => {
   });
 
   it('skips records that are missing or empty', async () => {
-    const dir = await seedAssignment({ 'ticket.md': '   \n' });
+    const dir = await seedTicket({ 'ticket.md': '   \n' });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,

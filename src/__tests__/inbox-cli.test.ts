@@ -63,7 +63,7 @@ async function seed(o: SeedOpts): Promise<void> {
     const body = o.comments.map(formatCommentEntry).join('\n');
     await writeFile(
       join(dir, 'comments.md'),
-      `---\nassignment: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
+      `---\nticket: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
     );
   }
 }
@@ -71,7 +71,7 @@ async function seed(o: SeedOpts): Promise<void> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-inbox-cli-'));
   projectsDir = join(root, 'projects');
-  standaloneDir = join(root, 'tickets'); // ticketsDir() = <home>/assignments
+  standaloneDir = join(root, 'tickets'); // ticketsDir() = <home>/tickets
   await mkdir(projectsDir, { recursive: true });
   await mkdir(standaloneDir, { recursive: true });
 

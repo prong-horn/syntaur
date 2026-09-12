@@ -5,14 +5,14 @@
  * `recomputeAndWrite`, so locking, CAS, history recording, and terminal
  * deference live in exactly one place.
  *
- * Locking: a per-assignment advisory lockfile (`.derive.lock`, O_EXCL with
+ * Locking: a per-ticket advisory lockfile (`.derive.lock`, O_EXCL with
  * pid+timestamp, stale takeover after 30s) serializes cooperating writers
  * (CLI + dashboard server — both call this function). Content-hash CAS with
  * bounded retry narrows the residual race against NON-cooperating writers
  * (human editors); on exhaustion we surface a warning instead of clobbering.
  *
  * What never happens here: no timer-driven calls (time-based facts are
- * payload-only flags), no recompute of terminal assignments (they defer until
+ * payload-only flags), no recompute of terminal tickets (they defer until
  * `reopen`), no write when nothing changed.
  */
 
@@ -59,7 +59,7 @@ const CAS_RETRIES = 3;
  * upgrading the dashboard would re-derive every in-flight ticket before
  * its implementationStarted/reviewRequested standing was seeded, regressing
  * real work. EXPLICIT actions (CLI verbs, dashboard transitions, `syntaur
- * recompute`) are deliberate per-assignment acts and run regardless — their
+ * recompute`) are deliberate per-ticket acts and run regardless — their
  * output shows the derived result plainly.
  */
 const MIGRATION_MARKER = 'derive-migrated';
@@ -118,7 +118,7 @@ export async function resolveRecomputeContext(): Promise<{
   };
 }
 
-/** Acquire the per-assignment advisory lock. Returns a release function.
+/** Acquire the per-ticket advisory lock. Returns a release function.
  * The lockfile carries an ownership token: release unlinks only when the
  * token still matches, so a holder that was staleness-evicted cannot unlink
  * its REPLACEMENT's lock (codex code-review finding 14).
@@ -187,7 +187,7 @@ export interface RecomputeOptions {
    * `workflowResolver` is supplied (legacy single-workflow path). */
   context: DeriveContext;
   /** Per-ticket workflow resolver (memoized by workflow id + project dir). When
-   * present, recompute resolves THIS assignment's own workflow context from its
+   * present, recompute resolves THIS ticket's own workflow context from its
    * fresh frontmatter + project binding, so each ticket derives/gates/defers
    * against its own workflow. Absent → `context` is used. */
   workflowResolver?: WorkflowContextResolver;
@@ -233,7 +233,7 @@ export interface RecomputeResult {
 }
 
 /**
- * Recompute one assignment's dimensions and persist them if anything changed.
+ * Recompute one ticket's dimensions and persist them if anything changed.
  * Appends a dimension-aware statusHistory entry via the same serializer the
  * command transitions use — derived changes are recorded by the existing path.
  */
@@ -558,7 +558,7 @@ export interface SweepSummary {
 
 /**
  * Reconciliation sweep: recompute every ticket under a projects dir (and
- * optionally a standalone-assignments dir). Used on dashboard-server boot
+ * optionally a standalone-tickets dir). Used on dashboard-server boot
  * (catches edits made while it was down), on config.md changes (the rules
  * changed → everything re-derives), by `syntaur recompute --all`, and by the
  * migration. Lazy reads stay read-only — this is the only bulk write path.
@@ -632,10 +632,10 @@ export async function recomputeAll(
  * through the `assertFact` spine. Resolves the derive context and infers
  * `projectDir` from the directory layout (`<projectDir>/tickets/<slug>` →
  * projectDir; standalone → null). EXPLICIT trigger: runs regardless of the
- * migration gate (the verb is a deliberate per-assignment act). Never throws —
+ * migration gate (the verb is a deliberate per-ticket act). Never throws —
  * the verb's primary effect already succeeded — returning null on any failure.
  */
-export async function recomputeAssignmentDir(
+export async function recomputeTicketDir(
   ticketDir: string,
   cause: string,
   by: string | null,

@@ -55,7 +55,7 @@ async function seedProject(slug: string, fm: string): Promise<void> {
   );
 }
 
-async function seedAssignment(
+async function seedTicket(
   projectSlug: string,
   slug: string,
   workflow: string | null,
@@ -87,7 +87,7 @@ afterEach(async () => {
 describe('doctor: workflows.references-resolve', () => {
   it('passes when every binding names a defined workflow', async () => {
     await seedProject('p', 'workflowByType:\n  bug: bug');
-    await seedAssignment('p', 'a1', 'bug');
+    await seedTicket('p', 'a1', 'bug');
     const r = await run(configWith({}));
     expect(r.status).toBe('pass');
   });
@@ -109,7 +109,7 @@ describe('doctor: workflows.references-resolve', () => {
 
   it('errors when a ticket workflow override references a missing workflow', async () => {
     await seedProject('p', '');
-    await seedAssignment('p', 'a1', 'phantom');
+    await seedTicket('p', 'a1', 'phantom');
     const r = await run(configWith({}));
     expect(r.status).toBe('error');
     expect(r.detail).toContain('phantom');
@@ -123,7 +123,7 @@ describe('doctor: workflows.references-resolve', () => {
 
   it('legacy single-workflow config (no `workflows:`) passes — library is just {default}', async () => {
     await seedProject('p', '');
-    await seedAssignment('p', 'a1', null);
+    await seedTicket('p', 'a1', null);
     // No `workflows` map, no statuses → getWorkflowLibrary synthesizes {default}.
     const r = await run({ defaultProjectDir: projectsDir, defaultWorkflow: null } as SyntaurConfig);
     expect(r.status).toBe('pass');

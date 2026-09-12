@@ -68,9 +68,9 @@ async function seedProject(
   updated: string,
   opts: { withHistory?: boolean; malformed?: boolean } = {},
 ): Promise<string> {
-  const dir = resolve(projectsDir, project, 'assignments', slug);
+  const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'assignment.md');
+  const path = resolve(dir, 'ticket.md');
   await writeFile(path, ticketMd(slug, status, created, updated, opts), 'utf-8');
   return path;
 }
@@ -84,7 +84,7 @@ async function seedStandalone(
 ): Promise<string> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'assignment.md');
+  const path = resolve(dir, 'ticket.md');
   await writeFile(path, ticketMd(uuid, status, created, updated, opts), 'utf-8');
   return path;
 }
@@ -128,7 +128,7 @@ describe('migrateStatusHistoryCommand', () => {
     expect(parseTicketFrontmatter(await readFile(path, 'utf-8')).statusHistory).toHaveLength(1);
   });
 
-  it('skips assignments that already have statusHistory', async () => {
+  it('skips tickets that already have statusHistory', async () => {
     const path = await seedProject('p1', 'has', 'draft', C, U, { withHistory: true });
     const before = await readFile(path, 'utf-8');
     await migrateStatusHistoryCommand({ dir: projectsDir, apply: true });

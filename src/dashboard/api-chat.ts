@@ -1,9 +1,9 @@
 /**
- * Assignment-chat REST API.
+ * Ticket-chat REST API.
  *
  * Mounted at `/api` (the routes carry their own `/tickets/...` prefix, the
  * way `api-events.ts` and `api-inbox.ts` do). Every route resolves the
- * assignment through `resolveTicketById`, so a project-nested slug and a
+ * ticket through `resolveTicketById`, so a project-nested slug and a
  * standalone UUID work identically.
  *
  * The chat STREAM does not live here — items arrive over `/ws` as `chat-item`
@@ -52,12 +52,12 @@ export function createChatRouter(
     // Express 5 types `params` values as `string | string[]`; these routes take
     // a single segment.
     const id = String(req.params.id);
-    const assignment = await resolveTicketById(projectsDir, ticketsDir, id);
-    if (!assignment) {
-      res.status(404).json({ error: `No assignment with id ${JSON.stringify(id)}` });
+    const ticket = await resolveTicketById(projectsDir, ticketsDir, id);
+    if (!ticket) {
+      res.status(404).json({ error: `No ticket with id ${JSON.stringify(id)}` });
       return null;
     }
-    return assignment;
+    return ticket;
   }
 
   /** Domain errors carry a status; anything else is a 500. */
@@ -91,11 +91,11 @@ export function createChatRouter(
 
   router.get('/tickets/:id/chat/items', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const before = Number(req.query.before);
       const limit = Number(req.query.limit);
-      const items = broker.items(assignment, {
+      const items = broker.items(ticket, {
         ...(Number.isFinite(before) ? { beforeSeq: before } : {}),
         ...(Number.isFinite(limit) && limit > 0 ? { limit } : {}),
       });
@@ -111,10 +111,10 @@ export function createChatRouter(
 
   router.get('/tickets/:id/chat/session', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const agentId = typeof req.query.agent === 'string' ? req.query.agent : null;
-      res.json({ session: await broker.getSession(assignment, agentId) });
+      res.json({ session: await broker.getSession(ticket, agentId) });
     } catch (err) {
       fail(res, err);
     }
@@ -136,8 +136,8 @@ export function createChatRouter(
         }
         void (async () => {
           try {
-            const assignment = await resolveOr404(req, res);
-            if (!assignment) return;
+            const ticket = await resolveOr404(req, res);
+            if (!ticket) return;
             const rawName = headerValue(req, 'x-attachment-filename');
             let filename = 'file';
             if (rawName) {
@@ -158,7 +158,7 @@ export function createChatRouter(
               res.status(400).json({ error: 'Empty upload body' });
               return;
             }
-            const result = await writeChatAttachment(assignment.ticketDir, {
+            const result = await writeChatAttachment(ticket.ticketDir, {
               name: filename,
               mime,
               bytes: body,
@@ -174,10 +174,10 @@ export function createChatRouter(
 
   router.get('/tickets/:id/chat/attachments/:attachmentId', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const attachmentId = String(req.params.attachmentId);
-      const resolved = await resolveChatAttachment(assignment.ticketDir, attachmentId);
+      const resolved = await resolveChatAttachment(ticket.ticketDir, attachmentId);
       if (!resolved) {
         res.status(404).json({ error: `Attachment "${attachmentId}" not found` });
         return;
@@ -197,8 +197,8 @@ export function createChatRouter(
 
   router.post('/tickets/:id/chat/messages', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const body = (req.body ?? {}) as {
         agentId?: string;
         text?: string;
@@ -221,7 +221,7 @@ export function createChatRouter(
       }
       const attachments = [];
       for (const id of attachmentIds) {
-        const resolved = await resolveChatAttachment(assignment.ticketDir, id);
+        const resolved = await resolveChatAttachment(ticket.ticketDir, id);
         if (!resolved) {
           res.status(400).json({ error: `Unknown attachment ${JSON.stringify(id)}` });
           return;
@@ -239,7 +239,7 @@ export function createChatRouter(
         });
       }
       const { messageId } = await broker.send({
-        ticket: assignment,
+        ticket: ticket,
         agentId: body.agentId ?? null,
         text,
         ...(attachments.length ? { attachments } : {}),
@@ -258,9 +258,9 @@ export function createChatRouter(
    */
   router.get('/tickets/:id/chat/messages/:messageId', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
-      const state = messageTurnState(assignment.id, String(req.params.messageId));
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
+      const state = messageTurnState(ticket.id, String(req.params.messageId));
       if (!state) {
         res.status(404).json({ error: 'No such message in this chat' });
         return;
@@ -278,9 +278,9 @@ export function createChatRouter(
    */
   router.delete('/tickets/:id/chat/messages/:messageId', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
-      const withdrawn = await broker.withdraw(assignment, String(req.params.messageId));
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
+      const withdrawn = await broker.withdraw(ticket, String(req.params.messageId));
       if (!withdrawn) {
         res.status(409).json({ error: 'That message is not queued — it has already been sent' });
         return;
@@ -293,10 +293,10 @@ export function createChatRouter(
 
   router.post('/tickets/:id/chat/cancel', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const body = (req.body ?? {}) as { agentId?: string };
-      const cancelled = await broker.cancel(assignment, body.agentId ?? null);
+      const cancelled = await broker.cancel(ticket, body.agentId ?? null);
       res.json({ cancelled });
     } catch (err) {
       fail(res, err);
@@ -305,8 +305,8 @@ export function createChatRouter(
 
   router.post('/tickets/:id/chat/permissions/:requestId', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const body = (req.body ?? {}) as { optionId?: string; allowAllSession?: boolean };
       if (typeof body.optionId !== 'string' || body.optionId.length === 0) {
         res.status(400).json({ error: 'optionId is required' });
@@ -317,7 +317,7 @@ export function createChatRouter(
         return;
       }
       const answered = await broker.answerPermission(
-        assignment,
+        ticket,
         String(req.params.requestId),
         body.optionId,
         body.allowAllSession === undefined ? undefined : { allowAllSession: body.allowAllSession },
@@ -334,8 +334,8 @@ export function createChatRouter(
 
   router.post('/tickets/:id/chat/questions/:requestId', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const body = (req.body ?? {}) as { optionId?: string; text?: string };
       if (
         (typeof body.optionId !== 'string' || body.optionId.length === 0) &&
@@ -344,7 +344,7 @@ export function createChatRouter(
         res.status(400).json({ error: 'optionId or text is required' });
         return;
       }
-      const answered = await broker.answerQuestion(assignment, String(req.params.requestId), {
+      const answered = await broker.answerQuestion(ticket, String(req.params.requestId), {
         ...(body.optionId ? { optionId: body.optionId } : {}),
         ...(body.text ? { text: body.text } : {}),
       });
@@ -361,9 +361,9 @@ export function createChatRouter(
   /** Rebuild `chat_items` from `chat/events.jsonl` (Decision 2's recovery path). */
   router.post('/tickets/:id/chat/reindex', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
-      res.json(await broker.reindex(assignment));
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
+      res.json(await broker.reindex(ticket));
     } catch (err) {
       fail(res, err);
     }
@@ -371,8 +371,8 @@ export function createChatRouter(
 
   router.post('/tickets/:id/chat/items/:itemId/file', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
 
       const body = (req.body ?? {}) as {
         kind?: string;
@@ -419,7 +419,7 @@ export function createChatRouter(
         }
       }
 
-      const record = await broker.fileRecord(assignment, String(req.params.itemId), {
+      const record = await broker.fileRecord(ticket, String(req.params.itemId), {
         kind: body.kind as 'decision' | 'progress' | 'comment',
         body: body.body,
         ...(decisionTitle ? { title: decisionTitle } : {}),
@@ -449,9 +449,9 @@ export function createChatRouter(
 
   router.get('/tickets/:id/chat/participants', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
-      res.json(await broker.getParticipants(assignment));
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
+      res.json(await broker.getParticipants(ticket));
     } catch (err) {
       fail(res, err);
     }
@@ -464,15 +464,15 @@ export function createChatRouter(
    */
   router.put('/tickets/:id/chat/participants', async (req, res) => {
     try {
-      const assignment = await resolveOr404(req, res);
-      if (!assignment) return;
+      const ticket = await resolveOr404(req, res);
+      if (!ticket) return;
       const body = (req.body ?? {}) as Partial<Participants>;
       if (!Array.isArray(body.agents)) {
         res.status(400).json({ error: 'agents must be a list of agent ids' });
         return;
       }
       res.json(
-        await broker.setParticipants(assignment, {
+        await broker.setParticipants(ticket, {
           agents: body.agents,
           defaultAgent: body.defaultAgent ?? null,
           ...(body.hopBudget === undefined ? {} : { hopBudget: body.hopBudget }),

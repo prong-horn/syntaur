@@ -145,7 +145,7 @@ function usageOnlyRow(sessionId: string, usage: SessionUsage): AgentSessionWithL
  * Apply the paged query's filters to a synthetic usage-only row.
  *
  * These rows exist only in JS, so they cannot ride the SQL WHERE clause and the
- * predicates have to be mirrored here. They carry no project, assignment,
+ * predicates have to be mirrored here. They carry no project, ticket,
  * description, summary or transcript, so the searchable surface is narrower than
  * a tracked session's — matching what the client saw when it searched these same
  * fields on these same rows.
@@ -251,7 +251,7 @@ function compareKeys(a: MergeKey, b: MergeKey, sort: SessionSort, now: number): 
       return durationMinutes(a, now) - durationMinutes(b, now) || a.sessionId.localeCompare(b.sessionId);
     case 'duration_desc':
       return durationMinutes(b, now) - durationMinutes(a, now) || a.sessionId.localeCompare(b.sessionId);
-    case 'assignment_asc':
+    case 'ticket_asc':
       return (
         nocase(a.ticketSlug, b.ticketSlug)
         || nocase(a.projectSlug, b.projectSlug)
@@ -622,14 +622,14 @@ export function createAgentSessionsRouter(
   router.get('/:projectSlug', async (req, res) => {
     try {
       const { projectSlug } = req.params;
-      const assignment = req.query.assignment as string | undefined;
+      const ticket = req.query.ticket as string | undefined;
       const projectDir = resolve(projectsDir, projectSlug);
       if (!(await fileExists(projectDir))) {
         res.status(404).json({ error: `Project "${projectSlug}" not found` });
         return;
       }
       await reconcileActiveSessions(projectsDir, ticketsDir);
-      const sessions = await listProjectSessions(projectsDir, projectSlug, assignment);
+      const sessions = await listProjectSessions(projectsDir, projectSlug, ticket);
       res.json({
         // Usage attached, but never orphan rows: a usage-only session has no
         // project binding, so it cannot belong to a project-scoped listing.
@@ -647,14 +647,14 @@ export function createAgentSessionsRouter(
       const {
         projectSlug,
         ticketSlug: bodyTicketSlug,
-        assignmentSlug: legacyAssignmentSlug,
+        ticketSlug: legacyTicketSlug,
         agent,
         sessionId,
         path,
         description,
         transcriptPath,
       } = req.body;
-      const ticketSlug = bodyTicketSlug ?? legacyAssignmentSlug;
+      const ticketSlug = bodyTicketSlug ?? legacyTicketSlug;
 
       if (!agent) {
         res.status(400).json({ error: 'agent is required' });
@@ -672,7 +672,7 @@ export function createAgentSessionsRouter(
       // L gate (1): a malformed/arbitrary session id must not open or
       // mis-attribute an engagement. `assertMayMutate` is a no-op here (an
       // HTTP-supplied id resolves to EXPLICIT provenance), so the real guard is
-      // format validation + assignment-existence below — not provenance.
+      // format validation + ticket-existence below — not provenance.
       if (!isSafeSessionId(sessionId)) {
         res.status(400).json({
           error: 'sessionId is malformed. Pass the real agent-generated session id.',
@@ -688,13 +688,13 @@ export function createAgentSessionsRouter(
         }
       }
 
-      // L gate (2) + M1: when the POST BINDS to an assignment, the assignment
+      // L gate (2) + M1: when the POST BINDS to an ticket, the ticket
       // must exist (else this opens/mis-attributes a window for a phantom
-      // assignment). Resolve once: `.exists` gates the bind, `.id` is stored as
+      // ticket). Resolve once: `.exists` gates the bind, `.id` is stored as
       // the engagement's `assignment_id` so a later stage assertion won't split
       // the interval to repair the id. A registration-only POST (no
-      // `assignmentSlug`) is NOT gated — it registers the bare session.
-      let assignmentId: string | null = null;
+      // `ticketSlug`) is NOT gated — it registers the bare session.
+      let ticketId: string | null = null;
       if (ticketSlug) {
         const resolvedTicket = await resolveTicketBySlug(
           projectsDir,
@@ -706,7 +706,7 @@ export function createAgentSessionsRouter(
           res.status(404).json({ error: `Ticket "${ticketSlug}" not found` });
           return;
         }
-        assignmentId = resolvedTicket.id;
+        ticketId = resolvedTicket.id;
       }
 
       // Prefer the launch cwd recorded inside the transcript over whatever
@@ -723,12 +723,12 @@ export function createAgentSessionsRouter(
         : null;
 
       const session = {
-        // L: a POST with no assignmentSlug is registration-only (unbound) — do
+        // L: a POST with no ticketSlug is registration-only (unbound) — do
         // NOT open a project-bound engagement for an arbitrary session. Binding
-        // requires a validated assignment selector (existence-checked above).
+        // requires a validated ticket selector (existence-checked above).
         projectSlug: ticketSlug ? projectSlug || null : null,
         ticketSlug: ticketSlug || null,
-        ticketId: assignmentId,
+        ticketId: ticketId,
         agent,
         sessionId,
         started: new Date().toISOString(),
@@ -750,7 +750,7 @@ export function createAgentSessionsRouter(
   // POST /api/agent-sessions/:sessionId/worktree/recreate — rebuild a deleted
   // worktree at the session's exact recorded path so `claude --resume <id>` can
   // find the transcript again. Server-authoritative (path/repo/branch derived
-  // from the session row + its linked assignment, never the request body).
+  // from the session row + its linked ticket, never the request body).
   router.post('/:sessionId/worktree/recreate', async (req, res) => {
     try {
       const { sessionId } = req.params;

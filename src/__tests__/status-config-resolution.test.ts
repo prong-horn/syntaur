@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile, access } from 'node:fs/promise
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  scanAssignmentsByStatus,
+  scanTicketsByStatus,
   applyStatusResolutions,
   verifyNoDriftedOrphans,
   scanWorkflowUsage,
@@ -92,14 +92,14 @@ afterEach(async () => {
   await rm(root, { recursive: true, force: true });
 });
 
-describe('scanAssignmentsByStatus', () => {
+describe('scanTicketsByStatus', () => {
   it('groups by status across project + standalone trees', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'in_progress');
     await seed(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending');
 
-    const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending', 'in_progress']);
+    const result = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending', 'in_progress']);
 
     expect(result.get('pending')).toHaveLength(3);
     expect(result.get('in_progress')).toHaveLength(1);
@@ -110,7 +110,7 @@ describe('scanAssignmentsByStatus', () => {
   it('returns an empty array for queried ids that have zero matches', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
 
-    const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending', 'nonexistent']);
+    const result = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending', 'nonexistent']);
 
     expect(result.get('pending')).toHaveLength(1);
     expect(result.get('nonexistent')).toEqual([]);
@@ -120,7 +120,7 @@ describe('scanAssignmentsByStatus', () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending');
 
-    const result = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const result = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     expect(result.get('pending')).toHaveLength(1);
     expect(result.get('pending')![0].ticketSlug).toBe('a1');
@@ -130,7 +130,7 @@ describe('scanAssignmentsByStatus', () => {
 describe('applyStatusResolutions', () => {
   it('remap-only: rewrites status + updated, leaves other fields intact', async () => {
     const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     const before = await readFile(path, 'utf-8');
     const result = await applyStatusResolutions(
@@ -151,7 +151,7 @@ describe('applyStatusResolutions', () => {
 
   it('remap appends a statusHistory entry (command: remap, correct from/to)', async () => {
     const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     await applyStatusResolutions(
       [{ id: 'pending', mode: 'remap', target: 'draft' }],
@@ -174,7 +174,7 @@ describe('applyStatusResolutions', () => {
   it('delete-only: removes ticket directories', async () => {
     const p1 = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const p2 = await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     const result = await applyStatusResolutions(
       [{ id: 'pending', mode: 'delete' }],
@@ -192,7 +192,7 @@ describe('applyStatusResolutions', () => {
   it('mixed remap + delete across different status ids', async () => {
     const r1 = await seed(join(projectsDir, 'p1', 'tickets', 'r1'), 'r1', 'pending');
     const d1 = await seed(join(projectsDir, 'p1', 'tickets', 'd1'), 'd1', 'review');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending', 'review']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending', 'review']);
 
     const result = await applyStatusResolutions(
       [
@@ -210,7 +210,7 @@ describe('applyStatusResolutions', () => {
   });
 
   it('zero-affected resolution is a no-op (counts as 0)', async () => {
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
     const result = await applyStatusResolutions(
       [{ id: 'pending', mode: 'remap', target: 'draft' }],
       affected,
@@ -222,7 +222,7 @@ describe('applyStatusResolutions', () => {
 
   it('throws duplicate-id when two resolutions share the same id', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     await expect(
       applyStatusResolutions(
@@ -238,7 +238,7 @@ describe('applyStatusResolutions', () => {
 
   it('throws stale-resolution when id was not scanned', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     await expect(
       applyStatusResolutions(
@@ -251,7 +251,7 @@ describe('applyStatusResolutions', () => {
 
   it('throws invalid-target when target is not in validTargets', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     await expect(
       applyStatusResolutions(
@@ -264,7 +264,7 @@ describe('applyStatusResolutions', () => {
 
   it('throws invalid-target when target equals source id', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     await expect(
       applyStatusResolutions(
@@ -278,7 +278,7 @@ describe('applyStatusResolutions', () => {
   it('TOCTOU: skips a remap whose status drifted between scan and apply', async () => {
     const path = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     // Mutate the file under us — simulate a concurrent CLI write.
     const drifted = (await readFile(path, 'utf-8')).replace('status: pending', 'status: completed');
@@ -297,7 +297,7 @@ describe('applyStatusResolutions', () => {
   it('TOCTOU: skips a delete whose status drifted between scan and apply', async () => {
     const driftedPath = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     const stablePath = await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
 
     const drifted = (await readFile(driftedPath, 'utf-8')).replace('status: pending', 'status: in_progress');
     await writeFile(driftedPath, drifted);
@@ -324,7 +324,7 @@ describe('applyStatusResolutions', () => {
 
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
-    const affected = await scanAssignmentsByStatus(projectsDir, null, ['pending']);
+    const affected = await scanTicketsByStatus(projectsDir, null, ['pending']);
     const list = affected.get('pending')!;
     expect(list).toHaveLength(2);
 
@@ -363,7 +363,7 @@ describe('applyStatusResolutions', () => {
     await chmod(a1, 0o000);
     try {
       await expect(
-        scanAssignmentsByStatus(projectsDir, null, ['pending']),
+        scanTicketsByStatus(projectsDir, null, ['pending']),
       ).rejects.toMatchObject({ code: 'scan-failed' });
     } finally {
       await chmod(a1, 0o644).catch(() => {});
@@ -388,7 +388,7 @@ describe('verifyNoDriftedOrphans', () => {
     ).rejects.toMatchObject({ code: 'drift-detected' });
   });
 
-  it('catches cross-id drift (assignment moved A→B while both are being dropped)', async () => {
+  it('catches cross-id drift (ticket moved A→B while both are being dropped)', async () => {
     // Seed under "review" (we'll claim we scanned this as "pending").
     const driftedPath = await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'review');
     // applyStatusResolutions for [pending, review] would skip a1 for pending (status drifted)
@@ -442,11 +442,11 @@ function wfResolver(ids: string[], defaultWorkflow: string | null = null): Workf
   return makeWorkflowContextResolver({ workflows, defaultWorkflow });
 }
 
-describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
-  it('records the resolved workflow on each affected assignment', async () => {
+describe('scanTicketsByStatus — per-workflow scoping (Task 8)', () => {
+  it('records the resolved workflow on each affected ticket', async () => {
     await seedWf(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending', 'alpha');
     const resolver = wfResolver(['default', 'alpha', 'beta']);
-    const result = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+    const result = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
     });
     expect(result.get('pending')![0].resolvedWorkflow).toBe('alpha');
@@ -458,13 +458,13 @@ describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
     await seedWf(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending', 'beta');
     const resolver = wfResolver(['default', 'alpha', 'beta']);
 
-    const scoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+    const scoped = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
       workflowId: 'alpha',
     });
     expect(scoped.get('pending')!.map((a) => a.ticketSlug)).toEqual(['a1']);
 
-    const unscoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+    const unscoped = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
     });
     expect(unscoped.get('pending')!.length).toBe(2);
@@ -473,7 +473,7 @@ describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
   it('handles a standalone ticket with a workflow override', async () => {
     await seedWf(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending', 'alpha');
     const resolver = wfResolver(['default', 'alpha']);
-    const scoped = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['pending'], {
+    const scoped = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
       workflowId: 'alpha',
     });
@@ -492,7 +492,7 @@ describe('scanAssignmentsByStatus — per-workflow scoping (Task 8)', () => {
     const resolver = wfResolver(['default', 'alpha', 'beta']);
 
     // Re-bind alpha's "shared" → "remapped" (only alpha is in scope).
-    const affected = await scanAssignmentsByStatus(projectsDir, standaloneDir, ['shared'], {
+    const affected = await scanTicketsByStatus(projectsDir, standaloneDir, ['shared'], {
       resolver,
       workflowId: 'alpha',
     });
@@ -528,7 +528,7 @@ describe('scanWorkflowUsage — delete-in-use guard (Task 8)', () => {
       isGlobalDefault: false,
     });
     expect(usage.deletable).toBe(false);
-    expect(usage.assignments.map((a) => a.ticketSlug)).toEqual(['a1']);
+    expect(usage.tickets.map((a) => a.ticketSlug)).toEqual(['a1']);
     expect(usage.blockers.join(' ')).toContain('reassign');
   });
 

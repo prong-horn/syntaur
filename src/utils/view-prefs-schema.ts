@@ -29,10 +29,10 @@ export const SORT_FIELDS: readonly SortField[] = [
   'agentName',
 ];
 
-// Sort fields offered by assignment-view surfaces (boards, CreateViewDialog,
+// Sort fields offered by ticket-view surfaces (boards, CreateViewDialog,
 // view defaults). The session-only fields are intentionally excluded so the
 // ticket dropdowns don't surface session sorts.
-export const ASSIGNMENT_SORT_FIELDS: readonly SortField[] = [
+export const TICKET_SORT_FIELDS: readonly SortField[] = [
   'title',
   'status',
   'priority',

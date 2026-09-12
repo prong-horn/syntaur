@@ -17,7 +17,7 @@ import { getOpenEngagement } from '../db/engagement-db.js';
  * that has finished must be reconciled to `completed` on the tick, not left for
  * the six-hour stale sweep to call `stopped`. `completed` and `stopped` are
  * different facts, and only the ordering decides which one a finished
- * assignment's session gets.
+ * ticket's session gets.
  */
 
 let dir: string;

@@ -138,7 +138,7 @@ describe('syntaur session boundary', () => {
     expect(data.projectDir).toBe(resolve(syntaurHome, 'projects', 'p'));
   });
 
-  it('returns null assignment/project (with workspaceRoot) when the session has NO open engagement', async () => {
+  it('returns null ticket/project (with workspaceRoot) when the session has NO open engagement', async () => {
     // No engagement seeded. The CLI must still exit 0 and emit a parseable object.
     await mkdir(resolve(workspaceRoot, '.syntaur'), { recursive: true });
     await writeFile(

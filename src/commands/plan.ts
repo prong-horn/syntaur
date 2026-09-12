@@ -4,12 +4,12 @@ import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { ticketsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
-import { recomputeAssignmentDir } from '../lifecycle/recompute.js';
+import { recomputeTicketDir } from '../lifecycle/recompute.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
 
-async function resolveAssignmentDir(opts: {
+async function resolveTicketDir(opts: {
   ticket?: string;
   project?: string;
   cwd?: string;
@@ -19,7 +19,7 @@ async function resolveAssignmentDir(opts: {
     if (opts.project) {
       return resolve((await readConfig()).defaultProjectDir, opts.project, 'tickets', opts.ticket);
     }
-    // Standalone (assignment is UUID under ~/.syntaur/tickets/)
+    // Standalone (ticket is UUID under ~/.syntaur/tickets/)
     return resolve(ticketsDir(), opts.ticket);
   }
   // No explicit target → resolve from the session's OPEN engagement and gate
@@ -169,13 +169,13 @@ interface PlanCreateOptions {
 }
 
 async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
-  const ticketDir = await resolveAssignmentDir(options);
+  const ticketDir = await resolveTicketDir(options);
   if (!(await fileExists(ticketDir))) {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
-  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-  if (!(await fileExists(assignmentMdPath))) {
-    throw new Error(`Missing ticket.md at: ${assignmentMdPath}`);
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) {
+    throw new Error(`Missing ticket.md at: ${ticketMdPath}`);
   }
 
   const planPath = resolve(ticketDir, 'plan.md');
@@ -185,8 +185,8 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
     );
   }
 
-  const assignmentMd = await readFile(assignmentMdPath, 'utf-8');
-  const slugMatch = assignmentMd.match(/^slug:\s*(.+?)\s*$/m);
+  const ticketMd = await readFile(ticketMdPath, 'utf-8');
+  const slugMatch = ticketMd.match(/^slug:\s*(.+?)\s*$/m);
   const slug = slugMatch ? slugMatch[1].trim() : ticketDir.split('/').pop() ?? '';
 
   await writeFileForce(planPath, buildInitialPlanStub(slug));
@@ -196,7 +196,7 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   // Keep derived status current: writing a plan flips planExists (and a new
   // plan can invalidate a stale approval). Explicit verb → recompute regardless
   // of the migration gate; best-effort, never blocks the create.
-  await recomputeAssignmentDir(ticketDir, 'plan-create', null);
+  await recomputeTicketDir(ticketDir, 'plan-create', null);
 }
 
 interface PlanVersionOptions {
@@ -206,14 +206,14 @@ interface PlanVersionOptions {
 }
 
 async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
-  const ticketDir = await resolveAssignmentDir(options);
+  const ticketDir = await resolveTicketDir(options);
   if (!(await fileExists(ticketDir))) {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
 
-  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-  if (!(await fileExists(assignmentMdPath))) {
-    throw new Error(`Missing ticket.md at: ${assignmentMdPath}`);
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) {
+    throw new Error(`Missing ticket.md at: ${ticketMdPath}`);
   }
 
   const planFiles = await listPlanFiles(ticketDir);
@@ -232,8 +232,8 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   }
 
   // Parse the ticket slug from frontmatter (kebab from path as fallback).
-  const assignmentMd = await readFile(assignmentMdPath, 'utf-8');
-  const slugMatch = assignmentMd.match(/^slug:\s*(.+?)\s*$/m);
+  const ticketMd = await readFile(ticketMdPath, 'utf-8');
+  const slugMatch = ticketMd.match(/^slug:\s*(.+?)\s*$/m);
   const slug = slugMatch ? slugMatch[1].trim() : ticketDir.split('/').pop() ?? '';
 
   // Read prior plan body to scrape unchecked todos.
@@ -259,7 +259,7 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   // A new plan version invalidates any prior plan approval (digest no longer
   // matches the latest plan file). Recompute so the derived status reflects
   // that immediately. Explicit verb → runs regardless of the migration gate.
-  await recomputeAssignmentDir(ticketDir, 'plan-version', null);
+  await recomputeTicketDir(ticketDir, 'plan-version', null);
 }
 
 export const planCommand = new Command('plan')
@@ -302,7 +302,7 @@ export const _internal = {
   extractUncheckedTodos,
   nextPlanFileName,
   listPlanFiles,
-  resolveAssignmentDir,
+  resolveTicketDir,
   runPlanVersion,
   runPlanCreate,
   buildInitialPlanStub,

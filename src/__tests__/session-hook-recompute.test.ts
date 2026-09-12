@@ -12,7 +12,7 @@ const REPO_ROOT = resolve(__dirname, '..', '..');
 const CLAUDE_HOOK = resolve(REPO_ROOT, 'platforms/claude-code/hooks/session-cleanup.sh');
 const CODEX_HOOK = resolve(REPO_ROOT, 'platforms/codex/scripts/session-cleanup.sh');
 
-const ASSIGNMENT = `---
+const TICKET = `---
 id: hook-test-id
 slug: hook-test
 title: "Hook Recompute Test"
@@ -62,7 +62,7 @@ async function setup(withMarker: boolean): Promise<Ctx> {
   await mkdir(aDir, { recursive: true });
   await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
   const aPath = join(aDir, 'ticket.md');
-  await writeFile(aPath, ASSIGNMENT);
+  await writeFile(aPath, TICKET);
   if (withMarker) await writeFile(join(home, 'derive-migrated'), '2026-06-17T00:00:00Z\n');
 
   // Seed the session DB the hook subprocess reads ($SYNTAUR_HOME/syntaur.db):

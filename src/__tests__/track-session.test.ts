@@ -91,7 +91,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
 
   it('accepts a WEAK session id when --ticket is provided', async () => {
     await trackSessionCommand(
-      { agent: 'claude', path: testDir, ticket: 'my-assignment' },
+      { agent: 'claude', path: testDir, ticket: 'my-ticket' },
       { resolveSessionId: async () => ({ id: 'weak-id-2', provenance: 'WEAK' as const }), fallbackPid: () => null },
     );
     expect(getSessionById('weak-id-2')).not.toBeNull();

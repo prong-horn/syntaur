@@ -15,7 +15,7 @@ export interface MigrateStatusHistoryOptions {
 
 interface SeedTarget {
   display: string;
-  assignmentMd: string;
+  ticketMd: string;
   status: string;
   seedAt: string;
 }
@@ -67,13 +67,13 @@ async function collectTargets(
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
 
-      // Standalone shape: baseDir/<uuid>/assignment.md (v1) or ticket.md (Phase A)
+      // Standalone shape: baseDir/<uuid>/ticket.md (v1) or ticket.md (Phase A)
       const directTicketMd = resolve(baseDir, m.name, 'ticket.md');
-      const directAssignmentMd = resolve(baseDir, m.name, 'assignment.md');
+      const directLegacyTicketMd = resolve(baseDir, m.name, 'assignment.md');
       const standaloneMd = (await fileExists(directTicketMd))
         ? directTicketMd
-        : (await fileExists(directAssignmentMd))
-          ? directAssignmentMd
+        : (await fileExists(directLegacyTicketMd))
+          ? directLegacyTicketMd
           : null;
       if (standaloneMd) {
         if (seen.has(standaloneMd)) continue;
@@ -82,7 +82,7 @@ async function collectTargets(
           seen.add(standaloneMd);
           targets.push({
             display: `standalone/${m.name}`,
-            assignmentMd: standaloneMd,
+            ticketMd: standaloneMd,
             status: fm.status,
             seedAt: seedAtFor(fm, terminalStatuses),
           });
@@ -90,22 +90,22 @@ async function collectTargets(
         continue;
       }
 
-      // Project shape: baseDir/<project>/assignments/<slug>/assignment.md
-      const assignmentsBase = resolve(baseDir, m.name, 'assignments');
-      if (await fileExists(assignmentsBase)) {
-        const slugs = await readdir(assignmentsBase, { withFileTypes: true });
+      // Project shape (v1): baseDir/<project>/tickets/<slug>/ticket.md
+      const legacyTicketsDir = resolve(baseDir, m.name, 'assignments');
+      if (await fileExists(legacyTicketsDir)) {
+        const slugs = await readdir(legacyTicketsDir, { withFileTypes: true });
         for (const a of slugs) {
           if (!a.isDirectory()) continue;
           if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-          const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
-          if (!(await fileExists(assignmentMd))) continue;
-          if (seen.has(assignmentMd)) continue;
-          const fm = await parseSafe(assignmentMd);
+          const ticketMd = resolve(legacyTicketsDir, a.name, 'assignment.md');
+          if (!(await fileExists(ticketMd))) continue;
+          if (seen.has(ticketMd)) continue;
+          const fm = await parseSafe(ticketMd);
           if (!fm || fm.statusHistory.length > 0) continue;
-          seen.add(assignmentMd);
+          seen.add(ticketMd);
           targets.push({
             display: `${m.name}/${a.name}`,
-            assignmentMd,
+            ticketMd,
             status: fm.status,
             seedAt: seedAtFor(fm, terminalStatuses),
           });
@@ -127,7 +127,7 @@ async function collectTargets(
           seen.add(ticketMd);
           targets.push({
             display: `${m.name}/${a.name}`,
-            assignmentMd: ticketMd,
+            ticketMd: ticketMd,
             status: fm.status,
             seedAt: seedAtFor(fm, terminalStatuses),
           });
@@ -140,7 +140,7 @@ async function collectTargets(
 
 /**
  * One-time migration: seed a single synthetic `statusHistory` entry on every
- * assignment.md that lacks one. Dry-run by default; `--apply` writes. Idempotent
+ * ticket.md that lacks one. Dry-run by default; `--apply` writes. Idempotent
  * (skips files that already have history) and never throws per file. Mirrors the
  * scan/apply shape of `migrate-statuses`.
  */
@@ -155,12 +155,12 @@ export async function migrateStatusHistoryCommand(
   const targets = await collectTargets([projectsBase, standaloneBase], terminalStatuses);
 
   if (targets.length === 0) {
-    console.log('No assignments need a statusHistory seed — all up to date.');
+    console.log('No tickets need a statusHistory seed — all up to date.');
     return;
   }
 
   console.log(
-    `Found ${targets.length} assignment${targets.length === 1 ? '' : 's'} lacking statusHistory ${
+    `Found ${targets.length} ticket${targets.length === 1 ? '' : 's'} lacking statusHistory ${
       options.apply ? '(applying)' : '(dry-run; use --apply to write)'
     }:`,
   );
@@ -182,7 +182,7 @@ export async function migrateStatusHistoryCommand(
   await withSuppressedEvents(async () => {
     for (const t of targets) {
       try {
-        const content = await readFile(t.assignmentMd, 'utf-8');
+        const content = await readFile(t.ticketMd, 'utf-8');
         // Re-check idempotency in case the file changed since the scan.
         if (parseTicketFrontmatter(content).statusHistory.length > 0) continue;
         const seededContent = appendStatusHistoryEntry(content, {
@@ -192,7 +192,7 @@ export async function migrateStatusHistoryCommand(
           command: 'seed',
           by: null,
         });
-        await writeFileForce(t.assignmentMd, seededContent);
+        await writeFileForce(t.ticketMd, seededContent);
         seeded += 1;
       } catch (err) {
         failed += 1;
@@ -201,6 +201,6 @@ export async function migrateStatusHistoryCommand(
     }
   });
   console.log(
-    `Seeded ${seeded} assignment${seeded === 1 ? '' : 's'}${failed > 0 ? `, ${failed} skipped` : ''}.`,
+    `Seeded ${seeded} ticket${seeded === 1 ? '' : 's'}${failed > 0 ? `, ${failed} skipped` : ''}.`,
   );
 }

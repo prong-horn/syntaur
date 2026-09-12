@@ -52,7 +52,7 @@ describe('syntaur workflow', () => {
     );
   }
 
-  async function seedAssignment(project: string, slug: string, workflow: string): Promise<string> {
+  async function seedTicket(project: string, slug: string, workflow: string): Promise<string> {
     const dir = resolve(home, 'projects', project, 'tickets', slug);
     await mkdir(dir, { recursive: true });
     const path = resolve(dir, 'ticket.md');
@@ -112,7 +112,7 @@ describe('syntaur workflow', () => {
   it('blocks delete while a ticket resolves to the workflow, then allows it', async () => {
     await seedProject('p');
     await runCli(['workflow', 'new', 'bug'], home);
-    await seedAssignment('p', 'a1', 'bug');
+    await seedTicket('p', 'a1', 'bug');
 
     const blocked = await runCli(['workflow', 'delete', 'bug'], home);
     expect(blocked.code).toBe(1);
@@ -138,10 +138,10 @@ describe('syntaur workflow', () => {
     );
     expect(res.code).toBe(0);
     // Find the created ticket.md and assert its workflow field.
-    const assignmentsRoot = resolve(home, 'projects', 'p', 'tickets');
+    const ticketsRoot = resolve(home, 'projects', 'p', 'tickets');
     const { readdir } = await import('node:fs/promises');
-    const slugs = await readdir(assignmentsRoot);
-    const md = await readFile(resolve(assignmentsRoot, slugs[0], 'ticket.md'), 'utf-8');
+    const slugs = await readdir(ticketsRoot);
+    const md = await readFile(resolve(ticketsRoot, slugs[0], 'ticket.md'), 'utf-8');
     expect(md).toMatch(/^workflow: bug$/m);
   });
 });

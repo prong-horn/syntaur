@@ -86,7 +86,7 @@ describe('syntaur session resume (handoff-only)', () => {
     const handoffPath = resolve(ticketDir, 'handoff.md');
     await writeFile(
       handoffPath,
-      `---\nassignment: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nReal content.\n`,
+      `---\nticket: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nReal content.\n`,
     );
 
     const human = await runCli(['session', 'resume'], workspaceRoot, syntaurHome, {

@@ -124,7 +124,7 @@ export async function trackSessionCommand(
     ? await captureHeadSha(recordedPath)
     : null;
 
-  // Bootstrap binding: the session→assignment engagement edge is opened from the
+  // Bootstrap binding: the session→ticket engagement edge is opened from the
   // EXPLICIT --project/--ticket CLI args (appendSession opens an engagement
   // from these). Never sourced from the demoted context.json ticket scalar.
   await appendSession('', {

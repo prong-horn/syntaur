@@ -2,7 +2,7 @@ import type { Check } from './types.js';
 import { envChecks } from './checks/env.js';
 import { structureChecks } from './checks/structure.js';
 import { projectChecks } from './checks/project.js';
-import { assignmentChecks } from './checks/ticket.js';
+import { ticketChecks } from './checks/ticket.js';
 import { dashboardChecks } from './checks/dashboard.js';
 import { integrationChecks } from './checks/integrations.js';
 import { workspaceChecks } from './checks/workspace.js';
@@ -18,7 +18,7 @@ export function allChecks(): Check[] {
     ...envChecks,
     ...structureChecks,
     ...projectChecks,
-    ...assignmentChecks,
+    ...ticketChecks,
     ...dashboardChecks,
     ...integrationChecks,
     ...workspaceChecks,

@@ -166,7 +166,7 @@ function humanizeAge(ageMs: number): string {
   return `${wk}w ago`;
 }
 
-/** `project/slug` for project assignments; the standalone UUID otherwise. */
+/** `project/slug` for project tickets; the standalone UUID otherwise. */
 function locator(item: InboxItem): string {
   if (item.project === null) return item.ticketId;
   return `${item.project}/${item.ticketSlug}`;
@@ -227,7 +227,7 @@ function renderHuman(result: InboxResult): string {
 
 export const inboxCommand = new Command('inbox')
   .description(
-    'One triage view of everything awaiting a human: unanswered questions, assignments in review, or with a plan awaiting approval. Read-only — prints the exact action command for each item; never mutates.',
+    'One triage view of everything awaiting a human: unanswered questions, tickets in review, or with a plan awaiting approval. Read-only — prints the exact action command for each item; never mutates.',
   )
   .option('--project <slug>', 'Restrict to one project')
   .option(

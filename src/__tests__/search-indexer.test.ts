@@ -36,15 +36,15 @@ beforeEach(async () => {
   // latest plan = plan-v2.md (plan.md is v1, must NOT be indexed)
   await write(
     join(aDir, 'plan.md'),
-    `---\nassignment: asg-001\n---\n# Old Plan v1\n\nObsolete approach.\n`,
+    `---\nticket: asg-001\n---\n# Old Plan v1\n\nObsolete approach.\n`,
   );
   await write(
     join(aDir, 'plan-v2.md'),
-    `---\nassignment: asg-001\n---\n# Plan v2\n\nThe approved strawberry approach.\n`,
+    `---\nticket: asg-001\n---\n# Plan v2\n\nThe approved strawberry approach.\n`,
   );
   await write(
     join(aDir, 'comments.md'),
-    `---\nassignment: asg-001\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
+    `---\nticket: asg-001\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
   );
 
   // ── standalone ticket ─────────────────────────────────────────────────
@@ -83,14 +83,14 @@ function find(docs: SearchDoc[], fileKind: string, slug: string | null): SearchD
 }
 
 describe('buildIndex', () => {
-  it('emits a doc per file kind across assignments and sidecars', async () => {
+  it('emits a doc per file kind across tickets and sidecars', async () => {
     const docs = await buildIndex({ projectsDir, ticketsDir });
     const kinds = docs.map((d) => d.fileKind).sort();
     expect(kinds).toContain('ticket');
     expect(kinds).toContain('plan');
     expect(kinds).toContain('comments');
-    const assignmentDocs = docs.filter((d) => d.fileKind === 'ticket');
-    expect(assignmentDocs.map((d) => d.ticketSlug).sort()).toEqual([
+    const ticketDocs = docs.filter((d) => d.fileKind === 'ticket');
+    expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual([
       'build-widget',
       'uuid-standalone',
     ]);
@@ -105,7 +105,7 @@ describe('buildIndex', () => {
     expect(planDocs[0].body).not.toContain('Obsolete');
   });
 
-  it('excludes archived assignments unless includeArchived', async () => {
+  it('excludes archived tickets unless includeArchived', async () => {
     const docs = await buildIndex({ projectsDir, ticketsDir });
     expect(docs.some((d) => d.ticketSlug === 'old-task')).toBe(false);
 
@@ -113,7 +113,7 @@ describe('buildIndex', () => {
     expect(withArchived.some((d) => d.ticketSlug === 'old-task')).toBe(true);
   });
 
-  it('excludes an archived project’s assignments by default', async () => {
+  it('excludes an archived project’s tickets by default', async () => {
     const docs = await buildIndex({ projectsDir, ticketsDir });
     expect(docs.some((d) => d.projectSlug === 'zeta')).toBe(false);
     expect(docs.some((d) => d.ticketSlug === 'zeta-task')).toBe(false);

@@ -4,7 +4,7 @@ import { SectionCard } from '../components/SectionCard';
 import {
   DENSITIES,
   SORT_DIRECTIONS,
-  ASSIGNMENT_SORT_FIELDS,
+  TICKET_SORT_FIELDS,
   VIEW_MODES,
   type Density,
   type SortDirection,
@@ -168,7 +168,7 @@ export function ViewDefaultsSection() {
               disabled={saving}
               className="editor-input max-w-[220px]"
             >
-              {ASSIGNMENT_SORT_FIELDS.map((f) => (
+              {TICKET_SORT_FIELDS.map((f) => (
                 <option key={f} value={f}>{SORT_FIELD_LABEL[f] ?? f}</option>
               ))}
             </select>

@@ -1,5 +1,5 @@
 /**
- * Engagement runtime operations — the session↔assignment edge API.
+ * Engagement runtime operations — the session↔ticket edge API.
  *
  * All ops run on the **session-db connection** (`getSessionDb()`), the same
  * handle `usage/session-join.ts` uses, so a close+open switch is a single
@@ -39,12 +39,8 @@ export interface EngagementRow {
 export interface OpenEngagementInput {
   sessionId: string;
   ticketId?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId?: string | null;
   projectSlug?: string | null;
   ticketSlug?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
   tokensAtOpen?: TokenSnapshot | null;
@@ -83,9 +79,9 @@ export function getLatestEngagement(sessionId: string): EngagementRow | null {
  * details "Session Activity" attribution view — the full per-session stage
  * history, distinct from the single *chosen* engagement the agent-sessions
  * endpoint returns. Ordered by `started_at` (then `id` to tie-break rows that
- * share a timestamp); the `idx_engagement_assignment` index covers the filter.
+ * share a timestamp); the `idx_engagement_ticket` index covers the filter.
  */
-export function getEngagementsByAssignmentId(ticketId: string): EngagementRow[] {
+export function getEngagementsByTicketId(ticketId: string): EngagementRow[] {
   return getSessionDb()
     .prepare(
       `SELECT * FROM engagement WHERE assignment_id = ?
@@ -106,12 +102,8 @@ export function hasAnyEngagement(sessionId: string): boolean {
 export interface ClosedEngagementInput {
   sessionId: string;
   ticketId?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId?: string | null;
   projectSlug?: string | null;
   ticketSlug?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
   endedAt: string;
@@ -133,9 +125,9 @@ export function insertClosedEngagement(input: ClosedEngagementInput): Engagement
     )
     .run({
       sessionId: input.sessionId,
-      ticketId: input.ticketId ?? input.assignmentId ?? null,
+      ticketId: input.ticketId ?? null,
       projectSlug: input.projectSlug ?? null,
-      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       endedAt: input.endedAt,
@@ -166,9 +158,9 @@ export function openEngagement(input: OpenEngagementInput): EngagementRow {
     )
     .run({
       sessionId: input.sessionId,
-      ticketId: input.ticketId ?? input.assignmentId ?? null,
+      ticketId: input.ticketId ?? null,
       projectSlug: input.projectSlug ?? null,
-      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? null,
       stage: input.stage ?? DEFAULT_STAGE,
       startedAt: input.startedAt,
       tokensAtOpen: serializeSnapshot(input.tokensAtOpen ?? null),
@@ -252,12 +244,8 @@ export function ensureOpenEngagement(input: OpenEngagementInput): EngagementRow 
 export interface SwitchEngagementInput {
   sessionId: string;
   ticketId?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId?: string | null;
   projectSlug?: string | null;
   ticketSlug?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string | null;
   stage?: string;
   startedAt: string;
   /** Pre-captured snapshot (await the async source BEFORE calling — Decision 11). */
@@ -285,9 +273,9 @@ export function switchEngagement(input: SwitchEngagementInput): EngagementRow {
     }
     return openEngagement({
       sessionId: input.sessionId,
-      ticketId: input.ticketId ?? input.assignmentId ?? null,
+      ticketId: input.ticketId ?? null,
       projectSlug: input.projectSlug ?? null,
-      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? null,
       stage: input.stage,
       startedAt: input.startedAt,
       tokensAtOpen: snapshot,

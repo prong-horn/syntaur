@@ -20,7 +20,7 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
   });
 }
 
-const VALID_ASSIGNMENT = `---
+const VALID_TICKET = `---
 id: abc-1
 slug: demo
 title: "Demo"
@@ -41,7 +41,7 @@ tags: []
 Body.
 `;
 
-const MISSING_SLUG = VALID_ASSIGNMENT.replace('slug: demo\n', '');
+const MISSING_SLUG = VALID_TICKET.replace('slug: demo\n', '');
 const MISSING_WORKSPACE = `---
 id: abc-1
 slug: demo
@@ -80,7 +80,7 @@ describe('syntaur doctor --ticket --json', () => {
 
   it('returns ok:true with no errors for a valid ticket.md', async () => {
     const path = resolve(scratch, 'ticket.md');
-    await writeFile(path, VALID_ASSIGNMENT);
+    await writeFile(path, VALID_TICKET);
     const r = await runCli(['doctor', '--ticket', path, '--json'], syntaurHome);
     expect(r.code).toBe(0);
     const data = JSON.parse(r.stdout);

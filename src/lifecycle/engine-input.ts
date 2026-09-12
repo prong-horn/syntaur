@@ -10,7 +10,7 @@
  * default workflow's `codeReviewed` gate is not a declared fact (codex r2).
  */
 
-import type { AssignmentFacts } from './derive.js';
+import type { TicketFacts } from './derive.js';
 import type { TicketFrontmatter } from './types.js';
 import type { StageCheck, StageWorkflow } from '../utils/stage-model.js';
 import {
@@ -52,7 +52,7 @@ function normalizeBinds(binds: string | undefined): 'plan' | 'commit' | 'none' {
  */
 export function buildEngineInput(
   frontmatter: TicketFrontmatter,
-  facts: AssignmentFacts,
+  facts: TicketFacts,
   workflow: StageWorkflow,
   env: AttestationEnv,
 ): EngineInput {
@@ -101,7 +101,7 @@ export function buildEngineInput(
  */
 export function getCheckStates(
   frontmatter: TicketFrontmatter,
-  facts: AssignmentFacts,
+  facts: TicketFacts,
   workflow: StageWorkflow,
   env: AttestationEnv,
 ): EvaluatedCheck[] {

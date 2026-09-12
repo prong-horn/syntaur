@@ -31,7 +31,7 @@ function ticketId(slug: string): string {
   return `55555555-5555-5555-5555-${slug.padEnd(12, '0').slice(0, 12)}`;
 }
 
-async function seedAssignment(project: string, slug: string): Promise<string> {
+async function seedTicket(project: string, slug: string): Promise<string> {
   const dir = join(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
   const path = join(dir, 'ticket.md');
@@ -116,7 +116,7 @@ describe('project workflow-binding route', () => {
 describe('ticket workflow route', () => {
   it('sets the workflow override and re-derives', async () => {
     await seedProject('p');
-    await seedAssignment('p', 'a1');
+    await seedTicket('p', 'a1');
     const res = await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'bug' });
     expect(res.status).toBe(200);
     const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');
@@ -125,7 +125,7 @@ describe('ticket workflow route', () => {
 
   it('rejects an unknown workflow', async () => {
     await seedProject('p');
-    await seedAssignment('p', 'a1');
+    await seedTicket('p', 'a1');
     expect(
       (await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'ghost' })).status,
     ).toBe(400);
@@ -133,7 +133,7 @@ describe('ticket workflow route', () => {
 
   it('clears the workflow override when given null', async () => {
     await seedProject('p');
-    await seedAssignment('p', 'a1');
+    await seedTicket('p', 'a1');
     await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'bug' });
     await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: null });
     const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');

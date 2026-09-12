@@ -17,7 +17,6 @@ import {
 const SCOPE_LABELS: Record<DefaultScope, string> = {
   all: 'Everything',
   ticket: 'Tickets',
-  assignment: 'Tickets (legacy alias)',
   project: 'Projects',
   playbook: 'Playbooks',
 };

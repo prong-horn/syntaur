@@ -60,9 +60,9 @@ Build the thing properly so it can ship.
 
 describe('migrateStatusesCommand — statusHistory', () => {
   it('promote appends a statusHistory entry (command: promote)', async () => {
-    const dir = resolve(projectsDir, 'p1', 'assignments', 'a1');
+    const dir = resolve(projectsDir, 'p1', 'tickets', 'a1');
     await mkdir(dir, { recursive: true });
-    const path = resolve(dir, 'assignment.md');
+    const path = resolve(dir, 'ticket.md');
     await writeFile(path, promotableMd('a1'), 'utf-8');
 
     await migrateStatusesCommand({ dir: projectsDir, apply: true });

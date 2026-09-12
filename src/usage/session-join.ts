@@ -8,7 +8,7 @@
  * NOTE (M2 / decision-record.md Decision 1): this resolves the *binding* only, it
  * does NOT split *cost*. `usage_events` is cumulative per `(session_id, model)`
  * with a date-only session-level `event_ts`, so a single cumulative row cannot be
- * decomposed across two engagement windows within one session/model. Per-assignment
+ * decomposed across two engagement windows within one session/model. Per-ticket
  * COST therefore comes from engagement snapshot deltas (`usage/engagement-cost.ts`,
  * `tokens_at_close − tokens_at_open`), not from this join. This stays a best-effort
  * binding resolver, not a per-window cost splitter. Read-only.
@@ -22,7 +22,7 @@
  *       `ended`/`ended_at` may be SQLite `YYYY-MM-DD HH:MM:SS`.
  *   2b. Day-granularity fallback, only when the event timestamp is a date-only
  *       UTC-midnight snap (Claude's date-only `lastActivity`), and only when the
- *       day's same-cwd engagements resolve to exactly one project/assignment.
+ *       day's same-cwd engagements resolve to exactly one project/ticket.
  *
  * Returns `{projectSlug: null, ticketSlug: null}` when no stage matches —
  * the caller stores `''` (the schema NOT-NULL default) so the unattributed
@@ -114,7 +114,7 @@ export function resolveAttribution(
     // `lastActivity` is date-only, so the exact instant window above always
     // misses — no session starts at 00:00:00Z). `date()` parses both ISO `…Z`
     // and SQLite `YYYY-MM-DD HH:MM:SS`. The ambiguity guard (exactly one
-    // distinct project/assignment) avoids guessing when two sessions shared the
+    // distinct project/ticket) avoids guessing when two sessions shared the
     // cwd that day.
     if (input.eventTs.endsWith('T00:00:00.000Z')) {
       const sameDay = database

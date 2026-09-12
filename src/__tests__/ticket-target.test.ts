@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { resolveTicketTarget, AssignmentTargetError } from '../utils/ticket-target.js';
+import { resolveTicketTarget, TicketTargetError } from '../utils/ticket-target.js';
 
 let originalHome: string | undefined;
 let tmpRoot: string;
@@ -210,7 +210,7 @@ describe('resolveTicketTarget', () => {
   it('throws when no resolveEngagement seam is provided', async () => {
     await expect(
       resolveTicketTarget(undefined, { cwd: cwdRoot, dir: projectsDir }),
-    ).rejects.toThrow(AssignmentTargetError);
+    ).rejects.toThrow(TicketTargetError);
   });
 
   it('throws on invalid project slug', async () => {
@@ -237,7 +237,7 @@ describe('resolveTicketTarget', () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it('throws when the open engagement points to a missing assignment', async () => {
+  it('throws when the open engagement points to a missing ticket', async () => {
     await expect(
       resolveTicketTarget(undefined, {
         cwd: cwdRoot,

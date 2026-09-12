@@ -7,7 +7,7 @@ import { formatProgressEntry, renderProgress } from '../templates/index.js';
 /**
  * Insert a new entry immediately after the `# Progress` H1 (reverse-chronological),
  * replacing the `No progress yet.` placeholder if present. Frontmatter `entryCount`
- * is incremented and `updated` bumped; `assignment` and `generated` are preserved
+ * is incremented and `updated` bumped; `ticket` and `generated` are preserved
  * verbatim (we edit the raw frontmatter rather than round-tripping through a parser
  * that would drop `generated`).
  */

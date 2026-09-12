@@ -74,7 +74,7 @@ export interface InboxItem {
   project: string | null;
   /** Ticket slug; for standalone, the UUID folder name. */
   ticketSlug: string;
-  /** Assignment id (UUID from frontmatter). */
+  /** Ticket id (UUID from frontmatter). */
   ticketId: string;
   title: string;
   category: InboxCategory;

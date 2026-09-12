@@ -11,7 +11,7 @@ export type SegmentName = 'wrap' | 'git' | 'ticket' | 'external' | 'session' | '
 export const AVAILABLE_SEGMENTS: ReadonlyArray<{ name: SegmentName; preview: string; description: string }> =
   [
     { name: 'git',        preview: 'syntaur:main* +2',                         description: 'repo:branch (with dirty marker and ahead/behind)' },
-    { name: 'ticket', preview: 'my-proj/demo-assn — Demo Assignment',      description: 'active syntaur ticket (project/slug or standalone/uuid)' },
+    { name: 'ticket', preview: 'my-proj/demo-assn — Demo Ticket',      description: 'active syntaur ticket (project/slug or standalone/uuid)' },
     { name: 'external',   preview: 'PROJ-123, ENG-456',                        description: 'external tracker IDs from ticket externalIds (Jira, Linear, …)' },
     { name: 'session',    preview: '9c3a4d2e-1b7f-4a0c-bb11-ccddeeff0011',     description: 'Claude Code session id (full)' },
     { name: 'model',      preview: 'Opus 4.7',                                 description: 'Claude model display name' },

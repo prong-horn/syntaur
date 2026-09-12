@@ -102,7 +102,7 @@ for (const f of walk(DASH)) {
   for (const [a, b] of REPS) c = c.split(a).join(b);
   // restore SQL / known false positives
   c = c.replace(/\bticket_id\b/g, 'assignment_id');
-  c = c.replace(/\bticket_slug\b/g, 'assignment_slug');
+  c = c.replace(/\bticket_slug\b/g, 'ticket_slug');
   c = c.replace(/ticket-chat/g, 'ticket-chat');
   if (c !== orig) writeFileSync(f, c);
 }

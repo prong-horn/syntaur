@@ -9,7 +9,7 @@
  *
  * Key properties:
  *   - ASYNC, command-layer: engagement-db is synchronous SQLite; this does file
- *     I/O + the per-assignment lock, so it runs AFTER the sync engagement switch
+ *     I/O + the per-ticket lock, so it runs AFTER the sync engagement switch
  *     commits (Decision 3).
  *   - Session-stage facts only — `implementationStarted` (implement open),
  *     `reviewRequested` (review open), plus the derived `reworkRequested`
@@ -36,9 +36,9 @@ export interface StageFactInput {
   projectDir: string | null;
   /** The stage that just opened (`implement` | `review` | `plan` | …). */
   stage: string;
-  /** The stage open before the switch FOR THIS ASSIGNMENT (null when none, or
+  /** The stage open before the switch FOR THIS TICKET (null when none, or
    * when the prior engagement was for a different ticket — the caller must
-   * only pass it when same-assignment). */
+   * only pass it when same-ticket). */
   prevStage?: string | null;
   /** Actor for the history entry — 'agent:<id>' | 'human' | 'system'. */
   by?: string | null;
@@ -138,7 +138,7 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
     });
     if (result.deferredTerminal) {
       throw new Error(
-        `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+        `Ticket is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
       );
     }
     if (result.warning) throw new Error(result.warning);
@@ -170,7 +170,7 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
     context,
     workflowResolver,
     mutate: (content) => {
-      // Re-derive against the FRESH locked content so a concurrent same-assignment
+      // Re-derive against the FRESH locked content so a concurrent same-ticket
       // stage write can't be clobbered by a stale pre-lock delta (codex r2).
       const writes = computeDelta(input.stage, input.prevStage, parseTicketFrontmatter(content));
       return Object.keys(writes).length > 0 ? updateTicketFile(content, writes) : content;
@@ -180,7 +180,7 @@ export async function assertStageFactOnOpen(input: StageFactInput): Promise<void
   // assertFact behavior) instead of a silent "✓" with the fact unwritten.
   if (result.deferredTerminal) {
     throw new Error(
-      `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+      `Ticket is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
     );
   }
   // Don't swallow failures (Decision 8): a CAS-exhausted projection must be

@@ -2,13 +2,13 @@
  * Derived-status dimension engine (design v3, Piece 2) — PURE.
  *
  * Evaluates the configured phase ladder + disposition rules over an
- * assignment's facts and projects the headline status. No filesystem access
+ * ticket's facts and projects the headline status. No filesystem access
  * and no Node-only imports — the dashboard client can evaluate the same rules
  * over server-materialized facts. Fact *computation* lives in `facts.ts`
  * (Node-side).
  *
  * Invariants enforced here:
- *  - Terminal assignments defer entirely: callers get `null` and must leave
+ *  - Terminal tickets defer entirely: callers get `null` and must leave
  *    every dimension as-is (terminal is reached only via the gated
  *    complete/fail transitions; `reopen` re-enters derivation).
  *  - Derive conditions evaluate over FACTS ONLY (`DERIVE_FIELDS`): time-based
@@ -39,7 +39,7 @@ export {
 } from '../utils/fact-registry.js';
 
 /** The fixed built-in fact set (the 14 derived-status v3 facts). Custom facts
- * extend {@link AssignmentFacts} dynamically via the config-declared registry. */
+ * extend {@link TicketFacts} dynamically via the config-declared registry. */
 export interface BuiltinFacts {
   hasRealObjective: boolean;
   acRealTotal: number;
@@ -66,7 +66,7 @@ export interface BuiltinFacts {
  * declared facts (bool/number) and attestation exports (`<name>`,
  * `<name>Approved`, … as boolean / actor `string[]`) ride in the open index.
  */
-export type AssignmentFacts = BuiltinFacts &
+export type TicketFacts = BuiltinFacts &
   Record<string, boolean | number | string[]>;
 
 /** Validate one derive condition against a field registry (defaults to the
@@ -131,7 +131,7 @@ function compiledWhen(registry: FieldRegistry, when: string): Predicate {
 }
 
 export interface DeriveInput {
-  facts: AssignmentFacts;
+  facts: TicketFacts;
   derive: DeriveConfig;
   /** Current headline status from frontmatter (for the terminal check). */
   currentStatus: string;

@@ -196,7 +196,7 @@ describe('lifecycle integration', () => {
     // The dependency is terminal…
     expect(await readTicketContent(projectSlug, 'task-b')).toContain('status: completed');
     // …and the dependent (task-a) was re-derived by its slug.
-    expect(logs.join('\n')).toMatch(/Re-derived \d+ dependent assignment/);
+    expect(logs.join('\n')).toMatch(/Re-derived \d+ dependent ticket/);
   });
 
   it('allows any known command regardless of current status (guards removed)', async () => {
@@ -364,7 +364,7 @@ describe('lifecycle integration', () => {
   });
 });
 
-describe('assignment links', () => {
+describe('ticket links', () => {
   const projectSlug = 'test-project';
 
   beforeEach(async () => {

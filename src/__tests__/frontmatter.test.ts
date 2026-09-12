@@ -6,10 +6,10 @@ import {
   updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 
-const SIMPLE_ASSIGNMENT = `---
+const SIMPLE_TICKET = `---
 id: test-id-123
-slug: test-assignment
-title: "Test Assignment"
+slug: test-ticket
+title: "Test Ticket"
 status: pending
 priority: medium
 created: "2026-03-18T10:00:00Z"
@@ -27,12 +27,12 @@ workspace:
 tags: []
 ---
 
-# Test Assignment
+# Test Ticket
 
 Body content here.
 `;
 
-const COMPLEX_ASSIGNMENT = `---
+const COMPLEX_TICKET = `---
 id: complex-id-456
 slug: complex-task
 title: "Complex Task"
@@ -48,7 +48,7 @@ externalIds:
 dependsOn:
   - design-auth-schema
 links:
-  - other-project/some-assignment
+  - other-project/some-ticket
   - my-project/another-task
 blockedReason: null
 workspace:
@@ -66,10 +66,10 @@ Body content here.
 
 describe('parseTicketFrontmatter', () => {
   it('parses simple ticket with empty arrays and null fields', () => {
-    const fm = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(SIMPLE_TICKET);
     expect(fm.id).toBe('test-id-123');
-    expect(fm.slug).toBe('test-assignment');
-    expect(fm.title).toBe('Test Assignment');
+    expect(fm.slug).toBe('test-ticket');
+    expect(fm.title).toBe('Test Ticket');
     expect(fm.status).toBe('pending');
     expect(fm.priority).toBe('medium');
     expect(fm.created).toBe('2026-03-18T10:00:00Z');
@@ -87,18 +87,18 @@ describe('parseTicketFrontmatter', () => {
   });
 
   it('parses ticket with populated fields', () => {
-    const fm = parseTicketFrontmatter(COMPLEX_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(COMPLEX_TICKET);
     expect(fm.status).toBe('in_progress');
     expect(fm.assignee).toBe('claude-1');
     expect(fm.dependsOn).toEqual(['design-auth-schema']);
-    expect(fm.links).toEqual(['other-project/some-assignment', 'my-project/another-task']);
+    expect(fm.links).toEqual(['other-project/some-ticket', 'my-project/another-task']);
     expect(fm.workspace.repository).toBe('/Users/brennen/projects/auth-service');
     expect(fm.workspace.branch).toBe('feat/complex-task');
     expect(fm.workspace.parentBranch).toBe('main');
   });
 
   it('parses externalIds with nested objects', () => {
-    const fm = parseTicketFrontmatter(COMPLEX_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(COMPLEX_TICKET);
     expect(fm.externalIds.length).toBe(1);
     expect(fm.externalIds[0]).toEqual({
       system: 'jira',
@@ -108,7 +108,7 @@ describe('parseTicketFrontmatter', () => {
   });
 
   it('preserves externalIds entries that omit the url, defaulting to null', () => {
-    const URL_LESS_ASSIGNMENT = `---
+    const URL_LESS_TICKET = `---
 id: u-1
 slug: link-less
 title: "Link-less"
@@ -136,7 +136,7 @@ tags: []
 
 # x
 `;
-    const fm = parseTicketFrontmatter(URL_LESS_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(URL_LESS_TICKET);
     expect(fm.externalIds).toHaveLength(2);
     expect(fm.externalIds[0]).toEqual({ system: 'linear', id: 'ENG-7', url: null });
     expect(fm.externalIds[1]).toEqual({
@@ -203,7 +203,7 @@ tags: []
 
 describe('updateTicketFile', () => {
   it('updates status field', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       status: 'in_progress',
     });
     expect(result).toContain('status: in_progress');
@@ -211,7 +211,7 @@ describe('updateTicketFile', () => {
   });
 
   it('updates assignee from null to a name', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       assignee: 'claude-3',
     });
     expect(result).toContain('assignee: claude-3');
@@ -219,7 +219,7 @@ describe('updateTicketFile', () => {
   });
 
   it('updates assignee from a name back to null', () => {
-    const result = updateTicketFile(COMPLEX_ASSIGNMENT, {
+    const result = updateTicketFile(COMPLEX_TICKET, {
       assignee: null,
     });
     expect(result).toContain('assignee: null');
@@ -227,14 +227,14 @@ describe('updateTicketFile', () => {
   });
 
   it('updates blockedReason to a string value', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       blockedReason: 'Waiting for API key',
     });
     expect(result).toContain('blockedReason: Waiting for API key');
   });
 
   it('updates blockedReason back to null', () => {
-    const withReason = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const withReason = updateTicketFile(SIMPLE_TICKET, {
       blockedReason: 'some reason',
     });
     const result = updateTicketFile(withReason, {
@@ -244,15 +244,15 @@ describe('updateTicketFile', () => {
   });
 
   it('updates timestamp with quotes', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       updated: '2026-03-18T15:00:00Z',
     });
     expect(result).toContain('updated: "2026-03-18T15:00:00Z"');
   });
 
   it('preserves the markdown body unchanged', () => {
-    const body = '# Test Assignment\n\nBody content here.\n';
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const body = '# Test Ticket\n\nBody content here.\n';
+    const result = updateTicketFile(SIMPLE_TICKET, {
       status: 'in_progress',
       assignee: 'claude-1',
       updated: '2026-03-18T15:00:00Z',
@@ -261,7 +261,7 @@ describe('updateTicketFile', () => {
   });
 
   it('updates multiple fields at once', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       status: 'blocked',
       blockedReason: 'Need API key',
       updated: '2026-03-18T16:00:00Z',
@@ -274,21 +274,21 @@ describe('updateTicketFile', () => {
   // AC2: formatYamlValue must quote a scalar that is itself wrapped in quote
   // chars, else parseSimpleValue strips the literal quotes on read.
   it('round-trips a blockedReason whose value is wrapped in double quotes (AC2)', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       blockedReason: '"connection refused"',
     });
     expect(parseTicketFrontmatter(result).blockedReason).toBe('"connection refused"');
   });
 
   it('round-trips a blockedReason wrapped in single quotes (AC2)', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       blockedReason: "'singlequoted'",
     });
     expect(parseTicketFrontmatter(result).blockedReason).toBe("'singlequoted'");
   });
 
   it('still round-trips a value with only interior quotes (AC2 over-trigger guard)', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       blockedReason: 'say "hello" now',
     });
     expect(parseTicketFrontmatter(result).blockedReason).toBe('say "hello" now');
@@ -354,13 +354,13 @@ describe('parseStatusHistory', () => {
 
   it('returns [] for the inline empty list form', () => {
     const fm = parseTicketFrontmatter(
-      SIMPLE_ASSIGNMENT.replace('externalIds: []', 'externalIds: []\nstatusHistory: []'),
+      SIMPLE_TICKET.replace('externalIds: []', 'externalIds: []\nstatusHistory: []'),
     );
     expect(fm.statusHistory).toEqual([]);
   });
 
   it('returns [] when the key is absent', () => {
-    expect(parseTicketFrontmatter(SIMPLE_ASSIGNMENT).statusHistory).toEqual([]);
+    expect(parseTicketFrontmatter(SIMPLE_TICKET).statusHistory).toEqual([]);
   });
 
   it('parses the real block even when an earlier scalar contains "statusHistory:"', () => {
@@ -456,7 +456,7 @@ describe('appendStatusHistoryEntry', () => {
   };
 
   it('creates the block when no statusHistory key exists, and round-trips (EOF combined)', () => {
-    const appended = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+    const appended = appendStatusHistoryEntry(SIMPLE_TICKET, {
       at: '2026-04-01T12:00:00Z',
       from: null,
       to: 'pending',
@@ -477,7 +477,7 @@ describe('appendStatusHistoryEntry', () => {
   });
 
   it('converts an inline empty list to a block', () => {
-    const inline = SIMPLE_ASSIGNMENT.replace(
+    const inline = SIMPLE_TICKET.replace(
       'externalIds: []',
       'externalIds: []\nstatusHistory: []',
     );
@@ -511,7 +511,7 @@ describe('appendStatusHistoryEntry', () => {
   });
 
   it('quotes a reason containing YAML-special characters', () => {
-    const appended = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+    const appended = appendStatusHistoryEntry(SIMPLE_TICKET, {
       at: '2026-04-01T12:00:00Z',
       from: 'in_progress',
       to: 'blocked',
@@ -634,14 +634,14 @@ tags: []
 
 describe('archive frontmatter fields', () => {
   it('defaults missing archive fields to false/null/null', () => {
-    const fm = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
+    const fm = parseTicketFrontmatter(SIMPLE_TICKET);
     expect(fm.archived).toBe(false);
     expect(fm.archivedAt).toBeNull();
     expect(fm.archivedReason).toBeNull();
   });
 
   it('inserts archive fields into a file that lacks them, and round-trips', () => {
-    const result = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const result = updateTicketFile(SIMPLE_TICKET, {
       archived: true,
       archivedAt: '2026-05-31T12:00:00Z',
       archivedReason: 'superseded',
@@ -660,7 +660,7 @@ describe('archive frontmatter fields', () => {
   });
 
   it('replaces existing archive fields in place (no duplicate keys)', () => {
-    const archived = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const archived = updateTicketFile(SIMPLE_TICKET, {
       archived: true,
       archivedAt: '2026-05-31T12:00:00Z',
       archivedReason: 'temp',
@@ -700,14 +700,14 @@ describe('dimension-aware statusHistory (v3)', () => {
       dispositionFrom: 'blocked',
       dispositionTo: 'blocked',
     };
-    const content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, entry);
+    const content = appendStatusHistoryEntry(SIMPLE_TICKET, entry);
     const parsed = parseTicketFrontmatter(content);
     expect(parsed.statusHistory).toHaveLength(1);
     expect(parsed.statusHistory[0]).toMatchObject(entry);
   });
 
   it('old headline-only entries parse unchanged (no dimension keys)', () => {
-    const content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+    const content = appendStatusHistoryEntry(SIMPLE_TICKET, {
       at: '2026-06-09T12:00:00Z',
       from: 'pending',
       to: 'in_progress',
@@ -723,7 +723,7 @@ describe('dimension-aware statusHistory (v3)', () => {
   });
 
   it('renameStatusInHistory relabels phaseFrom/phaseTo but not disposition keys', () => {
-    let content = appendStatusHistoryEntry(SIMPLE_ASSIGNMENT, {
+    let content = appendStatusHistoryEntry(SIMPLE_TICKET, {
       at: '2026-06-09T12:00:00Z',
       from: 'review',
       to: 'review',
@@ -745,7 +745,7 @@ describe('dimension-aware statusHistory (v3)', () => {
 
 describe('asserted-fact frontmatter fields (v3)', () => {
   it('defaults are null/false on legacy files', () => {
-    const parsed = parseTicketFrontmatter(SIMPLE_ASSIGNMENT);
+    const parsed = parseTicketFrontmatter(SIMPLE_TICKET);
     expect(parsed.phase).toBeNull();
     expect(parsed.disposition).toBeNull();
     expect(parsed.planApproval).toBeNull();
@@ -763,7 +763,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       by: 'human',
       at: '2026-06-09T12:00:00Z',
     };
-    let content = updatePlanApproval(SIMPLE_ASSIGNMENT, approval);
+    let content = updatePlanApproval(SIMPLE_TICKET, approval);
     expect(parseTicketFrontmatter(content).planApproval).toEqual(approval);
     // set again in place (edit, not duplicate)
     content = updatePlanApproval(content, { ...approval, file: 'plan-v3.md' });
@@ -783,14 +783,14 @@ describe('asserted-fact frontmatter fields (v3)', () => {
       reason: 'waiting on vendor',
       at: '2026-06-09T12:00:00Z',
     };
-    let content = updateOverride(COMPLEX_ASSIGNMENT, pin);
+    let content = updateOverride(COMPLEX_TICKET, pin);
     expect(parseTicketFrontmatter(content).override).toEqual(pin);
     content = updateOverride(content, null);
     expect(parseTicketFrontmatter(content).override).toBeNull();
   });
 
   it('updateTicketFile handles new scalar fields incl. insertion when missing', () => {
-    const content = updateTicketFile(SIMPLE_ASSIGNMENT, {
+    const content = updateTicketFile(SIMPLE_TICKET, {
       phase: 'planning',
       disposition: 'active',
       parked: false,
@@ -810,7 +810,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
 import { parseTicketFull } from '../dashboard/parser.js';
 
 describe('ticket workflow: field (both parsers + updater)', () => {
-  const withWorkflow = SIMPLE_ASSIGNMENT.replace(
+  const withWorkflow = SIMPLE_TICKET.replace(
     'status: pending',
     'workflow: bugfix\nstatus: pending',
   );
@@ -820,16 +820,16 @@ describe('ticket workflow: field (both parsers + updater)', () => {
   });
 
   it('parseTicketFrontmatter yields null when workflow is absent', () => {
-    expect(parseTicketFrontmatter(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+    expect(parseTicketFrontmatter(SIMPLE_TICKET).workflow).toBeNull();
   });
 
   it('the dashboard parseTicketFull reads the same workflow id (parser parity)', () => {
     expect(parseTicketFull(withWorkflow).workflow).toBe('bugfix');
-    expect(parseTicketFull(SIMPLE_ASSIGNMENT).workflow).toBeNull();
+    expect(parseTicketFull(SIMPLE_TICKET).workflow).toBeNull();
   });
 
   it('updateTicketFile sets workflow (whitelisted) and it round-trips through both parsers', () => {
-    const updated = updateTicketFile(SIMPLE_ASSIGNMENT, { workflow: 'research' });
+    const updated = updateTicketFile(SIMPLE_TICKET, { workflow: 'research' });
     expect(parseTicketFrontmatter(updated).workflow).toBe('research');
     expect(parseTicketFull(updated).workflow).toBe('research');
   });

@@ -60,7 +60,7 @@ function ticketMd(status: string, workspace?: { repository?: string | null; work
   const wpath = workspace?.worktreePath ?? null;
   return `---
 id: 11111111-1111-1111-1111-111111111111
-slug: test-assignment
+slug: test-ticket
 title: Test
 status: ${status}
 priority: medium
@@ -78,7 +78,7 @@ workspace:
 tags: []
 ---
 
-# Test Assignment
+# Test Ticket
 `;
 }
 
@@ -158,13 +158,13 @@ describe('syntaur doctor', () => {
     await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('in_progress'));
     const report = await runChecks();
-    const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status === 'error');
+    const issues = byId(report, 'ticket.workspace-missing').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
     expect(issues[0].detail).toContain('a1');
     expect(report.summary.error).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not flag workspace-missing for pending or completed assignments', async () => {
+  it('does not flag workspace-missing for pending or completed tickets', async () => {
     await initBaseline();
     const projectDir = await writeProjectScaffold('m1');
     const pendingDir = resolve(projectDir, 'tickets', 'p');
@@ -174,7 +174,7 @@ describe('syntaur doctor', () => {
     await writeFile(resolve(pendingDir, 'ticket.md'), ticketMd('pending'));
     await writeFile(resolve(completedDir, 'ticket.md'), ticketMd('completed'));
     const report = await runChecks();
-    const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status !== 'pass');
+    const issues = byId(report, 'ticket.workspace-missing').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
   });
 
@@ -187,7 +187,7 @@ describe('syntaur doctor', () => {
       await writeFile(resolve(dir, 'ticket.md'), ticketMd(status));
     }
     const report = await runChecks();
-    const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status !== 'pass');
+    const issues = byId(report, 'ticket.workspace-missing').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
   });
 
@@ -200,7 +200,7 @@ describe('syntaur doctor', () => {
     const md = `---\nid: 22222222-2222-2222-2222-222222222222\nslug: empty-draft\ntitle: Empty\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Empty\n\n## Objective\n\n## Acceptance Criteria\n\n- [ ] <!-- criterion 1 -->\n`;
     await writeFile(resolve(dir, 'ticket.md'), md);
     const report = await runChecks();
-    const issues = byId(report, 'assignment.draft-missing-objective').filter((c) => c.status === 'warn');
+    const issues = byId(report, 'ticket.draft-missing-objective').filter((c) => c.status === 'warn');
     expect(issues.length).toBe(1);
     expect(issues[0].detail).toContain('empty-draft');
   });
@@ -213,7 +213,7 @@ describe('syntaur doctor', () => {
     const md = `---\nid: 33333333-3333-3333-3333-333333333333\nslug: real-draft\ntitle: Real\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Real\n\n## Objective\n\nThis is a real objective with actual content describing the work.\n\n## Acceptance Criteria\n\n- [ ] something concrete\n`;
     await writeFile(resolve(dir, 'ticket.md'), md);
     const report = await runChecks();
-    const issues = byId(report, 'assignment.draft-missing-objective').filter((c) => c.status !== 'pass');
+    const issues = byId(report, 'ticket.draft-missing-objective').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
   });
 
@@ -224,7 +224,7 @@ describe('syntaur doctor', () => {
     await mkdir(dir, { recursive: true });
     await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
     const report = await runChecks();
-    const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status === 'warn');
+    const issues = byId(report, 'ticket.ready-to-implement-missing-plan').filter((c) => c.status === 'warn');
     expect(issues.length).toBe(1);
     expect(issues[0].detail).toContain('no-plan');
   });
@@ -237,7 +237,7 @@ describe('syntaur doctor', () => {
     await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
     await writeFile(resolve(dir, 'plan.md'), '# Plan\n\nSome plan content.\n');
     const report = await runChecks();
-    const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status !== 'pass');
+    const issues = byId(report, 'ticket.ready-to-implement-missing-plan').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
   });
 
@@ -248,7 +248,7 @@ describe('syntaur doctor', () => {
     await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('not_a_real_status'));
     const report = await runChecks();
-    const issues = byId(report, 'assignment.invalid-status').filter((c) => c.status === 'error');
+    const issues = byId(report, 'ticket.invalid-status').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
     expect(issues[0].detail).toContain('not_a_real_status');
   });
@@ -258,7 +258,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     await mkdir(resolve(projectDir, 'tickets', 'orphan'), { recursive: true });
     const report = await runChecks();
-    const issues = byId(report, 'assignment.orphaned-folder').filter((c) => c.status === 'error');
+    const issues = byId(report, 'ticket.orphaned-folder').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
   });
 
@@ -275,7 +275,7 @@ describe('syntaur doctor', () => {
 
   it('detects a project folder that has no project.md at all', async () => {
     await initBaseline();
-    const projectDir = resolve(projectsDir, 'only-assignments');
+    const projectDir = resolve(projectsDir, 'only-tickets');
     await mkdir(resolve(projectDir, 'tickets'), { recursive: true });
     const report = await runChecks();
     const issues = byId(report, 'project.required-files-present').filter((c) => c.status === 'error');
@@ -347,7 +347,7 @@ describe('syntaur doctor', () => {
     await writeFile(resolve(cwd, '.syntaur', 'context.json'), JSON.stringify({ sessionId: 'abc' }));
     const report = await runChecks({ cwd });
     const validCheck = byId(report, 'workspace.context-valid')[0];
-    const resolveCheck = byId(report, 'workspace.context-assignment-resolves')[0];
+    const resolveCheck = byId(report, 'workspace.context-ticket-resolves')[0];
     const terminalCheck = byId(report, 'workspace.context-terminal')[0];
     expect(validCheck?.status).toBe('pass');
     expect(resolveCheck?.status).toBe('skipped');

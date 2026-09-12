@@ -8,8 +8,8 @@ import {
   closeEventsDb,
   resetEventsDb,
   recordEvent,
-  listEventsByAssignment,
-  hasEventsForAssignment,
+  listEventsByTicket,
+  hasEventsForTicket,
 } from '../db/events-db.js';
 
 let testDir: string;
@@ -49,7 +49,7 @@ describe('initEventsDb', () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='index'")
       .all() as Array<{ name: string }>;
     const names = indexes.map((i) => i.name);
-    expect(names).toContain('idx_events_assignment_at');
+    expect(names).toContain('idx_events_ticket_at');
     expect(names).toContain('idx_events_at');
   });
 
@@ -94,7 +94,7 @@ describe('getEventsDb', () => {
   });
 });
 
-describe('recordEvent + listEventsByAssignment', () => {
+describe('recordEvent + listEventsByTicket', () => {
   beforeEach(() => {
     initEventsDb(dbPath);
   });
@@ -108,7 +108,7 @@ describe('recordEvent + listEventsByAssignment', () => {
       actor: 'agent:abcd1234',
     });
 
-    const rows = listEventsByAssignment('asn-1');
+    const rows = listEventsByTicket('asn-1');
     expect(rows).toHaveLength(1);
     expect(rows[0].assignment_id).toBe('asn-1');
     expect(rows[0].project_slug).toBe('proj');
@@ -122,7 +122,7 @@ describe('recordEvent + listEventsByAssignment', () => {
 
   it('round-trips a standalone event (null project_slug)', () => {
     recordEvent({ ticketId: 'asn-s', type: 'archived', actor: 'human' });
-    const rows = listEventsByAssignment('asn-s');
+    const rows = listEventsByTicket('asn-s');
     expect(rows).toHaveLength(1);
     expect(rows[0].project_slug).toBeNull();
     expect(rows[0].details).toBeNull();
@@ -135,7 +135,7 @@ describe('recordEvent + listEventsByAssignment', () => {
       actor: 'human',
       details: '{"name":"x"}',
     });
-    const rows = listEventsByAssignment('asn-str');
+    const rows = listEventsByTicket('asn-str');
     expect(rows[0].details).toBe('{"name":"x"}');
   });
 
@@ -147,7 +147,7 @@ describe('recordEvent + listEventsByAssignment', () => {
       at: '2020-01-01T00:00:00.000Z',
       sourceKey: 'backfill:asn-bf:status:0',
     });
-    const rows = listEventsByAssignment('asn-bf');
+    const rows = listEventsByTicket('asn-bf');
     expect(rows[0].at).toBe('2020-01-01T00:00:00.000Z');
     expect(rows[0].actor).toBe('system');
     expect(rows[0].source_key).toBe('backfill:asn-bf:status:0');
@@ -156,8 +156,8 @@ describe('recordEvent + listEventsByAssignment', () => {
   it('isolates events by assignment_id', () => {
     recordEvent({ ticketId: 'x', type: 'archived', actor: 'human' });
     recordEvent({ ticketId: 'y', type: 'archived', actor: 'human' });
-    expect(listEventsByAssignment('x')).toHaveLength(1);
-    expect(listEventsByAssignment('y')).toHaveLength(1);
+    expect(listEventsByTicket('x')).toHaveLength(1);
+    expect(listEventsByTicket('y')).toHaveLength(1);
   });
 });
 
@@ -179,23 +179,23 @@ describe('source_key idempotency (INSERT OR IGNORE)', () => {
       at: '2021-06-06T00:00:00.000Z',
       sourceKey: 'backfill:asn-1:status:0',
     });
-    expect(listEventsByAssignment('asn-1')).toHaveLength(1);
+    expect(listEventsByTicket('asn-1')).toHaveLength(1);
   });
 
   it('two recordEvent calls with source_key null produce TWO rows', () => {
     recordEvent({ ticketId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
     recordEvent({ ticketId: 'asn-2', type: 'comment-added', actor: 'human', sourceKey: null });
-    expect(listEventsByAssignment('asn-2')).toHaveLength(2);
+    expect(listEventsByTicket('asn-2')).toHaveLength(2);
   });
 
   it('omitting source_key behaves like null (always inserts)', () => {
     recordEvent({ ticketId: 'asn-3', type: 'comment-added', actor: 'human' });
     recordEvent({ ticketId: 'asn-3', type: 'comment-added', actor: 'human' });
-    expect(listEventsByAssignment('asn-3')).toHaveLength(2);
+    expect(listEventsByTicket('asn-3')).toHaveLength(2);
   });
 });
 
-describe('listEventsByAssignment filters + ordering', () => {
+describe('listEventsByTicket filters + ordering', () => {
   beforeEach(() => {
     initEventsDb(dbPath);
     // Explicit, sortable timestamps so ordering/filtering is deterministic.
@@ -205,7 +205,7 @@ describe('listEventsByAssignment filters + ordering', () => {
   });
 
   it('orders newest-first (at DESC)', () => {
-    const rows = listEventsByAssignment('x');
+    const rows = listEventsByTicket('x');
     expect(rows.map((r) => r.at)).toEqual([
       '2022-01-01T00:00:00.000Z',
       '2021-01-01T00:00:00.000Z',
@@ -214,7 +214,7 @@ describe('listEventsByAssignment filters + ordering', () => {
   });
 
   it('applies since (at >= since)', () => {
-    const rows = listEventsByAssignment('x', { since: '2021-01-01T00:00:00.000Z' });
+    const rows = listEventsByTicket('x', { since: '2021-01-01T00:00:00.000Z' });
     expect(rows.map((r) => r.at)).toEqual([
       '2022-01-01T00:00:00.000Z',
       '2021-01-01T00:00:00.000Z',
@@ -222,25 +222,25 @@ describe('listEventsByAssignment filters + ordering', () => {
   });
 
   it('applies types (IN filter)', () => {
-    const rows = listEventsByAssignment('x', { types: ['comment-added'] });
+    const rows = listEventsByTicket('x', { types: ['comment-added'] });
     expect(rows).toHaveLength(1);
     expect(rows[0].type).toBe('comment-added');
   });
 
   it('applies multiple types', () => {
-    const rows = listEventsByAssignment('x', { types: ['status-change', 'comment-added'] });
+    const rows = listEventsByTicket('x', { types: ['status-change', 'comment-added'] });
     expect(rows).toHaveLength(3);
   });
 
   it('applies limit (still newest-first)', () => {
-    const rows = listEventsByAssignment('x', { limit: 2 });
+    const rows = listEventsByTicket('x', { limit: 2 });
     expect(rows).toHaveLength(2);
     expect(rows[0].at).toBe('2022-01-01T00:00:00.000Z');
     expect(rows[1].at).toBe('2021-01-01T00:00:00.000Z');
   });
 
   it('combines since + types + limit', () => {
-    const rows = listEventsByAssignment('x', {
+    const rows = listEventsByTicket('x', {
       since: '2020-06-01T00:00:00.000Z',
       types: ['status-change'],
       limit: 1,
@@ -250,16 +250,16 @@ describe('listEventsByAssignment filters + ordering', () => {
   });
 });
 
-describe('hasEventsForAssignment', () => {
+describe('hasEventsForTicket', () => {
   beforeEach(() => initEventsDb(dbPath));
 
   it('returns false when no events exist', () => {
-    expect(hasEventsForAssignment('none')).toBe(false);
+    expect(hasEventsForTicket('none')).toBe(false);
   });
 
   it('returns true once an event is recorded', () => {
     recordEvent({ ticketId: 'has', type: 'archived', actor: 'human' });
-    expect(hasEventsForAssignment('has')).toBe(true);
+    expect(hasEventsForTicket('has')).toBe(true);
   });
 });
 

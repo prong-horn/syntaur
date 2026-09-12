@@ -137,7 +137,7 @@ function buildV11Db(path: string): void {
     CREATE TABLE artifacts (
       id TEXT PRIMARY KEY,
       assignment_id TEXT NOT NULL,
-      assignment_dir TEXT NOT NULL,
+      ticket_dir TEXT NOT NULL,
       criterion_index INTEGER,
       kind TEXT NOT NULL,
       file_path TEXT,
@@ -188,7 +188,7 @@ function buildV11Db(path: string): void {
   ).run('lease-1', 'granted', '2026-08-01T10:00:00.000Z');
 
   db.prepare(
-    `INSERT INTO artifacts (id, assignment_id, assignment_dir, kind)
+    `INSERT INTO artifacts (id, assignment_id, ticket_dir, kind)
      VALUES (?, ?, ?, ?)`,
   ).run('art-1', 'proj/asgn', '/tmp/asgn', 'screenshot');
 
@@ -239,7 +239,7 @@ function createRetiredTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS artifacts (
       id TEXT PRIMARY KEY,
       assignment_id TEXT NOT NULL,
-      assignment_dir TEXT NOT NULL,
+      ticket_dir TEXT NOT NULL,
       criterion_index INTEGER,
       kind TEXT NOT NULL,
       file_path TEXT,
@@ -273,7 +273,7 @@ function createRetiredTables(db: Database.Database): void {
     '2026-08-01T10:00:00.000Z',
   );
   db.prepare(
-    `INSERT INTO artifacts (id, assignment_id, assignment_dir, kind)
+    `INSERT INTO artifacts (id, assignment_id, ticket_dir, kind)
      VALUES (?, ?, ?, ?)`,
   ).run('stale-art', 'proj/asgn', '/tmp/asgn', 'screenshot');
   db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(

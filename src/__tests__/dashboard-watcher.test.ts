@@ -63,7 +63,7 @@ describe('ignoreDotSegmentsBelow', () => {
 // ── derived-status v3: recompute hooks ──────────────────────────────────────
 
 describe('watcher derive hooks', () => {
-  it('fires onAssignmentChanged for project + standalone edits, onConfigChanged for config.md', async () => {
+  it('fires onTicketChanged for project + standalone edits, onConfigChanged for config.md', async () => {
     const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
@@ -75,7 +75,7 @@ describe('watcher derive hooks', () => {
     await mkdir(join(ticketsDir, 'u1'), { recursive: true });
     await writeFile(configPath, '---\nversion: "2.0"\n---\n');
 
-    const assignmentEvents: Array<[string | null, string]> = [];
+    const ticketEvents: Array<[string | null, string]> = [];
     let configEvents = 0;
 
     const watcher = createWatcher({
@@ -83,7 +83,7 @@ describe('watcher derive hooks', () => {
       ticketsDir,
       configPath,
       onMessage: () => {},
-      onAssignmentChanged: (p, a) => assignmentEvents.push([p, a]),
+      onTicketChanged: (p, a) => ticketEvents.push([p, a]),
       onConfigChanged: () => configEvents++,
       debounceMs: 50,
     });
@@ -97,8 +97,8 @@ describe('watcher derive hooks', () => {
 
     await watcher.close();
 
-    expect(assignmentEvents).toContainEqual(['p1', 'a1']);
-    expect(assignmentEvents).toContainEqual([null, 'u1']);
+    expect(ticketEvents).toContainEqual(['p1', 'a1']);
+    expect(ticketEvents).toContainEqual([null, 'u1']);
     expect(configEvents).toBeGreaterThanOrEqual(1);
   });
 });

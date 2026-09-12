@@ -29,7 +29,7 @@ import {
 } from '../utils/query/index.js';
 import { DERIVE_FIELDS } from '../utils/fact-registry.js';
 import type { StageWorkflow, WorkflowStage, StageCheck, StageRoute } from '../utils/stage-model.js';
-import type { AssignmentFacts } from './derive.js';
+import type { TicketFacts } from './derive.js';
 import type { AttestationRecord, Solicitation } from './types.js';
 
 // ── Public types ─────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ export interface CheckEvidence {
 /** Everything the engine needs to evaluate a stage — all passed in, no fs. */
 export interface EngineInput {
   /** Computed fact bag (built-ins + custom + attestation exports). */
-  facts: AssignmentFacts;
+  facts: TicketFacts;
   /** Judged-check evidence, keyed by check name; absent → no attestation/solicitation. */
   evidence: Readonly<Record<string, CheckEvidence>>;
   /** `dissentKey()`s already routed on — edge-trigger bookkeeping (WS-2 persists). */
@@ -204,7 +204,7 @@ function compileCondition(expr: string, registry: FieldRegistry): Predicate | { 
 
 /** Read a fact as a boolean; a present number/`string[]` fact used as a bare
  *  check is coerced but flagged (the author should write a `condition`). */
-function truthyFact(facts: AssignmentFacts, name: string): { value: boolean; issue?: string } {
+function truthyFact(facts: TicketFacts, name: string): { value: boolean; issue?: string } {
   const v = (facts as Record<string, unknown>)[name];
   if (typeof v === 'boolean') return { value: v };
   return {

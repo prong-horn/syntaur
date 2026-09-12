@@ -1,5 +1,5 @@
 /**
- * The per-assignment participant set — `<ticketDir>/chat/participants.json`
+ * The per-ticket participant set — `<ticketDir>/chat/participants.json`
  * (Decision 1).
  *
  * It lives beside `events.jsonl` rather than in `ticket.md` frontmatter (the
@@ -109,7 +109,7 @@ export async function writeParticipants(
   const defaultAgent = next.defaultAgent ?? null;
   if (defaultAgent !== null && !agents.includes(defaultAgent)) {
     throw new ParticipantsError(
-      `The default agent ${JSON.stringify(defaultAgent)} is not attached to this assignment`,
+      `The default agent ${JSON.stringify(defaultAgent)} is not attached to this ticket`,
     );
   }
 

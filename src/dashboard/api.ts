@@ -20,7 +20,7 @@ import {
   type StatusConfig,
 } from '../utils/config.js';
 import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
-import { ASSIGNMENT_FIELDS, type FieldRegistry } from '../utils/query/index.js';
+import { TICKET_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
@@ -30,7 +30,7 @@ import { invalidateIndex } from '../search/index.js';
 import {
   parseProject,
   parseStatus,
-  parseAssignmentFull,
+  parseTicketFull,
   parsePlan,
   parseScratchpad,
   parseHandoff,
@@ -43,14 +43,14 @@ import {
 import { getDashboardHelp } from './help.js';
 import type {
   ArchiveResponse,
-  ArchivedAssignmentItem,
+  ArchivedTicketItem,
   ArchivedProjectItem,
   TicketBoardItem,
   TicketDetail,
-  AssignmentReference,
+  TicketReference,
   TicketSummary,
-  AssignmentsBoardResponse,
-  AssignmentTransitionAction,
+  TicketsBoardResponse,
+  TicketTransitionAction,
   AttentionItem,
   EditableDocumentResponse,
   EnrichedLink,
@@ -72,7 +72,7 @@ import type {
   EngagementInfo,
 } from './types.js';
 import { listAllSessions, getSessionById } from './agent-sessions.js';
-import { getEngagementsByAssignmentId } from '../db/engagement-db.js';
+import { getEngagementsByTicketId } from '../db/engagement-db.js';
 import { isSessionDbInitialized } from './session-db.js';
 import { SEGMENT_REASON } from './overviewCopy.js';
 import {
@@ -101,8 +101,8 @@ function isProjectArchived(p: { archived?: boolean }): boolean {
   return p.archived === true;
 }
 
-/** Drop individually-archived assignments from a list (for normal/active views). */
-function activeAssignments<T extends { archived?: boolean }>(items: T[]): T[] {
+/** Drop individually-archived tickets from a list (for normal/active views). */
+function activeTickets<T extends { archived?: boolean }>(items: T[]): T[] {
   return items.filter((item) => item.archived !== true);
 }
 
@@ -177,31 +177,31 @@ const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
   ['stale', 'stale'],
 ];
 
-type AssignmentRecord = ReturnType<typeof parseAssignmentFull>;
+type TicketRecord = ReturnType<typeof parseTicketFull>;
 
 interface ProjectRecord {
   projectPath: string;
   project: ReturnType<typeof parseProject>;
-  assignments: AssignmentRecord[];
+  tickets: TicketRecord[];
   summary: ProjectSummary;
   dependencyGraph: string | null;
 }
 
-/** A standalone assignment lives at `<ticketsDir>/<uuid>/` and has no containing project. */
+/** A standalone ticket lives at `<ticketsDir>/<uuid>/` and has no containing project. */
 interface StandaloneRecord {
   ticketDir: string;
   /** The UUID (folder name). */
   id: string;
-  record: AssignmentRecord;
+  record: TicketRecord;
 }
 
 // ---------------------------------------------------------------------------
 // Shared records cache (coarse, clear-all).
 //
 // Parsed project records and standalone records are read on every hot read
-// path — /api/overview, /api/projects, /api/assignments, /api/workspaces, plus
+// path — /api/overview, /api/projects, /api/tickets, /api/workspaces, plus
 // the server scanner's workspace lookup. The underlying work is a file fan-out
-// (readdir + readFile + parse for every project, assignment, and comments
+// (readdir + readFile + parse for every project, ticket, and comments
 // file), which dominates request latency and is badly amplified by corporate
 // EDR/AV that hooks filesystem syscalls. The dashboard server is long-lived, so
 // we cache the parsed snapshot per directory and reuse it across requests.
@@ -283,11 +283,11 @@ async function computeStandaloneRecords(ticketsDir: string | undefined): Promise
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
     const ticketDir = resolve(ticketsDir, entry.name);
-    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(assignmentMdPath))) continue;
+    const ticketMdPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMdPath))) continue;
     try {
-      const content = await readFile(assignmentMdPath, 'utf-8');
-      const record = parseAssignmentFull(content);
+      const content = await readFile(ticketMdPath, 'utf-8');
+      const record = parseTicketFull(content);
       records.push({ ticketDir, id: entry.name, record });
     } catch {
       // skip unreadable
@@ -313,31 +313,31 @@ const DEFAULT_TRANSITION_DEFINITIONS: Array<{
   {
     command: 'shape',
     label: 'Shape',
-    description: 'Promote a draft assignment to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
+    description: 'Promote a draft ticket to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
     requiresReason: false,
   },
   {
     command: 'plan-ready',
     label: 'Plan Ready',
-    description: 'Promote a ready_for_planning assignment to ready_to_implement after the plan is written and approved.',
+    description: 'Promote a ready_for_planning ticket to ready_to_implement after the plan is written and approved.',
     requiresReason: false,
   },
   {
     command: 'implement',
     label: 'Implement',
-    description: 'Move a ready_to_implement assignment into in_progress when coding begins.',
+    description: 'Move a ready_to_implement ticket into in_progress when coding begins.',
     requiresReason: false,
   },
   {
     command: 'review',
     label: 'Send To Review',
-    description: 'Mark the assignment ready for inspection.',
+    description: 'Mark the ticket ready for inspection.',
     requiresReason: false,
   },
   {
     command: 'complete',
     label: 'Complete',
-    description: 'Mark the assignment done.',
+    description: 'Mark the ticket done.',
     requiresReason: false,
   },
   {
@@ -355,13 +355,13 @@ const DEFAULT_TRANSITION_DEFINITIONS: Array<{
   {
     command: 'fail',
     label: 'Fail',
-    description: 'Mark the assignment as failed when it cannot be completed as planned.',
+    description: 'Mark the ticket as failed when it cannot be completed as planned.',
     requiresReason: false,
   },
   {
     command: 'reopen',
     label: 'Reopen',
-    description: 'Reopen a completed or failed assignment to resume work.',
+    description: 'Reopen a completed or failed ticket to resume work.',
     requiresReason: false,
   },
 ];
@@ -432,7 +432,7 @@ const _cachedConfigs = new Map<string, ResolvedStatusConfig>();
  * `'default'`). Backed by a per-workflow cache. For the legacy single-lifecycle
  * config (no `workflows:` block), the `'default'` workflow resolves from the
  * top-level `statuses:` block — byte-identical to the pre-workflow behavior, so
- * every existing no-arg caller is unaffected. Assignment-specific surfaces
+ * every existing no-arg caller is unaffected. Ticket-specific surfaces
  * (board items, projection, transitions, terminal virtuals) pass the ticket's
  * resolved workflow id so each ticket derives against its OWN workflow.
  */
@@ -505,7 +505,7 @@ function stageWorkflowStatusConfig(workflowId: string, wf: StageWorkflow): Resol
 
 /** Cached workflow-library meta (available ids + global default) so per-ticket
  * workflow resolution during board/detail materialization never re-reads +
- * re-parses config.md per assignment. Rebuilt from config.md on demand; cleared
+ * re-parses config.md per ticket. Rebuilt from config.md on demand; cleared
  * alongside the status-config cache whenever config.md is written. */
 let _cachedWorkflowMeta: { available: ReadonlySet<string>; defaultWorkflow: string | null } | null =
   null;
@@ -546,17 +546,17 @@ export async function effectiveWorkflowIds(
 
 const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowByType: {} };
 
-/** Resolve an assignment's workflow id from its `workflow`/`type` fields and a
+/** Resolve a ticket's workflow id from its `workflow`/`type` fields and a
  * project binding (from the already-parsed project record — no extra read).
  * Uses the cached workflow-library meta. First-hit-wins precedence. */
 async function resolveWorkflowIdWithBinding(
-  assignment: { workflow?: string | null; type?: string | null },
+  ticket: { workflow?: string | null; type?: string | null },
   binding: ProjectWorkflowBinding,
 ): Promise<string> {
   const meta = await getWorkflowMeta();
   return resolveWorkflowId({
-    assignmentWorkflow: assignment.workflow ?? null,
-    assignmentType: assignment.type ?? null,
+    ticketWorkflow: ticket.workflow ?? null,
+    ticketType: ticket.type ?? null,
     projectDefaultWorkflow: binding.defaultWorkflow,
     projectWorkflowByType: binding.workflowByType,
     globalDefaultWorkflow: meta.defaultWorkflow,
@@ -564,24 +564,24 @@ async function resolveWorkflowIdWithBinding(
   });
 }
 
-/** Resolve an assignment's workflow id reading the project binding from disk
+/** Resolve a ticket's workflow id reading the project binding from disk
  * (single-record paths where the parsed project isn't already in hand).
  * Standalone (no projectDir) → binding-less resolution. */
 async function resolveWorkflowIdByDir(
-  assignment: { workflow?: string | null; type?: string | null },
+  ticket: { workflow?: string | null; type?: string | null },
   projectDir: string | null,
 ): Promise<string> {
   const binding = projectDir ? await readProjectBinding(projectDir) : EMPTY_BINDING;
-  return resolveWorkflowIdWithBinding(assignment, binding);
+  return resolveWorkflowIdWithBinding(ticket, binding);
 }
 
 /** The per-ticket resolved status config (its OWN workflow). Convenience over
  * {@link resolveWorkflowIdByDir} + {@link getStatusConfig}. */
-async function statusConfigForAssignment(
-  assignment: { workflow?: string | null; type?: string | null },
+async function statusConfigForTicket(
+  ticket: { workflow?: string | null; type?: string | null },
   projectDir: string | null,
 ): Promise<ResolvedStatusConfig> {
-  return getStatusConfig(await resolveWorkflowIdByDir(assignment, projectDir));
+  return getStatusConfig(await resolveWorkflowIdByDir(ticket, projectDir));
 }
 
 /** Human label for a workflow id: the explicit `workflows.<id>.label`, else
@@ -680,9 +680,9 @@ export async function listProjects(projectsDir: string): Promise<ProjectSummary[
 /**
  * Worktree/branch records for the server scanner's tmux pane auto-linking,
  * derived from the cached records snapshot instead of a second file fan-out
- * (the scanner previously re-read every assignment.md on each cold scan). A
- * `null` projectSlug marks a standalone assignment. By convention a project
- * assignment's folder name equals its slug, and standalone folders are named by
+ * (the scanner previously re-read every ticket.md on each cold scan). A
+ * `null` projectSlug marks a standalone ticket. By convention a project
+ * ticket's folder name equals its slug, and standalone folders are named by
  * UUID, so `ticketSlug` matches the scanner's prior folder-name behavior.
  */
 export async function listWorkspaceRecords(
@@ -692,7 +692,7 @@ export async function listWorkspaceRecords(
   Array<{
     projectSlug: string | null;
     ticketSlug: string;
-    assignmentTitle: string;
+    ticketTitle: string;
     worktreePath: string | null;
     branch: string | null;
   }>
@@ -705,19 +705,19 @@ export async function listWorkspaceRecords(
   const records: Array<{
     projectSlug: string | null;
     ticketSlug: string;
-    assignmentTitle: string;
+    ticketTitle: string;
     worktreePath: string | null;
     branch: string | null;
   }> = [];
 
   for (const project of projectRecords) {
-    for (const assignment of project.assignments) {
+    for (const ticket of project.tickets) {
       records.push({
         projectSlug: project.summary.slug,
-        ticketSlug: assignment.slug,
-        assignmentTitle: assignment.title || assignment.slug,
-        worktreePath: assignment.workspace.worktreePath ?? null,
-        branch: assignment.workspace.branch ?? null,
+        ticketSlug: ticket.slug,
+        ticketTitle: ticket.title || ticket.slug,
+        worktreePath: ticket.workspace.worktreePath ?? null,
+        branch: ticket.workspace.branch ?? null,
       });
     }
   }
@@ -726,7 +726,7 @@ export async function listWorkspaceRecords(
     records.push({
       projectSlug: null,
       ticketSlug: standalone.id,
-      assignmentTitle: standalone.record.title || standalone.id,
+      ticketTitle: standalone.record.title || standalone.id,
       worktreePath: standalone.record.workspace.worktreePath ?? null,
       branch: standalone.record.workspace.branch ?? null,
     });
@@ -754,7 +754,7 @@ export async function getOverview(
   const standaloneRecords = await timed(traces, 'list-standalone-records', () =>
     listStandaloneRecords(ticketsDir),
   );
-  // Archived projects + individually-archived assignments are hidden from every
+  // Archived projects + individually-archived tickets are hidden from every
   // overview aggregate (stats, recent projects, recent activity). The full record
   // sets are still used for firstRun detection and the segment-bucket builder
   // (which applies its own cascade filtering internally).
@@ -785,11 +785,11 @@ export async function getOverview(
 
   if (traces) {
     const wallMs = performance.now() - overallStart;
-    const totalAssignments =
-      projectRecords.reduce((sum, r) => sum + r.assignments.length, 0) + standaloneRecords.length;
+    const totalTickets =
+      projectRecords.reduce((sum, r) => sum + r.tickets.length, 0) + standaloneRecords.length;
     emitTrace(traces, {
       wallMs,
-      fixture: { projects: projectRecords.length, assignments: totalAssignments },
+      fixture: { projects: projectRecords.length, tickets: totalTickets },
     });
   }
 
@@ -798,26 +798,26 @@ export async function getOverview(
     firstRun: projectRecords.length === 0 && standaloneRecords.length === 0,
     stats: {
       activeProjects: activeProjectRecords.filter((record) => record.summary.status === 'active').length,
-      inProgressAssignments: activeProjectRecords.reduce(
+      inProgressTickets: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['in_progress'] ?? 0),
         0,
       ),
-      blockedAssignments: activeProjectRecords.reduce(
+      blockedTickets: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['blocked'] ?? 0),
         0,
       ),
-      reviewAssignments: activeProjectRecords.reduce(
+      reviewTickets: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['review'] ?? 0),
         0,
       ),
-      failedAssignments: activeProjectRecords.reduce(
+      failedTickets: activeProjectRecords.reduce(
         (total, record) => total + (record.summary.progress['failed'] ?? 0),
         0,
       ),
       // Derived from the SAME classifier verdict as the stale segment (via the
       // pre-cap segment total) so the badge count can never diverge from the
       // listed rows.
-      staleAssignments: segments.stale.total,
+      staleTickets: segments.stale.total,
     },
     hero,
     segments,
@@ -831,32 +831,32 @@ export async function getOverview(
 }
 
 /**
- * Get all assignments across all projects for the global kanban board.
- * GET /api/assignments
+ * Get all tickets across all projects for the global kanban board.
+ * GET /api/tickets
  */
 export async function listTicketsBoard(
   projectsDir: string,
   ticketsDir?: string,
   options: { archived?: 'exclude' | 'only' } = {},
-): Promise<AssignmentsBoardResponse> {
+): Promise<TicketsBoardResponse> {
   const mode = options.archived ?? 'exclude';
   const projectRecords = await listProjectRecords(projectsDir);
   const projectItems = await Promise.all(
     projectRecords.flatMap(async (record) => {
       if (mode === 'only') {
-        // Individually-archived assignments only — ignore project-archived cascade.
+        // Individually-archived tickets only — ignore project-archived cascade.
         return Promise.all(
-          record.assignments
-            .filter((assignment) => assignment.archived === true)
-            .map(async (assignment) => toTicketBoardItem(projectsDir, record, assignment)),
+          record.tickets
+            .filter((ticket) => ticket.archived === true)
+            .map(async (ticket) => toTicketBoardItem(projectsDir, record, ticket)),
         );
       }
       // 'exclude': cascade-hide every child of an archived project, and drop
       // individually-archived children of non-archived projects.
       if (isProjectArchived(record.summary)) return [] as TicketBoardItem[];
       return Promise.all(
-        activeAssignments(record.assignments).map(async (assignment) =>
-          toTicketBoardItem(projectsDir, record, assignment),
+        activeTickets(record.tickets).map(async (ticket) =>
+          toTicketBoardItem(projectsDir, record, ticket),
         ),
       );
     }),
@@ -873,37 +873,37 @@ export async function listTicketsBoard(
 
   return {
     generatedAt: new Date().toISOString(),
-    assignments: [...projectItems.flat(), ...standaloneItems]
+    tickets: [...projectItems.flat(), ...standaloneItems]
       .sort((left, right) => compareTimestamps(right.updated, left.updated)),
   };
 }
 
-function toArchivedAssignmentItem(
-  assignment: AssignmentRecord,
+function toArchivedTicketItem(
+  ticket: TicketRecord,
   projectSlug: string | null,
   projectTitle: string | null,
-): ArchivedAssignmentItem {
+): ArchivedTicketItem {
   return {
-    id: assignment.id,
-    slug: assignment.slug,
-    title: assignment.title,
-    status: assignment.status,
-    type: assignment.type,
-    priority: assignment.priority as ArchivedAssignmentItem['priority'],
+    id: ticket.id,
+    slug: ticket.slug,
+    title: ticket.title,
+    status: ticket.status,
+    type: ticket.type,
+    priority: ticket.priority as ArchivedTicketItem['priority'],
     projectSlug,
     projectTitle,
-    archived: assignment.archived,
-    archivedAt: assignment.archivedAt,
-    archivedReason: assignment.archivedReason,
-    updated: assignment.updated,
+    archived: ticket.archived,
+    archivedAt: ticket.archivedAt,
+    archivedReason: ticket.archivedReason,
+    updated: ticket.updated,
   };
 }
 
 /**
  * Build the canonical archived view for the dashboard Archive page.
  * Returns archived projects (each expandable to ALL its children) plus
- * individually-archived assignments whose parent project is NOT archived
- * (so they are never double-listed) and archived standalone assignments.
+ * individually-archived tickets whose parent project is NOT archived
+ * (so they are never double-listed) and archived standalone tickets.
  * GET /api/archived
  */
 export async function listArchived(
@@ -920,38 +920,38 @@ export async function listArchived(
       title: record.summary.title,
       archivedAt: record.summary.archivedAt,
       archivedReason: record.summary.archivedReason,
-      assignments: record.assignments
-        .map((assignment) =>
-          toArchivedAssignmentItem(assignment, record.summary.slug, record.summary.title),
+      tickets: record.tickets
+        .map((ticket) =>
+          toArchivedTicketItem(ticket, record.summary.slug, record.summary.title),
         )
         .sort((left, right) => compareTimestamps(right.updated, left.updated)),
     }))
     .sort((left, right) => compareTimestamps(right.archivedAt ?? '', left.archivedAt ?? ''));
 
-  const individuallyArchived: ArchivedAssignmentItem[] = [];
+  const individuallyArchived: ArchivedTicketItem[] = [];
   for (const record of projectRecords) {
     if (isProjectArchived(record.summary)) continue; // its children belong under the project above
-    for (const assignment of record.assignments) {
-      if (assignment.archived === true) {
+    for (const ticket of record.tickets) {
+      if (ticket.archived === true) {
         individuallyArchived.push(
-          toArchivedAssignmentItem(assignment, record.summary.slug, record.summary.title),
+          toArchivedTicketItem(ticket, record.summary.slug, record.summary.title),
         );
       }
     }
   }
   for (const sr of standaloneRecords) {
     if (sr.record.archived === true) {
-      individuallyArchived.push(toArchivedAssignmentItem(sr.record, null, null));
+      individuallyArchived.push(toArchivedTicketItem(sr.record, null, null));
     }
   }
   individuallyArchived.sort((left, right) => compareTimestamps(right.updated, left.updated));
 
-  return { projects, assignments: individuallyArchived };
+  return { projects, tickets: individuallyArchived };
 }
 
 async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<TicketBoardItem> {
   // Standalone → the ticket's own workflow (no project binding).
-  const config = await statusConfigForAssignment(sr.record, null);
+  const config = await statusConfigForTicket(sr.record, null);
   const { terminalStatuses } = config;
 
   let facts: TicketBoardItem['facts'];
@@ -980,21 +980,21 @@ async function toStandaloneBoardItem(sr: StandaloneRecord): Promise<TicketBoardI
 }
 
 async function getStandaloneAvailableTransitions(
-  assignment: AssignmentRecord,
-): Promise<AssignmentTransitionAction[]> {
-  // Standalone assignments have no dependencies, so skip dependency gating.
+  ticket: TicketRecord,
+): Promise<TicketTransitionAction[]> {
+  // Standalone tickets have no dependencies, so skip dependency gating.
   // Commands offered come from the ticket's OWN workflow (no project binding).
-  const config = await statusConfigForAssignment(assignment, null);
+  const config = await statusConfigForTicket(ticket, null);
   const transitionDefs = getTransitionDefinitions(config);
-  const actions: AssignmentTransitionAction[] = [];
+  const actions: TicketTransitionAction[] = [];
 
   for (const definition of transitionDefs) {
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    const target = getTargetStatus(ticket.status, definition.command, config.transitionTable);
     // Only valid transitions reach the client; the kanban inline picker renders them directly.
     if (target === null) continue;
 
     let warning: string | null = null;
-    if (definition.command === 'start' && !assignment.assignee) {
+    if (definition.command === 'start' && !ticket.assignee) {
       warning = 'No assignee set — consider assigning before starting.';
     }
     actions.push({
@@ -1048,7 +1048,7 @@ export async function getEditableDocument(
 }
 
 /**
- * Resolve an assignment by UUID (standalone or project-nested) and return its
+ * Resolve an ticket by UUID (standalone or project-nested) and return its
  * editable document payload for the given type.
  */
 export async function getEditableDocumentById(
@@ -1070,7 +1070,7 @@ export async function getEditableDocumentById(
   }
 
   const fileName =
-    documentType === 'assignment'
+    documentType === 'ticket'
       ? 'ticket.md'
       : documentType === 'plan'
         ? 'plan.md'
@@ -1088,8 +1088,8 @@ export async function getEditableDocumentById(
   const content = await readFile(filePath, 'utf-8');
   const label = resolved.id;
   const title =
-    documentType === 'assignment'
-      ? `Edit Assignment: ${label}`
+    documentType === 'ticket'
+      ? `Edit Ticket: ${label}`
       : documentType === 'plan'
         ? `Edit Plan: ${label}`
         : documentType === 'scratchpad'
@@ -1110,7 +1110,7 @@ export async function getEditableDocumentById(
 }
 
 /**
- * Get full project detail with assignments.
+ * Get full project detail with tickets.
  * GET /api/projects/:slug
  */
 export async function getProjectDetail(
@@ -1126,22 +1126,22 @@ export async function getProjectDetail(
 
   const projectContent = await readFile(projectMdPath, 'utf-8');
   const project = parseProject(projectContent);
-  const assignments = await listAssignmentRecords(projectPath);
-  const rollup = await buildProjectRollup(projectPath, project, assignments);
-  const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
+  const tickets = await listTicketRecords(projectPath);
+  const rollup = await buildProjectRollup(projectPath, project, tickets);
+  const dependencyGraph = await loadDependencyGraph(projectPath, tickets);
   // Consistent with the project summary: the activity timestamp ignores archived
-  // children so archiving an old assignment doesn't bump it.
-  const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
+  // children so archiving an old ticket doesn't bump it.
+  const updated = getProjectActivityTimestamp(project.updated, activeTickets(tickets));
 
-  // Each assignment's terminal virtuals come from ITS OWN workflow (resolved via
+  // Each ticket's terminal virtuals come from ITS OWN workflow (resolved via
   // this project's binding — already parsed, no extra read).
   const projectBinding: ProjectWorkflowBinding = {
     defaultWorkflow: project.defaultWorkflow,
     workflowByType: project.workflowByType,
   };
-  const assignmentSummaries = (
+  const ticketSummaries = (
     await Promise.all(
-      assignments.map(async (a) => {
+      tickets.map(async (a) => {
         const config = await getStatusConfig(await resolveWorkflowIdWithBinding(a, projectBinding));
         return toTicketSummary(a, config);
       }),
@@ -1163,30 +1163,30 @@ export async function getProjectDetail(
     body: project.body,
     progress: rollup.progress,
     needsAttention: rollup.needsAttention,
-    assignments: assignmentSummaries,
+    tickets: ticketSummaries,
     dependencyGraph,
     repositories: project.repositories,
   };
 }
 
 /**
- * Get full assignment detail with plan, scratchpad, handoff, and decision record.
+ * Get full ticket detail with plan, scratchpad, handoff, and decision record.
  * GET /api/projects/:slug/tickets/:aslug
  */
 /**
- * Build the slim, camelCase engagement projection for an assignment's
+ * Build the slim, camelCase engagement projection for a ticket's
  * "Session Activity" view: the full per-session stage history, agent-enriched.
  *
- * Reads the session DB (`getEngagementsByAssignmentId` / `getSessionById` both
+ * Reads the session DB (`getEngagementsByTicketId` / `getSessionById` both
  * go through `getSessionDb()`, which throws if `initSessionDb()` never ran).
  * The dashboard server initializes it; non-dashboard `getTicketDetail`
  * callers (CLI launch/open, direct tests) may not — so degrade to no
  * engagements rather than throwing. Agent is enriched once per distinct session
  * (no N+1); a missing session row yields `agent: null`.
  */
-function buildAssignmentEngagements(ticketId: string): EngagementInfo[] {
+function buildTicketEngagements(ticketId: string): EngagementInfo[] {
   if (!isSessionDbInitialized()) return [];
-  const rows = getEngagementsByAssignmentId(ticketId);
+  const rows = getEngagementsByTicketId(ticketId);
   const agentBySession = new Map<string, string | null>();
   for (const r of rows) {
     if (!agentBySession.has(r.session_id)) {
@@ -1209,14 +1209,14 @@ export async function getTicketDetail(
   ticketSlug: string,
 ): Promise<TicketDetail | null> {
   const ticketDir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
-  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
 
-  if (!(await fileExists(assignmentMdPath))) {
+  if (!(await fileExists(ticketMdPath))) {
     return null;
   }
 
-  const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
-  const assignment = parseAssignmentFull(assignmentContent);
+  const ticketContent = await readFile(ticketMdPath, 'utf-8');
+  const ticket = parseTicketFull(ticketContent);
 
   let plan: TicketDetail['plan'] = null;
   const planFile = await latestPlanFile(ticketDir);
@@ -1292,37 +1292,37 @@ export async function getTicketDetail(
     };
   }
 
-  const wfConfig = await statusConfigForAssignment(assignment, resolve(projectsDir, projectSlug));
+  const wfConfig = await statusConfigForTicket(ticket, resolve(projectsDir, projectSlug));
   const detail: TicketDetail = {
-    id: assignment.id,
+    id: ticket.id,
     projectSlug,
-    slug: assignment.slug || ticketSlug,
-    title: assignment.title,
-    status: assignment.status,
-    type: assignment.type,
-    workflow: assignment.workflow,
+    slug: ticket.slug || ticketSlug,
+    title: ticket.title,
+    status: ticket.status,
+    type: ticket.type,
+    workflow: ticket.workflow,
     resolvedWorkflow: wfConfig.workflowId,
     workflowLabel: wfConfig.label,
-    statusLabel: statusLabelFor(wfConfig, assignment.status),
-    priority: assignment.priority as TicketDetail['priority'],
-    assignee: assignment.assignee,
-    dependsOn: assignment.dependsOn,
-    links: assignment.links,
+    statusLabel: statusLabelFor(wfConfig, ticket.status),
+    priority: ticket.priority as TicketDetail['priority'],
+    assignee: ticket.assignee,
+    dependsOn: ticket.dependsOn,
+    links: ticket.links,
     reverseLinks: [],
     enrichedLinks: [],
-    blockedReason: assignment.blockedReason,
-    workspace: assignment.workspace,
-    externalIds: assignment.externalIds,
-    tags: assignment.tags,
-    archived: assignment.archived,
-    archivedAt: assignment.archivedAt,
-    archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
-    override: assignment.override,
-    derived: await buildDerivedDetail(assignment, ticketDir, resolve(projectsDir, projectSlug)),
-    created: assignment.created,
-    updated: assignment.updated,
-    body: assignment.body,
+    blockedReason: ticket.blockedReason,
+    workspace: ticket.workspace,
+    externalIds: ticket.externalIds,
+    tags: ticket.tags,
+    archived: ticket.archived,
+    archivedAt: ticket.archivedAt,
+    archivedReason: ticket.archivedReason,
+    ...deriveStatusVirtuals(ticket, wfConfig.terminalStatuses),
+    override: ticket.override,
+    derived: await buildDerivedDetail(ticket, ticketDir, resolve(projectsDir, projectSlug)),
+    created: ticket.created,
+    updated: ticket.updated,
+    body: ticket.body,
     plan,
     scratchpad,
     handoff,
@@ -1330,12 +1330,12 @@ export async function getTicketDetail(
     progress,
     comments,
     referencedBy: [],
-    engagements: buildAssignmentEngagements(assignment.id),
+    engagements: buildTicketEngagements(ticket.id),
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectSlug,
       ticketSlug,
-      assignment,
+      ticket,
     ),
   };
 
@@ -1343,10 +1343,10 @@ export async function getTicketDetail(
   const selfSlug = `${projectSlug}/${detail.slug}`;
   const projectRecords = await listProjectRecords(projectsDir);
 
-  // Find reverse links: assignments across all projects whose links contain this assignment
+  // Find reverse links: tickets across all projects whose links contain this ticket
   const reverseLinks: string[] = [];
   for (const mr of projectRecords) {
-    for (const a of mr.assignments) {
+    for (const a of mr.tickets) {
       const qualifiedSlug = `${mr.summary.slug}/${a.slug}`;
       if (qualifiedSlug === selfSlug) continue; // skip self
       if (a.links.includes(selfSlug)) {
@@ -1360,7 +1360,7 @@ export async function getTicketDetail(
     const parts = l.split('/');
     return parts.length === 2 && parts[0].length > 0 && parts[1].length > 0;
   };
-  const forwardLinks = assignment.links.filter((l) => l !== selfSlug && isValidLinkFormat(l));
+  const forwardLinks = ticket.links.filter((l) => l !== selfSlug && isValidLinkFormat(l));
 
   // Deduplicate: if a slug is in both forward and reverse, keep in forward only
   const forwardSet = new Set(forwardLinks);
@@ -1370,10 +1370,10 @@ export async function getTicketDetail(
   detail.reverseLinks = dedupedReverseLinks;
 
   // Build enriched links for the frontend
-  const allProjectAssignments = new Map<string, { id: string; title: string; status: string }>();
+  const allProjectTickets = new Map<string, { id: string; title: string; status: string }>();
   for (const mr of projectRecords) {
-    for (const a of mr.assignments) {
-      allProjectAssignments.set(`${mr.summary.slug}/${a.slug}`, {
+    for (const a of mr.tickets) {
+      allProjectTickets.set(`${mr.summary.slug}/${a.slug}`, {
         id: a.id,
         title: a.title,
         status: a.status,
@@ -1384,7 +1384,7 @@ export async function getTicketDetail(
   const enrichedLinks: EnrichedLink[] = [];
   for (const linkSlug of forwardLinks) {
     const [ms, as] = linkSlug.split('/');
-    const info = allProjectAssignments.get(linkSlug);
+    const info = allProjectTickets.get(linkSlug);
     enrichedLinks.push({
       id: info?.id ?? linkSlug,
       slug: linkSlug,
@@ -1397,7 +1397,7 @@ export async function getTicketDetail(
   }
   for (const linkSlug of dedupedReverseLinks) {
     const [ms, as] = linkSlug.split('/');
-    const info = allProjectAssignments.get(linkSlug);
+    const info = allProjectTickets.get(linkSlug);
     enrichedLinks.push({
       id: info?.id ?? linkSlug,
       slug: linkSlug,
@@ -1411,9 +1411,9 @@ export async function getTicketDetail(
 
   detail.enrichedLinks = enrichedLinks;
 
-  // Populate referencedBy — assignments that mention this one.
+  // Populate referencedBy — tickets that mention this one.
   detail.referencedBy = await computeReferencedBy(
-    { id: assignment.id, projectSlug, slug: detail.slug },
+    { id: ticket.id, projectSlug, slug: detail.slug },
     projectsDir,
     undefined,
   );
@@ -1430,7 +1430,7 @@ interface ReferenceTarget {
 }
 
 /**
- * Scan every *other* assignment's Todos, progress, comments, and handoff bodies
+ * Scan every *other* ticket's Todos, progress, comments, and handoff bodies
  * for markdown links that resolve to `target`, and return an aggregated per-source
  * count (capped at 50).
  */
@@ -1438,7 +1438,7 @@ async function computeReferencedBy(
   target: ReferenceTarget,
   projectsDir: string,
   ticketsDir: string | undefined,
-): Promise<AssignmentReference[]> {
+): Promise<TicketReference[]> {
   const sources: Array<{
     id: string;
     slug: string;
@@ -1450,7 +1450,7 @@ async function computeReferencedBy(
   // project-nested
   const projectRecords = await listProjectRecords(projectsDir);
   for (const rec of projectRecords) {
-    for (const a of rec.assignments) {
+    for (const a of rec.tickets) {
       sources.push({
         id: a.id,
         slug: a.slug,
@@ -1472,10 +1472,10 @@ async function computeReferencedBy(
     });
   }
 
-  const references: AssignmentReference[] = [];
+  const references: TicketReference[] = [];
   for (const source of sources) {
     if (source.id === target.id) continue; // skip self
-    const mentions = await countMentionsInAssignment(source.ticketDir, target);
+    const mentions = await countMentionsInTicket(source.ticketDir, target);
     if (mentions > 0) {
       references.push({
         sourceId: source.id,
@@ -1491,7 +1491,7 @@ async function computeReferencedBy(
   return references.slice(0, REFERENCED_BY_LIMIT);
 }
 
-async function countMentionsInAssignment(
+async function countMentionsInTicket(
   sourceDir: string,
   target: ReferenceTarget,
 ): Promise<number> {
@@ -1545,7 +1545,7 @@ function escapeRegExpLocal(value: string): string {
 }
 
 /**
- * Resolve an assignment by UUID (standalone or project-nested) and return its full detail payload.
+ * Resolve an ticket by UUID (standalone or project-nested) and return its full detail payload.
  * GET /api/tickets/:id
  */
 export async function getTicketDetailById(
@@ -1557,7 +1557,7 @@ export async function getTicketDetailById(
   if (!resolved) return null;
 
   if (!resolved.standalone && resolved.projectSlug) {
-    // Use the standard detail fetcher, then also scan standalone assignments
+    // Use the standard detail fetcher, then also scan standalone tickets
     // for backlinks.
     const detail = await getTicketDetail(projectsDir, resolved.projectSlug, resolved.ticketSlug);
     if (!detail) return null;
@@ -1584,11 +1584,11 @@ async function buildStandaloneTicketDetail(
   resolved: ResolvedTicket,
 ): Promise<TicketDetail | null> {
   const ticketDir = resolved.ticketDir;
-  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-  if (!(await fileExists(assignmentMdPath))) return null;
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return null;
 
-  const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
-  const assignment = parseAssignmentFull(assignmentContent);
+  const ticketContent = await readFile(ticketMdPath, 'utf-8');
+  const ticket = parseTicketFull(ticketContent);
 
   let plan: TicketDetail['plan'] = null;
   const planFile = await latestPlanFile(ticketDir);
@@ -1635,37 +1635,37 @@ async function buildStandaloneTicketDetail(
     comments = { updated: parsed.updated, entryCount: parsed.entryCount, entries: parsed.entries };
   }
 
-  const wfConfig = await statusConfigForAssignment(assignment, null);
+  const wfConfig = await statusConfigForTicket(ticket, null);
   const detail: TicketDetail = {
-    id: assignment.id,
+    id: ticket.id,
     projectSlug: null,
-    slug: assignment.slug || resolved.id,
-    title: assignment.title,
-    status: assignment.status,
-    type: assignment.type,
-    workflow: assignment.workflow,
+    slug: ticket.slug || resolved.id,
+    title: ticket.title,
+    status: ticket.status,
+    type: ticket.type,
+    workflow: ticket.workflow,
     resolvedWorkflow: wfConfig.workflowId,
     workflowLabel: wfConfig.label,
-    statusLabel: statusLabelFor(wfConfig, assignment.status),
-    priority: assignment.priority as TicketDetail['priority'],
-    assignee: assignment.assignee,
+    statusLabel: statusLabelFor(wfConfig, ticket.status),
+    priority: ticket.priority as TicketDetail['priority'],
+    assignee: ticket.assignee,
     dependsOn: [], // standalone cannot declare dependencies
     links: [],
     reverseLinks: [],
     enrichedLinks: [],
-    blockedReason: assignment.blockedReason,
-    workspace: assignment.workspace,
-    externalIds: assignment.externalIds,
-    tags: assignment.tags,
-    archived: assignment.archived,
-    archivedAt: assignment.archivedAt,
-    archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, wfConfig.terminalStatuses),
-    override: assignment.override,
-    derived: await buildDerivedDetail(assignment, ticketDir, null),
-    created: assignment.created,
-    updated: assignment.updated,
-    body: assignment.body,
+    blockedReason: ticket.blockedReason,
+    workspace: ticket.workspace,
+    externalIds: ticket.externalIds,
+    tags: ticket.tags,
+    archived: ticket.archived,
+    archivedAt: ticket.archivedAt,
+    archivedReason: ticket.archivedReason,
+    ...deriveStatusVirtuals(ticket, wfConfig.terminalStatuses),
+    override: ticket.override,
+    derived: await buildDerivedDetail(ticket, ticketDir, null),
+    created: ticket.created,
+    updated: ticket.updated,
+    body: ticket.body,
     plan,
     scratchpad,
     handoff,
@@ -1673,8 +1673,8 @@ async function buildStandaloneTicketDetail(
     progress,
     comments,
     referencedBy: [],
-    engagements: buildAssignmentEngagements(assignment.id),
-    availableTransitions: await getStandaloneAvailableTransitions(assignment),
+    engagements: buildTicketEngagements(ticket.id),
+    availableTransitions: await getStandaloneAvailableTransitions(ticket),
   };
 
   return detail;
@@ -1733,25 +1733,25 @@ async function computeProjectRecords(
       if (traces) accumulatePhase(traces, 'parse-project-md', performance.now() - t0);
 
       const t1 = traces ? performance.now() : 0;
-      const assignments = await listAssignmentRecords(projectPath, traces);
-      if (traces) accumulatePhase(traces, 'list-assignments', performance.now() - t1);
+      const tickets = await listTicketRecords(projectPath, traces);
+      if (traces) accumulatePhase(traces, 'list-tickets', performance.now() - t1);
 
       const t2 = traces ? performance.now() : 0;
-      const rollup = await buildProjectRollup(projectPath, project, assignments, traces);
+      const rollup = await buildProjectRollup(projectPath, project, tickets, traces);
       if (traces) accumulatePhase(traces, 'build-rollup', performance.now() - t2);
 
       // Archived children are hidden, so archiving an old one must not bump the
       // project's activity timestamp (which drives list/recent-projects ordering).
-      const updated = getProjectActivityTimestamp(project.updated, activeAssignments(assignments));
+      const updated = getProjectActivityTimestamp(project.updated, activeTickets(tickets));
 
       const t3 = traces ? performance.now() : 0;
-      const dependencyGraph = await loadDependencyGraph(projectPath, assignments);
+      const dependencyGraph = await loadDependencyGraph(projectPath, tickets);
       if (traces) accumulatePhase(traces, 'load-dep-graph', performance.now() - t3);
 
       return {
         projectPath,
         project,
-        assignments,
+        tickets,
         dependencyGraph,
         summary: {
           slug: project.slug || entry.name,
@@ -1777,10 +1777,10 @@ async function computeProjectRecords(
   return records;
 }
 
-async function listAssignmentRecords(
+async function listTicketRecords(
   projectPath: string,
   traces?: OverviewTraces,
-): Promise<AssignmentRecord[]> {
+): Promise<TicketRecord[]> {
   const ticketsDir = resolve(projectPath, 'tickets');
   if (!(await fileExists(ticketsDir))) {
     return [];
@@ -1790,20 +1790,20 @@ async function listAssignmentRecords(
   const dirEntries = entries.filter((entry) => entry.isDirectory());
 
   const maybeRecords = await Promise.all(
-    dirEntries.map(async (entry): Promise<AssignmentRecord | null> => {
-      const assignmentMd = resolve(ticketsDir, entry.name, 'ticket.md');
-      if (!(await fileExists(assignmentMd))) {
+    dirEntries.map(async (entry): Promise<TicketRecord | null> => {
+      const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+      if (!(await fileExists(ticketMd))) {
         return null;
       }
       const t0 = traces ? performance.now() : 0;
-      const content = await readFile(assignmentMd, 'utf-8');
-      const parsed = parseAssignmentFull(content);
-      if (traces) accumulatePhase(traces, 'read-assignment-md', performance.now() - t0);
+      const content = await readFile(ticketMd, 'utf-8');
+      const parsed = parseTicketFull(content);
+      if (traces) accumulatePhase(traces, 'read-ticket-md', performance.now() - t0);
       return parsed;
     }),
   );
 
-  const records = maybeRecords.filter((r): r is AssignmentRecord => r !== null);
+  const records = maybeRecords.filter((r): r is TicketRecord => r !== null);
   records.sort((left, right) => compareTimestamps(right.updated, left.updated));
   return records;
 }
@@ -1826,7 +1826,7 @@ export async function resolveProjectPath(
 
 async function loadDependencyGraph(
   projectPath: string,
-  assignments: AssignmentRecord[],
+  tickets: TicketRecord[],
 ): Promise<string | null> {
   const statusPath = resolve(projectPath, '_status.md');
   if (await fileExists(statusPath)) {
@@ -1838,13 +1838,13 @@ async function loadDependencyGraph(
     }
   }
 
-  return buildDependencyGraph(assignments);
+  return buildDependencyGraph(tickets);
 }
 
 async function buildProjectRollup(
   projectPath: string,
   project: ReturnType<typeof parseProject>,
-  assignments: AssignmentRecord[],
+  tickets: TicketRecord[],
   traces?: OverviewTraces,
 ): Promise<{
   progress: ProgressCounts;
@@ -1853,22 +1853,22 @@ async function buildProjectRollup(
 }> {
   // Archived children are hidden from normal views, so they must not count in
   // the project's progress/totals/status rollup either (cascade consistency).
-  const active = activeAssignments(assignments);
+  const active = activeTickets(tickets);
   const progress: ProgressCounts = { total: active.length };
 
-  // Map: read every comments.md in parallel. Reduce: fold the per-assignment
+  // Map: read every comments.md in parallel. Reduce: fold the per-ticket
   // results into progress counters + openQuestions sum.
-  const perAssignment = await Promise.all(
-    active.map(async (assignment) => {
+  const perTicket = await Promise.all(
+    active.map(async (ticket) => {
       const t0 = traces ? performance.now() : 0;
-      const openQuestions = await countOpenQuestions(projectPath, assignment.slug);
+      const openQuestions = await countOpenQuestions(projectPath, ticket.slug);
       if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
-      return { status: assignment.status, openQuestions };
+      return { status: ticket.status, openQuestions };
     }),
   );
 
   let openQuestions = 0;
-  for (const entry of perAssignment) {
+  for (const entry of perTicket) {
     progress[entry.status] = (progress[entry.status] ?? 0) + 1;
     openQuestions += entry.openQuestions;
   }
@@ -1902,16 +1902,16 @@ async function buildProjectRollup(
 }
 
 /**
- * Derive the loader-only virtual fields from an assignment's `statusHistory`
+ * Derive the loader-only virtual fields from a ticket's `statusHistory`
  * (never stored on disk). `completedAt` is the `at` of the LAST transition into
  * the current status, but only when that status is terminal (lifecycle
- * `completed`/`failed`) — so an assignment reopened after completion reports null,
+ * `completed`/`failed`) — so an ticket reopened after completion reports null,
  * because its current status is no longer terminal. `statusAge` is the elapsed
  * milliseconds since the last entry (time in current status), null when there is
  * no history or the timestamp is unparseable.
  */
 function deriveStatusVirtuals(
-  assignment: AssignmentRecord,
+  ticket: TicketRecord,
   terminalStatuses: ReadonlySet<string>,
 ): {
   completedAt: string | null;
@@ -1921,12 +1921,12 @@ function deriveStatusVirtuals(
   disposition: string | null;
   pinned: boolean;
 } {
-  const hist = assignment.statusHistory ?? [];
+  const hist = ticket.statusHistory ?? [];
 
   let completedAt: string | null = null;
-  if (terminalStatuses.has(assignment.status)) {
+  if (terminalStatuses.has(ticket.status)) {
     for (const entry of hist) {
-      if (entry.to === assignment.status) completedAt = entry.at;
+      if (entry.to === ticket.status) completedAt = entry.at;
     }
   }
 
@@ -1961,27 +1961,27 @@ function deriveStatusVirtuals(
     // and `phaseTo` history entries stop being written so phaseAge freezes.
     // Sync peek warmed by getStatusConfig; false = pre-marker behavior.
     phaseAge: _stagesMigratedCache ? statusAge : phaseAge,
-    phase: _stagesMigratedCache ? assignment.status : assignment.phase,
-    disposition: assignment.disposition,
-    pinned: assignment.override !== null,
+    phase: _stagesMigratedCache ? ticket.status : ticket.phase,
+    disposition: ticket.disposition,
+    pinned: ticket.override !== null,
   };
 }
 
 /**
- * Server-side materialization of the derivation detail for one assignment
+ * Server-side materialization of the derivation detail for one ticket
  * (design v3: the browser never reads the filesystem — facts ship in the
- * payload). Null for terminal assignments (derivation defers entirely).
+ * payload). Null for terminal tickets (derivation defers entirely).
  */
 async function buildDerivedDetail(
-  assignment: AssignmentRecord,
+  ticket: TicketRecord,
   ticketDir: string,
   projectDir: string | null,
 ): Promise<TicketDetail['derived']> {
   // Derive against the ticket's OWN workflow (its terminal set, derive rules,
   // fact registry, known statuses) so the dashboard projection agrees with the
   // CLI recompute for the same ticket.
-  const config = await statusConfigForAssignment(assignment, projectDir);
-  if (config.terminalStatuses.has(assignment.status)) return null;
+  const config = await statusConfigForTicket(ticket, projectDir);
+  if (config.terminalStatuses.has(ticket.status)) return null;
   try {
     const { computeFactsDetailed } = await import('../lifecycle/facts.js');
     const { deriveDimensions } = await import('../lifecycle/derive.js');
@@ -1992,11 +1992,11 @@ async function buildDerivedDetail(
     const { facts, attestations } = await computeFactsDetailed({
       ticketDir,
       frontmatter: {
-        ...assignment,
-        // AssignmentRecord ⊃ the fields computeFacts reads (incl. facts +
+        ...ticket,
+        // TicketRecord ⊃ the fields computeFacts reads (incl. facts +
         // attestations from the parser); statusHistory + derived caches ride along.
       } as unknown as import('../lifecycle/types.js').TicketFrontmatter,
-      body: assignment.body,
+      body: ticket.body,
       projectDir,
       terminalStatuses: config.terminalStatuses,
       declarations: config.factDeclarations,
@@ -2004,10 +2004,10 @@ async function buildDerivedDetail(
     const dims = deriveDimensions({
       facts,
       derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
-      currentStatus: assignment.status,
+      currentStatus: ticket.status,
       terminalStatuses: config.terminalStatuses,
       knownStatusIds: new Set(config.statuses.map((s) => s.id)),
-      override: assignment.override,
+      override: ticket.override,
       registry: config.deriveRegistry,
     });
     if (!dims) return null;
@@ -2024,7 +2024,7 @@ async function buildDerivedDetail(
 
     // WS-3 compat window (§4.5): `derivedStatus`/`nextAction` are DEPRECATED
     // payload mirrors kept one release. When the stage engine is active for
-    // this assignment (marker + per-file workflow + stored status is a stage),
+    // this ticket (marker + per-file workflow + stored status is a stage),
     // the honest mirror is the STORED stage and its `guidance:` — the ladder's
     // re-ranked headline would contradict the frozen stage position.
     let derivedStatus = dims.derivedStatus;
@@ -2034,12 +2034,12 @@ async function buildDerivedDetail(
       if (await isStagesMigrated()) {
         const { makeWorkflowContextResolver } = await import('../lifecycle/workflow-context.js');
         const sw = await makeWorkflowContextResolver(await readConfig()).stageWorkflowFor(
-          assignment,
+          ticket,
           projectDir,
         );
-        const stage = sw?.stages.find((s) => s.id === assignment.status);
+        const stage = sw?.stages.find((s) => s.id === ticket.status);
         if (stage) {
-          derivedStatus = assignment.status;
+          derivedStatus = ticket.status;
           nextAction = stage.guidance ?? null;
         }
       }
@@ -2078,50 +2078,50 @@ function statusLabelFor(config: ResolvedStatusConfig, status: string): string {
 }
 
 function toTicketSummary(
-  assignment: AssignmentRecord,
+  ticket: TicketRecord,
   config: ResolvedStatusConfig,
 ): TicketSummary {
   return {
-    id: assignment.id,
-    slug: assignment.slug,
-    title: assignment.title,
-    status: assignment.status,
-    type: assignment.type,
-    workflow: assignment.workflow,
+    id: ticket.id,
+    slug: ticket.slug,
+    title: ticket.title,
+    status: ticket.status,
+    type: ticket.type,
+    workflow: ticket.workflow,
     resolvedWorkflow: config.workflowId,
     workflowLabel: config.label,
-    statusLabel: statusLabelFor(config, assignment.status),
-    priority: assignment.priority as TicketSummary['priority'],
-    assignee: assignment.assignee,
-    dependsOn: assignment.dependsOn,
-    links: assignment.links,
-    tags: assignment.tags,
-    externalIds: assignment.externalIds,
-    created: assignment.created,
-    updated: assignment.updated,
-    archived: assignment.archived,
-    archivedAt: assignment.archivedAt,
-    archivedReason: assignment.archivedReason,
-    ...deriveStatusVirtuals(assignment, config.terminalStatuses),
+    statusLabel: statusLabelFor(config, ticket.status),
+    priority: ticket.priority as TicketSummary['priority'],
+    assignee: ticket.assignee,
+    dependsOn: ticket.dependsOn,
+    links: ticket.links,
+    tags: ticket.tags,
+    externalIds: ticket.externalIds,
+    created: ticket.created,
+    updated: ticket.updated,
+    archived: ticket.archived,
+    archivedAt: ticket.archivedAt,
+    archivedReason: ticket.archivedReason,
+    ...deriveStatusVirtuals(ticket, config.terminalStatuses),
   };
 }
 
 async function toTicketBoardItem(
   projectsDir: string,
   projectRecord: ProjectRecord,
-  assignment: AssignmentRecord,
+  ticket: TicketRecord,
 ): Promise<TicketBoardItem> {
   // Resolve the ticket's OWN workflow once (from the already-parsed project
   // binding — no extra read) and reuse it for terminal virtuals, fact
   // declarations, and the available-transitions table.
-  const workflowId = await resolveWorkflowIdWithBinding(assignment, {
+  const workflowId = await resolveWorkflowIdWithBinding(ticket, {
     defaultWorkflow: projectRecord.project.defaultWorkflow,
     workflowByType: projectRecord.project.workflowByType,
   });
   const config = await getStatusConfig(workflowId);
   const { terminalStatuses } = config;
 
-  const ticketDir = resolve(projectRecord.projectPath, 'tickets', assignment.slug);
+  const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.slug);
   const projectDir = projectRecord.projectPath;
 
   let facts: TicketBoardItem['facts'];
@@ -2129,8 +2129,8 @@ async function toTicketBoardItem(
     const { computeFacts } = await import('../lifecycle/facts.js');
     facts = await computeFacts({
       ticketDir,
-      frontmatter: assignment as unknown as import('../lifecycle/types.js').TicketFrontmatter,
-      body: assignment.body,
+      frontmatter: ticket as unknown as import('../lifecycle/types.js').TicketFrontmatter,
+      body: ticket.body,
       projectDir,
       terminalStatuses,
       declarations: config.factDeclarations,
@@ -2140,15 +2140,15 @@ async function toTicketBoardItem(
   }
 
   return {
-    ...toTicketSummary(assignment, config),
+    ...toTicketSummary(ticket, config),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
-    blockedReason: assignment.blockedReason,
+    blockedReason: ticket.blockedReason,
     availableTransitions: await getAvailableTransitions(
       projectsDir,
       projectRecord.summary.slug,
-      assignment.slug,
-      assignment,
+      ticket.slug,
+      ticket,
       { resolvedConfig: config },
     ),
     facts,
@@ -2164,17 +2164,17 @@ const DEFAULT_GRAPH_COLORS: Record<string, string> = {
   review: 'fill:#c6911e,stroke:#7a5a10,color:#ffffff',
 };
 
-function buildDependencyGraph(assignments: AssignmentRecord[]): string | null {
+function buildDependencyGraph(tickets: TicketRecord[]): string | null {
   const edges: string[] = [];
   const usedStatuses = new Set<string>();
 
-  for (const assignment of assignments) {
-    for (const dependency of assignment.dependsOn) {
-      const depStatus = findAssignmentStatus(assignments, dependency);
+  for (const ticket of tickets) {
+    for (const dependency of ticket.dependsOn) {
+      const depStatus = findTicketStatus(tickets, dependency);
       usedStatuses.add(depStatus);
-      usedStatuses.add(assignment.status);
+      usedStatuses.add(ticket.status);
       edges.push(
-        `    ${dependency}:::${depStatus} --> ${assignment.slug}:::${assignment.status}`,
+        `    ${dependency}:::${depStatus} --> ${ticket.slug}:::${ticket.status}`,
       );
     }
   }
@@ -2192,15 +2192,15 @@ function buildDependencyGraph(assignments: AssignmentRecord[]): string | null {
   return ['graph TD', ...edges, ...classDefs].join('\n');
 }
 
-function findAssignmentStatus(assignments: AssignmentRecord[], slug: string): string {
-  return assignments.find((assignment) => assignment.slug === slug)?.status ?? 'pending';
+function findTicketStatus(tickets: TicketRecord[], slug: string): string {
+  return tickets.find((ticket) => ticket.slug === slug)?.status ?? 'pending';
 }
 
 async function getAvailableTransitions(
   projectsDir: string,
   projectSlug: string,
   ticketSlug: string,
-  assignment: AssignmentRecord,
+  ticket: TicketRecord,
   options?: {
     dependencyStatusMap?: ReadonlyMap<string, string>;
     traces?: OverviewTraces;
@@ -2208,31 +2208,31 @@ async function getAvailableTransitions(
      * ticket's workflow isn't re-resolved (and project.md re-read) per call. */
     resolvedConfig?: ResolvedStatusConfig;
   },
-): Promise<AssignmentTransitionAction[]> {
+): Promise<TicketTransitionAction[]> {
   const projectPath = resolve(projectsDir, projectSlug);
   // Transitions offered come from the ticket's OWN workflow (its transition
   // table + terminal set), resolved via the project binding.
-  const config = options?.resolvedConfig ?? (await statusConfigForAssignment(assignment, projectPath));
+  const config = options?.resolvedConfig ?? (await statusConfigForTicket(ticket, projectPath));
   const transitionDefs = getTransitionDefinitions(config);
-  const actions: AssignmentTransitionAction[] = [];
+  const actions: TicketTransitionAction[] = [];
   const traces = options?.traces;
 
   for (const definition of transitionDefs) {
-    const target = getTargetStatus(assignment.status, definition.command, config.transitionTable);
+    const target = getTargetStatus(ticket.status, definition.command, config.transitionTable);
     // Only valid transitions reach the client; the kanban inline picker renders them directly.
     if (target === null) continue;
 
     let warning: string | null = null;
 
-    if (definition.command === 'start' && !assignment.assignee) {
+    if (definition.command === 'start' && !ticket.assignee) {
       warning = 'No assignee set — consider assigning before starting.';
     }
 
-    if (definition.command === 'start' && assignment.dependsOn.length > 0) {
+    if (definition.command === 'start' && ticket.dependsOn.length > 0) {
       const t0 = traces ? performance.now() : 0;
       const unmetDependencies = await getUnmetDependencies(
         projectPath,
-        assignment.dependsOn,
+        ticket.dependsOn,
         config.terminalStatuses,
         options?.dependencyStatusMap,
       );
@@ -2286,7 +2286,7 @@ async function getUnmetDependencies(
     }
 
     const content = await readFile(dependencyPath, 'utf-8');
-    const parsed = parseAssignmentFull(content);
+    const parsed = parseTicketFull(content);
     if (!terminals.has(parsed.status)) {
       unmet.push(`${dependency} (${parsed.status})`);
     }
@@ -2342,7 +2342,7 @@ function topStaleReason(reasons: StaleReason[]): StaleReason | null {
     .sort((a, b) => STALE_SEVERITY_RANK[b.severity] - STALE_SEVERITY_RANK[a.severity])[0];
 }
 
-/** Activity age from `progress.md` mtime (the honest signal — NOT assignment
+/** Activity age from `progress.md` mtime (the honest signal — NOT ticket
  * `updated`, which recompute bumps). `null` when there is no progress.md, so the
  * classifier's activity-based reason fails safe (never fires on unknown). */
 async function readProgressActivityMs(progressPath: string, now: number): Promise<number | null> {
@@ -2354,22 +2354,22 @@ async function readProgressActivityMs(progressPath: string, now: number): Promis
   }
 }
 
-/** Run the shared staleness classifier for one assignment record. */
-function classifyAssignmentRecord(
-  assignment: AssignmentRecord,
+/** Run the shared staleness classifier for one ticket record. */
+function classifyTicketRecord(
+  ticket: TicketRecord,
   terminalStatuses: ReadonlySet<string>,
   depsSatisfied: boolean | null,
   lastActivityMs: number | null,
   thresholds: StaleThresholds,
 ): StaleReason[] {
-  const virtuals = deriveStatusVirtuals(assignment, terminalStatuses);
+  const virtuals = deriveStatusVirtuals(ticket, terminalStatuses);
   return classifyNeedsAttention(
     {
       phase: virtuals.phase,
       disposition: virtuals.disposition,
-      isTerminal: terminalStatuses.has(assignment.status),
-      assignee: assignment.assignee ?? null,
-      blockedReason: assignment.blockedReason,
+      isTerminal: terminalStatuses.has(ticket.status),
+      assignee: ticket.assignee ?? null,
+      blockedReason: ticket.blockedReason,
       depsSatisfied,
       // plan_awaiting_approval is deferred to the decision inbox's plan-approval
       // category for now; pass values that keep that reason dormant.
@@ -2383,9 +2383,9 @@ function classifyAssignmentRecord(
 }
 
 /**
- * Read-only scan of EVERY active assignment (project + standalone, unpaged) for
+ * Read-only scan of EVERY active ticket (project + standalone, unpaged) for
  * the staleness watchdog. Reuses the same classifier + resolved terminals +
- * config thresholds as the overview, keyed by assignment id (stable UUID). Never
+ * config thresholds as the overview, keyed by ticket id (stable UUID). Never
  * writes anything.
  */
 export async function collectStaleCandidates(
@@ -2408,33 +2408,33 @@ export async function collectStaleCandidates(
       workflowByType: record.project.workflowByType,
     };
     const depMap = new Map<string, string>();
-    for (const a of record.assignments) depMap.set(a.slug, a.status);
-    for (const assignment of activeAssignments(record.assignments)) {
+    for (const a of record.tickets) depMap.set(a.slug, a.status);
+    for (const ticket of activeTickets(record.tickets)) {
       // Terminal set from the ticket's OWN workflow, so a custom terminal status
       // isn't misread as "active" and wrongly flagged stale.
       const { terminalStatuses } = await getStatusConfig(
-        await resolveWorkflowIdWithBinding(assignment, binding),
+        await resolveWorkflowIdWithBinding(ticket, binding),
       );
       const depsSatisfied =
-        assignment.dependsOn.length === 0
+        ticket.dependsOn.length === 0
           ? true
-          : (await getUnmetDependencies(projectPath, assignment.dependsOn, terminalStatuses, depMap)).length === 0;
+          : (await getUnmetDependencies(projectPath, ticket.dependsOn, terminalStatuses, depMap)).length === 0;
       const lastActivityMs = await readProgressActivityMs(
-        resolve(projectPath, 'tickets', assignment.slug, 'progress.md'),
+        resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
         now,
       );
-      const reasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
+      const reasons = classifyTicketRecord(ticket, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
       if (reasons.length > 0) {
-        out.push({ ticketId: assignment.id, projectSlug: record.summary.slug, reasons });
+        out.push({ ticketId: ticket.id, projectSlug: record.summary.slug, reasons });
       }
     }
   }
 
   for (const sr of standaloneRecords) {
     if (sr.record.archived === true) continue;
-    const { terminalStatuses } = await statusConfigForAssignment(sr.record, null);
+    const { terminalStatuses } = await statusConfigForTicket(sr.record, null);
     const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
-    const reasons = classifyAssignmentRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
+    const reasons = classifyTicketRecord(sr.record, terminalStatuses, true, lastActivityMs, thresholds);
     if (reasons.length > 0) out.push({ ticketId: sr.record.id, projectSlug: null, reasons });
   }
 
@@ -2459,22 +2459,22 @@ async function buildOverviewSegmentBuckets(
   const newestPool: Array<{ created: string; clone: AttentionItem }> = [];
 
   for (const record of projectRecords) {
-    // Cascade-hide: an archived project contributes none of its assignments to
+    // Cascade-hide: an archived project contributes none of its tickets to
     // the overview segments.
     if (isProjectArchived(record.summary)) continue;
 
     // Build a dep-status map once per project so getUnmetDependencies can resolve
-    // dependency status from memory instead of re-reading each dep's assignment.md.
-    // (Built over ALL assignments so dependency resolution is unaffected by hiding.)
+    // dependency status from memory instead of re-reading each dep's ticket.md.
+    // (Built over ALL tickets so dependency resolution is unaffected by hiding.)
     const depMap = new Map<string, string>();
-    for (const a of record.assignments) {
+    for (const a of record.tickets) {
       depMap.set(a.slug, a.status);
     }
 
-    // Individually-archived assignments are hidden from the overview segments.
-    const visibleAssignments = activeAssignments(record.assignments);
+    // Individually-archived tickets are hidden from the overview segments.
+    const visibleTickets = activeTickets(record.tickets);
 
-    // Resolve every per-assignment getAvailableTransitions call for this project
+    // Resolve every per-ticket getAvailableTransitions call for this project
     // in parallel, then run the synchronous classification logic below over the results.
     const projectPath = resolve(projectsDir, record.summary.slug);
     const binding: ProjectWorkflowBinding = {
@@ -2482,18 +2482,18 @@ async function buildOverviewSegmentBuckets(
       workflowByType: record.project.workflowByType,
     };
     const resolvedTransitions = await Promise.all(
-      visibleAssignments.map(async (assignment) => {
+      visibleTickets.map(async (ticket) => {
         // The ticket's OWN workflow config → its transition table + terminal set.
         const resolvedConfig = await getStatusConfig(
-          await resolveWorkflowIdWithBinding(assignment, binding),
+          await resolveWorkflowIdWithBinding(ticket, binding),
         );
         const ticketTerminal = resolvedConfig.terminalStatuses;
         const t0 = traces ? performance.now() : 0;
         const availableTransitions = await getAvailableTransitions(
           projectsDir,
           record.summary.slug,
-          assignment.slug,
-          assignment,
+          ticket.slug,
+          ticket,
           { traces, dependencyStatusMap: depMap, resolvedConfig },
         );
         if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
@@ -2501,57 +2501,57 @@ async function buildOverviewSegmentBuckets(
         // + one progress.md stat). depsSatisfied via the in-memory depMap; no
         // extra disk read when there are no deps.
         const depsSatisfied =
-          assignment.dependsOn.length === 0
+          ticket.dependsOn.length === 0
             ? true
-            : (await getUnmetDependencies(projectPath, assignment.dependsOn, ticketTerminal, depMap))
+            : (await getUnmetDependencies(projectPath, ticket.dependsOn, ticketTerminal, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
-          resolve(projectPath, 'tickets', assignment.slug, 'progress.md'),
+          resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
           now,
         );
-        return { assignment, availableTransitions, depsSatisfied, lastActivityMs, ticketTerminal };
+        return { ticket, availableTransitions, depsSatisfied, lastActivityMs, ticketTerminal };
       }),
     );
 
     for (const {
-      assignment,
+      ticket,
       availableTransitions,
       depsSatisfied,
       lastActivityMs,
       ticketTerminal,
     } of resolvedTransitions) {
-      const segmentId = STATUS_TO_SEGMENT[assignment.status];
-      const isTerminal = ticketTerminal.has(assignment.status);
-      const staleReasons = classifyAssignmentRecord(
-        assignment,
+      const segmentId = STATUS_TO_SEGMENT[ticket.status];
+      const isTerminal = ticketTerminal.has(ticket.status);
+      const staleReasons = classifyTicketRecord(
+        ticket,
         ticketTerminal,
         depsSatisfied,
         lastActivityMs,
         staleThresholds,
       );
       const stale = staleReasons.length > 0;
-      const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
-      const baseId = `${record.summary.slug}:${assignment.slug}`;
+      const agingMs = Math.max(0, now - parseTimestamp(ticket.updated));
+      const baseId = `${record.summary.slug}:${ticket.slug}`;
 
       const shared = {
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
-        ticketSlug: assignment.slug,
-        assignmentTitle: assignment.title,
-        status: assignment.status,
-        updated: assignment.updated,
-        href: `/t/${assignment.id}`,
-        blockedReason: assignment.blockedReason,
+        ticketSlug: ticket.slug,
+        ticketTitle: ticket.title,
+        status: ticket.status,
+        updated: ticket.updated,
+        href: `/t/${ticket.id}`,
+        blockedReason: ticket.blockedReason,
         stale,
         agingMs,
-        assignee: assignment.assignee ?? null,
+        assignee: ticket.assignee ?? null,
         availableTransitions,
       };
 
       if (segmentId) {
         const reason =
-          segmentId === 'blocked' && assignment.blockedReason
-            ? assignment.blockedReason
+          segmentId === 'blocked' && ticket.blockedReason
+            ? ticket.blockedReason
             : SEGMENT_REASON[segmentId];
         const primary: AttentionItem = {
           ...shared,
@@ -2577,7 +2577,7 @@ async function buildOverviewSegmentBuckets(
 
       if (!isTerminal) {
         newestPool.push({
-          created: assignment.created,
+          created: ticket.created,
           clone: {
             ...shared,
             id: `${baseId}:newest`,
@@ -2599,46 +2599,46 @@ async function buildOverviewSegmentBuckets(
       if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
       const lastActivityMs = await readProgressActivityMs(resolve(sr.ticketDir, 'progress.md'), now);
       // Standalone → the ticket's own workflow terminal set (no project binding).
-      const { terminalStatuses: ticketTerminal } = await statusConfigForAssignment(sr.record, null);
+      const { terminalStatuses: ticketTerminal } = await statusConfigForTicket(sr.record, null);
       return { sr, availableTransitions, lastActivityMs, ticketTerminal };
     }),
   );
 
   for (const { sr, availableTransitions, lastActivityMs, ticketTerminal } of resolvedStandaloneTransitions) {
-    const assignment = sr.record;
-    const segmentId = STATUS_TO_SEGMENT[assignment.status];
-    const isTerminal = ticketTerminal.has(assignment.status);
-    // Standalone assignments cannot declare dependencies → depsSatisfied is true.
-    const staleReasons = classifyAssignmentRecord(
-      assignment,
+    const ticket = sr.record;
+    const segmentId = STATUS_TO_SEGMENT[ticket.status];
+    const isTerminal = ticketTerminal.has(ticket.status);
+    // Standalone tickets cannot declare dependencies → depsSatisfied is true.
+    const staleReasons = classifyTicketRecord(
+      ticket,
       ticketTerminal,
       true,
       lastActivityMs,
       staleThresholds,
     );
     const stale = staleReasons.length > 0;
-    const agingMs = Math.max(0, now - parseTimestamp(assignment.updated));
+    const agingMs = Math.max(0, now - parseTimestamp(ticket.updated));
     const baseId = `standalone:${sr.id}`;
 
     const shared = {
       projectSlug: null,
       projectTitle: null,
-      ticketSlug: assignment.slug || sr.id,
-      assignmentTitle: assignment.title,
-      status: assignment.status,
-      updated: assignment.updated,
+      ticketSlug: ticket.slug || sr.id,
+      ticketTitle: ticket.title,
+      status: ticket.status,
+      updated: ticket.updated,
       href: `/t/${sr.id}`,
-      blockedReason: assignment.blockedReason,
+      blockedReason: ticket.blockedReason,
       stale,
       agingMs,
-      assignee: assignment.assignee ?? null,
+      assignee: ticket.assignee ?? null,
       availableTransitions,
     };
 
     if (segmentId) {
       const reason =
-        segmentId === 'blocked' && assignment.blockedReason
-          ? assignment.blockedReason
+        segmentId === 'blocked' && ticket.blockedReason
+          ? ticket.blockedReason
           : SEGMENT_REASON[segmentId];
       buckets[segmentId].push({
         ...shared,
@@ -2662,7 +2662,7 @@ async function buildOverviewSegmentBuckets(
 
     if (!isTerminal) {
       newestPool.push({
-        created: assignment.created,
+        created: ticket.created,
         clone: {
           ...shared,
           id: `${baseId}:newest`,
@@ -2756,33 +2756,33 @@ function buildRecentActivity(
       summary: `Project status is ${record.summary.status}.`,
     });
 
-    for (const assignment of activeAssignments(record.assignments)) {
+    for (const ticket of activeTickets(record.tickets)) {
       activity.push({
-        id: `assignment:${record.summary.slug}:${assignment.slug}`,
-        type: 'assignment',
-        title: assignment.title,
-        updated: assignment.updated,
-        href: `/t/${assignment.id}`,
+        id: `ticket:${record.summary.slug}:${ticket.slug}`,
+        type: 'ticket',
+        title: ticket.title,
+        updated: ticket.updated,
+        href: `/t/${ticket.id}`,
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
-        ticketSlug: assignment.slug,
-        summary: `Assignment is ${assignment.status} with ${assignment.priority} priority.`,
+        ticketSlug: ticket.slug,
+        summary: `Ticket is ${ticket.status} with ${ticket.priority} priority.`,
       });
     }
   }
 
   for (const sr of standaloneRecords) {
-    const assignment = sr.record;
+    const ticket = sr.record;
     activity.push({
-      id: `standalone-assignment:${sr.id}`,
-      type: 'assignment',
-      title: assignment.title,
-      updated: assignment.updated,
+      id: `standalone-ticket:${sr.id}`,
+      type: 'ticket',
+      title: ticket.title,
+      updated: ticket.updated,
       href: `/t/${sr.id}`,
       projectSlug: null,
       projectTitle: null,
-      ticketSlug: assignment.slug || sr.id,
-      summary: `Standalone assignment is ${assignment.status} with ${assignment.priority} priority.`,
+      ticketSlug: ticket.slug || sr.id,
+      summary: `Standalone ticket is ${ticket.status} with ${ticket.priority} priority.`,
     });
   }
 
@@ -2828,11 +2828,11 @@ async function countOpenQuestions(
   }
 }
 
-function getProjectActivityTimestamp(projectUpdated: string, assignments: AssignmentRecord[]): string {
+function getProjectActivityTimestamp(projectUpdated: string, tickets: TicketRecord[]): string {
   let latest = projectUpdated;
-  for (const assignment of assignments) {
-    if (compareTimestamps(assignment.updated, latest) > 0) {
-      latest = assignment.updated;
+  for (const ticket of tickets) {
+    if (compareTimestamps(ticket.updated, latest) > 0) {
+      latest = ticket.updated;
     }
   }
   return latest;
@@ -2847,7 +2847,7 @@ function getDocumentPath(
   switch (documentType) {
     case 'project':
       return resolve(projectsDir, projectSlug, 'project.md');
-    case 'assignment':
+    case 'ticket':
     case 'ticket':
       return ticketSlug
         ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md')
@@ -2881,18 +2881,18 @@ function getEditableDocumentTitle(
   switch (documentType) {
     case 'project':
       return `Edit Project: ${projectSlug}`;
-    case 'assignment':
-      return `Edit Assignment: ${ticketSlug || 'assignment'}`;
+    case 'ticket':
+      return `Edit Ticket: ${ticketSlug || 'ticket'}`;
     case 'ticket':
       return `Edit Ticket: ${ticketSlug || 'ticket'}`;
     case 'plan':
-      return `Edit Plan: ${ticketSlug || 'assignment'}`;
+      return `Edit Plan: ${ticketSlug || 'ticket'}`;
     case 'scratchpad':
-      return `Edit Scratchpad: ${ticketSlug || 'assignment'}`;
+      return `Edit Scratchpad: ${ticketSlug || 'ticket'}`;
     case 'handoff':
-      return `Append Handoff: ${ticketSlug || 'assignment'}`;
+      return `Append Handoff: ${ticketSlug || 'ticket'}`;
     case 'decision-record':
-      return `Append Decision: ${ticketSlug || 'assignment'}`;
+      return `Append Decision: ${ticketSlug || 'ticket'}`;
     case 'playbook':
       return `Edit Playbook: ${projectSlug}`;
     default:

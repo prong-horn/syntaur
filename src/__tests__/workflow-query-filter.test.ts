@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { compileQuery, validateQuery } from '../utils/query/index.js';
 import { buildQueryRegistry } from '../utils/fact-registry.js';
-import { ASSIGNMENT_FIELDS } from '../utils/query/index.js';
+import { TICKET_FIELDS } from '../utils/query/index.js';
 import { boardItemToQueryItem, filterBoardItems } from '../../dashboard/src/lib/queryFilter';
-import type { AssignmentBoardItem } from '../../dashboard/src/hooks/useProjects';
+import type { TicketBoardItem } from '../../dashboard/src/hooks/useProjects';
 
 let seq = 0;
-function makeItem(overrides: Partial<AssignmentBoardItem> = {}): AssignmentBoardItem {
+function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
   seq += 1;
   return {
     id: `a-${seq}`,
@@ -38,12 +38,12 @@ function makeItem(overrides: Partial<AssignmentBoardItem> = {}): AssignmentBoard
     phaseAge: null,
     facts: {},
     ...overrides,
-  } as AssignmentBoardItem;
+  } as TicketBoardItem;
 }
 
 describe('workflow AQL field', () => {
   it('registers `workflow` in the built-in vocabulary', () => {
-    expect('workflow' in ASSIGNMENT_FIELDS).toBe(true);
+    expect('workflow' in TICKET_FIELDS).toBe(true);
     expect(validateQuery('workflow:bug')).toEqual([]);
   });
 

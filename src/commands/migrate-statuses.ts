@@ -19,8 +19,8 @@ export interface MigrateStatusesOptions {
 
 interface Candidate {
   projectSlug: string | null;
-  assignmentSlug: string;
-  assignmentMd: string;
+  ticketSlug: string;
+  ticketMd: string;
   fromStatus: string;
   toStatus: string;
 }
@@ -55,46 +55,61 @@ async function collectCandidates(baseDirs: string[]): Promise<Candidate[]> {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
 
-      // Standalone shape: baseDir contains uuid folders directly with assignment.md
-      const directAssignmentMd = resolve(baseDir, m.name, 'assignment.md');
-      if (await fileExists(directAssignmentMd)) {
-        const fm = await parseSafe(directAssignmentMd);
-        if (fm && PROMOTABLE_STATUSES.has(fm.status)) {
-          const content = await readFile(directAssignmentMd, 'utf-8');
-          if (objectiveIsFleshedOut(content) && hasAcceptanceCriteria(content)) {
-            candidates.push({
-              projectSlug: null,
-              assignmentSlug: m.name,
-              assignmentMd: directAssignmentMd,
-              fromStatus: fm.status,
-              toStatus: 'ready_for_planning',
-            });
-          }
-        }
-        continue;
-      }
-
-      // Project shape: baseDir/projectSlug/assignments/<slug>/assignment.md
-      const assignmentsDir = resolve(baseDir, m.name, 'assignments');
-      if (!(await fileExists(assignmentsDir))) continue;
-      const entries = await readdir(assignmentsDir, { withFileTypes: true });
-      for (const a of entries) {
-        if (!a.isDirectory()) continue;
-        if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-        const assignmentMd = resolve(assignmentsDir, a.name, 'assignment.md');
-        if (!(await fileExists(assignmentMd))) continue;
-        const fm = await parseSafe(assignmentMd);
-        if (!fm || !PROMOTABLE_STATUSES.has(fm.status)) continue;
-        const content = await readFile(assignmentMd, 'utf-8');
-        if (!objectiveIsFleshedOut(content)) continue;
-        if (!hasAcceptanceCriteria(content)) continue;
+      const pushCandidate = async (
+        projectSlug: string | null,
+        ticketSlug: string,
+        ticketMd: string,
+      ): Promise<void> => {
+        const fm = await parseSafe(ticketMd);
+        if (!fm || !PROMOTABLE_STATUSES.has(fm.status)) return;
+        const content = await readFile(ticketMd, 'utf-8');
+        if (!objectiveIsFleshedOut(content) || !hasAcceptanceCriteria(content)) return;
         candidates.push({
-          projectSlug: m.name,
-          assignmentSlug: a.name,
-          assignmentMd,
+          projectSlug,
+          ticketSlug,
+          ticketMd,
           fromStatus: fm.status,
           toStatus: 'ready_for_planning',
         });
+      };
+
+      // Standalone shape (v1): baseDir/<uuid>/assignment.md
+      const directLegacyTicketMd = resolve(baseDir, m.name, 'assignment.md');
+      if (await fileExists(directLegacyTicketMd)) {
+        await pushCandidate(null, m.name, directLegacyTicketMd);
+        continue;
+      }
+
+      // Standalone shape (Phase A): baseDir/<uuid>/ticket.md
+      const directTicketMd = resolve(baseDir, m.name, 'ticket.md');
+      if (await fileExists(directTicketMd)) {
+        await pushCandidate(null, m.name, directTicketMd);
+        continue;
+      }
+
+      // Project shape (v1): baseDir/<project>/assignments/<slug>/assignment.md
+      const legacyTicketsDir = resolve(baseDir, m.name, 'assignments');
+      if (await fileExists(legacyTicketsDir)) {
+        const entries = await readdir(legacyTicketsDir, { withFileTypes: true });
+        for (const a of entries) {
+          if (!a.isDirectory()) continue;
+          if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+          const ticketMd = resolve(legacyTicketsDir, a.name, 'assignment.md');
+          if (!(await fileExists(ticketMd))) continue;
+          await pushCandidate(m.name, a.name, ticketMd);
+        }
+      }
+
+      // Project shape (Phase A): baseDir/<project>/tickets/<slug>/ticket.md
+      const ticketsBase = resolve(baseDir, m.name, 'tickets');
+      if (!(await fileExists(ticketsBase))) continue;
+      const entries = await readdir(ticketsBase, { withFileTypes: true });
+      for (const a of entries) {
+        if (!a.isDirectory()) continue;
+        if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+        const ticketMd = resolve(ticketsBase, a.name, 'ticket.md');
+        if (!(await fileExists(ticketMd))) continue;
+        await pushCandidate(m.name, a.name, ticketMd);
       }
     }
   }
@@ -120,14 +135,14 @@ export async function migrateStatusesCommand(
   const candidates = await collectCandidates([projectsBase, standaloneBase]);
 
   if (candidates.length === 0) {
-    console.log('No promotion candidates found. (Looking for pending assignments with a fleshed-out Objective and at least one Acceptance Criterion.)');
+    console.log('No promotion candidates found. (Looking for pending tickets with a fleshed-out Objective and at least one Acceptance Criterion.)');
     return;
   }
 
   console.log(`Found ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} for promotion ${options.apply ? '(applying)' : '(dry-run; use --apply to write)'}:`);
   console.log('');
   for (const c of candidates) {
-    const label = c.projectSlug ? `${c.projectSlug}/${c.assignmentSlug}` : `standalone/${c.assignmentSlug}`;
+    const label = c.projectSlug ? `${c.projectSlug}/${c.ticketSlug}` : `standalone/${c.ticketSlug}`;
     console.log(`  ${label}: ${c.fromStatus} -> ${c.toStatus}`);
   }
   console.log('');
@@ -144,7 +159,7 @@ export async function migrateStatusesCommand(
   // instrumented path, but the guard keeps them no-emit defensively.)
   await withSuppressedEvents(async () => {
     for (const c of candidates) {
-      const content = await readFile(c.assignmentMd, 'utf-8');
+      const content = await readFile(c.ticketMd, 'utf-8');
       const updated = appendStatusHistoryEntry(
         updateTicketFile(content, {
           status: c.toStatus,
@@ -152,9 +167,9 @@ export async function migrateStatusesCommand(
         }),
         { at: now, from: c.fromStatus, to: c.toStatus, command: 'promote', by: null },
       );
-      await writeFileForce(c.assignmentMd, updated);
+      await writeFileForce(c.ticketMd, updated);
       migrated += 1;
     }
   });
-  console.log(`Migrated ${migrated} assignment${migrated === 1 ? '' : 's'}.`);
+  console.log(`Migrated ${migrated} ticket${migrated === 1 ? '' : 's'}.`);
 }

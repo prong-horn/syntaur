@@ -69,7 +69,7 @@ describe('parseComments round-trip', () => {
       timestamp: '2026-04-20T10:00:00Z',
     });
     const parsed = parseComments(template);
-    expect(parsed.assignment).toBe('ex');
+    expect(parsed.ticket).toBe('ex');
     expect(parsed.entryCount).toBe(0);
     expect(parsed.entries).toHaveLength(0);
   });
@@ -115,7 +115,7 @@ describe('parseComments round-trip', () => {
     ].join('\n');
 
     const parsed = parseComments(file);
-    expect(parsed.assignment).toBe('example');
+    expect(parsed.ticket).toBe('example');
     expect(parsed.entryCount).toBe(3);
     expect(parsed.entries).toHaveLength(3);
 

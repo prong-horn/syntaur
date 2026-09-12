@@ -1,5 +1,5 @@
 /**
- * Assignment-chat schema — DDL + schema-version constant.
+ * Ticket-chat schema — DDL + schema-version constant.
  *
  * Zero imports on purpose, exactly like `engagement-schema.ts`: both
  * `dashboard/session-db.ts` (which creates the tables inside `initSessionDb`)
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
   commands_json       TEXT,
   standing_fingerprint TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_chat_sessions_assignment ON chat_sessions(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_ticket ON chat_sessions(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_acp ON chat_sessions(acp_session_id);
 
 CREATE TABLE IF NOT EXISTS chat_items (
@@ -70,8 +70,8 @@ CREATE TABLE IF NOT EXISTS chat_items (
   sealed        INTEGER NOT NULL DEFAULT 0,
   json          TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_chat_items_assignment_seq ON chat_items(assignment_id, seq_first);
-CREATE INDEX IF NOT EXISTS idx_chat_items_assignment_turn ON chat_items(assignment_id, turn_id);
+CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_seq ON chat_items(assignment_id, seq_first);
+CREATE INDEX IF NOT EXISTS idx_chat_items_ticket_turn ON chat_items(assignment_id, turn_id);
 
 CREATE TABLE IF NOT EXISTS chat_harness_options (
   harness         TEXT PRIMARY KEY,

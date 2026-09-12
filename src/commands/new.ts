@@ -90,7 +90,7 @@ export async function newCommand(
     const parts = link.split('/');
     if (parts.length !== 2 || !parts.every(isValidSlug)) {
       throw new Error(
-        `Invalid link "${link}". Links must be in projectSlug/ticketSlug format (e.g., "my-project/my-assignment").`,
+        `Invalid link "${link}". Links must be in projectSlug/ticketSlug format (e.g., "my-project/my-ticket").`,
       );
     }
   }
@@ -156,7 +156,7 @@ export async function newCommand(
 
   await ensureDir(ticketDir);
 
-  const companionAssignmentRef = projectSlug === null ? id : ticketSlug;
+  const companionTicketRef = projectSlug === null ? id : ticketSlug;
 
   const files: Array<[string, string]> = [
     [
@@ -179,35 +179,35 @@ export async function newCommand(
     [
       resolve(ticketDir, 'scratchpad.md'),
       renderScratchpad({
-        ticketSlug: companionAssignmentRef,
+        ticketSlug: companionTicketRef,
         timestamp,
       }),
     ],
     [
       resolve(ticketDir, 'handoff.md'),
       renderHandoff({
-        ticketSlug: companionAssignmentRef,
+        ticketSlug: companionTicketRef,
         timestamp,
       }),
     ],
     [
       resolve(ticketDir, 'decision-record.md'),
       renderDecisionRecord({
-        ticketSlug: companionAssignmentRef,
+        ticketSlug: companionTicketRef,
         timestamp,
       }),
     ],
     [
       resolve(ticketDir, 'progress.md'),
       renderProgress({
-        ticket: companionAssignmentRef,
+        ticket: companionTicketRef,
         timestamp,
       }),
     ],
     [
       resolve(ticketDir, 'comments.md'),
       renderComments({
-        ticket: companionAssignmentRef,
+        ticket: companionTicketRef,
         timestamp,
       }),
     ],

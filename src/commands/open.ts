@@ -70,7 +70,7 @@ export async function runOpen(
         projectsDir: config.defaultProjectDir || defaultProjectDir(),
         ticketsDir: ticketsDir(),
       },
-      { kind: 'assignment', id: resolved.id },
+      { kind: 'ticket', id: resolved.id },
     );
     const mapped = recreateOutcomeToHttp(outcome);
     if (mapped.httpStatus >= 400) {
@@ -97,7 +97,7 @@ export const openCommand = new Command('open')
   .description(
     "Resolve a ticket's worktree path — print it and copy it to the clipboard. Optionally open it in your editor/terminal, or recreate the worktree if its directory is missing.",
   )
-  .argument('[assignment]', 'Ticket slug (or UUID). Omit to use --id or the session open engagement')
+  .argument('[ticket]', 'Ticket slug (or UUID). Omit to use --id or the session open engagement')
   .option('--id <uuid>', 'Resolve the ticket by its UUID (standalone or project-nested)')
   .option('--project <slug>', 'Project slug (narrows a project-nested ticket slug)')
   .option('--editor', 'Open the worktree in $VISUAL/$EDITOR (or VS Code / macOS open)')

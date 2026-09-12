@@ -16,7 +16,7 @@ export const SESSION_SORTS = [
   'started_asc',
   'duration_desc',
   'duration_asc',
-  'assignment_asc',
+  'ticket_asc',
   'agent_asc',
   'spend_desc',
   'tokens_desc',

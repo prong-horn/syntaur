@@ -179,7 +179,7 @@ async function resolveTicketContextForTarget(target: ResolvedTarget): Promise<De
  * recomputeAndWrite's lock + CAS loop — one transaction with derivation — so
  * concurrent verbs can't lose updates and a concurrent completion can't be
  * overwritten with stale non-terminal content (codex code-review finding 2).
- * Terminal assignments surface a clear error instead of a silent defer.
+ * Terminal tickets surface a clear error instead of a silent defer.
  */
 async function assertFact(
   ticket: string,
@@ -206,7 +206,7 @@ async function assertFact(
   });
   if (result.deferredTerminal) {
     throw new Error(
-      `Assignment is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+      `Ticket is ${result.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
     );
   }
   if (result.warning) {
@@ -405,12 +405,12 @@ async function applyStageFact(
    * itself, so this stays null there. */
   foldAssignee: string | null = null,
 ): Promise<void> {
-  // Refuse terminal assignments BEFORE switching the engagement — facts are
+  // Refuse terminal tickets BEFORE switching the engagement — facts are
   // frozen, so a stage switch would leave the engagement ahead of a fact that
   // can't be written (mirrors assertFact's terminal refusal; codex r2).
   if (context.terminalStatuses.has(fm.status)) {
     throw new Error(
-      `Assignment is ${fm.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
+      `Ticket is ${fm.status} (terminal) — facts are frozen. Use \`syntaur reopen\` first.`,
     );
   }
   const cwd = options.cwd ?? process.cwd();
@@ -424,7 +424,7 @@ async function applyStageFact(
       ticketSlug: fm.slug,
       stage,
     });
-    // Rework keys on the prior stage FOR THIS ASSIGNMENT only — a session that
+    // Rework keys on the prior stage FOR THIS TICKET only — a session that
     // was reviewing a DIFFERENT ticket must not mark this one as rework
     // (codex finding). Pass the resolved path so --dir is honoured.
     const prevStage =
@@ -704,7 +704,7 @@ export async function recomputeCommand(
       { cause: 'recompute', by: await inferActor(options), context, workflowResolver },
     );
     console.log(
-      `Recomputed ${summary.scanned} assignment(s): ${summary.changed} changed, ${summary.deferredTerminal} terminal (deferred).`,
+      `Recomputed ${summary.scanned} ticket(s): ${summary.changed} changed, ${summary.deferredTerminal} terminal (deferred).`,
     );
     for (const w of summary.warnings) console.warn(`Warning: ${w}`);
     return;

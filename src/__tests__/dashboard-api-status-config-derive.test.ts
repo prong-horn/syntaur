@@ -74,7 +74,7 @@ async function readConfigMd(): Promise<string> {
   return readFile(join(tmpHome, '.syntaur', 'config.md'), 'utf-8');
 }
 
-async function seedAssignment(dir: string, slug: string, status: string): Promise<string> {
+async function seedTicket(dir: string, slug: string, status: string): Promise<string> {
   await mkdir(dir, { recursive: true });
   const md = `---
 id: 22222222-2222-2222-2222-${slug.padEnd(12, '0').slice(0, 12)}
@@ -348,7 +348,7 @@ describe('custom status set with no transitions (P1-1)', () => {
 describe('deep derive shape validation before mutation (P1-2)', () => {
   it('a null rung returns invalid-derive 400 (not 500) and leaves ticket files untouched', async () => {
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'review');
+    const assignPath = await seedTicket(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'review');
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({
       statuses: droppedStatuses,
@@ -379,7 +379,7 @@ describe('validation before mutation', () => {
   it('an invalid-derive payload with pending resolutions does NOT touch ticket files', async () => {
     // status "review" will be dropped, with a ticket in it + a resolution.
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'review');
+    const assignPath = await seedTicket(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'review');
 
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({
@@ -400,7 +400,7 @@ describe('validation before mutation', () => {
 
   it('an invalid-facts payload with pending resolutions does NOT touch ticket files', async () => {
     await seedConfigWith();
-    const assignPath = await seedAssignment(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'review');
+    const assignPath = await seedTicket(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'review');
 
     const droppedStatuses = statuses.filter((s) => s.id !== 'review');
     const res = await post({

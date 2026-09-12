@@ -48,14 +48,14 @@ async function resolveTarget(target: string, options: ArchiveOptions): Promise<R
     if (!isValidSlug(target)) {
       throw new Error(`Invalid ticket slug "${target}".`);
     }
-    const assignmentMd = resolve(baseDir, options.project, 'tickets', target, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) {
+    const ticketMd = resolve(baseDir, options.project, 'tickets', target, 'ticket.md');
+    if (!(await fileExists(ticketMd))) {
       throw new Error(`Ticket "${target}" not found in project "${options.project}".`);
     }
-    return { kind: 'ticket', filePath: assignmentMd, label: `ticket "${options.project}/${target}"` };
+    return { kind: 'ticket', filePath: ticketMd, label: `ticket "${options.project}/${target}"` };
   }
 
-  // 2. Assignment by UUID (standalone or project-nested).
+  // 2. Ticket by UUID (standalone or project-nested).
   const resolved = await resolveTicketById(baseDir, ticketsDirFn(), target);
   if (resolved) {
     return {
@@ -92,7 +92,7 @@ async function writeArchiveState(
 }
 
 /**
- * Emit an `archived`/`restored` audit event for an ASSIGNMENT target only
+ * Emit an `archived`/`restored` audit event for an TICKET target only
  * (project archives have no ticket id and are out of v1 scope). Reads the
  * id + project slug off the freshly-written frontmatter. Best-effort.
  */

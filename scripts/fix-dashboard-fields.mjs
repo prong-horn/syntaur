@@ -47,7 +47,7 @@ function safeReplace(content) {
   for (const [a, b] of REPS) c = c.split(a).join(b);
   // Restore DB column names
   c = c.replace(/\bticket_id\b/g, 'assignment_id');
-  c = c.replace(/\bticket_slug\b/g, 'assignment_slug');
+  c = c.replace(/\bticket_slug\b/g, 'ticket_slug');
   return c;
 }
 

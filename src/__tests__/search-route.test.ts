@@ -52,7 +52,7 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'plan',
         projectSlug: 'proj',
-        ticketSlug: 'my-assignment',
+        ticketSlug: 'my-ticket',
         ticketId: 'ticket-uuid-1',
         standalone: false,
         section: 'Open Questions',
@@ -80,7 +80,7 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'ticket',
         projectSlug: 'proj',
-        ticketSlug: 'my-assignment',
+        ticketSlug: 'my-ticket',
         ticketId: 'ticket-uuid-3',
         standalone: false,
         section: 'Acceptance Criteria',
@@ -95,7 +95,7 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'comments',
         projectSlug: 'proj',
-        ticketSlug: 'my-assignment',
+        ticketSlug: 'my-ticket',
         ticketId: 'ticket-uuid-4',
         standalone: false,
         section: 'Open Questions',
@@ -110,7 +110,7 @@ describe('routeForHit', () => {
       hit({
         fileKind: 'progress',
         projectSlug: 'proj',
-        ticketSlug: 'my-assignment',
+        ticketSlug: 'my-ticket',
         ticketId: 'ticket-uuid-5',
         standalone: false,
         section: 'Day 1',

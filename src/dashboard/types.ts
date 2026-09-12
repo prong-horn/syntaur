@@ -1,7 +1,7 @@
-import type { AssignmentStatus, TransitionCommand } from '../lifecycle/types.js';
+import type { TicketStatus, TransitionCommand } from '../lifecycle/types.js';
 
 // Re-export for convenience in dashboard modules
-export type { AssignmentStatus, TransitionCommand } from '../lifecycle/types.js';
+export type { TicketStatus, TransitionCommand } from '../lifecycle/types.js';
 
 // --- API Response Types ---
 
@@ -50,7 +50,7 @@ export interface TicketSummary {
   title: string;
   status: string;
   type: string | null;
-  /** Explicit `workflow:` override stored on the assignment (null → resolved via binding). */
+  /** Explicit `workflow:` override stored on the ticket (null → resolved via binding). */
   workflow: string | null;
   /** The workflow id this ticket resolves to (drives its lifecycle/board column). */
   resolvedWorkflow: string;
@@ -72,7 +72,7 @@ export interface TicketSummary {
   /**
    * Loader-derived (NOT stored). The `at` of the transition into the current
    * status iff that status is terminal (lifecycle `completed`/`failed`), else
-   * null — so an assignment reopened after completion reports null. Sourced from
+   * null — so an ticket reopened after completion reports null. Sourced from
    * `statusHistory`. See `deriveStatusVirtuals` in api.ts.
    */
   completedAt: string | null;
@@ -100,25 +100,25 @@ export interface TicketSummary {
 }
 
 export interface TicketBoardItem extends TicketSummary {
-  /** `null` for standalone assignments that live outside any project. */
+  /** `null` for standalone tickets that live outside any project. */
   projectSlug: string | null;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectTitle: string | null;
   blockedReason: string | null;
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
 }
 
-/** One archived assignment row shown on the canonical Archive page. */
-export interface ArchivedAssignmentItem {
+/** One archived ticket row shown on the canonical Archive page. */
+export interface ArchivedTicketItem {
   id: string;
   slug: string;
   title: string;
   status: string;
   type: string | null;
   priority: 'low' | 'medium' | 'high' | 'critical';
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectTitle: string | null;
   /** This row's own archive flag — distinguishes individually-archived from cascade-hidden children. */
   archived: boolean;
@@ -127,21 +127,21 @@ export interface ArchivedAssignmentItem {
   updated: string;
 }
 
-/** One archived project (expandable to ALL its child assignments) on the Archive page. */
+/** One archived project (expandable to ALL its child tickets) on the Archive page. */
 export interface ArchivedProjectItem {
   slug: string;
   title: string;
   archivedAt: string | null;
   archivedReason: string | null;
   /** ALL children, each carrying its own `archived` flag for the badge. */
-  assignments: ArchivedAssignmentItem[];
+  tickets: ArchivedTicketItem[];
 }
 
 export interface ArchiveResponse {
   /** Archived projects, expandable to their children. */
   projects: ArchivedProjectItem[];
-  /** Individually-archived assignments whose parent project is NOT archived, plus archived standalone assignments. */
-  assignments: ArchivedAssignmentItem[];
+  /** Individually-archived tickets whose parent project is NOT archived, plus archived standalone tickets. */
+  tickets: ArchivedTicketItem[];
 }
 
 export interface ProjectDetail {
@@ -159,7 +159,7 @@ export interface ProjectDetail {
   body: string;
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  assignments: TicketSummary[];
+  tickets: TicketSummary[];
   dependencyGraph: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
@@ -184,7 +184,7 @@ export interface ExternalIdInfo {
 }
 
 /**
- * One session↔assignment engagement interval, projected for the dashboard's
+ * One session↔ticket engagement interval, projected for the dashboard's
  * "Session Activity" attribution view. A slim camelCase view of an
  * `EngagementRow` — token snapshots / close_reason are intentionally omitted.
  * `agent` is enriched from the owning session row (null if that row is gone).
@@ -195,7 +195,7 @@ export interface EngagementInfo {
   id: number;
   sessionId: string;
   agent: string | null;
-  /** Engagement stage (plan | implement | review | …) — the attribution source, NOT the derived assignment phase. */
+  /** Engagement stage (plan | implement | review | …) — the attribution source, NOT the derived ticket phase. */
   stage: string;
   startedAt: string;
   endedAt: string | null;
@@ -203,13 +203,13 @@ export interface EngagementInfo {
 
 export interface TicketDetail {
   id: string;
-  /** `null` for standalone assignments that live outside any project. */
+  /** `null` for standalone tickets that live outside any project. */
   projectSlug: string | null;
   slug: string;
   title: string;
   status: string;
   type: string | null;
-  /** Explicit `workflow:` override stored on the assignment (null → resolved via binding). */
+  /** Explicit `workflow:` override stored on the ticket (null → resolved via binding). */
   workflow: string | null;
   /** The workflow id this ticket resolves to (drives its lifecycle). */
   resolvedWorkflow: string;
@@ -246,7 +246,7 @@ export interface TicketDetail {
    * server-side and shipped — the browser never reads the filesystem).
    * `derivedStatus` is the pre-override headline, powering the
    * "pinned to X — would otherwise be Y" divergence display. Null for
-   * terminal assignments (derivation defers). */
+   * terminal tickets (derivation defers). */
   derived: {
     derivedStatus: string;
     nextAction: string | null;
@@ -276,24 +276,24 @@ export interface TicketDetail {
   scratchpad: { updated: string; body: string } | null;
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
-  progress: AssignmentProgress | null;
-  comments: AssignmentComments | null;
-  referencedBy: AssignmentReference[];
+  progress: TicketProgress | null;
+  comments: TicketComments | null;
+  referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first). Empty when the session DB is not initialized (non-dashboard callers). */
   engagements: EngagementInfo[];
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
 }
 
 /**
- * Reverse link: an assignment that mentions the current one in its Todos, comments,
+ * Reverse link: an ticket that mentions the current one in its Todos, comments,
  * progress, or handoff body. Populated by the dashboard when returning TicketDetail.
  */
-export interface AssignmentReference {
-  /** UUID of the source assignment. */
+export interface TicketReference {
+  /** UUID of the source ticket. */
   sourceId: string;
-  /** Slug of the source assignment (folder name or display slug). */
+  /** Slug of the source ticket (folder name or display slug). */
   sourceSlug: string;
-  /** Title of the source assignment. */
+  /** Title of the source ticket. */
   sourceTitle: string;
   /** Project slug of the source, or `null` if source is standalone. */
   sourceProjectSlug: string | null;
@@ -301,18 +301,18 @@ export interface AssignmentReference {
   mentions: number;
 }
 
-export interface AssignmentProgressEntry {
+export interface TicketProgressEntry {
   timestamp: string;
   body: string;
 }
 
-export interface AssignmentProgress {
+export interface TicketProgress {
   updated: string;
   entryCount: number;
-  entries: AssignmentProgressEntry[];
+  entries: TicketProgressEntry[];
 }
 
-export interface AssignmentCommentEntry {
+export interface TicketCommentEntry {
   id: string;
   timestamp: string;
   author: string;
@@ -322,13 +322,13 @@ export interface AssignmentCommentEntry {
   resolved?: boolean;
 }
 
-export interface AssignmentComments {
+export interface TicketComments {
   updated: string;
   entryCount: number;
-  entries: AssignmentCommentEntry[];
+  entries: TicketCommentEntry[];
 }
 
-export interface AssignmentTransitionAction {
+export interface TicketTransitionAction {
   command: string;
   label: string;
   description: string;
@@ -357,12 +357,12 @@ export type OverviewSegmentId =
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectTitle: string | null;
   ticketSlug: string;
-  assignmentTitle: string;
+  ticketTitle: string;
   status: string;
   reason: string;
   updated: string;
@@ -376,7 +376,7 @@ export interface AttentionItem {
   /** Current assignee from frontmatter; `null` if unclaimed. */
   assignee: string | null;
   /** Transitions available right now; powers the Advance quick action. */
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
 }
 
 /** Hero category — drives both copy lookup and the row reference. */
@@ -430,20 +430,20 @@ export interface OverviewSegments {
   stale: OverviewStaleSegmentPayload;
 }
 
-export interface AssignmentsBoardResponse {
+export interface TicketsBoardResponse {
   generatedAt: string;
-  assignments: TicketBoardItem[];
+  tickets: TicketBoardItem[];
 }
 
 export interface RecentActivityItem {
   id: string;
-  type: 'project' | 'assignment';
+  type: 'project' | 'ticket';
   title: string;
   updated: string;
   href: string;
-  /** `null` when the activity is for a standalone assignment. */
+  /** `null` when the activity is for a standalone ticket. */
   projectSlug: string | null;
-  /** `null` when the activity is for a standalone assignment. */
+  /** `null` when the activity is for a standalone ticket. */
   projectTitle: string | null;
   ticketSlug: string | null;
   summary: string;
@@ -454,11 +454,11 @@ export interface OverviewResponse {
   firstRun: boolean;
   stats: {
     activeProjects: number;
-    inProgressAssignments: number;
-    blockedAssignments: number;
-    reviewAssignments: number;
-    failedAssignments: number;
-    staleAssignments: number;
+    inProgressTickets: number;
+    blockedTickets: number;
+    reviewTickets: number;
+    failedTickets: number;
+    staleTickets: number;
   };
   hero: OverviewHeroRecommendation;
   segments: OverviewSegments;
@@ -552,7 +552,7 @@ export interface PlaybooksResponse {
 
 export type EditableDocumentType =
   | 'project'
-  | 'assignment'
+  | 'ticket'
   | 'ticket'
   | 'plan'
   | 'scratchpad'
@@ -566,7 +566,7 @@ export interface EditableDocumentResponse {
   content: string;
   projectSlug: string | null;
   ticketSlug?: string;
-  /** For standalone assignments, the UUID (routes use /tickets/:id/...). */
+  /** For standalone tickets, the UUID (routes use /tickets/:id/...). */
   ticketId?: string;
   appendOnly: boolean;
 }
@@ -609,7 +609,7 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 /**
  * Who hosts a tracked session's process (`sessions.hosted_by`).
  *
- * `'acp'` — and, since schema v11, nothing else — is an assignment-chat session
+ * `'acp'` — and, since schema v11, nothing else — is an ticket-chat session
  * hosted by the dashboard's own ACP client. The broker owns those rows'
  * `active`/`stopped` transitions outright, which is why the stale sweep exempts
  * them (Decision 1). Every other row is `null`: a hook-registered terminal
@@ -622,7 +622,7 @@ export interface AgentSession {
   projectSlug: string | null;
   ticketSlug: string | null;
   /**
-   * The binding's resolved assignment frontmatter `id`, when the registering
+   * The binding's resolved ticket frontmatter `id`, when the registering
    * caller resolved it from the slugs (M1). Threaded into the opened engagement's
    * `assignment_id` so a later stage assertion doesn't split the interval just to
    * repair the id. Null/absent when unresolved (slug-only binding).

@@ -19,7 +19,7 @@ interface UsageCommandOptions {
 }
 
 export const usageCommand = new Command('usage')
-  .description('Show token usage rolled up by project/assignment')
+  .description('Show token usage rolled up by project/ticket')
   .option('--since <iso>', 'restrict report to events on or after this ISO date')
   .option('--until <iso>', 'restrict report to events on or before this ISO date')
   .option('--project <slug>', 'restrict to one project slug')
@@ -61,7 +61,7 @@ export async function runUsage(options: UsageCommandOptions): Promise<void> {
   if (options.ticket !== undefined) filter.ticketSlug = options.ticket;
 
   const rows = listDaily(filter);
-  const grouped = groupByProjectAssignment(rows);
+  const grouped = groupByProjectTicket(rows);
 
   if (options.json) {
     console.log(JSON.stringify({ daily: rows, summary: grouped }, null, 2));
@@ -85,7 +85,7 @@ interface GroupedRow {
   lastEventDay: string;
 }
 
-function groupByProjectAssignment(
+function groupByProjectTicket(
   rows: ReturnType<typeof listDaily>,
 ): GroupedRow[] {
   const map = new Map<string, GroupedRow>();
@@ -115,7 +115,7 @@ function renderTable(rows: GroupedRow[]): void {
     return;
   }
 
-  const headers = ['Project', 'Assignment', 'Tokens', 'Cost (USD)', 'Last event'];
+  const headers = ['Project', 'Ticket', 'Tokens', 'Cost (USD)', 'Last event'];
   const data = rows.map((r) => [
     r.projectSlug || '(unattributed)',
     r.ticketSlug || '(unattributed)',

@@ -167,8 +167,6 @@ export interface ListEventsFilter {
   until?: string;
   projectSlug?: string;
   ticketSlug?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string;
   tool?: string;
   model?: string;
   workspaceMembers?: WorkspaceMembers;
@@ -179,8 +177,6 @@ export interface ListDailyFilter {
   until?: string;
   projectSlug?: string;
   ticketSlug?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string;
   tool?: string;
   model?: string;
   workspaceMembers?: WorkspaceMembers;
@@ -392,7 +388,7 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
     where.push('project_slug = ?');
     params.push(filter.projectSlug);
   }
-  const ticketSlug = filter.ticketSlug ?? filter.assignmentSlug;
+  const ticketSlug = filter.ticketSlug;
   if (ticketSlug !== undefined) {
     where.push('assignment_slug = ?');
     params.push(ticketSlug);
@@ -587,7 +583,7 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
     where.push('project_slug = ?');
     params.push(filter.projectSlug);
   }
-  const ticketSlug = filter.ticketSlug ?? filter.assignmentSlug;
+  const ticketSlug = filter.ticketSlug;
   if (ticketSlug !== undefined) {
     where.push('assignment_slug = ?');
     params.push(ticketSlug);

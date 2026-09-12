@@ -75,12 +75,12 @@ tags: []
 # ${slug}`;
 }
 
-async function seedProjectWithAssignment(status: string): Promise<string> {
+async function seedProjectWithTicket(status: string): Promise<string> {
   const projectDir = resolve(testDir, 'test-project');
-  const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+  const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
   await mkdir(ticketDir, { recursive: true });
   await writeFile(resolve(projectDir, 'project.md'), projectMd('test-project', 'Test Project'), 'utf-8');
-  await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('test-assignment', status), 'utf-8');
+  await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('test-ticket', status), 'utf-8');
   return resolve(ticketDir, 'ticket.md');
 }
 
@@ -117,29 +117,29 @@ async function invokeRoute(
 
 describe('records cache', () => {
   it('serves a cached snapshot until explicitly invalidated', async () => {
-    await seedProjectWithAssignment('pending');
-    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
+    await seedProjectWithTicket('pending');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
 
     // Warm the cache.
     const first = await getOverview(testDir);
-    expect(first.stats.inProgressAssignments).toBe(0);
+    expect(first.stats.inProgressTickets).toBe(0);
 
     // Mutate the file directly on disk, bypassing every router (so nothing
     // invalidates). A live (non-cached) read would see in_progress.
-    await writeFile(ticketPath, ticketMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, ticketMd('test-ticket', 'in_progress'), 'utf-8');
 
     // Cache is still serving the warm snapshot — proves it is not re-fanning out.
     const cached = await getOverview(testDir);
-    expect(cached.stats.inProgressAssignments).toBe(0);
+    expect(cached.stats.inProgressTickets).toBe(0);
 
     // After invalidation the next read rebuilds and reflects the on-disk change.
     invalidateRecordsCache();
     const fresh = await getOverview(testDir);
-    expect(fresh.stats.inProgressAssignments).toBe(1);
+    expect(fresh.stats.inProgressTickets).toBe(1);
   });
 
   it('shares one snapshot across listProjects and getOverview', async () => {
-    await seedProjectWithAssignment('pending');
+    await seedProjectWithTicket('pending');
     const projectMdPath = resolve(testDir, 'test-project', 'project.md');
 
     // Warm via listProjects.
@@ -159,12 +159,12 @@ describe('records cache', () => {
   });
 
   it('returns fresh data immediately after a dashboard write (no stale-read-after-write)', async () => {
-    await seedProjectWithAssignment('pending');
+    await seedProjectWithTicket('pending');
     const router = createWriteRouter(testDir, ticketsDir);
 
     // Warm the cache with the pending state.
     const before = await getOverview(testDir);
-    expect(before.stats.inProgressAssignments).toBe(0);
+    expect(before.stats.inProgressTickets).toBe(0);
 
     // Mutate through the real write router; its invalidation wrapper must clear
     // the cache synchronously before this returns — no watcher debounce window.
@@ -172,27 +172,27 @@ describe('records cache', () => {
       router,
       'patch',
       '/api/tickets/:id',
-      { id: 'test-assignment-id' },
-      { content: ticketMd('test-assignment', 'in_progress') },
+      { id: 'test-ticket-id' },
+      { content: ticketMd('test-ticket', 'in_progress') },
     );
     expect(status).toBe(200);
 
     // The very next read reflects the write with no manual invalidation.
     const after = await getOverview(testDir);
-    expect(after.stats.inProgressAssignments).toBe(1);
+    expect(after.stats.inProgressTickets).toBe(1);
   });
 
   it('invalidates the records cache after a status-config mutation', async () => {
-    await seedProjectWithAssignment('pending');
-    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
+    await seedProjectWithTicket('pending');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
     const router = createStatusConfigRouter(testDir, null);
 
     // Warm the cache with the pending state.
     const before = await getOverview(testDir);
-    expect(before.stats.inProgressAssignments).toBe(0);
+    expect(before.stats.inProgressTickets).toBe(0);
 
     // Mutate on disk, bypassing every router.
-    await writeFile(ticketPath, ticketMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, ticketMd('test-ticket', 'in_progress'), 'utf-8');
 
     // A malformed body short-circuits to 400 before any global status-config
     // read/write, but it must still run the invalidation wrapper's `finally` —
@@ -202,7 +202,7 @@ describe('records cache', () => {
 
     // The next read reflects the on-disk change → the cache was cleared.
     const after = await getOverview(testDir);
-    expect(after.stats.inProgressAssignments).toBe(1);
+    expect(after.stats.inProgressTickets).toBe(1);
   });
 
   it('derives workspace records from the cache without a second fan-out', async () => {

@@ -18,7 +18,7 @@ let prevHome: string | undefined;
 
 const PROJECT = 'p1';
 const SLUG = 'a1';
-const ASSIGNMENT_ID = 'a1-id';
+const TICKET_ID = 'a1-id';
 
 const T1 = '2026-01-01T00:00:00Z';
 const T2 = '2026-02-01T00:00:00Z';
@@ -91,10 +91,10 @@ afterEach(async () => {
 
 describe('runTimeline', () => {
   it('returns events newest-first with parsed details', async () => {
-    await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
+    await seedProject(PROJECT, SLUG, TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
+    recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
 
     const events = await runTimeline(SLUG, { project: PROJECT });
     expect(events.map((e) => e.at)).toEqual([T3, T2, T1]);
@@ -105,13 +105,13 @@ describe('runTimeline', () => {
   });
 
   it('--json shape: each event has parsed details + the core columns', async () => {
-    await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    await seedProject(PROJECT, SLUG, TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
 
     const events = await runTimeline(SLUG, { project: PROJECT });
     expect(events).toHaveLength(1);
     const e = events[0];
-    expect(e.assignment_id).toBe(ASSIGNMENT_ID);
+    expect(e.assignment_id).toBe(TICKET_ID);
     expect(e.actor).toBe('human');
     expect(e.type).toBe('status-change');
     expect(e.at).toBe(T1);
@@ -122,30 +122,30 @@ describe('runTimeline', () => {
   });
 
   it('--since filters out events strictly before the bound', async () => {
-    await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
+    await seedProject(PROJECT, SLUG, TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, since: T2 });
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });
 
   it('--type filters to the requested event types', async () => {
-    await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'fact-set', actor: 'human', at: T2 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'plan-approval', actor: 'human', at: T3 });
+    await seedProject(PROJECT, SLUG, TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'human', at: T2 });
+    recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, type: ['fact-set', 'plan-approval'] });
     expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set']);
   });
 
   it('--limit caps the number of events returned', async () => {
-    await seedProject(PROJECT, SLUG, ASSIGNMENT_ID);
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ ticketId: ASSIGNMENT_ID, type: 'status-change', actor: 'human', at: T3 });
+    await seedProject(PROJECT, SLUG, TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
 
     const events = await runTimeline(SLUG, { project: PROJECT, limit: 2 });
     // newest-first, so the two newest survive

@@ -6,7 +6,7 @@ import { extractFrontmatter, getField } from './parser.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
 import {
   initEventsDb,
-  listEventsByAssignment,
+  listEventsByTicket,
   type EventRow,
   type ListEventsFilters,
 } from '../db/events-db.js';
@@ -72,7 +72,7 @@ function loadEvents(
   query: Record<string, unknown>,
 ): Array<Omit<EventRow, 'details'> & { details: unknown }> {
   initEventsDb();
-  const rows = listEventsByAssignment(ticketId, parseFilters(query));
+  const rows = listEventsByTicket(ticketId, parseFilters(query));
   return rows.map((row) => ({
     ...row,
     details: parseDetails(row.details),

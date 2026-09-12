@@ -32,7 +32,7 @@ stages:
 let home: string;
 let priorHome: string | undefined;
 
-const ASSIGNMENT = (status: string, withWorkflowField: boolean) => `---
+const TICKET = (status: string, withWorkflowField: boolean) => `---
 id: t-id
 slug: t
 title: "T"
@@ -106,7 +106,7 @@ function noEngineArtifacts(fm: ReturnType<typeof parseTicketFrontmatter>): void 
 
 describe('engine dormancy — marker unset keeps recompute on the ladder', () => {
   it('with the per-file workflow field set, an unset marker still derives via the ladder', async () => {
-    const path = await writeTicket(ASSIGNMENT('draft', true));
+    const path = await writeTicket(TICKET('draft', true));
     const { context, workflowResolver } = await resolveRecomputeContext();
     const result = await recomputeAndWrite(path, {
       cause: 'derive',
@@ -125,7 +125,7 @@ describe('engine dormancy — marker unset keeps recompute on the ladder', () =>
   });
 
   it('without a workflow field either, the ladder result is identical (marker-independent)', async () => {
-    const path = await writeTicket(ASSIGNMENT('draft', false));
+    const path = await writeTicket(TICKET('draft', false));
     const { context, workflowResolver } = await resolveRecomputeContext();
     const result = await recomputeAndWrite(path, {
       cause: 'derive',

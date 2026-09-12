@@ -78,7 +78,7 @@ Real objective text.
 `}`;
 }
 
-async function makeAssignment(opts: Parameters<typeof ticketContent>[0] = {}): Promise<{ dir: string; path: string }> {
+async function makeTicket(opts: Parameters<typeof ticketContent>[0] = {}): Promise<{ dir: string; path: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'syntaur-recompute-'));
   tmpDirs.push(dir);
   const path = join(dir, 'ticket.md');
@@ -88,7 +88,7 @@ async function makeAssignment(opts: Parameters<typeof ticketContent>[0] = {}): P
 
 describe('recomputeAndWrite', () => {
   it('derives and writes status/phase/disposition + history entry on change', async () => {
-    const { path } = await makeAssignment({ status: 'draft' });
+    const { path } = await makeTicket({ status: 'draft' });
     const result = await recomputeAndWrite(path, {
       cause: 'derive',
       by: 'system',
@@ -114,7 +114,7 @@ describe('recomputeAndWrite', () => {
   });
 
   it('no-op stability: recompute twice ⇒ exactly one history entry', async () => {
-    const { path } = await makeAssignment();
+    const { path } = await makeTicket();
     const opts = { cause: 'derive', by: 'system', projectDir: null, context: CONTEXT };
     const r1 = await recomputeAndWrite(path, opts);
     const r2 = await recomputeAndWrite(path, opts);
@@ -124,8 +124,8 @@ describe('recomputeAndWrite', () => {
     expect(fm.statusHistory).toHaveLength(1);
   });
 
-  it('terminal assignments defer entirely — no write, no entry', async () => {
-    const { path } = await makeAssignment({ status: 'completed' });
+  it('terminal tickets defer entirely — no write, no entry', async () => {
+    const { path } = await makeTicket({ status: 'completed' });
     const before = await readFile(path, 'utf-8');
     const result = await recomputeAndWrite(path, {
       cause: 'derive',
@@ -140,7 +140,7 @@ describe('recomputeAndWrite', () => {
 
   it('phase change under an unchanged headline is recorded (from == to + phase keys)', async () => {
     const planContent = '# plan';
-    const { dir, path } = await makeAssignment({
+    const { dir, path } = await makeTicket({
       status: 'draft',
       blockedReason: 'vendor down',
     });
@@ -173,7 +173,7 @@ describe('recomputeAndWrite', () => {
   });
 
   it('concurrent recomputes serialize via the lock (no duplicate entries)', async () => {
-    const { path } = await makeAssignment();
+    const { path } = await makeTicket();
     const opts = { cause: 'derive', by: 'system', projectDir: null, context: CONTEXT };
     const results = await Promise.all([
       recomputeAndWrite(path, opts),
@@ -186,7 +186,7 @@ describe('recomputeAndWrite', () => {
   });
 
   it('stale lock is taken over', async () => {
-    const { dir, path } = await makeAssignment();
+    const { dir, path } = await makeTicket();
     const lockPath = join(dir, '.derive.lock');
     await writeFile(lockPath, '99999 1'); // ancient mtime? mtime is now — simulate via utimes
     const { utimes } = await import('node:fs/promises');

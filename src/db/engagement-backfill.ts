@@ -51,9 +51,9 @@ function safeReaddir(dir: string): Dirent[] {
   }
 }
 
-function readTicketId(assignmentMdPath: string): string | null {
+function readTicketId(ticketMdPath: string): string | null {
   try {
-    const fm = parseTicketFrontmatter(readFileSync(assignmentMdPath, 'utf-8'));
+    const fm = parseTicketFrontmatter(readFileSync(ticketMdPath, 'utf-8'));
     return fm.id || null;
   } catch {
     return null;

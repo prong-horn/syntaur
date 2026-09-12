@@ -141,7 +141,7 @@ export async function resolveTicketWorkflowContext(
 }
 
 /**
- * Sweep-oriented resolver: build ONCE per config, then resolve many assignments.
+ * Sweep-oriented resolver: build ONCE per config, then resolve many tickets.
  * Memoizes workflow contexts by id (so the compile-condition cache stays warm
  * across a `recomputeAll` sweep — Task 6) and project bindings by dir (so each
  * project's `project.md` is read at most once). Not concurrency-guarded — used
@@ -198,7 +198,7 @@ export function makeWorkflowContextResolver(config: WorkflowConfigView) {
     bindingFor,
     /** Resolve the memoized context for a ticket in a given project. The
      * returned object spreads the id-cached legacy context and attaches THIS
-     * ticket's `stageWorkflow` (resolved per-assignment against the stage
+     * ticket's `stageWorkflow` (resolved per-ticket against the stage
      * library) — so the shared cache is never polluted with a per-ticket field. */
     async forTicket(
       ticket: TicketBindingFields,

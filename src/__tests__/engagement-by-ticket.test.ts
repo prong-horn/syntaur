@@ -7,13 +7,13 @@ import {
   closeSessionDb,
   resetSessionDb,
 } from '../dashboard/session-db.js';
-import { getEngagementsByAssignmentId } from '../db/engagement-db.js';
+import { getEngagementsByTicketId } from '../db/engagement-db.js';
 
 let sandbox: string;
 let dbPath: string;
 
 beforeEach(async () => {
-  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-engagement-by-assignment-'));
+  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-engagement-by-ticket-'));
   dbPath = resolve(sandbox, 'syntaur.db');
   resetSessionDb();
 });
@@ -52,7 +52,7 @@ function seedEngagement(
   });
 }
 
-describe('getEngagementsByAssignmentId', () => {
+describe('getEngagementsByTicketId', () => {
   it('returns all engagements for the ticket ordered by started_at (regardless of insert/id order)', () => {
     const db = initSessionDb(dbPath);
     // Insert out of chronological order to prove sorting is by started_at, not id.
@@ -78,7 +78,7 @@ describe('getEngagementsByAssignmentId', () => {
       ended: null,
     }); // id 3 — open (sess-2's only open row)
 
-    const rows = getEngagementsByAssignmentId('asgn-A');
+    const rows = getEngagementsByTicketId('asgn-A');
 
     expect(rows.map((r) => r.stage)).toEqual(['plan', 'implement', 'review']);
     expect(rows.map((r) => r.session_id)).toEqual(['sess-1', 'sess-2', 'sess-2']);
@@ -102,7 +102,7 @@ describe('getEngagementsByAssignmentId', () => {
       ended: sameStart,
     }); // id 2
 
-    const rows = getEngagementsByAssignmentId('asgn-tie');
+    const rows = getEngagementsByTicketId('asgn-tie');
 
     // Equal started_at → rows come back in id (insertion) order, not reversed.
     expect(rows.map((r) => r.session_id)).toEqual(['sess-a', 'sess-b']);
@@ -119,13 +119,13 @@ describe('getEngagementsByAssignmentId', () => {
       ended: null,
     });
 
-    const rows = getEngagementsByAssignmentId('asgn-open');
+    const rows = getEngagementsByTicketId('asgn-open');
 
     expect(rows).toHaveLength(1);
     expect(rows[0].ended_at).toBeNull();
   });
 
-  it('excludes engagements belonging to other assignments', () => {
+  it('excludes engagements belonging to other tickets', () => {
     const db = initSessionDb(dbPath);
     seedEngagement(db, {
       sessionId: 'sess-1',
@@ -142,7 +142,7 @@ describe('getEngagementsByAssignmentId', () => {
       ended: null,
     });
 
-    const rows = getEngagementsByAssignmentId('asgn-A');
+    const rows = getEngagementsByTicketId('asgn-A');
 
     expect(rows).toHaveLength(1);
     expect(rows.every((r) => r.assignment_id === 'asgn-A')).toBe(true);
@@ -150,6 +150,6 @@ describe('getEngagementsByAssignmentId', () => {
 
   it('returns an empty array for an unknown ticket id', () => {
     initSessionDb(dbPath);
-    expect(getEngagementsByAssignmentId('does-not-exist')).toEqual([]);
+    expect(getEngagementsByTicketId('does-not-exist')).toEqual([]);
   });
 });

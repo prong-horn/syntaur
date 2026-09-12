@@ -26,7 +26,7 @@ async function withFakeSyntaur(binDir: string, boundaryJson: string): Promise<st
   return prevPath;
 }
 
-// A fully-resolved boundary (assignment + project + workspace), as the CLI's
+// A fully-resolved boundary (ticket + project + workspace), as the CLI's
 // `session boundary` would emit for an open project-nested engagement.
 const BOUNDARY = {
   ticketDir: '/work/assign',
@@ -53,7 +53,7 @@ describe('pi extension — isWriteAllowed (mirrors the bash boundary hook)', () 
     expect(isWriteAllowed('/ws/src/app.ts', BOUNDARY).allowed).toBe(true);
   });
   it('does NOT mis-allow a sibling with a shared prefix (/foo vs /foobar)', () => {
-    expect(isWriteAllowed('/work/assignment-other/x', BOUNDARY).allowed).toBe(false);
+    expect(isWriteAllowed('/work/ticket-other/x', BOUNDARY).allowed).toBe(false);
     expect(isWriteAllowed('/ws-extra/x', BOUNDARY).allowed).toBe(false);
   });
   it('allows the context file itself', () => {
@@ -136,7 +136,7 @@ describe('pi extension — CORE_COMMANDS shape', () => {
 });
 
 describe('pi extension — loadContext + activate registration', () => {
-  it('loadContext reads ONLY workspace markers (assignment scalars demoted) and null when absent', async () => {
+  it('loadContext reads ONLY workspace markers (ticket scalars demoted) and null when absent', async () => {
     const tmp = await mkdtemp(join(tmpdir(), 'pi-ctx-'));
     try {
       expect(loadContext(tmp)).toBeNull();

@@ -156,7 +156,7 @@ for (const f of files) {
   for (const [a, b] of REPS) c = c.split(a).join(b);
   // restore SQL / db column names
   c = c.replace(/\bticket_id\b/g, 'assignment_id');
-  c = c.replace(/\bticket_slug\b/g, 'assignment_slug');
+  c = c.replace(/\bticket_slug\b/g, 'ticket_slug');
   if (c !== orig) writeFileSync(f, c);
 }
 

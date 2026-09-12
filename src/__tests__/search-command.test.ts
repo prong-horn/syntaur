@@ -37,7 +37,7 @@ async function seedHome(root: string): Promise<void> {
   );
   await writeFile(
     join(aDir, 'comments.md'),
-    `---\nassignment: build-widget\n---\n# Comments\n\nA comment mentioning the widget feature.\n`,
+    `---\nticket: build-widget\n---\n# Comments\n\nA comment mentioning the widget feature.\n`,
   );
 
   const sDir = join(ticketsDir, '22222222-2222-2222-2222-222222222222');
@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe('runSearch', () => {
-  it('returns the JSON-contract shape with project/assignment as slugs', async () => {
+  it('returns the JSON-contract shape with project/ticket as slugs', async () => {
     const hits = await runSearch('widget', {});
     expect(hits.length).toBeGreaterThan(0);
 

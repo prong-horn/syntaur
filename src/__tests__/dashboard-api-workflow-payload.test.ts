@@ -55,7 +55,7 @@ Do the thing.
 `;
 }
 
-async function seedAssignment(opts: {
+async function seedTicket(opts: {
   slug: string;
   type?: string | null;
   workflow?: string | null;
@@ -95,7 +95,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\nworkflowByType:\n  bug: bug\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedAssignment({ slug: 'a1', type: 'bug', status: 'fixing' });
+    await seedTicket({ slug: 'a1', type: 'bug', status: 'fixing' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a1');
     expect(detail).not.toBeNull();
@@ -113,7 +113,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       'utf-8',
     );
     // No project binding; the ticket pins the bug workflow explicitly.
-    await seedAssignment({ slug: 'a2', type: 'feature', workflow: 'bug', status: 'verified' });
+    await seedTicket({ slug: 'a2', type: 'feature', workflow: 'bug', status: 'verified' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a2');
     expect(detail!.workflow).toBe('bug');
@@ -129,7 +129,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedAssignment({ slug: 'a3', type: 'feature', status: 'in_progress' });
+    await seedTicket({ slug: 'a3', type: 'feature', status: 'in_progress' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a3');
     expect(detail!.resolvedWorkflow).toBe('default');
@@ -144,12 +144,12 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\nworkflowByType:\n  bug: bug\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedAssignment({ slug: 'a1', type: 'bug', status: 'fixing' });
-    await seedAssignment({ slug: 'a3', type: 'feature', status: 'in_progress' });
+    await seedTicket({ slug: 'a1', type: 'bug', status: 'fixing' });
+    await seedTicket({ slug: 'a3', type: 'feature', status: 'in_progress' });
 
     const project = await getProjectDetail(projectsDir, 'proj');
     expect(project).not.toBeNull();
-    const bySlug = Object.fromEntries(project!.assignments.map((a) => [a.slug, a]));
+    const bySlug = Object.fromEntries(project!.tickets.map((a) => [a.slug, a]));
     expect(bySlug.a1.resolvedWorkflow).toBe('bug');
     expect(bySlug.a1.statusLabel).toBe('Fixing Hard');
     expect(bySlug.a3.resolvedWorkflow).toBe('default');

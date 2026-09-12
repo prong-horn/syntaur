@@ -30,7 +30,7 @@ describe('derived-status CLI verbs (end-to-end)', () => {
   let home: string;
   let ticketPath: string;
 
-  const ASSIGNMENT = `---
+  const TICKET = `---
 id: verb-test-id
 slug: verb-test
 title: "Verb Test"
@@ -74,7 +74,7 @@ A real objective.
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     ticketPath = join(aDir, 'ticket.md');
-    await writeFile(ticketPath, ASSIGNMENT);
+    await writeFile(ticketPath, TICKET);
   });
 
   afterEach(async () => {
@@ -165,7 +165,7 @@ A real objective.
     expect(f.override).toBeNull();
   });
 
-  it('park/unpark; terminal assignments freeze facts', async () => {
+  it('park/unpark; terminal tickets freeze facts', async () => {
     let r = await runCli(['park', 'verb-test', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     // no 'parked' status defined → headline falls back to phase
@@ -214,10 +214,10 @@ A real objective.
       home,
     );
     expect(r.code).toBe(0);
-    expect(JSON.parse(r.stdout).assignments).toHaveLength(1);
+    expect(JSON.parse(r.stdout).tickets).toHaveLength(1);
 
     r = await runCli(['ls', '--query', 'planApproved:true', '--json'], home);
-    expect(JSON.parse(r.stdout).assignments).toHaveLength(0);
+    expect(JSON.parse(r.stdout).tickets).toHaveLength(0);
 
     r = await runCli(['ls', '--query', 'bogus:true', '--json'], home);
     expect(r.code).not.toBe(0);

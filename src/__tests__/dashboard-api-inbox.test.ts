@@ -92,7 +92,7 @@ async function seedQuestionComment(
   const dir = join(projectsDir, project, 'tickets', slug);
   await writeFile(
     join(dir, 'comments.md'),
-    `---\nassignment: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
+    `---\nticket: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
       id: comment.id,
       timestamp: ts,
       author: comment.author,
@@ -157,7 +157,7 @@ describe('GET /api/inbox', () => {
     });
   });
 
-  it('returns items when review-status assignments exist', async () => {
+  it('returns items when review-status tickets exist', async () => {
     await mkdir(join(projectsDir, 'p1'), { recursive: true });
     await writeFile(
       join(projectsDir, 'p1', 'project.md'),
@@ -241,7 +241,7 @@ describe('GET /api/inbox', () => {
     });
     await writeFile(
       join(dir, 'comments.md'),
-      `---\nassignment: chat-row\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
+      `---\nticket: chat-row\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
         id: 'c9',
         timestamp: '2026-06-16T00:00:00Z',
         author: 'claude',
@@ -296,8 +296,8 @@ describe('GET /api/inbox', () => {
 });
 
 describe('GET /api/inbox — card enrichment', () => {
-  const ASSIGNMENT_ID = 'perm-assignment';
-  const SESSION_KEY = `${ASSIGNMENT_ID}:cursor`;
+  const TICKET_ID = 'perm-ticket';
+  const SESSION_KEY = `${TICKET_ID}:cursor`;
 
   beforeEach(async () => {
     await mkdir(join(projectsDir, 'p1'), { recursive: true });
@@ -305,20 +305,20 @@ describe('GET /api/inbox — card enrichment', () => {
       join(projectsDir, 'p1', 'project.md'),
       `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
     );
-    await seed({ id: ASSIGNMENT_ID, slug: 'perm-row', status: 'in_progress', project: 'p1' });
+    await seed({ id: TICKET_ID, slug: 'perm-row', status: 'in_progress', project: 'p1' });
   });
 
   it('enriches a permission row with requestId, options and settled:false', async () => {
     const itemId = 'perm-item-1';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
-    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
       id: 'cq-perm',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -353,14 +353,14 @@ describe('GET /api/inbox — card enrichment', () => {
   it('marks an answered permission card settled:true', async () => {
     const itemId = 'perm-item-2';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
-    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
       id: 'cq-perm-2',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       turnId: 'turn-1',
       agentId: 'cursor',
       type: 'permission.request',
@@ -383,14 +383,14 @@ describe('GET /api/inbox — card enrichment', () => {
   it('enriches an ask row with two choices', async () => {
     const itemId = 'ask-item-1';
     const marker = formatChatQuestionMarker({ kind: 'ask', itemId });
-    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
       id: 'cq-ask',
       author: 'cursor',
       body: `Pick one\n\n${marker}`,
     });
     upsertChatItem(SESSION_KEY, {
       itemId,
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       turnId: 'turn-2',
       agentId: 'cursor',
       type: 'question',
@@ -423,7 +423,7 @@ describe('GET /api/inbox — card enrichment', () => {
 
   it('returns card:null when the chat item is absent', async () => {
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: 'missing-item' });
-    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
       id: 'cq-missing',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
@@ -528,7 +528,7 @@ describe('GET /api/inbox — card enrichment', () => {
   it('returns card:null with HTTP 200 when the session db is closed', async () => {
     const permItemId = 'perm-closed-db';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
-    await seedQuestionComment('p1', 'perm-row', ASSIGNMENT_ID, {
+    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
       id: 'cq-closed-db',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,

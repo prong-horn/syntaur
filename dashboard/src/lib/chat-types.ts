@@ -1,5 +1,5 @@
 /**
- * Wire shape of the assignment-chat API and the `chat-item` / `chat-session` WS
+ * Wire shape of the ticket-chat API and the `chat-item` / `chat-session` WS
  * frames.
  *
  * The SPA is a separate TS project and cannot import `src/chat/types.ts`, so the

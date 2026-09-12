@@ -1,7 +1,7 @@
 /**
  * One-time, idempotent migration to derived status (design v3, Piece 5).
  *
- * Seeds asserted facts from each assignment's CURRENT command-set status so
+ * Seeds asserted facts from each ticket's CURRENT command-set status so
  * in-flight work keeps its standing (codex round-2 finding: re-deriving from
  * objective facts alone would lose implementation/review state):
  *   - blocked w/o reason          → blockedReason: "(unknown)"
@@ -109,7 +109,7 @@ function seedFacts(content: string, status: string, blockedReason: string | null
   if (REVIEW_STATUSES.has(status)) {
     updates.reviewRequested = true;
   }
-  // Migration policy: a migrated assignment has no rework history — materialize
+  // Migration policy: a migrated ticket has no rework history — materialize
   // the scalar explicitly as false (stage-fact-status-bridge).
   updates.reworkRequested = false;
   if (Object.keys(updates).length > 0) {
@@ -164,7 +164,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
     const fm = parseTicketFrontmatter(content);
 
     if (context.terminalStatuses.has(fm.status)) {
-      terminal++; // terminal assignments are untouched — derivation defers
+      terminal++; // terminal tickets are untouched — derivation defers
       continue;
     }
 
@@ -176,7 +176,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
       const seededFm = parseTicketFrontmatter(seededContent);
       const body = seededContent.replace(/^---\n[\s\S]*?\n---/, '');
       const facts = await computeFacts({
-        assignmentDir: resolve(target.path, '..'),
+        ticketDir: resolve(target.path, '..'),
         frontmatter: seededFm,
         body,
         projectDir: target.projectDir,
@@ -231,7 +231,7 @@ export async function migrateDeriveCommand(options: MigrateDeriveOptions): Promi
 
   const mode = options.dryRun ? '[dry-run] ' : '';
   console.log(
-    `${mode}migrate-derive: ${targets.length} assignment(s) scanned, ${seeded} fact-seeded, ` +
+    `${mode}migrate-derive: ${targets.length} ticket(s) scanned, ${seeded} fact-seeded, ` +
       `${options.dryRun ? divergences.length + ' would change' : recomputed + ' re-derived'}, ${terminal} terminal (untouched).`,
   );
   if (divergences.length > 0) {

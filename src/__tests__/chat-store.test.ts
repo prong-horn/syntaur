@@ -35,12 +35,12 @@ import { fixtureEvents, listFixtures } from './helpers/acp-fixtures.js';
 let sandbox: string;
 let ticketDir: string;
 
-const ASSIGNMENT_ID = 'assignment-1';
-const SESSION_KEY = 'assignment-1:claude';
+const TICKET_ID = 'ticket-1';
+const SESSION_KEY = 'ticket-1:claude';
 
 function item(overrides: Partial<ChatItem> & Pick<ChatItem, 'itemId'>): ChatItem {
   return {
-    ticketId: ASSIGNMENT_ID,
+    ticketId: TICKET_ID,
     turnId: 't1',
     agentId: 'claude',
     type: 'system',
@@ -72,7 +72,7 @@ describe('event log', () => {
     const log = await openChatLog(ticketDir);
     expect(log.path).toBe(chatLogPath(ticketDir));
     const a = await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -80,7 +80,7 @@ describe('event log', () => {
       payload: { messageId: 'm1', text: 'hi' },
     });
     const b = await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: 't1',
@@ -99,7 +99,7 @@ describe('event log', () => {
     const first = await openChatLog(ticketDir);
     for (let i = 0; i < 3; i++) {
       await first.append({
-        ticketId: ASSIGNMENT_ID,
+        ticketId: TICKET_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: null,
@@ -110,7 +110,7 @@ describe('event log', () => {
     const second = await openChatLog(ticketDir);
     expect(second.nextSeq).toBe(3);
     const next = await second.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -124,7 +124,7 @@ describe('event log', () => {
   it('tolerates a torn final line and keeps appending after it', async () => {
     const log = await openChatLog(ticketDir);
     await log.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -140,7 +140,7 @@ describe('event log', () => {
     const reopened = await openChatLog(ticketDir);
     expect(reopened.nextSeq).toBe(1);
     await reopened.append({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
       turnId: null,
@@ -156,7 +156,7 @@ describe('event log', () => {
     await Promise.all(
       Array.from({ length: 25 }, (_, i) =>
         log.append({
-          ticketId: ASSIGNMENT_ID,
+          ticketId: TICKET_ID,
           agentId: 'claude',
           sessionKey: SESSION_KEY,
           turnId: null,
@@ -173,7 +173,7 @@ describe('event log', () => {
     const log = await openChatLog(ticketDir);
     for (let i = 0; i < 5; i++) {
       await log.append({
-        ticketId: ASSIGNMENT_ID,
+        ticketId: TICKET_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: null,
@@ -206,7 +206,7 @@ describe('chat_items index', () => {
   it('upsert is idempotent by item_id', () => {
     upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v1' }));
     upsertChatItem(SESSION_KEY, item({ itemId: 't1:0', text: 'v2', seqLast: 5 }));
-    const items = listChatItems(ASSIGNMENT_ID);
+    const items = listChatItems(TICKET_ID);
     expect(items).toHaveLength(1);
     expect((items[0] as { text: string }).text).toBe('v2');
     expect(items[0].seqLast).toBe(5);
@@ -214,9 +214,9 @@ describe('chat_items index', () => {
 
   it('a retract patch deletes the row', () => {
     applyChatPatch(SESSION_KEY, { op: 'upsert', item: item({ itemId: 't1:0' }) });
-    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
+    expect(countChatItems(TICKET_ID)).toBe(1);
     applyChatPatch(SESSION_KEY, { op: 'retract', itemId: 't1:0' });
-    expect(countChatItems(ASSIGNMENT_ID)).toBe(0);
+    expect(countChatItems(TICKET_ID)).toBe(0);
     // Retracting an unknown id is a no-op, not an error.
     deleteChatItem('nope');
   });
@@ -225,25 +225,25 @@ describe('chat_items index', () => {
     for (let i = 0; i < 10; i++) {
       upsertChatItem(SESSION_KEY, item({ itemId: `t1:${i}`, seqFirst: i, seqLast: i }));
     }
-    const newest = listChatItems(ASSIGNMENT_ID, { limit: 3 });
+    const newest = listChatItems(TICKET_ID, { limit: 3 });
     expect(newest.map((i) => i.seqFirst)).toEqual([7, 8, 9]);
-    const older = listChatItems(ASSIGNMENT_ID, { limit: 3, beforeSeq: newest[0].seqFirst });
+    const older = listChatItems(TICKET_ID, { limit: 3, beforeSeq: newest[0].seqFirst });
     expect(older.map((i) => i.seqFirst)).toEqual([4, 5, 6]);
   });
 
-  it('keeps assignments apart', () => {
+  it('keeps tickets apart', () => {
     upsertChatItem(SESSION_KEY, item({ itemId: 't1:0' }));
-    upsertChatItem('other:claude', item({ itemId: 't2:0', ticketId: 'assignment-2' }));
-    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
-    expect(deleteChatItems('assignment-2')).toBe(1);
-    expect(countChatItems(ASSIGNMENT_ID)).toBe(1);
+    upsertChatItem('other:claude', item({ itemId: 't2:0', ticketId: 'ticket-2' }));
+    expect(countChatItems(TICKET_ID)).toBe(1);
+    expect(deleteChatItems('ticket-2')).toBe(1);
+    expect(countChatItems(TICKET_ID)).toBe(1);
   });
 });
 
 describe('chat_sessions', () => {
   const base = {
     sessionKey: SESSION_KEY,
-    ticketId: ASSIGNMENT_ID,
+    ticketId: TICKET_ID,
     projectSlug: 'syntaur-meta',
     ticketSlug: 'chat',
     agentId: 'claude',
@@ -253,19 +253,19 @@ describe('chat_sessions', () => {
 
   it('upserts and reads back by (ticket, agent) and by key', () => {
     upsertChatSession({ ...base, acpSessionId: 'acp-1', pid: 4242 });
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(row?.acp_session_id).toBe('acp-1');
     expect(row?.pid).toBe(4242);
     expect(row?.state).toBe('spawning');
     expect(getChatSessionByKey(SESSION_KEY)?.session_key).toBe(SESSION_KEY);
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')).toBeNull();
-    expect(listChatSessions(ASSIGNMENT_ID)).toHaveLength(1);
+    expect(getChatSession(TICKET_ID, 'codex')).toBeNull();
+    expect(listChatSessions(TICKET_ID)).toHaveLength(1);
   });
 
   it('a state transition never erases the ACP session id resume needs', () => {
     upsertChatSession({ ...base, acpSessionId: 'acp-1', adapterVersion: 'x@1', cwd: '/tmp/w' });
     upsertChatSession({ ...base, state: 'idle' });
-    const row = getChatSession(ASSIGNMENT_ID, 'claude');
+    const row = getChatSession(TICKET_ID, 'claude');
     expect(row?.state).toBe('idle');
     expect(row?.acp_session_id).toBe('acp-1');
     expect(row?.adapter_version).toBe('x@1');
@@ -276,19 +276,19 @@ describe('chat_sessions', () => {
 describe('rebuild == live', () => {
   async function seedFromFixture(name: string): Promise<{ events: ChatEvent[]; live: ChatItem[] }> {
     const fixture = listFixtures().find((f) => f.name === name)!;
-    const raw = fixtureEvents(fixture.path, { ticketId: ASSIGNMENT_ID, agentId: 'claude' });
+    const raw = fixtureEvents(fixture.path, { ticketId: TICKET_ID, agentId: 'claude' });
     const log = await openChatLog(ticketDir);
     const events: ChatEvent[] = [];
     // Write the log the way the broker does — one append per event — and index
     // each patch as it is produced, exactly like the live path.
     const normalizer = new ChatNormalizer({
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       agentId: 'claude',
       sessionKey: SESSION_KEY,
     });
     for (const e of raw) {
       const stored = await log.append({
-        ticketId: ASSIGNMENT_ID,
+        ticketId: TICKET_ID,
         agentId: 'claude',
         sessionKey: SESSION_KEY,
         turnId: e.turnId,
@@ -299,30 +299,30 @@ describe('rebuild == live', () => {
       events.push(stored);
       for (const patch of normalizer.ingest(stored)) applyChatPatch(SESSION_KEY, patch);
     }
-    return { events, live: listChatItems(ASSIGNMENT_ID, { limit: 1000 }) };
+    return { events, live: listChatItems(TICKET_ID, { limit: 1000 }) };
   }
 
   it('a rebuilt index equals the live index, row for row', async () => {
     const { live } = await seedFromFixture('claude/07-permissions.ndjson');
-    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    const liveRows = listChatItemRows(TICKET_ID);
     expect(live.length).toBeGreaterThan(5);
 
-    const result = await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
+    const result = await rebuildChatIndex(ticketDir, TICKET_ID);
     expect(result.deleted).toBe(liveRows.length);
     expect(result.items).toBe(liveRows.length);
-    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+    expect(listChatItemRows(TICKET_ID)).toEqual(liveRows);
   });
 
   it('holds for a transcript with tool cards, a fold and a plan', async () => {
     await seedFromFixture('claude/08-plan-events.ndjson');
-    const liveRows = listChatItemRows(ASSIGNMENT_ID);
-    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
-    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+    const liveRows = listChatItemRows(TICKET_ID);
+    await rebuildChatIndex(ticketDir, TICKET_ID);
+    expect(listChatItemRows(TICKET_ID)).toEqual(liveRows);
   });
 
   it('a rebuild removes rows the fold retracted rather than resurrecting them', async () => {
     await seedFromFixture('claude/05-tool-calls.ndjson');
-    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    const liveRows = listChatItemRows(TICKET_ID);
     // The narration bubble folded into the card, so it is not in the index.
     expect(liveRows.some((r) => r.type === 'agent.work')).toBe(true);
     const card = JSON.parse(liveRows.find((r) => r.type === 'agent.work')!.json) as {
@@ -330,26 +330,26 @@ describe('rebuild == live', () => {
     };
     expect(card.lead).toBeDefined();
 
-    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
-    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+    await rebuildChatIndex(ticketDir, TICKET_ID);
+    expect(listChatItemRows(TICKET_ID)).toEqual(liveRows);
   });
 
   it('replayItems matches what the index holds', async () => {
     const { events, live } = await seedFromFixture('codex/05-tool-calls.ndjson');
-    expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
+    expect(replayItems(events, TICKET_ID)).toEqual(live);
   });
 
   it('rebuilding a ticket with no log clears its index', async () => {
     upsertChatItem(SESSION_KEY, item({ itemId: 'stale:0' }));
-    const result = await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
+    const result = await rebuildChatIndex(ticketDir, TICKET_ID);
     expect(result).toEqual({ events: 0, items: 0, deleted: 1 });
   });
 });
 
 describe('rebuild == live across the ticket scope (Task 5)', () => {
-  const ASSIGNMENT_SCOPE = `${ASSIGNMENT_ID}:@assignment`;
-  const PLANNER_KEY = `${ASSIGNMENT_ID}:planner`;
-  const IMPLEMENTER_KEY = `${ASSIGNMENT_ID}:implementer`;
+  const TICKET_SCOPE = `${TICKET_ID}:@ticket`;
+  const PLANNER_KEY = `${TICKET_ID}:planner`;
+  const IMPLEMENTER_KEY = `${TICKET_ID}:implementer`;
 
   /**
    * A two-agent chat as the broker writes it: the routing rows in the
@@ -369,7 +369,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       payload: unknown,
     ) => {
       const stored = await log.append({
-        ticketId: ASSIGNMENT_ID,
+        ticketId: TICKET_ID,
         agentId,
         sessionKey,
         turnId,
@@ -378,13 +378,13 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       });
       let normalizer = normalizers.get(sessionKey);
       if (!normalizer) {
-        normalizer = new ChatNormalizer({ ticketId: ASSIGNMENT_ID, agentId, sessionKey });
+        normalizer = new ChatNormalizer({ ticketId: TICKET_ID, agentId, sessionKey });
         normalizers.set(sessionKey, normalizer);
       }
       for (const patch of normalizer.ingest(stored)) applyChatPatch(sessionKey, patch);
     };
 
-    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message', {
+    await write(TICKET_SCOPE, 'human', null, 'user.message', {
       messageId: 'm1',
       text: '@planner @implementer go',
       state: 'queued',
@@ -396,7 +396,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       startedAt: '2026-09-02T12:00:00.000Z',
       trigger: { kind: 'human', messageId: 'm1' },
     });
-    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message.delivered', {
+    await write(TICKET_SCOPE, 'human', null, 'user.message.delivered', {
       messageId: 'm1',
       agentId: 'planner',
       turnId: 'turn-p',
@@ -405,7 +405,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       startedAt: '2026-09-02T12:00:01.000Z',
       trigger: { kind: 'human', messageId: 'm1' },
     });
-    await write(ASSIGNMENT_SCOPE, 'human', null, 'user.message.delivered', {
+    await write(TICKET_SCOPE, 'human', null, 'user.message.delivered', {
       messageId: 'm1',
       agentId: 'implementer',
       turnId: 'turn-i',
@@ -420,7 +420,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       endedAt: '2026-09-02T12:00:05.000Z',
       durationMs: 5000,
     });
-    await write(ASSIGNMENT_SCOPE, 'planner', null, 'handoff', {
+    await write(TICKET_SCOPE, 'planner', null, 'handoff', {
       handoffId: 'h1',
       fromAgentId: 'planner',
       toAgentId: 'implementer',
@@ -429,7 +429,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
       hop: 1,
       budget: 4,
     });
-    await write(ASSIGNMENT_SCOPE, 'system', null, 'route.notice', {
+    await write(TICKET_SCOPE, 'system', null, 'route.notice', {
       level: 'warn',
       text: 'No agent @reviewer is attached to this ticket.',
     });
@@ -442,7 +442,7 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
 
   it('rebuilds routing rows, handoffs and two agents’ turns identically', async () => {
     await seedTwoAgents();
-    const liveRows = listChatItemRows(ASSIGNMENT_ID);
+    const liveRows = listChatItemRows(TICKET_ID);
     // The routing rows really are there, authored by three different parties.
     expect(liveRows.filter((r) => r.type === 'handoff')).toHaveLength(1);
     expect(new Set(liveRows.map((r) => r.agent_id))).toEqual(
@@ -455,15 +455,15 @@ describe('rebuild == live across the ticket scope (Task 5)', () => {
     expect(message.state).toBe('sent');
     expect(message.deliveredTo).toEqual(['planner', 'implementer']);
 
-    await rebuildChatIndex(ticketDir, ASSIGNMENT_ID);
-    expect(listChatItemRows(ASSIGNMENT_ID)).toEqual(liveRows);
+    await rebuildChatIndex(ticketDir, TICKET_ID);
+    expect(listChatItemRows(TICKET_ID)).toEqual(liveRows);
   });
 
   it('replayItems reproduces the interleaved stream', async () => {
     await seedTwoAgents();
-    const live = listChatItems(ASSIGNMENT_ID, { limit: 1000 });
+    const live = listChatItems(TICKET_ID, { limit: 1000 });
     const events = await readEvents(chatLogPath(ticketDir));
-    expect(replayItems(events, ASSIGNMENT_ID)).toEqual(live);
+    expect(replayItems(events, TICKET_ID)).toEqual(live);
   });
 });
 

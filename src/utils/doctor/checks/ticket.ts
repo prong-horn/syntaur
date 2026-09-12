@@ -4,7 +4,7 @@ import { fileExists } from '../../fs.js';
 import { parseTicketFull } from '../../../dashboard/parser.js';
 import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
 import { ticketsDir as getStandaloneDir } from '../../paths.js';
-import { listTicketsByProject, type AssignmentEntry } from '../../ticket-walk.js';
+import { listTicketsByProject, type TicketEntry } from '../../ticket-walk.js';
 import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
@@ -43,8 +43,8 @@ function objectiveBodyIsEmpty(content: string): boolean {
 }
 
 async function listTickets(ctx: CheckContext): Promise<{
-  withAssignmentMd: AssignmentEntry[];
-  orphanFolders: AssignmentEntry[];
+  withTicketMd: TicketEntry[];
+  orphanFolders: TicketEntry[];
 }> {
   return listTicketsByProject(ctx.config.defaultProjectDir, getStandaloneDir());
 }
@@ -57,17 +57,17 @@ function configuredStatuses(ctx: CheckContext): Set<string> {
 
 /** projectDir for a walked ticket entry — its project root for a nested
  * ticket (`<projectDir>/tickets/<slug>`), null for standalone. */
-function projectDirFor(a: AssignmentEntry): string | null {
+function projectDirFor(a: TicketEntry): string | null {
   return a.projectSlug ? resolve(a.ticketDir, '..', '..') : null;
 }
 
 const requiredFiles: Check = {
-  id: 'assignment.required-files',
+  id: 'ticket.required-files',
   category: CATEGORY,
   title: 'Each ticket folder has an ticket.md',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
-    if (withAssignmentMd.length === 0) {
+    const { withTicketMd } = await listTickets(ctx);
+    if (withTicketMd.length === 0) {
       return {
         id: this.id,
         category: this.category,
@@ -77,12 +77,12 @@ const requiredFiles: Check = {
         autoFixable: false,
       } satisfies CheckResult;
     }
-    return pass(this, `${withAssignmentMd.length} ticket.md files present`);
+    return pass(this, `${withTicketMd.length} ticket.md files present`);
   },
 };
 
 const orphanedFolder: Check = {
-  id: 'assignment.orphaned-folder',
+  id: 'ticket.orphaned-folder',
   category: CATEGORY,
   title: 'No ticket folders without ticket.md',
   async run(ctx) {
@@ -106,16 +106,16 @@ const orphanedFolder: Check = {
 };
 
 const invalidStatus: Check = {
-  id: 'assignment.invalid-status',
+  id: 'ticket.invalid-status',
   category: CATEGORY,
   title: 'Ticket statuses are valid',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
-    // Each assignment's status is validated against ITS OWN workflow's defined
+    const { withTicketMd } = await listTickets(ctx);
+    // Each ticket's status is validated against ITS OWN workflow's defined
     // statuses (resolved via the ticket's binding), not one global set.
     const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -144,16 +144,16 @@ const invalidStatus: Check = {
 };
 
 const workspaceMissing: Check = {
-  id: 'assignment.workspace-missing',
+  id: 'ticket.workspace-missing',
   category: CATEGORY,
-  title: 'Non-terminal assignments have workspace fields set',
+  title: 'Non-terminal tickets have workspace fields set',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     // Terminality is judged per the ticket's OWN workflow (a custom terminal
     // status must exempt the ticket from the workspace requirement).
     const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -184,7 +184,7 @@ const workspaceMissing: Check = {
 };
 
 const requiredFilesByStatus: Check = {
-  id: 'assignment.required-files-by-status',
+  id: 'ticket.required-files-by-status',
   category: CATEGORY,
   title: 'Handoff file matches ticket status',
   async run(ctx) {
@@ -200,9 +200,9 @@ const requiredFilesByStatus: Check = {
         autoFixable: false,
       } satisfies CheckResult;
     }
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const ticketPath = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(ticketPath);
       if (!parsed) continue;
@@ -221,7 +221,7 @@ const requiredFilesByStatus: Check = {
         affected: missing.map((m) => resolve(a.ticketDir, m)),
         remediation: {
           kind: 'manual',
-          suggestion: `Create the missing ${missing.join(' and ')} files for this assignment`,
+          suggestion: `Create the missing ${missing.join(' and ')} files for this ticket`,
           command: null,
         },
         autoFixable: false,
@@ -233,13 +233,13 @@ const requiredFilesByStatus: Check = {
 };
 
 const companionFilesScaffolded: Check = {
-  id: 'assignment.companion-files',
+  id: 'ticket.companion-files',
   category: CATEGORY,
   title: 'progress.md and comments.md scaffolded (v2.0)',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const missing: string[] = [];
       for (const filename of ['progress.md', 'comments.md']) {
         if (!(await fileExists(resolve(a.ticketDir, filename)))) {
@@ -269,9 +269,9 @@ const companionFilesScaffolded: Check = {
 };
 
 const typeDefinition: Check = {
-  id: 'assignment.type-definition',
+  id: 'ticket.type-definition',
   category: CATEGORY,
-  title: 'Assignment `type` is in config.types.definitions',
+  title: 'Ticket `type` is in config.types.definitions',
   async run(ctx) {
     const typesConfig = ctx.config.types;
     if (!typesConfig) {
@@ -285,9 +285,9 @@ const typeDefinition: Check = {
       } satisfies CheckResult;
     }
     const allowed = new Set(typesConfig.definitions.map((d) => d.id));
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -316,13 +316,13 @@ const typeDefinition: Check = {
 };
 
 const projectFrontmatterMatchesContainer: Check = {
-  id: 'assignment.project-matches-container',
+  id: 'ticket.project-matches-container',
   category: CATEGORY,
   title: '`project` frontmatter matches containing project slug (or null for standalone)',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -368,13 +368,13 @@ const projectFrontmatterMatchesContainer: Check = {
 };
 
 const draftMissingObjective: Check = {
-  id: 'assignment.draft-missing-objective',
+  id: 'ticket.draft-missing-objective',
   category: CATEGORY,
-  title: 'Draft assignments have a non-empty Objective',
+  title: 'Draft tickets have a non-empty Objective',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -408,13 +408,13 @@ const draftMissingObjective: Check = {
 };
 
 const readyToImplementMissingPlan: Check = {
-  id: 'assignment.ready-to-implement-missing-plan',
+  id: 'ticket.ready-to-implement-missing-plan',
   category: CATEGORY,
-  title: 'ready_to_implement assignments have a plan.md (or plan-v<N>.md)',
+  title: 'ready_to_implement tickets have a plan.md (or plan-v<N>.md)',
   async run(ctx) {
-    const { withAssignmentMd } = await listTickets(ctx);
+    const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
-    for (const a of withAssignmentMd) {
+    for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
@@ -455,7 +455,7 @@ const readyToImplementMissingPlan: Check = {
   },
 };
 
-export const assignmentChecks: Check[] = [
+export const ticketChecks: Check[] = [
   requiredFiles,
   orphanedFolder,
   invalidStatus,

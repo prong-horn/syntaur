@@ -82,7 +82,7 @@ describe('syntaur progress log', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('replaces the placeholder, increments entryCount, preserves assignment/generated', async () => {
+  it('replaces the placeholder, increments entryCount, preserves ticket/generated', async () => {
     const r = await runCli(['progress', 'log', 'First entry', '--ticket', 'a', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');

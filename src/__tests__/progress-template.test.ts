@@ -31,7 +31,7 @@ describe('parseProgress round-trip', () => {
       timestamp: '2026-04-20T10:00:00Z',
     });
     const parsed = parseProgress(template);
-    expect(parsed.assignment).toBe('a-slug');
+    expect(parsed.ticket).toBe('a-slug');
     expect(parsed.entryCount).toBe(0);
     // Sentinel "No progress yet." is not a valid `## ` entry, so entries are empty.
     expect(parsed.entries).toHaveLength(0);
@@ -59,7 +59,7 @@ describe('parseProgress round-trip', () => {
     ].join('\n');
 
     const parsed = parseProgress(file);
-    expect(parsed.assignment).toBe('example');
+    expect(parsed.ticket).toBe('example');
     expect(parsed.entryCount).toBe(2);
     expect(parsed.updated).toBe('2026-04-20T14:00:00Z');
     expect(parsed.entries).toHaveLength(2);

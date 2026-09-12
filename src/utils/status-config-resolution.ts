@@ -7,22 +7,20 @@ import {
   updateTicketFile,
 } from '../lifecycle/frontmatter.js';
 import { recordStatusEvent, resolveActor } from '../lifecycle/event-emit.js';
-import { listTicketsByProject, type AssignmentEntry } from './ticket-walk.js';
+import { listTicketsByProject, type TicketEntry } from './ticket-walk.js';
 import { readProjectBinding } from './project-binding.js';
 import { DEFAULT_WORKFLOW_ID } from './workflow-resolve.js';
 import type { WorkflowContextResolver } from '../lifecycle/workflow-context.js';
 import { fileExists } from './fs.js';
 import { nowTimestamp } from './timestamp.js';
 
-export interface AffectedAssignment {
+export interface AffectedTicket {
   /** Absolute path to the ticket.md file. */
   path: string;
   /** Human display label: "<project>/<slug>" or "(standalone) <slug>". */
   display: string;
   projectSlug: string | null;
   ticketSlug?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string;
   status: TicketStatus;
   /** Explicit `workflow:` override on the ticket (null → resolved via binding). */
   workflow: string | null;
@@ -44,7 +42,7 @@ export interface WorkflowScanScope {
 }
 
 /** Project root for binding lookup — null for standalone (no project.md). */
-function bindingProjectDir(entry: AssignmentEntry): string | null {
+function bindingProjectDir(entry: TicketEntry): string | null {
   return entry.standalone ? null : entry.projectDir;
 }
 
@@ -81,30 +79,30 @@ export class StatusResolutionError extends Error {
  * other than ENOENT (which is treated as the file vanishing between the
  * walk and the read — rare but benign).
  */
-export async function scanAssignmentsByStatus(
+export async function scanTicketsByStatus(
   projectsDir: string,
   standaloneDir: string | null,
   ids: string[],
   scope: WorkflowScanScope = {},
-): Promise<Map<string, AffectedAssignment[]>> {
+): Promise<Map<string, AffectedTicket[]>> {
   // Always populate an entry for every requested id (possibly empty).
   // This lets `applyStatusResolutions` distinguish "stale" (id not in
   // map) from "zero-affected" (id in map, list empty).
-  const result = new Map<string, AffectedAssignment[]>();
+  const result = new Map<string, AffectedTicket[]>();
   for (const id of ids) result.set(id, []);
   if (ids.length === 0) return result;
   const idSet = new Set(ids);
 
   const walk = await listTicketsByProject(projectsDir, standaloneDir);
 
-  for (const entry of walk.withAssignmentMd) {
+  for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
       content = await readFile(ticketPath, 'utf-8');
     } catch (err) {
       // Don't swallow IO errors silently — surface them as scan-failed.
-      // Silent skip would hide affected assignments and let the server
+      // Silent skip would hide affected tickets and let the server
       // wrongly approve a drop, leaving doctor errors after save.
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') {
@@ -133,7 +131,7 @@ export async function scanAssignmentsByStatus(
     const display = entry.standalone
       ? `(standalone) ${entry.ticketSlug}`
       : `${entry.projectSlug}/${entry.ticketSlug}`;
-    const affected: AffectedAssignment = {
+    const affected: AffectedTicket = {
       path: ticketPath,
       display,
       projectSlug: entry.projectSlug,
@@ -150,7 +148,7 @@ export async function scanAssignmentsByStatus(
 }
 
 /**
- * Apply a list of resolutions to the affected assignments.
+ * Apply a list of resolutions to the affected tickets.
  *
  * Order (per `decision-record.md` Decision 3):
  *   1. Validate (duplicates, stale ids, invalid targets) — no writes.
@@ -160,13 +158,13 @@ export async function scanAssignmentsByStatus(
  *   4. Delete phase: re-verify status, rm -rf ticket directories.
  *      On failure, throw without rolling back remaps (caller leaves
  *      config un-written so the old config still considers every
- *      remaining assignment's status valid).
+ *      remaining ticket's status valid).
  *
  * `validTargets` MUST be `oldIds ∩ newIds` — statuses present in BOTH
  * the pre- and post-mutation status config. Restricting targets this
  * way is what makes Decision 3 safe under post-Step-A config-write
- * failures: every remapped assignment's new status is valid in the old
- * config too, so doctor sees no `assignment.invalid-status`.
+ * failures: every remapped ticket's new status is valid in the old
+ * config too, so doctor sees no `ticket.invalid-status`.
  *
  * Returns `{ remapped, deleted }` — counts of files actually touched.
  * Skipped TOCTOU mismatches do not count.
@@ -180,7 +178,7 @@ export interface ApplyResult {
 
 export async function applyStatusResolutions(
   resolutions: StatusResolution[],
-  affected: Map<string, AffectedAssignment[]>,
+  affected: Map<string, AffectedTicket[]>,
   validTargets: Set<string>,
 ): Promise<ApplyResult> {
   // 1. Validate
@@ -409,7 +407,7 @@ export async function verifyNoDriftedOrphans(
   scope: WorkflowScanScope = {},
 ): Promise<void> {
   if (droppedIds.length === 0) return;
-  const finalScan = await scanAssignmentsByStatus(projectsDir, standaloneDir, droppedIds, scope);
+  const finalScan = await scanTicketsByStatus(projectsDir, standaloneDir, droppedIds, scope);
   const remaining: string[] = [];
   for (const id of droppedIds) {
     const list = finalScan.get(id) ?? [];
@@ -419,7 +417,7 @@ export async function verifyNoDriftedOrphans(
   }
   if (remaining.length > 0) {
     throw new StatusResolutionError(
-      `concurrent edit detected: ${remaining.length} assignment(s) still reference a dropped status after resolutions applied: ${remaining.join(', ')}`,
+      `concurrent edit detected: ${remaining.length} ticket(s) still reference a dropped status after resolutions applied: ${remaining.join(', ')}`,
       'drift-detected',
     );
   }
@@ -429,18 +427,18 @@ export async function verifyNoDriftedOrphans(
  * Rename-scope scan (derived-status v3): find every ticket that references
  * a status id ANYWHERE relabeling must reach — headline `status`, cached
  * `phase`, or any statusHistory from/to/phaseFrom/phaseTo. The plain
- * `scanAssignmentsByStatus` only matches the headline, which misses e.g. a
+ * `scanTicketsByStatus` only matches the headline, which misses e.g. a
  * blocked ticket whose cached phase uses the renamed id.
  */
-export async function scanAssignmentsReferencingStatus(
+export async function scanTicketsReferencingStatus(
   projectsDir: string,
   standaloneDir: string | null,
   id: string,
   scope: WorkflowScanScope = {},
-): Promise<AffectedAssignment[]> {
+): Promise<AffectedTicket[]> {
   const walk = await listTicketsByProject(projectsDir, standaloneDir);
-  const affected: AffectedAssignment[] = [];
-  for (const entry of walk.withAssignmentMd) {
+  const affected: AffectedTicket[] = [];
+  for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
@@ -492,7 +490,7 @@ export interface WorkflowUsage {
    * `workflows.references-resolve` check, so these block deletion too. */
   boundProjects: string[];
   /** Tickets that RESOLVE to this workflow (headline scan, all statuses). */
-  assignments: AffectedAssignment[];
+  tickets: AffectedTicket[];
   /** True when the workflow can be removed without first reassigning anything. */
   deletable: boolean;
   /** Human-readable reasons blocking deletion (empty ⇢ deletable). */
@@ -511,7 +509,7 @@ export interface WorkflowUsageOptions {
 
 /**
  * Delete-in-use guard (Task 8): resolve everything that references a workflow so
- * a caller can block or force reassignment before removing it. A workflow is
+ * a caller can block or force reticket before removing it. A workflow is
  * `deletable` only when it is not the built-in `default`, not the global
  * default, is bound by no project, and is resolved to by no ticket. Call this
  * BEFORE removing the workflow from config (so its tickets still resolve to it).
@@ -540,8 +538,8 @@ export async function scanWorkflowUsage(
 
   // Tickets that resolve to the workflow (headline scan across all statuses).
   const walk = await listTicketsByProject(opts.projectsDir, opts.standaloneDir);
-  const assignments: AffectedAssignment[] = [];
-  for (const entry of walk.withAssignmentMd) {
+  const tickets: AffectedTicket[] = [];
+  for (const entry of walk.withTicketMd) {
     const ticketPath = `${entry.ticketDir}/ticket.md`;
     let content: string;
     try {
@@ -557,7 +555,7 @@ export async function scanWorkflowUsage(
     const fm = parseTicketFrontmatter(content);
     const wctx = await opts.resolver.forTicket(fm, bindingProjectDir(entry));
     if (wctx.workflowId !== workflowId) continue;
-    assignments.push({
+    tickets.push({
       path: ticketPath,
       display: entry.standalone
         ? `(standalone) ${entry.ticketSlug}`
@@ -580,8 +578,8 @@ export async function scanWorkflowUsage(
   if (boundProjects.length > 0) {
     blockers.push(`bound by project(s): ${boundProjects.join(', ')}`);
   }
-  if (assignments.length > 0) {
-    blockers.push(`${assignments.length} ticket(s) resolve to it — reassign them before deleting`);
+  if (tickets.length > 0) {
+    blockers.push(`${tickets.length} ticket(s) resolve to it — reassign them before deleting`);
   }
 
   return {
@@ -589,7 +587,7 @@ export async function scanWorkflowUsage(
     isBuiltinDefault,
     isGlobalDefault: opts.isGlobalDefault,
     boundProjects,
-    assignments,
+    tickets,
     deletable: blockers.length === 0,
     blockers,
   };

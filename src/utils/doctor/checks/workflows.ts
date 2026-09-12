@@ -191,9 +191,9 @@ const referencesResolve: Check = {
       }
     }
 
-    // Per-assignment overrides.
-    const { withAssignmentMd } = await listTicketsByProject(projectsDir, getStandaloneDir());
-    for (const a of withAssignmentMd) {
+    // Per-ticket overrides.
+    const { withTicketMd } = await listTicketsByProject(projectsDir, getStandaloneDir());
+    for (const a of withTicketMd) {
       try {
         const parsed = parseTicketFull(
           await readFile(resolve(a.ticketDir, 'ticket.md'), 'utf-8'),

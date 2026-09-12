@@ -10,7 +10,7 @@ import {
 import { openEngagement, closeEngagementById } from '../db/engagement-db.js';
 import type { ModelTokens, TokenSnapshot } from '../db/engagement-tokens.js';
 import {
-  assignmentWindowCost,
+  ticketWindowCost,
   projectWindowCosts,
 } from '../usage/engagement-cost.js';
 
@@ -64,7 +64,7 @@ function window(opts: {
   });
 }
 
-describe('assignmentWindowCost', () => {
+describe('ticketWindowCost', () => {
   it('(a) attributes each window to the right ticket for A-then-B on the same model', () => {
     const m = 'claude-opus-4-7';
     // One session, same model, cumulative cost grows across both windows:
@@ -83,8 +83,8 @@ describe('assignmentWindowCost', () => {
       close: snap({ [m]: model({ total: 400, cost: 4.0 }) }),
     });
 
-    const a = assignmentWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
-    const b = assignmentWindowCost({ projectSlug: 'proj', ticketSlug: 'B' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const b = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'B' });
     expect(a.cost).toBeCloseTo(1.5, 6);
     expect(a.pricedWindowCount).toBe(1);
     expect(b.cost).toBeCloseTo(2.5, 6);
@@ -100,7 +100,7 @@ describe('assignmentWindowCost', () => {
       open: null,
       close: snap({ 'claude-opus-4-7': model({ total: 200, cost: 3.0 }) }),
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     expect(a.cost).toBe(0);
     expect(a.uncomputableWindowCount).toBe(1);
     expect(a.pricedWindowCount).toBe(0);
@@ -122,7 +122,7 @@ describe('assignmentWindowCost', () => {
         [unknown]: model({ input: 1_000_000, total: 1_000_000, cost: 0 }),
       }),
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     // known model: 1e6 * 0.95 / 1e6 = 0.95; unknown: 0 (not priced) but window still computable.
     expect(a.cost).toBeCloseTo(0.95, 6);
     expect(a.pricedWindowCount).toBe(1);
@@ -136,7 +136,7 @@ describe('assignmentWindowCost', () => {
       open: snap({ 'claude-opus-4-7': model({ total: 200, cost: 5.0 }) }),
       close: snap({ 'claude-opus-4-7': model({ total: 100, cost: 2.0 }) }), // went DOWN
     });
-    const a = assignmentWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
     expect(a.cost).toBe(0);
     expect(a.negativeDeltaCount).toBe(1);
     expect(a.pricedWindowCount).toBe(1);
@@ -150,8 +150,8 @@ describe('assignmentWindowCost', () => {
       close: snap({ 'claude-opus-4-7': model({ total: 50, cost: 0.7 }) }),
     });
     // Empty-string projectSlug (the standalone endpoint shape) maps to the NULL match.
-    const viaEmpty = assignmentWindowCost({ projectSlug: '', ticketSlug: 'solo' });
-    const viaNull = assignmentWindowCost({ projectSlug: null, ticketSlug: 'solo' });
+    const viaEmpty = ticketWindowCost({ projectSlug: '', ticketSlug: 'solo' });
+    const viaNull = ticketWindowCost({ projectSlug: null, ticketSlug: 'solo' });
     expect(viaEmpty.cost).toBeCloseTo(0.7, 6);
     expect(viaNull.cost).toBeCloseTo(0.7, 6);
   });
@@ -163,7 +163,7 @@ describe('assignmentWindowCost', () => {
       open: snap({ 'claude-opus-4-7': model({ cost: 0 }) }),
       close: snap({ 'claude-opus-4-7': model({ cost: 1.25 }) }),
     });
-    const a = assignmentWindowCost({ ticketId: 'id-A' });
+    const a = ticketWindowCost({ ticketId: 'id-A' });
     expect(a.cost).toBeCloseTo(1.25, 6);
   });
 });

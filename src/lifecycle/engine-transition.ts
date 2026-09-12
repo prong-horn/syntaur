@@ -25,12 +25,10 @@ import { parseTicketFrontmatter } from './frontmatter.js';
 
 type TicketPathInput = {
   ticketPath?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentPath?: string;
 };
 
 function resolveTicketPath(input: TicketPathInput): string {
-  const path = input.ticketPath ?? input.assignmentPath;
+  const path = input.ticketPath;
   if (!path) throw new Error('ticketPath is required');
   return path;
 }
@@ -43,7 +41,7 @@ function resolveTicketPath(input: TicketPathInput): string {
  * state and stays on the ladder. Used to gate the raw-PATCH mover guard and any
  * other site that must distinguish "engine owns this ticket" from "marker set".
  */
-export async function isEngineActiveForAssignment(
+export async function isEngineActiveForTicket(
   ticketPath: string,
   projectDir: string | null,
 ): Promise<boolean> {
@@ -137,7 +135,7 @@ export async function runEngineTransition(input: TicketPathInput & {
   if (result.deferredTerminal) {
     return {
       success: false,
-      message: `Assignment is ${result.status} (terminal). Use \`syntaur reopen\` first.`,
+      message: `Ticket is ${result.status} (terminal). Use \`syntaur reopen\` first.`,
       fromStatus,
     };
   }
@@ -212,7 +210,7 @@ export async function runEngineOverride(input: TicketPathInput & {
     engineMove: { kind: 'manual-override', target: input.status, actor: input.by ?? undefined },
   });
   if (result.deferredTerminal) {
-    return { ok: false, code: 409, message: 'Assignment is terminal — reopen it first.' };
+    return { ok: false, code: 409, message: 'Ticket is terminal — reopen it first.' };
   }
   if (result.warning) {
     return { ok: false, code: 503, message: result.warning };

@@ -1,7 +1,7 @@
 /**
  * Deep-link route helper for search hits. Produces UNPREFIXED app paths (the
  * dashboard palette prepends the per-hit `/w/<workspace>` prefix for nested
- * assignment-pane hits). Also exports the shared `slugifyHeading` used both here
+ * ticket-pane hits). Also exports the shared `slugifyHeading` used both here
  * (for the `#section` anchor) and by the dashboard `MarkdownRenderer` heading
  * ids, so the route hash always matches a real element id.
  */
@@ -42,7 +42,7 @@ export function slugifyHeading(text: string): string {
  * resolve against. Excluded kinds, and why a hash there would dangle:
  *   - `comments` / `progress` — render structured components (CommentsThread /
  *     progress `<li>` rows), NOT markdown headings.
- *   - `assignment` — the `summary` pane transforms `## Acceptance Criteria` into
+ *   - `ticket` — the `summary` pane transforms `## Acceptance Criteria` into
  *     `SectionCard`s WITHOUT ids (TicketDetail.tsx), so its headings never
  *     become element ids.
  * These all get the `?tab=` pane WITHOUT a hash.
@@ -56,7 +56,7 @@ const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
 
 /**
  * Build the UNPREFIXED deep-link for a hit:
- *   - assignment-scoped kinds → `<base>?tab=<pane>` + optional `#<slug(section)>`,
+ *   - ticket-scoped kinds → `<base>?tab=<pane>` + optional `#<slug(section)>`,
  *     where base is `/t/<ticketId>`.
  */
 export function routeForHit(

@@ -108,7 +108,7 @@ statuses:
 `;
 }
 
-const ASSIGNMENT = (repoPath: string) => `---
+const TICKET = (repoPath: string) => `---
 id: feat-x-id
 slug: feat-x
 title: "Feat X"
@@ -154,7 +154,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     ticketPath = join(aDir, 'ticket.md');
-    await writeFile(ticketPath, ASSIGNMENT('/repo'));
+    await writeFile(ticketPath, TICKET('/repo'));
   });
 
   afterEach(async () => {
@@ -217,7 +217,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
     await writeFile(join(repo, 'a.txt'), 'one');
     git(['add', '.']);
     git(['commit', '-q', '-m', 'one']);
-    await writeFile(ticketPath, ASSIGNMENT(repo));
+    await writeFile(ticketPath, TICKET(repo));
 
     try {
       await runCli(['recompute', 'feat-x', '--project', 'p1'], home);
@@ -240,7 +240,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
   });
 
   it('binds:commit attest refuses when the workspace is not a git repo', async () => {
-    await writeFile(ticketPath, ASSIGNMENT('/definitely/not/a/repo'));
+    await writeFile(ticketPath, TICKET('/definitely/not/a/repo'));
     await runCli(['recompute', 'feat-x', '--project', 'p1'], home);
     const r = await runCli(['attest', 'feat-x', 'deploy', '--agent', 'ci', '--project', 'p1'], home);
     expect(r.code).not.toBe(0);

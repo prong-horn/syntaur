@@ -213,7 +213,7 @@ describe('validateFactDeclarations', () => {
     expect(problems.join(' ')).toMatch(/planapproved.*collides with a built-in/i);
   });
 
-  it('rejects a collision with ASSIGNMENT_FIELDS (e.g. tags)', () => {
+  it('rejects a collision with TICKET_FIELDS (e.g. tags)', () => {
     const problems = validateFactDeclarations([{ name: 'tags', type: 'bool', binds: null }]);
     expect(problems.join(' ')).toMatch(/collides with a built-in/i);
   });

@@ -280,7 +280,7 @@ describe('usage-only rows in the paged union', () => {
 
 describe('attribution filtering', () => {
   async function seedMixed(): Promise<void> {
-    await seedSession('with-assignment', { projectSlug: 'alpha', ticketSlug: 'task' });
+    await seedSession('with-ticket', { projectSlug: 'alpha', ticketSlug: 'task' });
     await seedSession('adhoc-1');
     await seedSession('adhoc-2');
     seedUsage('spend-orphan-1', { cost: 1 });
@@ -291,7 +291,7 @@ describe('attribution filtering', () => {
     await seedMixed();
     const body = await get('?pageSize=50');
     expect(body.sessions.map((s) => s.sessionId).sort()).toEqual([
-      'adhoc-1', 'adhoc-2', 'with-assignment',
+      'adhoc-1', 'adhoc-2', 'with-ticket',
     ]);
     expect(body.page?.totalCount).toBe(3);
   });
@@ -308,7 +308,7 @@ describe('attribution filtering', () => {
   it('isolates assigned sessions', async () => {
     await seedMixed();
     const body = await get('?pageSize=50&attribution=assigned');
-    expect(body.sessions.map((s) => s.sessionId)).toEqual(['with-assignment']);
+    expect(body.sessions.map((s) => s.sessionId)).toEqual(['with-ticket']);
   });
 
   it('isolates spend-only rows', async () => {
@@ -475,7 +475,7 @@ describe('pinned-first ordering spans the whole result set', () => {
     expect(first.page?.totalCount).toBe(25);
   });
 
-  it.each(['started_desc', 'started_asc', 'assignment_asc', 'agent_asc'] as const)(
+  it.each(['started_desc', 'started_asc', 'ticket_asc', 'agent_asc'] as const)(
     'keeps pinned sessions leading under the SQL sort %s',
     async (sort) => {
       await seedMany(12);

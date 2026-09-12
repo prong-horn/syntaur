@@ -93,7 +93,7 @@ Open question.
 async function seedSyntheticWorkspace(
   projectsDir: string,
   projects: number,
-  assignmentsPerProject: number,
+  ticketsPerProject: number,
 ): Promise<void> {
   const statuses = [
     'in_progress',
@@ -113,7 +113,7 @@ async function seedSyntheticWorkspace(
     await mkdir(projectPath, { recursive: true });
     await writeFile(resolve(projectPath, 'project.md'), projectMd(projectSlug), 'utf-8');
 
-    for (let a = 0; a < assignmentsPerProject; a++) {
+    for (let a = 0; a < ticketsPerProject; a++) {
       const slug = `asg-${a.toString().padStart(3, '0')}`;
       const status = statuses[a % statuses.length]!;
       const dependsOn =
@@ -186,7 +186,7 @@ describe.skipIf(!ENABLED)('perf-overview synthetic 30x20', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('cold + warm + warm against 60 projects x 30 assignments', async () => {
+  it('cold + warm + warm against 60 projects x 30 tickets', async () => {
     await seedSyntheticWorkspace(dir, 60, 30);
     const cold = await runOnce('synthetic-cold', dir);
     const warm1 = await runOnce('synthetic-warm-1', dir);

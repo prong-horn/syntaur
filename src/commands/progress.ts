@@ -8,7 +8,7 @@ import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
 
-async function resolveAssignmentDir(opts: {
+async function resolveTicketDir(opts: {
   ticket?: string;
   project?: string;
   cwd: string;
@@ -48,7 +48,7 @@ export async function runProgressLog(
   if (!text || text.trim().length === 0) {
     throw new Error('Provide the progress text: `syntaur progress log "<text>"`.');
   }
-  const { dir, slug } = await resolveAssignmentDir({
+  const { dir, slug } = await resolveTicketDir({
     ticket: options.ticket,
     project: options.project,
     cwd,

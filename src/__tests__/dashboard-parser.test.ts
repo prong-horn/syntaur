@@ -181,7 +181,7 @@ needsAttention:
 });
 
 describe('parseTicketSummary', () => {
-  const ASSIGNMENT_MD = `---
+  const TICKET_MD = `---
 id: d1e2f3a4-b5c6-7890-abcd-111111111111
 slug: design-auth-schema
 title: Design Auth Database Schema
@@ -205,7 +205,7 @@ tags: []
 # Design Auth Database Schema`;
 
   it('parses key summary fields', () => {
-    const summary = parseTicketSummary(ASSIGNMENT_MD);
+    const summary = parseTicketSummary(TICKET_MD);
     expect(summary.slug).toBe('design-auth-schema');
     expect(summary.title).toBe('Design Auth Database Schema');
     expect(summary.status).toBe('completed');
@@ -217,7 +217,7 @@ tags: []
 });
 
 describe('parseTicketFull', () => {
-  const ASSIGNMENT_WITH_DEPS = `---
+  const TICKET_WITH_DEPS = `---
 id: d1e2f3a4-b5c6-7890-abcd-222222222222
 slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
@@ -248,7 +248,7 @@ tags: []
 Body here.`;
 
   it('parses all fields including dependencies and workspace', () => {
-    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(TICKET_WITH_DEPS);
     expect(ticket.slug).toBe('implement-jwt-middleware');
     expect(ticket.status).toBe('in_progress');
     expect(ticket.assignee).toBe('claude-1');
@@ -259,7 +259,7 @@ Body here.`;
   });
 
   it('defaults archive fields when absent (backward compatible)', () => {
-    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(TICKET_WITH_DEPS);
     expect(ticket.archived).toBe(false);
     expect(ticket.archivedAt).toBeNull();
     expect(ticket.archivedReason).toBeNull();
@@ -267,7 +267,7 @@ Body here.`;
 
   it('parses archive fields when present', () => {
     const archived = parseTicketFull(
-      ASSIGNMENT_WITH_DEPS.replace(
+      TICKET_WITH_DEPS.replace(
         'tags: []\n---',
         'tags: []\narchived: true\narchivedAt: "2026-05-31T12:00:00Z"\narchivedReason: stale\n---',
       ),
@@ -278,7 +278,7 @@ Body here.`;
   });
 
   it('parses externalIds', () => {
-    const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
+    const ticket = parseTicketFull(TICKET_WITH_DEPS);
     expect(ticket.externalIds).toHaveLength(1);
     expect(ticket.externalIds[0]).toEqual({
       system: 'jira',
@@ -288,7 +288,7 @@ Body here.`;
   });
 
   it('keeps externalIds entries without a url, defaulting url to null', () => {
-    const ASSIGNMENT_URL_LESS = `---
+    const TICKET_URL_LESS = `---
 id: u-1
 slug: link-less
 title: Link-less External ID
@@ -315,7 +315,7 @@ tags: []
 ---
 
 # Link-less External ID`;
-    const ticket = parseTicketFull(ASSIGNMENT_URL_LESS);
+    const ticket = parseTicketFull(TICKET_URL_LESS);
     expect(ticket.externalIds).toHaveLength(2);
     expect(ticket.externalIds[0]).toEqual({
       system: 'linear',
@@ -330,7 +330,7 @@ tags: []
   });
 
   it('normalizes explicit null, empty, tilde, and quoted url scalars', () => {
-    const ASSIGNMENT_QUIRKY_URLS = `---
+    const TICKET_QUIRKY_URLS = `---
 id: u-2
 slug: quirky-urls
 title: Quirky URLs
@@ -367,7 +367,7 @@ tags: []
 ---
 
 # Quirky URLs`;
-    const ticket = parseTicketFull(ASSIGNMENT_QUIRKY_URLS);
+    const ticket = parseTicketFull(TICKET_QUIRKY_URLS);
     expect(ticket.externalIds).toHaveLength(5);
     expect(ticket.externalIds[0].url).toBeNull();
     expect(ticket.externalIds[1].url).toBeNull();
@@ -392,7 +392,7 @@ updated: "2026-03-17T10:00:00Z"
 
   it('parses plan frontmatter and body', () => {
     const plan = parsePlan(PLAN_MD);
-    expect(plan.assignment).toBe('design-auth-schema');
+    expect(plan.ticket).toBe('design-auth-schema');
     expect(plan.status).toBe('completed');
     expect(plan.body).toContain('Task 1');
   });
@@ -410,7 +410,7 @@ Notes here.`;
 
   it('parses scratchpad', () => {
     const sp = parseScratchpad(SCRATCHPAD_MD);
-    expect(sp.assignment).toBe('design-auth-schema');
+    expect(sp.ticket).toBe('design-auth-schema');
     expect(sp.body).toContain('Notes here.');
   });
 });
@@ -429,7 +429,7 @@ Details.`;
 
   it('parses handoff with count', () => {
     const h = parseHandoff(HANDOFF_MD);
-    expect(h.assignment).toBe('design-auth-schema');
+    expect(h.ticket).toBe('design-auth-schema');
     expect(h.handoffCount).toBe(1);
     expect(h.body).toContain('Handoff 1');
   });
@@ -449,7 +449,7 @@ Details.`;
 
   it('parses decision record with count', () => {
     const d = parseDecisionRecord(DECISION_MD);
-    expect(d.assignment).toBe('design-auth-schema');
+    expect(d.ticket).toBe('design-auth-schema');
     expect(d.decisionCount).toBe(1);
     expect(d.body).toContain('Decision 1');
   });

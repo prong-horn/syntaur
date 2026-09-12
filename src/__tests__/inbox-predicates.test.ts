@@ -15,7 +15,7 @@ import {
   type InboxStatusConfig,
 } from '../inbox/index.js';
 import type { InboxItem } from '../inbox/types.js';
-import { parseTicketFull, type ParsedAssignmentFull, type ParsedComment } from '../dashboard/parser.js';
+import { parseTicketFull, type ParsedTicketFull, type ParsedComment } from '../dashboard/parser.js';
 import { buildDefaultStatusConfig } from '../utils/config.js';
 import { buildTransitionTable } from '../lifecycle/state-machine.js';
 import { planDigest } from '../lifecycle/facts.js';
@@ -36,8 +36,8 @@ function defaultStatusConfig(): InboxStatusConfig {
   };
 }
 
-/** Build a ParsedAssignmentFull from frontmatter by round-tripping the real parser. */
-function ticket(frontmatter: string): ParsedAssignmentFull {
+/** Build a ParsedTicketFull from frontmatter by round-tripping the real parser. */
+function ticket(frontmatter: string): ParsedTicketFull {
   return parseTicketFull(`---\n${frontmatter}\n---\n# body\n`);
 }
 

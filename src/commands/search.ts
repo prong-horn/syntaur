@@ -153,7 +153,7 @@ function renderTable(hits: SearchHit[]): string {
     sourceLabel(hit),
     highlight(hit.snippet, hit.matches).replace(/\s*\n\s*/g, ' ').trim(),
   ]);
-  const header = ['PROJECT', 'ASSIGNMENT', 'SOURCE', 'SNIPPET'];
+  const header = ['PROJECT', 'TICKET', 'SOURCE', 'SNIPPET'];
   // Highlight markers inflate the snippet width; cap non-snippet cols only.
   const widths = header.map((_, c) => {
     if (c === header.length - 1) return 0; // snippet — never padded/truncated
@@ -172,7 +172,7 @@ function renderTable(hits: SearchHit[]): string {
 
 export const searchCommand = new Command('search')
   .description(
-    'Full-text search across all Syntaur markdown content (assignments, plans, progress, comments, handoffs, decision records, and scratchpads).',
+    'Full-text search across all Syntaur markdown content (tickets, plans, progress, comments, handoffs, decision records, and scratchpads).',
   )
   .argument('<query>', 'Search query')
   .option('--project <slug>', 'Restrict to one project')

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { resolveEngagementBinding } from '../utils/engagement-binding.js';
-import { initEventsDb, listEventsByAssignment, type EventRow } from '../db/events-db.js';
+import { initEventsDb, listEventsByTicket, type EventRow } from '../db/events-db.js';
 
 /** Parsed `syntaur timeline` options (commander populates these from the flags). */
 export interface TimelineOptions {
@@ -42,7 +42,7 @@ export async function runTimeline(
   });
 
   initEventsDb();
-  const rows = listEventsByAssignment(resolved.id, {
+  const rows = listEventsByTicket(resolved.id, {
     since: options.since,
     types: options.type,
     limit: options.limit ?? DEFAULT_LIMIT,

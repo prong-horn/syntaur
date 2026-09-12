@@ -21,11 +21,11 @@ import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js
 import {
   getProjectRepositoryCandidates,
   getStandaloneRepositoryCandidates,
-  getProjectSourceAssignments,
-  getStandaloneSourceAssignments,
+  getProjectSourceTickets,
+  getStandaloneSourceTickets,
 } from './repository-candidates.js';
 import {
-  parseAssignmentFull,
+  parseTicketFull,
   parseDecisionRecord,
   parseHandoff,
   parseProject,
@@ -85,7 +85,7 @@ function emitDashboardEvent(
 }
 
 /**
- * WS-2 (codex r3 blocker / r5): on a MIGRATED assignment the raw whole-document
+ * WS-2 (codex r3 blocker / r5): on a MIGRATED ticket the raw whole-document
  * PATCH must not be a hidden mover. Default-deny allow-list — only inert
  * scalar-metadata edits pass; any field that moves a ticket or alters derived/
  * gate/pause state is rejected (the caller uses the move/transition path). `null`
@@ -93,8 +93,8 @@ function emitDashboardEvent(
  * engine's `isPaused` reads), so it is rejected too.
  */
 export function rawPatchMoverViolation(
-  current: ReturnType<typeof parseAssignmentFull>,
-  next: ReturnType<typeof parseAssignmentFull>,
+  current: ReturnType<typeof parseTicketFull>,
+  next: ReturnType<typeof parseTicketFull>,
 ): string | null {
   const j = (v: unknown): string => JSON.stringify(v ?? null);
   if (next.status !== current.status) return 'status';
@@ -207,7 +207,7 @@ function validateRequired(
 }
 
 /**
- * Apply (or clear) the orthogonal archive fields on a project.md / assignment.md
+ * Apply (or clear) the orthogonal archive fields on a project.md / ticket.md
  * frontmatter string. On archive: stamps `archivedAt` + optional `archivedReason`.
  * On restore: clears all three. Always bumps `updated`. `status` is never touched,
  * so restore preserves the prior status exactly.
@@ -251,9 +251,9 @@ interface WorktreeCreateContext {
 }
 
 /**
- * Assignment-file paths with a worktree creation currently in flight. Guards
+ * Ticket-file paths with a worktree creation currently in flight. Guards
  * the double-submit race that `git worktree add` does NOT catch: two concurrent
- * POSTs for the same assignment with *different* branch names would otherwise
+ * POSTs for the same ticket with *different* branch names would otherwise
  * both succeed — creating two worktrees and a last-write-wins `workspace.*`.
  * Exported so tests can deterministically assert the 409 path.
  */
@@ -315,7 +315,7 @@ export async function assertRepoRoot(
  * Shared body for both worktree-create routes. Validates inputs, runs the
  * disk-collision and parent-branch pre-flights, then calls the same
  * `createWorktreeAndRecord` helper the CLI uses. Returns
- * `{ assignment }` shaped via `reload` on success.
+ * `{ ticket }` shaped via `reload` on success.
  */
 async function handleWorktreeCreate(
   req: Request,
@@ -323,25 +323,25 @@ async function handleWorktreeCreate(
   ctx: WorktreeCreateContext,
 ): Promise<void> {
   if (!(await fileExists(ctx.ticketPath))) {
-    res.status(404).json({ error: 'Assignment not found' });
+    res.status(404).json({ error: 'Ticket not found' });
     return;
   }
 
-  // Double-submit guard: reject a second concurrent create for this assignment.
+  // Double-submit guard: reject a second concurrent create for this ticket.
   if (worktreeInFlight.has(ctx.ticketPath)) {
     res
       .status(409)
-      .json({ error: 'A worktree is already being created for this assignment.' });
+      .json({ error: 'A worktree is already being created for this ticket.' });
     return;
   }
   worktreeInFlight.add(ctx.ticketPath);
 
   try {
-    const parsed = parseAssignmentFull(await readFile(ctx.ticketPath, 'utf-8'));
+    const parsed = parseTicketFull(await readFile(ctx.ticketPath, 'utf-8'));
     if (parsed.workspace.worktreePath) {
       res
         .status(409)
-        .json({ error: 'Worktree already configured for this assignment' });
+        .json({ error: 'Worktree already configured for this ticket' });
       return;
     }
 
@@ -477,8 +477,8 @@ export function createWriteRouter(
     const standalone = req.query.standalone === '1';
     const content = renderTicket({
       id: generateId(),
-      slug: 'my-new-assignment',
-      title: 'My New Assignment',
+      slug: 'my-new-ticket',
+      title: 'My New Ticket',
       timestamp: nowTimestamp(),
       priority: 'medium',
       dependsOn: [],
@@ -613,7 +613,7 @@ export function createWriteRouter(
       const ticketDir = resolve(projectDir, 'tickets', ticketSlug);
       if (await fileExists(ticketDir)) {
         res.status(409).json({
-          error: `Assignment "${ticketSlug}" already exists in project "${projectSlug}"`,
+          error: `Ticket "${ticketSlug}" already exists in project "${projectSlug}"`,
         });
         return;
       }
@@ -623,7 +623,7 @@ export function createWriteRouter(
       await ensureDir(ticketDir);
       // Raw create bypasses renderTicket, so seed the statusHistory here
       // (only when the body didn't already supply one — never double-seed).
-      const parsedCreate = parseAssignmentFull(content);
+      const parsedCreate = parseTicketFull(content);
       const seededHere = parsedCreate.statusHistory.length === 0;
       const seededContent = seededHere
         ? appendStatusHistoryEntry(content, {
@@ -668,8 +668,8 @@ export function createWriteRouter(
 
       res.status(201).json({ slug: ticketSlug, projectSlug });
     } catch (error) {
-      console.error('Error creating assignment:', error);
-      res.status(500).json({ error: `Failed to create assignment: ${(error as Error).message}` });
+      console.error('Error creating ticket:', error);
+      res.status(500).json({ error: `Failed to create ticket: ${(error as Error).message}` });
     }
   });
 
@@ -766,7 +766,7 @@ export function createWriteRouter(
   router.put('/api/tickets/:id/workflow', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
@@ -809,8 +809,8 @@ export function createWriteRouter(
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, content);
 
-      const { recomputeAssignmentDir } = await import('../lifecycle/recompute.js');
-      await recomputeAssignmentDir(resolve(ticketPath, '..'), 'workflow-change', 'human');
+      const { recomputeTicketDir } = await import('../lifecycle/recompute.js');
+      await recomputeTicketDir(resolve(ticketPath, '..'), 'workflow-change', 'human');
 
       const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ ticket });
@@ -830,7 +830,7 @@ export function createWriteRouter(
   // --- Worktree creation + candidate discovery ---
   // Mirrors the existing CLI flow (`syntaur worktree create`) and the
   // TUI's `runCreate`. All three paths call `createWorktreeAndRecord` so the
-  // assignment.md frontmatter ends up identical regardless of entry point.
+  // ticket.md frontmatter ends up identical regardless of entry point.
 
   router.get(
     '/api/projects/:slug/repository-candidates',
@@ -860,13 +860,13 @@ export function createWriteRouter(
         if (!ticketsDir) {
           res
             .status(501)
-            .json({ error: 'Standalone assignments not configured on this server' });
+            .json({ error: 'Standalone tickets not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
         const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
-          res.status(404).json({ error: `Assignment "${id}" not found` });
+          res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
         const candidates = resolved.standalone
@@ -906,13 +906,13 @@ export function createWriteRouter(
         if (!ticketsDir) {
           res
             .status(501)
-            .json({ error: 'Standalone assignments not configured on this server' });
+            .json({ error: 'Standalone tickets not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
         const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
-          res.status(404).json({ error: `Assignment "${id}" not found` });
+          res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
         await handleRepositoryBranches(req, res);
@@ -932,27 +932,27 @@ export function createWriteRouter(
         if (!ticketsDir) {
           res
             .status(501)
-            .json({ error: 'Standalone assignments not configured on this server' });
+            .json({ error: 'Standalone tickets not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
         const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
-          res.status(404).json({ error: `Assignment "${id}" not found` });
+          res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
         const sourceTickets = resolved.standalone
-          ? await getStandaloneSourceAssignments(ticketsDir, id)
-          : await getProjectSourceAssignments(
+          ? await getStandaloneSourceTickets(ticketsDir, id)
+          : await getProjectSourceTickets(
               projectsDir,
               resolved.projectSlug!,
               resolved.ticketSlug,
             );
         res.json({ sourceTickets });
       } catch (error) {
-        console.error('Error listing source assignments:', error);
+        console.error('Error listing source tickets:', error);
         res.status(500).json({
-          error: `Failed to list source assignments: ${(error as Error).message}`,
+          error: `Failed to list source tickets: ${(error as Error).message}`,
         });
       }
     },
@@ -965,26 +965,26 @@ export function createWriteRouter(
         if (!ticketsDir) {
           res
             .status(501)
-            .json({ error: 'Standalone assignments not configured on this server' });
+            .json({ error: 'Standalone tickets not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
         const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
         if (!resolved) {
-          res.status(404).json({ error: `Assignment "${id}" not found` });
+          res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
         const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
         // Standalone: resolveTicketById returns the UUID as `ticketSlug`.
         // For branch naming we need the user-visible slug from frontmatter, so
-        // parse it here and pass that down. parseAssignmentFull falls back to
+        // parse it here and pass that down. parseTicketFull falls back to
         // empty string, hence the `|| resolved.id` belt-and-suspenders.
-        const parsedForSlug = parseAssignmentFull(await readFile(ticketPath, 'utf-8'));
-        const assignmentSlugForBranch = parsedForSlug.slug || resolved.id;
+        const parsedForSlug = parseTicketFull(await readFile(ticketPath, 'utf-8'));
+        const ticketSlugForBranch = parsedForSlug.slug || resolved.id;
         await handleWorktreeCreate(req, res, {
           ticketPath,
           projectSlug: resolved.projectSlug ?? '',
-          ticketSlug: assignmentSlugForBranch,
+          ticketSlug: ticketSlugForBranch,
           reload: () => getTicketDetailById(projectsDir, ticketsDir!, id),
         });
       } catch (error) {
@@ -1008,13 +1008,13 @@ export function createWriteRouter(
         if (!ticketsDir) {
           res
             .status(501)
-            .json({ error: 'Standalone assignments not configured on this server' });
+            .json({ error: 'Standalone tickets not configured on this server' });
           return;
         }
         const id = getParam(req.params.id);
         const outcome = await recreateForTarget(
           { projectsDir, ticketsDir },
-          { kind: 'assignment', id },
+          { kind: 'ticket', id },
         );
         const { httpStatus, body } = recreateOutcomeToHttp(outcome);
         res.status(httpStatus).json(body);
@@ -1063,7 +1063,7 @@ export function createWriteRouter(
 
   // --- Archive / Restore Endpoints (orthogonal `archived` flag) ---
   // Archiving never touches `status`; restore preserves the prior status. Project
-  // archive does NOT stamp child assignments — cascade-hide is computed at read time.
+  // archive does NOT stamp child tickets — cascade-hide is computed at read time.
 
   function archiveReason(body: unknown): string | null {
     const reason = (body as { reason?: unknown } | null)?.reason;
@@ -1106,7 +1106,7 @@ export function createWriteRouter(
     }
   });
 
-  async function handleAssignmentArchive(
+  async function handleTicketArchive(
     req: Request,
     res: Response,
     archived: boolean,
@@ -1115,7 +1115,7 @@ export function createWriteRouter(
     const ticketSlug = getParam(req.params.aslug);
     const ticketPath = resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md');
     if (!(await fileExists(ticketPath))) {
-      res.status(404).json({ error: 'Assignment not found' });
+      res.status(404).json({ error: 'Ticket not found' });
       return;
     }
     const content = await readFile(ticketPath, 'utf-8');
@@ -1123,7 +1123,7 @@ export function createWriteRouter(
     await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
 
     // Audit event (best-effort).
-    const parsed = parseAssignmentFull(content);
+    const parsed = parseTicketFull(content);
     emitDashboardEvent(parsed.id, projectSlug, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
     const ticket = await getTicketDetail(projectsDir, projectSlug, ticketSlug);
@@ -1138,13 +1138,13 @@ export function createWriteRouter(
     archived: boolean,
   ): Promise<void> {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
     const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
     if (!resolved) {
-      res.status(404).json({ error: `Assignment "${id}" not found` });
+      res.status(404).json({ error: `Ticket "${id}" not found` });
       return;
     }
     const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
@@ -1153,7 +1153,7 @@ export function createWriteRouter(
     await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
 
     // Audit event (best-effort): standalone → projectSlug null.
-    const parsed = parseAssignmentFull(content);
+    const parsed = parseTicketFull(content);
     emitDashboardEvent(parsed.id || resolved.id, null, archived ? 'archived' : 'restored', reason ? { reason } : {});
 
     const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
@@ -1163,7 +1163,7 @@ export function createWriteRouter(
   router.delete('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
@@ -1184,8 +1184,8 @@ export function createWriteRouter(
     try {
       await handleStandaloneArchive(req, res, true);
     } catch (error) {
-      console.error('Error archiving assignment:', error);
-      res.status(500).json({ error: `Failed to archive assignment: ${(error as Error).message}` });
+      console.error('Error archiving ticket:', error);
+      res.status(500).json({ error: `Failed to archive ticket: ${(error as Error).message}` });
     }
   });
 
@@ -1193,8 +1193,8 @@ export function createWriteRouter(
     try {
       await handleStandaloneArchive(req, res, false);
     } catch (error) {
-      console.error('Error restoring assignment:', error);
-      res.status(500).json({ error: `Failed to restore assignment: ${(error as Error).message}` });
+      console.error('Error restoring ticket:', error);
+      res.status(500).json({ error: `Failed to restore ticket: ${(error as Error).message}` });
     }
   });
 
@@ -1213,12 +1213,12 @@ export function createWriteRouter(
   router.post('/api/tickets', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
 
       // Two body shapes are supported:
-      //   1) { content: <markdown> } — same shape as POST /api/projects/:slug/assignments. Used by the dashboard UI.
+      //   1) { content: <markdown> } — same shape as POST /api/projects/:slug/tickets. Used by the dashboard UI.
       //   2) { title, slug?, priority?, type? } — original structured form, retained for back-compat.
       const rawContent = typeof req.body?.content === 'string' ? req.body.content : '';
       if (rawContent.trim()) {
@@ -1265,8 +1265,8 @@ export function createWriteRouter(
         let normalizedContent = setTopLevelField(rawContent, 'id', id);
         // Raw create bypasses renderTicket, so seed statusHistory here (only
         // when the body didn't already supply one — never double-seed).
-        const seededHere = parseAssignmentFull(normalizedContent).statusHistory.length === 0;
-        const createdStatus = parseAssignmentFull(normalizedContent).status;
+        const seededHere = parseTicketFull(normalizedContent).statusHistory.length === 0;
+        const createdStatus = parseTicketFull(normalizedContent).status;
         if (seededHere) {
           normalizedContent = appendStatusHistoryEntry(normalizedContent, {
             at: timestamp,
@@ -1340,7 +1340,7 @@ export function createWriteRouter(
         : 'medium';
 
       await ensureDir(ticketDir);
-      const assignmentContent = renderTicket({
+      const ticketContent = renderTicket({
         id,
         slug: resolvedSlug,
         title: title.trim(),
@@ -1351,7 +1351,7 @@ export function createWriteRouter(
         project: null,
         type: typeof type === 'string' ? type : undefined,
       });
-      await writeFileForce(resolve(ticketDir, 'ticket.md'), assignmentContent);
+      await writeFileForce(resolve(ticketDir, 'ticket.md'), ticketContent);
       await writeFileForce(
         resolve(ticketDir, 'scratchpad.md'),
         renderScratchpad({ ticketSlug: id, timestamp }),
@@ -1386,21 +1386,21 @@ export function createWriteRouter(
       const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.status(201).json({ ticket: detail });
     } catch (error) {
-      console.error('Error creating standalone assignment:', error);
-      res.status(500).json({ error: `Failed to create standalone assignment: ${(error as Error).message}` });
+      console.error('Error creating standalone ticket:', error);
+      res.status(500).json({ error: `Failed to create standalone ticket: ${(error as Error).message}` });
     }
   });
 
   router.post('/api/tickets/:id/comments', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       await appendCommentTo(resolved.ticketDir, resolved.standalone ? resolved.id : resolved.ticketSlug, req, res, async () => {
@@ -1417,14 +1417,14 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const commentId = getParam(req.params.commentId);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       await toggleCommentResolvedAt(resolved.ticketDir, commentId, req, res, async () => {
@@ -1440,13 +1440,13 @@ export function createWriteRouter(
 
   router.get('/api/tickets/:id/edit', async (req: Request, res: Response) => {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'assignment', id);
+    const doc = await getEditableDocumentById(projectsDir, ticketsDir, 'ticket', id);
     if (!doc) {
-      res.status(404).json({ error: 'Assignment not found' });
+      res.status(404).json({ error: 'Ticket not found' });
       return;
     }
     res.json(doc);
@@ -1454,7 +1454,7 @@ export function createWriteRouter(
 
   router.get('/api/tickets/:id/plan/edit', async (req: Request, res: Response) => {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
@@ -1468,7 +1468,7 @@ export function createWriteRouter(
 
   router.get('/api/tickets/:id/scratchpad/edit', async (req: Request, res: Response) => {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
@@ -1482,7 +1482,7 @@ export function createWriteRouter(
 
   router.get('/api/tickets/:id/handoff/edit', async (req: Request, res: Response) => {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
@@ -1496,7 +1496,7 @@ export function createWriteRouter(
 
   router.get('/api/tickets/:id/decision-record/edit', async (req: Request, res: Response) => {
     if (!ticketsDir) {
-      res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+      res.status(501).json({ error: 'Standalone tickets not configured on this server' });
       return;
     }
     const id = getParam(req.params.id);
@@ -1511,31 +1511,31 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
 
       const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
-        res.status(404).json({ error: 'Assignment not found' });
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
 
       const nextContentRaw = requireContent(req, res);
       if (!nextContentRaw) return;
 
-      const current = parseAssignmentFull(currentContent);
-      const next = parseAssignmentFull(nextContentRaw);
+      const current = parseTicketFull(currentContent);
+      const next = parseTicketFull(nextContentRaw);
 
       if (!next.title) {
-        res.status(400).json({ error: 'Assignment content must include a title.' });
+        res.status(400).json({ error: 'Ticket content must include a title.' });
         return;
       }
 
@@ -1543,12 +1543,12 @@ export function createWriteRouter(
       // routes; codex review blocker 4 — gate on a resolved workflow, not the
       // marker alone).
       const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
-      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForAssignment(ticketPath, byIdProjectDir)) {
+      const { isEngineActiveForTicket } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForTicket(ticketPath, byIdProjectDir)) {
         const violation = rawPatchMoverViolation(current, next);
         if (violation) {
           res.status(400).json({
-            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed assignment — use a move/transition.`,
+            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed ticket — use a move/transition.`,
           });
           return;
         }
@@ -1599,21 +1599,21 @@ export function createWriteRouter(
       const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
-      console.error('Error updating standalone assignment:', error);
-      res.status(500).json({ error: `Failed to update assignment: ${(error as Error).message}` });
+      console.error('Error updating standalone ticket:', error);
+      res.status(500).json({ error: `Failed to update ticket: ${(error as Error).message}` });
     }
   });
 
   router.patch('/api/tickets/:id/plan', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
 
@@ -1627,8 +1627,8 @@ export function createWriteRouter(
       if (!nextContentRaw) return;
 
       const parsed = parsePlan(nextContentRaw);
-      if (!parsed.assignment) {
-        res.status(400).json({ error: 'Plan content must include the assignment field.' });
+      if (!parsed.ticket) {
+        res.status(400).json({ error: 'Plan content must include the ticket field.' });
         return;
       }
 
@@ -1646,13 +1646,13 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id/scratchpad', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
 
@@ -1666,8 +1666,8 @@ export function createWriteRouter(
       if (!nextContentRaw) return;
 
       const parsed = parseScratchpad(nextContentRaw);
-      if (!parsed.assignment) {
-        res.status(400).json({ error: 'Scratchpad content must include the assignment field.' });
+      if (!parsed.ticket) {
+        res.status(400).json({ error: 'Scratchpad content must include the ticket field.' });
         return;
       }
 
@@ -1685,13 +1685,13 @@ export function createWriteRouter(
   router.post('/api/tickets/:id/handoff/entries', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const handoffPath = resolve(resolved.ticketDir, 'handoff.md');
@@ -1726,13 +1726,13 @@ export function createWriteRouter(
   router.post('/api/tickets/:id/decision-record/entries', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const decisionPath = resolve(resolved.ticketDir, 'decision-record.md');
@@ -1767,18 +1767,18 @@ export function createWriteRouter(
   router.post('/api/tickets/:id/status-override', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const { status } = req.body || {};
@@ -1832,13 +1832,13 @@ export function createWriteRouter(
         workflowResolver,
         mutate: (content) => {
           if (clearing) return updateOverride(content, null);
-          const current = parseAssignmentFull(content);
+          const current = parseTicketFull(content);
           if (current.override?.status === status) return content; // idempotent
           return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
         },
       });
       if (result.deferredTerminal) {
-        res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+        res.status(409).json({ error: 'Ticket is terminal — reopen it first.' });
         return;
       }
       if (result.warning) {
@@ -1856,18 +1856,18 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id/assignee', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const validation = validateAssigneeBody(req.body);
@@ -1876,7 +1876,7 @@ export function createWriteRouter(
         return;
       }
       let content = await readFile(ticketPath, 'utf-8');
-      const prior = parseAssignmentFull(content);
+      const prior = parseTicketFull(content);
       content = setTopLevelField(content, 'assignee', validation.value);
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, content);
@@ -1900,18 +1900,18 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id/title', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const validation = validateTitleBody(req.body);
@@ -1934,19 +1934,19 @@ export function createWriteRouter(
   router.patch('/api/tickets/:id/acceptance-criteria/:index', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
       const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
-        res.status(404).json({ error: 'Assignment not found' });
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const { checked } = req.body || {};
@@ -1973,14 +1973,14 @@ export function createWriteRouter(
   router.post('/api/tickets/:id/transitions/:command', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
       const command = getParam(req.params.command);
       const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${id}" not found` });
+        res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
 
@@ -2019,7 +2019,7 @@ export function createWriteRouter(
             }),
         });
         if (result.deferredTerminal) {
-          res.status(409).json({ error: 'Assignment is terminal — reopen it first.' });
+          res.status(409).json({ error: 'Ticket is terminal — reopen it first.' });
           return;
         }
         if (result.warning) {
@@ -2064,10 +2064,10 @@ export function createWriteRouter(
 
       // WS-2 (codex review blocker 2): reject engine-active commands the engine
       // didn't handle rather than falling through to the lockless legacy path.
-      const { isEngineActiveForAssignment } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForAssignment(byIdPath, byIdProjectDir)) {
+      const { isEngineActiveForTicket } = await import('../lifecycle/engine-transition.js');
+      if (await isEngineActiveForTicket(byIdPath, byIdProjectDir)) {
         res.status(400).json({
-          error: `"${command}" is not available on a stage-managed assignment — use complete/fail/reopen, block/unblock, or a board move.`,
+          error: `"${command}" is not available on a stage-managed ticket — use complete/fail/reopen, block/unblock, or a board move.`,
         });
         return;
       }
@@ -2141,7 +2141,7 @@ export function createWriteRouter(
   router.post('/api/tickets/:id/plan/approve', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
         return;
       }
       const id = getParam(req.params.id);
@@ -2223,7 +2223,7 @@ function validateTitleBody(body: unknown): TitleValidation {
 
 async function appendCommentTo(
   ticketDir: string,
-  assignmentRef: string,
+  ticketRef: string,
   req: Request,
   res: Response,
   reloadDetail: () => Promise<unknown>,
@@ -2255,7 +2255,7 @@ async function appendCommentTo(
     const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
     if (countMatch) currentCount = parseInt(countMatch[1], 10);
   } else {
-    currentContent = renderComments({ ticket: assignmentRef, timestamp });
+    currentContent = renderComments({ ticket: ticketRef, timestamp });
   }
 
   const comment: Comment = {
@@ -2279,9 +2279,9 @@ async function appendCommentTo(
 
   // Audit event (best-effort): comment-added. Author + excerpt ONLY.
   try {
-    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-    if (await fileExists(assignmentMdPath)) {
-      const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+    const ticketMdPath = resolve(ticketDir, 'ticket.md');
+    if (await fileExists(ticketMdPath)) {
+      const fm = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
       emitDashboardEvent(fm.id, fm.project, 'comment-added', {
         commentId: comment.id,
         author: entryAuthor,
@@ -2337,9 +2337,9 @@ async function toggleCommentResolvedAt(
   // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
   if (changed && previous === false && desired === true) {
     try {
-      const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-      if (await fileExists(assignmentMdPath)) {
-        const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
+      const ticketMdPath = resolve(ticketDir, 'ticket.md');
+      if (await fileExists(ticketMdPath)) {
+        const fm = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
         emitDashboardEvent(fm.id, fm.project, 'comment-resolved', { commentId });
       }
     } catch {

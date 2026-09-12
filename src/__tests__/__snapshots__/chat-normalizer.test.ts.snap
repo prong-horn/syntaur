@@ -35,7 +35,7 @@ exports[`normalizer golden snapshots > claude/02-handshake.ndjson normalizes to 
     "type": "agent.message",
   },
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 14,
@@ -303,7 +303,7 @@ scripts/spike/acp/scenarios.",
 exports[`normalizer golden snapshots > claude/06-edits.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 6,
@@ -448,7 +448,7 @@ Syntaur is a local project and assignment workflow for coding agents.",
 exports[`normalizer golden snapshots > claude/07-permissions.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 6,
@@ -546,7 +546,7 @@ drwxr-xr-x@ 29 brennen  staff     ",
     "type": "agent.message",
   },
   {
-    "itemId": "session:assignment-fixture:claude:1",
+    "itemId": "session:ticket-fixture:claude:1",
     "level": "info",
     "sealed": true,
     "seqFirst": 66,
@@ -556,7 +556,7 @@ drwxr-xr-x@ 29 brennen  staff     ",
     "type": "system",
   },
   {
-    "itemId": "session:assignment-fixture:claude:2",
+    "itemId": "session:ticket-fixture:claude:2",
     "level": "info",
     "sealed": true,
     "seqFirst": 70,
@@ -1425,7 +1425,7 @@ Few c",
     "type": "system",
   },
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 16,
@@ -1654,7 +1654,7 @@ exports[`normalizer golden snapshots > claude/14-load-resume.p2.ndjson normalize
 exports[`normalizer golden snapshots > claude/14-load-resume.p3.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 2,
@@ -2234,7 +2234,7 @@ The \`src/\` directory ",
 exports[`normalizer golden snapshots > claude/19-concurrency.implementer.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 6,
@@ -2374,7 +2374,7 @@ Syntaur is a local project and assignment workflow for coding agents.",
     "type": "agent.message",
   },
   {
-    "itemId": "session:assignment-fixture:claude:1",
+    "itemId": "session:ticket-fixture:claude:1",
     "level": "info",
     "sealed": true,
     "seqFirst": 32,
@@ -2393,7 +2393,7 @@ Syntaur is a local project and assignment workflow for coding agents.",
 exports[`normalizer golden snapshots > claude/19-concurrency.planner.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:claude:0",
+    "itemId": "session:ticket-fixture:claude:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 6,
@@ -5683,7 +5683,7 @@ exports[`normalizer golden snapshots > codex/14-load-resume.p2.ndjson normalizes
 exports[`normalizer golden snapshots > codex/14-load-resume.p3.ndjson normalizes to a stable item list 1`] = `
 [
   {
-    "itemId": "session:assignment-fixture:codex:0",
+    "itemId": "session:ticket-fixture:codex:0",
     "level": "info",
     "sealed": true,
     "seqFirst": 2,

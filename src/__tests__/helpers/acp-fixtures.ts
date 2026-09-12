@@ -81,7 +81,7 @@ export interface FixtureEventOptions {
  * transcript.
  */
 export function fixtureEvents(path: string, options: FixtureEventOptions = {}): ChatEvent[] {
-  const ticketId = options.ticketId ?? 'assignment-fixture';
+  const ticketId = options.ticketId ?? 'ticket-fixture';
   const agentId = options.agentId ?? 'claude';
   const sessionKey = options.sessionKey ?? `${ticketId}:${agentId}`;
 

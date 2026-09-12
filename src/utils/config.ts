@@ -177,7 +177,7 @@ export interface TypesConfig {
   default: string;
 }
 
-export const DEFAULT_ASSIGNMENT_TYPES: TypesConfig = {
+export const DEFAULT_TICKET_TYPES: TypesConfig = {
   definitions: [
     { id: 'feature', label: 'Feature' },
     { id: 'bug', label: 'Bug' },
@@ -1876,11 +1876,9 @@ export async function readConfig(): Promise<SyntaurConfig> {
 }
 
 export function getTicketTypes(config: SyntaurConfig): TypesConfig {
-  return config.types ?? DEFAULT_ASSIGNMENT_TYPES;
+  return config.types ?? DEFAULT_TICKET_TYPES;
 }
 
-/** @deprecated Dashboard compat until Task 2 */
-export const getAssignmentTypes = getTicketTypes;
 
 
 export class TerminalConfigError extends Error {}

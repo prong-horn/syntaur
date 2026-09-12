@@ -18,7 +18,7 @@ let standaloneDir: string;
 let server: Server;
 let baseUrl: string;
 
-async function seedAssignment(slug: string, workflow: string | null): Promise<void> {
+async function seedTicket(slug: string, workflow: string | null): Promise<void> {
   const dir = join(projectsDir, 'p1', 'tickets', slug);
   await mkdir(dir, { recursive: true });
   const wf = workflow ? `\nworkflow: ${workflow}` : '';
@@ -120,7 +120,7 @@ describe('workflow library routes', () => {
 
   it('blocks deletion while a ticket resolves to the workflow, then allows it once clear', async () => {
     await post('', { id: 'bug' });
-    await seedAssignment('a1', 'bug');
+    await seedTicket('a1', 'bug');
 
     const blocked = await del('/bug');
     expect(blocked.status).toBe(409);

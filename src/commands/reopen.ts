@@ -4,7 +4,7 @@ import { readConfig } from '../utils/config.js';
 import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
-import { isEngineActiveForAssignment } from '../lifecycle/engine-transition.js';
+import { isEngineActiveForTicket } from '../lifecycle/engine-transition.js';
 
 export interface ReopenOptions extends LifecycleOptions {}
 
@@ -43,7 +43,7 @@ export async function reopenCommand(
   // re-placed the ticket deliberately WITHOUT re-cascading and ran its terminal
   // side effects; a second default `gate` recompute here would auto-advance it
   // forward and undo the reopen (codex re-review). Skip it when engine-active.
-  if (!(await isEngineActiveForAssignment(ticketPath, projectDir))) {
+  if (!(await isEngineActiveForTicket(ticketPath, projectDir))) {
     const derived = await recomputeAndWrite(ticketPath, {
       cause: 'reopen',
       by: 'system',
@@ -65,6 +65,6 @@ export async function reopenCommand(
       workflowResolver,
     });
     const changed = results.filter((r) => r.changed).length;
-    if (changed > 0) console.log(`Re-derived ${changed} dependent assignment(s).`);
+    if (changed > 0) console.log(`Re-derived ${changed} dependent ticket(s).`);
   }
 }

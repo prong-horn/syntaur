@@ -1,5 +1,5 @@
 /**
- * Assignment-chat runtime operations.
+ * Ticket-chat runtime operations.
  *
  * Everything runs on the session-db connection (`getSessionDb()`), the same
  * handle `engagement-db.ts` uses, so a turn's chat write and its engagement write
@@ -28,12 +28,8 @@ import type {
 export interface UpsertChatSessionInput {
   sessionKey: string;
   ticketId?: string;
-  /** @deprecated test compat */
-  assignmentId?: string;
   projectSlug: string | null;
   ticketSlug?: string | null;
-  /** @deprecated test compat */
-  assignmentSlug?: string | null;
   agentId: string;
   harness: string;
   acpSessionId?: string | null;
@@ -89,9 +85,9 @@ export function upsertChatSession(input: UpsertChatSessionInput): void {
     )
     .run({
       sessionKey: input.sessionKey,
-      ticketId: input.ticketId ?? input.assignmentId ?? '',
+      ticketId: input.ticketId ?? '',
       projectSlug: input.projectSlug,
-      ticketSlug: input.ticketSlug ?? input.assignmentSlug ?? null,
+      ticketSlug: input.ticketSlug ?? null,
       agentId: input.agentId,
       harness: input.harness,
       acpSessionId: input.acpSessionId ?? null,

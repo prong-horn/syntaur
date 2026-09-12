@@ -29,7 +29,7 @@ function git(cwd: string, args: string[]): string {
   return r.stdout.trim();
 }
 
-async function writeProjectAssignment(opts: {
+async function writeProjectTicket(opts: {
   projectSlug: string;
   ticketSlug: string;
   id: string;
@@ -124,7 +124,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     const wtPath = resolve(tmpHome, 'session-wt');
     git(repo, ['worktree', 'add', '-b', 'feat/sess', wtPath, 'main']);
 
-    await writeProjectAssignment({
+    await writeProjectTicket({
       projectSlug: 'demo',
       ticketSlug: 'task-recreate',
       id: 'aaaa1111-bbbb-2222-cccc-333344445555',

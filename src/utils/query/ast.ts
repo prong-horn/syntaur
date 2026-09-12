@@ -1,9 +1,9 @@
 /**
- * AQL — Assignment Query Language. AST node types.
+ * AQL — Ticket Query Language. AST node types.
  *
  * Browser-safe: this module (and the whole `src/utils/query/` engine) must not
  * import any Node-only API — the dashboard evaluates queries client-side.
- * See claude-info/plans/2026-06-03-assignment-query-language-design.md (grammar)
+ * See claude-info/plans/2026-06-03-ticket-query-language-design.md (grammar)
  * and 2026-06-09-derived-status-and-rules-design.md (derive-rule consumer).
  */
 

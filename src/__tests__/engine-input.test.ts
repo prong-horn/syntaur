@@ -3,7 +3,7 @@ import { buildEngineInput, getCheckStates } from '../lifecycle/engine-input.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { AttestationEnv } from '../lifecycle/facts.js';
 import type { TicketFrontmatter, AttestationRecord, Solicitation } from '../lifecycle/types.js';
-import type { AssignmentFacts } from '../lifecycle/derive.js';
+import type { TicketFacts } from '../lifecycle/derive.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
 
 // A workflow whose `reviewing` gate is a judged, commit-bound `codeReviewed`
@@ -41,7 +41,7 @@ function fm(overrides: Partial<TicketFrontmatter>): TicketFrontmatter {
 
 const HEAD = 'deadbeefcafe';
 const env: AttestationEnv = { latestPlanFile: null, planDigest: null, headSha: HEAD };
-const facts = {} as AssignmentFacts;
+const facts = {} as TicketFacts;
 
 const rec = (o: Partial<AttestationRecord> = {}): AttestationRecord => ({
   fact: 'codeReviewed',

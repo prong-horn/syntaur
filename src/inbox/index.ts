@@ -21,7 +21,7 @@ import { listTicketsByProject } from '../utils/ticket-walk.js';
 import {
   parseTicketFull,
   parseComments,
-  type ParsedAssignmentFull,
+  type ParsedTicketFull,
   type ParsedComment,
 } from '../dashboard/parser.js';
 import { latestPlanFile, isPlanApproved } from '../lifecycle/facts.js';
@@ -118,7 +118,7 @@ export interface ComputeInboxOptions {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** review = derived `status === 'review'`. */
-export function isReview(a: ParsedAssignmentFull): boolean {
+export function isReview(a: ParsedTicketFull): boolean {
   return a.status === 'review';
 }
 
@@ -139,7 +139,7 @@ export function unresolvedQuestions(comments: ParsedComment[]): ParsedComment[] 
  * (facts.ts) — do NOT reimplement digest logic.
  */
 export async function isPlanAwaitingApproval(
-  a: ParsedAssignmentFull,
+  a: ParsedTicketFull,
   ticketDir: string,
 ): Promise<boolean> {
   if (a.status !== 'ready_for_planning') return false;
@@ -173,7 +173,7 @@ function validTimestamp(value: string | null | undefined): string | null {
 }
 
 /** `.at` of the latest statusHistory entry (by parseable timestamp), else null. */
-function latestStatusHistoryAt(a: ParsedAssignmentFull): string | null {
+function latestStatusHistoryAt(a: ParsedTicketFull): string | null {
   let best: { at: string; ms: number } | null = null;
   for (const e of a.statusHistory) {
     const at = validTimestamp(e.at);
@@ -186,8 +186,8 @@ function latestStatusHistoryAt(a: ParsedAssignmentFull): string | null {
 
 /** `.at` of the latest statusHistory entry matching `pred`, else null. */
 function latestStatusHistoryAtWhere(
-  a: ParsedAssignmentFull,
-  pred: (e: ParsedAssignmentFull['statusHistory'][number]) => boolean,
+  a: ParsedTicketFull,
+  pred: (e: ParsedTicketFull['statusHistory'][number]) => boolean,
 ): string | null {
   let best: { at: string; ms: number } | null = null;
   for (const e of a.statusHistory) {
@@ -207,7 +207,7 @@ function latestStatusHistoryAtWhere(
  */
 export function resolveSince(
   category: InboxCategory,
-  a: ParsedAssignmentFull,
+  a: ParsedTicketFull,
   now: number,
   comment?: ParsedComment,
 ): string {
@@ -343,7 +343,7 @@ export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
 // Action descriptor (pure) — exact CLI command strings (AC4 contract).
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** `--project <p>` for project assignments; omitted (target is the UUID) for standalone. */
+/** `--project <p>` for project tickets; omitted (target is the UUID) for standalone. */
 function targetAndProject(item: {
   project: string | null;
   ticketSlug: string;
@@ -526,11 +526,11 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
 
   const matched: InboxItem[] = [];
 
-  for (const entry of walk.withAssignmentMd) {
+  for (const entry of walk.withTicketMd) {
     // Honor the project filter against the inbox `project` field (null = standalone).
     if (opts.project !== undefined && entry.projectSlug !== opts.project) continue;
 
-    let parsed: ParsedAssignmentFull;
+    let parsed: ParsedTicketFull;
     try {
       const content = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
       parsed = parseTicketFull(content);
@@ -546,7 +546,7 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
     // malformed `disposition:parked, status:review`). Blocked + active flow on.
     if (parsed.disposition === 'parked' || parsed.disposition === 'terminal') continue;
 
-    // Skip terminal-STATUS assignments regardless of disposition. `disposition`
+    // Skip terminal-STATUS tickets regardless of disposition. `disposition`
     // is nullable, so a legacy/null-disposition entry whose derived status is
     // terminal (completed/failed) with an unresolved question would otherwise
     // leak in via the status-agnostic question loop below. `terminalStatuses`

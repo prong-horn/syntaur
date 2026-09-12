@@ -96,7 +96,7 @@ async function seed(o: SeedOpts): Promise<string> {
     const body = o.comments.map(formatCommentEntry).join('\n');
     await writeFile(
       join(dir, 'comments.md'),
-      `---\nassignment: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
+      `---\nticket: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
     );
   }
   return dir;
@@ -203,7 +203,7 @@ describe('computeInbox — positive categories', () => {
     expect(r.items[0].category).toBe('review');
   });
 
-  it('does not emit a blocked assignment', async () => {
+  it('does not emit a blocked ticket', async () => {
     await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1', blockedReason: 'waiting on api' });
     const r = await run();
     expect(r.total).toBe(0);
@@ -255,7 +255,7 @@ describe('computeInbox — positive categories', () => {
 // ── excluded / negative cases ──────────────────────────────────────────────────
 
 describe('computeInbox — exclusions', () => {
-  it('skips archived assignments up front', async () => {
+  it('skips archived tickets up front', async () => {
     await seed({ id: 'a', slug: 'arch', status: 'review', project: 'p1', archived: true });
     const r = await run();
     expect(r.total).toBe(0);
@@ -840,7 +840,7 @@ describe('computeInbox — filters', () => {
 // ── board-parity sanity ────────────────────────────────────────────────────────
 
 describe('computeInbox — board parity', () => {
-  it('blocked-status assignments are excluded from the inbox queue', async () => {
+  it('blocked-status tickets are excluded from the inbox queue', async () => {
     await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1' });
     const r = await run();
     expect(r.total).toBe(0);

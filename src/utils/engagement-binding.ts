@@ -1,5 +1,5 @@
 /**
- * The session→assignment binding read from the session's engagement edge.
+ * The session→ticket binding read from the session's engagement edge.
  *
  * After the context.json demotion, the active (ticket, stage) is resolved
  * from the session's OPEN engagement — not the cwd scalar. This module is the
@@ -142,7 +142,7 @@ function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): bool
  *
  * - Captures the token snapshot via the async source BEFORE the synchronous
  *   `switchEngagement` (the #1 boundary; stage-fact-status-bridge Decision 10).
- * - **Same-(assignment,stage) skip:** if the open engagement is already there,
+ * - **Same-(ticket,stage) skip:** if the open engagement is already there,
  *   makes no switch (no cost-window split / no spurious stage-open event) and
  *   returns `switched:false`. The stage-fact bridge still runs at the call site,
  *   so a half-applied fact still repairs (Decision 7/8).
@@ -152,7 +152,7 @@ function isSameTarget(open: EngagementRow, input: SwitchSessionStageInput): bool
  *   grabbed/tracked ticket whose `assignment_id` was not yet resolved) is NOT
  *   split merely to write the id when the first resolved-id stage assertion
  *   arrives for the SAME (ticket, stage) — splitting the cost window is worse
- *   than a null id, and per-assignment attribution falls back to slugs anyway.
+ *   than a null id, and per-ticket attribution falls back to slugs anyway.
  */
 export async function switchSessionStage(
   input: SwitchSessionStageInput,

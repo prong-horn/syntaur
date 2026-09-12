@@ -1,4 +1,4 @@
-import { DEFAULT_ASSIGNMENT_BOARD_COLUMNS } from './kanban';
+import { DEFAULT_TICKET_BOARD_COLUMNS } from './kanban';
 
 /** Minimal shape a board item must expose for workflow-aware grouping. Satisfied
  * by TicketSummary / TicketBoardItem (Task 9 payload fields). */
@@ -29,7 +29,7 @@ export function laneColumns(
   if (workflowOrder && workflowOrder.length > 0) return [...workflowOrder];
   const present = new Set(items.map((i) => i.status));
   const ordered: string[] = [];
-  for (const s of DEFAULT_ASSIGNMENT_BOARD_COLUMNS) {
+  for (const s of DEFAULT_TICKET_BOARD_COLUMNS) {
     if (present.has(s)) {
       ordered.push(s);
       present.delete(s);

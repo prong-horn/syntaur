@@ -11,11 +11,11 @@
  */
 
 /** The searchable entity kinds an alias prefix can target. */
-export type EntityKind = 'ticket' | 'assignment' | 'project' | 'playbook';
+export type EntityKind = 'ticket' | 'ticket' | 'project' | 'playbook';
 
 export const ENTITY_KINDS: readonly EntityKind[] = [
   'ticket',
-  'assignment',
+  'ticket',
   'project',
   'playbook',
 ];

@@ -28,12 +28,10 @@ export interface WorktreeDefaults {
 export function computeWorktreeDefaults(opts: {
   projectSlug: string;
   ticketSlug?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentSlug?: string;
   existing: { repository: string | null; branch: string | null; parentBranch: string | null };
   cwd?: string;
 }): Partial<WorktreeDefaults> & { repository?: string } {
-  const ticketSlug = opts.ticketSlug ?? opts.assignmentSlug ?? '';
+  const ticketSlug = opts.ticketSlug ?? '';
   const repository = opts.existing.repository ?? detectCurrentGitRoot(opts.cwd);
   const branch = opts.projectSlug
     ? `syntaur/${opts.projectSlug}/${ticketSlug}`

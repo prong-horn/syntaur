@@ -20,7 +20,7 @@ import type { ResolvedTicket } from '../utils/ticket-resolver.js';
  */
 
 let sandbox: string;
-let assignmentDir: string;
+let ticketDir: string;
 let worktree: string;
 let broker: ChatBroker;
 let clients: AcpClient[];
@@ -28,14 +28,14 @@ let frames: Array<{ type: string; payload: unknown }>;
 let fakes: Map<string, FakeAgent>;
 let clientsByAgent: Map<string, AcpClient>;
 
-const ASSIGNMENT_ID = 'c0ffee00-0000-4000-8000-00000000cafe';
-const SCOPE_KEY = ticketScopeKey(ASSIGNMENT_ID);
+const TICKET_ID = 'c0ffee00-0000-4000-8000-00000000cafe';
+const SCOPE_KEY = ticketScopeKey(TICKET_ID);
 
-const assignment = (): ResolvedTicket => ({
-  ticketDir: assignmentDir,
+const ticket = (): ResolvedTicket => ({
+  ticketDir: ticketDir,
   projectSlug: 'syntaur-meta',
   ticketSlug: 'chat-demo',
-  id: ASSIGNMENT_ID,
+  id: TICKET_ID,
   standalone: false,
 });
 
@@ -48,9 +48,9 @@ async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 500
   throw new Error(`timed out waiting for ${what}`);
 }
 
-const items = (): ChatItem[] => broker.items(assignment(), { limit: 500 });
+const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const itemsOfType = (type: ChatItem['type']) => items().filter((i) => i.type === type);
-const events = (): Promise<ChatEvent[]> => readEvents(join(assignmentDir, 'chat', 'events.jsonl'));
+const events = (): Promise<ChatEvent[]> => readEvents(join(ticketDir, 'chat', 'events.jsonl'));
 const systemTexts = () => (itemsOfType('system') as Array<{ text: string }>).map((i) => i.text);
 const prompts = (agentId: string) => fakes.get(agentId)?.prompts ?? [];
 
@@ -93,9 +93,9 @@ async function writeAgent(
 }
 
 async function writeParticipantsFile(participants: Participants): Promise<void> {
-  await mkdir(join(assignmentDir, 'chat'), { recursive: true });
+  await mkdir(join(ticketDir, 'chat'), { recursive: true });
   await writeFile(
-    join(assignmentDir, 'chat', 'participants.json'),
+    join(ticketDir, 'chat', 'participants.json'),
     JSON.stringify(participants, null, 2),
     'utf-8',
   );
@@ -175,15 +175,15 @@ async function idleAll(turns: number): Promise<void> {
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-routing-'));
-  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
+  ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
   worktree = join(sandbox, 'worktree');
-  await mkdir(assignmentDir, { recursive: true });
+  await mkdir(ticketDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
   await writeFile(
-    join(assignmentDir, 'ticket.md'),
+    join(ticketDir, 'ticket.md'),
     [
       '---',
-      `id: ${ASSIGNMENT_ID}`,
+      `id: ${TICKET_ID}`,
       'slug: chat-demo',
       'title: "Chat demo"',
       'status: ready_to_implement',
@@ -221,12 +221,12 @@ describe('routing a human message', () => {
   it('prompts both mentioned agents once each from ONE user.message item', async () => {
     makeBroker({ planner: [justSays('planned')], implementer: [justSays('done')] });
 
-    await broker.send({ assignment: assignment(), text: '@planner @implementer go' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer go' });
     await idleAll(2);
 
     expect(prompts('planner')).toHaveLength(1);
     expect(prompts('implementer')).toHaveLength(1);
-    // One bubble, not one per target: the message lives in the assignment scope.
+    // One bubble, not one per target: the message lives in the ticket scope.
     const messages = itemsOfType('user.message');
     expect(messages).toHaveLength(1);
     expect((messages[0] as { targets: string[] }).targets).toEqual(['planner', 'implementer']);
@@ -236,7 +236,7 @@ describe('routing a human message', () => {
   it('routes an unmentioned message to the default agent only', async () => {
     makeBroker({ planner: [justSays('planned')], implementer: [justSays('done')] });
 
-    await broker.send({ assignment: assignment(), text: 'no mentions here' });
+    await broker.send({ ticket: ticket(), text: 'no mentions here' });
     await idleAll(1);
     await new Promise((r) => setTimeout(r, 20));
 
@@ -256,7 +256,7 @@ describe('routing a human message', () => {
       chime: [justSays('noted')],
     });
 
-    await broker.send({ assignment: assignment(), text: 'no mentions here' });
+    await broker.send({ ticket: ticket(), text: 'no mentions here' });
     await idleAll(2);
     await new Promise((r) => setTimeout(r, 20));
 
@@ -268,7 +268,7 @@ describe('routing a human message', () => {
   it('files a system row for an unknown mention and still prompts the default', async () => {
     makeBroker({ planner: [justSays('planned')] });
 
-    await broker.send({ assignment: assignment(), text: '@reviewer take a look' });
+    await broker.send({ ticket: ticket(), text: '@reviewer take a look' });
     await idleAll(1);
 
     expect(prompts('planner')).toHaveLength(1);
@@ -278,7 +278,7 @@ describe('routing a human message', () => {
   it('grows deliveredTo as each target starts, partial then sent', async () => {
     makeBroker({ planner: [justSays('planned')], implementer: [justSays('done')] });
 
-    await broker.send({ assignment: assignment(), text: '@planner @implementer go' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer go' });
     await idleAll(2);
 
     const states = frames
@@ -306,7 +306,7 @@ describe('agent-to-agent hops', () => {
       implementer: [justSays('ok @planner', 'i1')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner outline it' });
+    await broker.send({ ticket: ticket(), text: '@planner outline it' });
     await idleAll(2);
     await new Promise((r) => setTimeout(r, 30));
 
@@ -344,7 +344,7 @@ describe('agent-to-agent hops', () => {
       implementer: [justSays('ok @planner', 'i1')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner outline it' });
+    await broker.send({ ticket: ticket(), text: '@planner outline it' });
     await idleAll(2);
     await new Promise((r) => setTimeout(r, 30));
 
@@ -372,7 +372,7 @@ describe('agent-to-agent hops', () => {
       implementer: [worksThenSays('Back to you @planner', 'i1')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner start' });
+    await broker.send({ ticket: ticket(), text: '@planner start' });
     await waitUntil(
       () => systemTexts().some((t) => t.includes('budget')),
       'the budget-exhausted notice',
@@ -393,13 +393,13 @@ describe('agent-to-agent hops', () => {
       implementer: [justSays('done')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner start' });
+    await broker.send({ ticket: ticket(), text: '@planner start' });
     await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
     await waitUntil(
       () => (itemsOfType('agent.message') as Array<{ text: string }>).length > 0,
       'the planner reply to stream',
     );
-    expect(await broker.cancel(assignment(), 'planner')).toBe(true);
+    expect(await broker.cancel(ticket(), 'planner')).toBe(true);
     await idleAll(1);
     await new Promise((r) => setTimeout(r, 40));
 
@@ -417,17 +417,17 @@ describe('one prompt in flight per agent', () => {
       implementer: [justSays('done')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await broker.send({ ticket: ticket(), text: '@planner one' });
     await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
 
-    await broker.send({ assignment: assignment(), text: '@planner two' });
-    await broker.send({ assignment: assignment(), text: '@implementer meanwhile' });
+    await broker.send({ ticket: ticket(), text: '@planner two' });
+    await broker.send({ ticket: ticket(), text: '@implementer meanwhile' });
     // The implementer runs while the planner is still busy — the queue is per
-    // agent, not per assignment (spike Decision 6).
+    // agent, not per ticket (spike Decision 6).
     await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
     expect(prompts('planner')).toHaveLength(1);
 
-    const planner = await broker.getSession(assignment(), 'planner');
+    const planner = await broker.getSession(ticket(), 'planner');
     expect(planner?.queued).toHaveLength(1);
     expect(planner?.queued[0].trigger.kind).toBe('human');
 
@@ -443,13 +443,13 @@ describe('one prompt in flight per agent', () => {
       implementer: [{ steps: [{ kind: 'awaitCancel' }] }],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner @implementer go' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer go' });
     await waitUntil(
       () => prompts('planner').length === 1 && prompts('implementer').length === 1,
       'both prompts',
     );
 
-    expect(await broker.cancel(assignment())).toBe(true);
+    expect(await broker.cancel(ticket())).toBe(true);
     await idleAll(2);
 
     const stopReasons = (itemsOfType('turn.status') as Array<{ stopReason?: string }>).map(
@@ -468,15 +468,15 @@ describe('withdrawing a fan-out message', () => {
       implementer: [{ steps: [{ kind: 'gate', gate }] }, justSays('implementer second')],
     });
 
-    const first = await broker.send({ assignment: assignment(), text: '@planner @implementer one' });
+    const first = await broker.send({ ticket: ticket(), text: '@planner @implementer one' });
     await waitUntil(
       () => prompts('planner').length === 1 && prompts('implementer').length === 1,
       'both first prompts',
     );
     // The first message reached both agents, so it cannot be unsent.
-    expect(await broker.withdraw(assignment(), first.messageId)).toBe(false);
+    expect(await broker.withdraw(ticket(), first.messageId)).toBe(false);
 
-    const second = await broker.send({ assignment: assignment(), text: '@planner @implementer two' });
+    const second = await broker.send({ ticket: ticket(), text: '@planner @implementer two' });
     await waitUntil(
       () =>
         itemsOfType('user.message').some(
@@ -485,9 +485,9 @@ describe('withdrawing a fan-out message', () => {
       'the queued fan-out bubble',
     );
 
-    expect(await broker.withdraw(assignment(), second.messageId)).toBe(true);
-    expect((await broker.getSession(assignment(), 'planner'))?.queued).toEqual([]);
-    expect((await broker.getSession(assignment(), 'implementer'))?.queued).toEqual([]);
+    expect(await broker.withdraw(ticket(), second.messageId)).toBe(true);
+    expect((await broker.getSession(ticket(), 'planner'))?.queued).toEqual([]);
+    expect((await broker.getSession(ticket(), 'implementer'))?.queued).toEqual([]);
 
     release();
     await idleAll(2);
@@ -511,10 +511,10 @@ describe('withdrawing a fan-out message', () => {
       implementer: [justSays('implementer first', 'i1')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner busy' });
+    await broker.send({ ticket: ticket(), text: '@planner busy' });
     await waitUntil(() => prompts('planner').length === 1, 'the planner to be busy');
 
-    const fanout = await broker.send({ assignment: assignment(), text: '@planner @implementer two' });
+    const fanout = await broker.send({ ticket: ticket(), text: '@planner @implementer two' });
     await waitUntil(() => prompts('implementer').length === 1, 'the implementer to start it');
 
     const message = itemsOfType('user.message').find(
@@ -525,8 +525,8 @@ describe('withdrawing a fan-out message', () => {
 
     // One target already has it, so it cannot be unsent — not even from the
     // queue of the target that has not started.
-    expect(await broker.withdraw(assignment(), fanout.messageId)).toBe(false);
-    expect((await broker.getSession(assignment(), 'planner'))?.queued).toHaveLength(1);
+    expect(await broker.withdraw(ticket(), fanout.messageId)).toBe(false);
+    expect((await broker.getSession(ticket(), 'planner'))?.queued).toHaveLength(1);
 
     release();
     await idleAll(3);
@@ -537,10 +537,10 @@ describe('withdrawing a fan-out message', () => {
 describe('per-target crash repair (Decision 12 extended)', () => {
   /** Write the log a crashed process would have left, with no live broker. */
   async function seed(lines: Array<Partial<ChatEvent> & Pick<ChatEvent, 'kind' | 'payload'>>): Promise<void> {
-    const log = await openChatLog(assignmentDir);
+    const log = await openChatLog(ticketDir);
     for (const line of lines) {
       await log.append({
-        ticketId: ASSIGNMENT_ID,
+        ticketId: TICKET_ID,
         agentId: line.agentId ?? 'human',
         sessionKey: line.sessionKey ?? SCOPE_KEY,
         turnId: line.turnId ?? null,
@@ -564,14 +564,14 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${ASSIGNMENT_ID}:planner`,
+        sessionKey: `${TICKET_ID}:planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.start',
         payload: { startedAt: '2026-09-02T12:00:00.000Z', trigger: { kind: 'human', messageId: 'm-fanout' } },
       },
       {
-        sessionKey: `${ASSIGNMENT_ID}:planner`,
+        sessionKey: `${TICKET_ID}:planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.end',
@@ -581,11 +581,11 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     makeBroker({ planner: [justSays('planned')], implementer: [justSays('done')] });
 
     // Materialising the sessions is enough — recovery drives itself.
-    await broker.getSession(assignment(), 'implementer');
+    await broker.getSession(ticket(), 'implementer');
     await waitUntil(() => prompts('implementer').length === 1, 'the recovered implementer prompt');
     expect(promptText(prompts('implementer')[0] as never)).toContain('two targets');
 
-    await broker.getSession(assignment(), 'planner');
+    await broker.getSession(ticket(), 'planner');
     await new Promise((r) => setTimeout(r, 30));
     // The planner already ran it; nothing is re-sent to it.
     expect(prompts('planner')).toHaveLength(0);
@@ -605,14 +605,14 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${ASSIGNMENT_ID}:planner`,
+        sessionKey: `${TICKET_ID}:planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.start',
         payload: { startedAt: '2026-09-02T12:00:00.000Z', trigger: { kind: 'human', messageId: 'm1' } },
       },
       {
-        sessionKey: `${ASSIGNMENT_ID}:planner`,
+        sessionKey: `${TICKET_ID}:planner`,
         agentId: 'planner',
         turnId: 'turn-planner',
         kind: 'turn.end',
@@ -634,7 +634,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     ]);
     makeBroker({ planner: [justSays('planned')], implementer: [justSays('ok @planner')] });
 
-    await broker.getSession(assignment(), 'implementer');
+    await broker.getSession(ticket(), 'implementer');
     await waitUntil(() => prompts('implementer').length === 1, 'the recovered hop');
     await idleAll(1);
     await new Promise((r) => setTimeout(r, 30));
@@ -685,13 +685,13 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
     makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('done', 'i1')] });
 
-    await broker.getSession(assignment(), 'planner');
+    await broker.getSession(ticket(), 'planner');
     await waitUntil(() => prompts('planner').length === 1, 'the recovered planner prompt');
-    await broker.getSession(assignment(), 'implementer');
+    await broker.getSession(ticket(), 'implementer');
     await new Promise((r) => setTimeout(r, 40));
 
     expect(prompts('implementer')).toHaveLength(0);
-    expect((await broker.getSession(assignment(), 'implementer'))?.queued).toEqual([]);
+    expect((await broker.getSession(ticket(), 'implementer'))?.queued).toEqual([]);
   });
 
   it('does not re-queue a hop the target already started', async () => {
@@ -710,7 +710,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
         },
       },
       {
-        sessionKey: `${ASSIGNMENT_ID}:implementer`,
+        sessionKey: `${TICKET_ID}:implementer`,
         agentId: 'implementer',
         turnId: 'turn-impl',
         kind: 'turn.start',
@@ -722,7 +722,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     ]);
     makeBroker({ implementer: [justSays('done')] });
 
-    await broker.getSession(assignment(), 'implementer');
+    await broker.getSession(ticket(), 'implementer');
     await new Promise((r) => setTimeout(r, 40));
     expect(prompts('implementer')).toHaveLength(0);
     // The orphaned turn is still sealed as an error, as in phase 2.
@@ -738,9 +738,9 @@ describe('the history delta and its cursor (Task 4)', () => {
       implementer: [justSays('implementer here', 'i1'), justSays('again', 'i2')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner @implementer one' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer one' });
     await idleAll(2);
-    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await broker.send({ ticket: ticket(), text: '@implementer two' });
     await idleAll(3);
 
     const second = prompts('implementer')[1] as never as { prompt: Array<{ text: string }> };
@@ -763,14 +763,14 @@ describe('the history delta and its cursor (Task 4)', () => {
       implementer: [{ steps: [{ kind: 'error', message: 'adapter blew up' }] }, justSays('recovered', 'i2')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await broker.send({ ticket: ticket(), text: '@planner one' });
     await idleAll(1);
-    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await broker.send({ ticket: ticket(), text: '@implementer two' });
     await idleAll(2);
 
-    expect((await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq).toBe(0);
+    expect((await broker.getSession(ticket(), 'implementer'))?.lastDeliveredSeq).toBe(0);
 
-    await broker.send({ assignment: assignment(), text: '@implementer three' });
+    await broker.send({ ticket: ticket(), text: '@implementer three' });
     await idleAll(3);
     // The planner's reply was never actually delivered, so it is sent again.
     const retry = prompts('implementer')[1] as never as { prompt: Array<{ text: string }> };
@@ -783,14 +783,14 @@ describe('the history delta and its cursor (Task 4)', () => {
       implementer: [{ steps: [{ kind: 'awaitCancel' }] }],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await broker.send({ ticket: ticket(), text: '@planner one' });
     await idleAll(1);
-    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await broker.send({ ticket: ticket(), text: '@implementer two' });
     await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
-    expect(await broker.cancel(assignment(), 'implementer')).toBe(true);
+    expect(await broker.cancel(ticket(), 'implementer')).toBe(true);
     await idleAll(2);
 
-    const cursor = (await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq ?? 0;
+    const cursor = (await broker.getSession(ticket(), 'implementer'))?.lastDeliveredSeq ?? 0;
     expect(cursor).toBeGreaterThan(0);
   });
 
@@ -799,21 +799,21 @@ describe('the history delta and its cursor (Task 4)', () => {
       planner: [justSays('planner here', 'p1')],
       implementer: [justSays('implementer here', 'i1')],
     });
-    await broker.send({ assignment: assignment(), text: '@planner one' });
+    await broker.send({ ticket: ticket(), text: '@planner one' });
     await idleAll(1);
-    await broker.send({ assignment: assignment(), text: '@implementer two' });
+    await broker.send({ ticket: ticket(), text: '@implementer two' });
     await idleAll(2);
-    const before = (await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq ?? 0;
+    const before = (await broker.getSession(ticket(), 'implementer'))?.lastDeliveredSeq ?? 0;
     expect(before).toBeGreaterThan(0);
 
     await broker.stopAll();
     makeBroker({ implementer: [justSays('after', 'i2')] });
-    expect((await broker.getSession(assignment(), 'implementer'))?.lastDeliveredSeq).toBe(before);
+    expect((await broker.getSession(ticket(), 'implementer'))?.lastDeliveredSeq).toBe(before);
   });
 
   it('sends the roster and the agent’s own identity in the standing context', async () => {
     makeBroker({ planner: [justSays('planned', 'p1')] });
-    await broker.send({ assignment: assignment(), text: '@planner go' });
+    await broker.send({ ticket: ticket(), text: '@planner go' });
     await idleAll(1);
 
     const first = prompts('planner')[0] as never as { prompt: Array<{ text?: string }> };
@@ -827,7 +827,7 @@ describe('the history delta and its cursor (Task 4)', () => {
   it('carries an updated description in the roster after saveAgent', async () => {
     await writeAgent('planner', { default: true, description: 'Alpha plans' });
     makeBroker({ planner: [justSays('planned', 'p1'), justSays('again', 'p2')] });
-    await broker.send({ assignment: assignment(), text: '@planner go' });
+    await broker.send({ ticket: ticket(), text: '@planner go' });
     await idleAll(1);
 
     await broker.saveAgent({
@@ -840,7 +840,7 @@ describe('the history delta and its cursor (Task 4)', () => {
       description: 'Beta plans',
       systemPrompt: 'You are the planner.',
     });
-    await broker.send({ assignment: assignment(), text: '@planner once more' });
+    await broker.send({ ticket: ticket(), text: '@planner once more' });
     await idleAll(2);
 
     const latest = prompts('planner').at(-1) as { prompt: Array<{ text?: string }> };
@@ -857,7 +857,7 @@ describe('the history delta and its cursor (Task 4)', () => {
       codex: [justSays('coded', 'c1'), justSays('coded again', 'c2')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleAll(1);
 
     await broker.saveAgent({
@@ -870,7 +870,7 @@ describe('the history delta and its cursor (Task 4)', () => {
       description: 'Beta plans',
       systemPrompt: 'You are the planner.',
     });
-    await broker.send({ assignment: assignment(), text: '@codex once more' });
+    await broker.send({ ticket: ticket(), text: '@codex once more' });
     await idleAll(2);
 
     const latest = prompts('codex').at(-1) as { prompt: Array<{ text?: string }> };
@@ -891,10 +891,10 @@ describe('an adapter dying mid-turn (code review round 1, finding 2)', () => {
       implementer: [justSays('unaffected', 'i1')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner hold' });
+    await broker.send({ ticket: ticket(), text: '@planner hold' });
     await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
     // A second message queues behind the in-flight turn.
-    await broker.send({ assignment: assignment(), text: '@planner queued behind it' });
+    await broker.send({ ticket: ticket(), text: '@planner queued behind it' });
     await waitUntil(
       () => (lastSessionQueued('planner') ?? 0) === 1,
       'the queued planner message',
@@ -923,7 +923,7 @@ describe('an adapter dying mid-turn (code review round 1, finding 2)', () => {
     );
 
     // The other agent is untouched and still works.
-    await broker.send({ assignment: assignment(), text: '@implementer still there?' });
+    await broker.send({ ticket: ticket(), text: '@implementer still there?' });
     await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
 
     release();
@@ -949,14 +949,14 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
       implementer: [{ steps: [{ kind: 'awaitCancel' }] }, justSays('never runs', 'i2')],
     });
 
-    await broker.send({ assignment: assignment(), text: '@implementer one' });
+    await broker.send({ ticket: ticket(), text: '@implementer one' });
     await waitUntil(() => prompts('implementer').length === 1, 'the implementer prompt');
-    await broker.send({ assignment: assignment(), text: '@implementer two' });
-    await broker.send({ assignment: assignment(), text: '@implementer three' });
+    await broker.send({ ticket: ticket(), text: '@implementer two' });
+    await broker.send({ ticket: ticket(), text: '@implementer three' });
     await waitUntil(() => (lastSessionQueued('implementer') ?? 0) === 2, 'two queued entries');
 
     const before = itemsOfType('system').length;
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
 
     // The in-flight prompt is cancelled, not left to finish off-screen.
     await waitUntil(
@@ -975,7 +975,7 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
       .slice(before)
       .filter((row) => /withdraw/i.test(row.text) && row.text.includes('@implementer'));
     expect(withdrawalRows).toHaveLength(2);
-    expect((await broker.getSession(assignment(), 'implementer'))?.queued).toEqual([]);
+    expect((await broker.getSession(ticket(), 'implementer'))?.queued).toEqual([]);
 
     // The adapter is gone, and the second scripted turn never ran.
     await waitUntil(
@@ -983,15 +983,15 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
       'the implementer adapter to be torn down',
     );
     expect(prompts('implementer')).toHaveLength(1);
-    expect((await broker.getSession(assignment(), 'implementer'))?.state).toBe('stopped');
+    expect((await broker.getSession(ticket(), 'implementer'))?.state).toBe('stopped');
   });
 
   it('treats a later mention of the detached agent as unknown', async () => {
     makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('done', 'i1')] });
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
 
     const before = itemsOfType('system').length;
-    await broker.send({ assignment: assignment(), text: '@implementer are you there' });
+    await broker.send({ ticket: ticket(), text: '@implementer are you there' });
     await idleAll(1);
     await new Promise((r) => setTimeout(r, 30));
 
@@ -1018,18 +1018,18 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
       defaultAgent: 'planner',
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner hold' });
+    await broker.send({ ticket: ticket(), text: '@planner hold' });
     await waitUntil(() => prompts('planner').length === 1, 'the planner prompt');
-    await broker.send({ assignment: assignment(), text: '@planner queued' });
+    await broker.send({ ticket: ticket(), text: '@planner queued' });
     await waitUntil(() => (lastSessionQueued('planner') ?? 0) === 1, 'the queued planner entry');
 
-    await broker.setParticipants(assignment(), {
+    await broker.setParticipants(ticket(), {
       agents: ['planner', 'implementer'],
       defaultAgent: 'planner',
     });
 
     // Detaching the reviewer must not touch the planner's in-flight turn or queue.
-    expect((await broker.getSession(assignment(), 'planner'))?.queued).toHaveLength(1);
+    expect((await broker.getSession(ticket(), 'planner'))?.queued).toHaveLength(1);
     release();
     await idleAll(2);
     expect(prompts('planner')).toHaveLength(2);
@@ -1063,7 +1063,7 @@ describe('surviving a dashboard restart with two agents (criterion 1)', () => {
 
   it('resumes BOTH agents’ ACP sessions on the next message', async () => {
     makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('built', 'i1')] });
-    await broker.send({ assignment: assignment(), text: '@planner @implementer start' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer start' });
     await idleAll(2);
 
     const before = persistedAcpSessions();
@@ -1074,7 +1074,7 @@ describe('surviving a dashboard restart with two agents (criterion 1)', () => {
     // A fresh broker over the same home, DB and event log — the server coming
     // back up. Nothing but the persisted state connects it to the first one.
     makeBroker({ planner: [justSays('again', 'p2')], implementer: [justSays('again', 'i2')] });
-    await broker.send({ assignment: assignment(), text: '@planner @implementer carry on' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer carry on' });
     await waitUntil(
       () => prompts('planner').length === 1 && prompts('implementer').length === 1,
       'both agents to be prompted after the restart',
@@ -1092,7 +1092,7 @@ describe('surviving a dashboard restart with two agents (criterion 1)', () => {
 
   it('falls back to session/new with a system row for the agent whose resume fails, and resumes the other', async () => {
     makeBroker({ planner: [justSays('planned', 'p1')], implementer: [justSays('built', 'i1')] });
-    await broker.send({ assignment: assignment(), text: '@planner @implementer start' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer start' });
     await idleAll(2);
     const before = persistedAcpSessions();
 
@@ -1106,7 +1106,7 @@ describe('surviving a dashboard restart with two agents (criterion 1)', () => {
         },
       },
     );
-    await broker.send({ assignment: assignment(), text: '@planner @implementer carry on' });
+    await broker.send({ ticket: ticket(), text: '@planner @implementer carry on' });
     await waitUntil(
       () => prompts('planner').length === 1 && prompts('implementer').length === 1,
       'both agents to be prompted after the restart',

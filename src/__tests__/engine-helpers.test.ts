@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { placeTicketCapped, crossedGates } from '../lifecycle/stage-engine.js';
 import type { EngineInput } from '../lifecycle/stage-engine.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
-import type { AssignmentFacts } from '../lifecycle/derive.js';
+import type { TicketFacts } from '../lifecycle/derive.js';
 
 const WF: StageWorkflow = {
   id: 'w',
@@ -15,7 +15,7 @@ const WF: StageWorkflow = {
 };
 
 const input = (facts: Record<string, unknown>): EngineInput => ({
-  facts: facts as unknown as AssignmentFacts,
+  facts: facts as unknown as TicketFacts,
   evidence: {},
   firedDissents: new Set(),
 });

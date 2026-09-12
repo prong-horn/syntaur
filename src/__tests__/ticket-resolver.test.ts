@@ -18,7 +18,7 @@ afterEach(async () => {
   await rm(sandbox, { recursive: true, force: true });
 });
 
-async function writeProjectAssignment(
+async function writeProjectTicket(
   projectSlug: string,
   ticketSlug: string,
   frontmatter: string,
@@ -28,7 +28,7 @@ async function writeProjectAssignment(
   await writeFile(resolve(dir, 'ticket.md'), `---\n${frontmatter}\n---\n\n# ${ticketSlug}\n`, 'utf-8');
 }
 
-async function writeStandaloneAssignment(slug: string, frontmatter: string): Promise<void> {
+async function writeStandaloneTicket(slug: string, frontmatter: string): Promise<void> {
   const dir = resolve(ticketsDir, slug);
   await mkdir(dir, { recursive: true });
   await writeFile(resolve(dir, 'ticket.md'), `---\n${frontmatter}\n---\n\n# ${slug}\n`, 'utf-8');
@@ -36,24 +36,24 @@ async function writeStandaloneAssignment(slug: string, frontmatter: string): Pro
 
 describe('resolveTicketBySlug', () => {
   it('returns {exists:true, id} for a project-nested ticket', async () => {
-    await writeProjectAssignment('proj', 'asgn', 'id: abc-123\nslug: asgn\ntitle: Asgn');
+    await writeProjectTicket('proj', 'asgn', 'id: abc-123\nslug: asgn\ntitle: Asgn');
     const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'asgn');
     expect(r).toEqual({ exists: true, id: 'abc-123' });
   });
 
   it('returns {exists:true, id} for a standalone ticket', async () => {
-    await writeStandaloneAssignment('solo', 'id: solo-uuid\nslug: solo\ntitle: Solo');
+    await writeStandaloneTicket('solo', 'id: solo-uuid\nslug: solo\ntitle: Solo');
     const r = await resolveTicketBySlug(projectsDir, ticketsDir, null, 'solo');
     expect(r).toEqual({ exists: true, id: 'solo-uuid' });
   });
 
-  it('returns {exists:true, id:null} for an existing but idless assignment', async () => {
-    await writeProjectAssignment('proj', 'noid', 'slug: noid\ntitle: NoId');
+  it('returns {exists:true, id:null} for an existing but idless ticket', async () => {
+    await writeProjectTicket('proj', 'noid', 'slug: noid\ntitle: NoId');
     const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'noid');
     expect(r).toEqual({ exists: true, id: null });
   });
 
-  it('returns {exists:false, id:null} for a missing assignment', async () => {
+  it('returns {exists:false, id:null} for a missing ticket', async () => {
     const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'ghost');
     expect(r).toEqual({ exists: false, id: null });
   });

@@ -6,7 +6,7 @@ import {
 } from '../utils/view-prefs-schema.js';
 import { isViewFilters } from '../utils/view-prefs-schema.js';
 // Predicate lives in the dashboard lib (loads under node via the @shared alias).
-import { filterAssignment } from '../../dashboard/src/lib/ticketFilter';
+import { filterTicket } from '../../dashboard/src/lib/ticketFilter';
 
 describe('toFilterValues', () => {
   it('treats undefined / "all" / "" / [] / ["all"] as no constraint', () => {
@@ -72,24 +72,24 @@ describe('isViewFilters (back-compat + multi-value)', () => {
   });
 });
 
-describe('filterAssignment — tags (match-ANY) + dateRange', () => {
+describe('filterTicket — tags (match-ANY) + dateRange', () => {
   const tagged = (tags: string[]): Item => ({ ...item(), tags });
   it('tags match-ANY: item matches if it has any selected tag', () => {
-    expect(filterAssignment(tagged(['backend']), { tags: ['backend', 'urgent'] })).toBe(true);
-    expect(filterAssignment(tagged(['frontend']), { tags: ['backend', 'urgent'] })).toBe(false);
-    expect(filterAssignment(tagged([]), { tags: ['backend'] })).toBe(false);
-    expect(filterAssignment(tagged([]), { tags: [] })).toBe(true); // empty filter = no constraint
+    expect(filterTicket(tagged(['backend']), { tags: ['backend', 'urgent'] })).toBe(true);
+    expect(filterTicket(tagged(['frontend']), { tags: ['backend', 'urgent'] })).toBe(false);
+    expect(filterTicket(tagged([]), { tags: ['backend'] })).toBe(false);
+    expect(filterTicket(tagged([]), { tags: [] })).toBe(true); // empty filter = no constraint
   });
-  it('dateRange flows through filterAssignment criteria (uses real now)', () => {
+  it('dateRange flows through filterTicket criteria (uses real now)', () => {
     const fresh: Item = { ...item(), updated: new Date(Date.now() - 1 * 86400_000).toISOString() };
     const old: Item = { ...item(), updated: new Date(Date.now() - 40 * 86400_000).toISOString() };
-    expect(filterAssignment(fresh, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(true);
-    expect(filterAssignment(old, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(false);
+    expect(filterTicket(fresh, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(true);
+    expect(filterTicket(old, { dateRange: { field: 'updated', preset: 'last_7d' } })).toBe(false);
   });
   it('respects options.search (the path the Overview widget plumbs through)', () => {
     const i: Item = { ...item(), title: 'Fix login bug' };
-    expect(filterAssignment(i, {}, { search: 'login' })).toBe(true);
-    expect(filterAssignment(i, {}, { search: 'logout' })).toBe(false);
+    expect(filterTicket(i, {}, { search: 'login' })).toBe(true);
+    expect(filterTicket(i, {}, { search: 'logout' })).toBe(false);
   });
 });
 
@@ -117,40 +117,40 @@ function item(p: Partial<Item> = {}): Item {
   };
 }
 
-describe('filterAssignment — multi-value membership', () => {
+describe('filterTicket — multi-value membership', () => {
   it('empty criteria matches everything', () => {
-    expect(filterAssignment(item(), {})).toBe(true);
+    expect(filterTicket(item(), {})).toBe(true);
   });
   it('legacy scalar status still matches', () => {
-    expect(filterAssignment(item({ status: 'review' }), { status: 'review' })).toBe(true);
-    expect(filterAssignment(item({ status: 'in_progress' }), { status: 'review' })).toBe(false);
+    expect(filterTicket(item({ status: 'review' }), { status: 'review' })).toBe(true);
+    expect(filterTicket(item({ status: 'in_progress' }), { status: 'review' })).toBe(false);
   });
   it('OR within a field', () => {
-    expect(filterAssignment(item({ status: 'review' }), { status: ['in_progress', 'review'] })).toBe(true);
-    expect(filterAssignment(item({ status: 'blocked' }), { status: ['in_progress', 'review'] })).toBe(false);
+    expect(filterTicket(item({ status: 'review' }), { status: ['in_progress', 'review'] })).toBe(true);
+    expect(filterTicket(item({ status: 'blocked' }), { status: ['in_progress', 'review'] })).toBe(false);
   });
   it('AND across fields', () => {
     const crit = { status: ['in_progress'], priority: ['high', 'critical'] };
-    expect(filterAssignment(item({ status: 'in_progress', priority: 'critical' }), crit)).toBe(true);
-    expect(filterAssignment(item({ status: 'in_progress', priority: 'low' }), crit)).toBe(false);
+    expect(filterTicket(item({ status: 'in_progress', priority: 'critical' }), crit)).toBe(true);
+    expect(filterTicket(item({ status: 'in_progress', priority: 'low' }), crit)).toBe(false);
   });
   it('honors the type field (null type → "")', () => {
-    expect(filterAssignment(item({ type: 'bug' }), { type: ['bug', 'feature'] })).toBe(true);
-    expect(filterAssignment(item({ type: null }), { type: ['feature'] })).toBe(false);
+    expect(filterTicket(item({ type: 'bug' }), { type: ['bug', 'feature'] })).toBe(true);
+    expect(filterTicket(item({ type: null }), { type: ['feature'] })).toBe(false);
   });
   it('__unassigned__ matches null assignee inside an array', () => {
-    expect(filterAssignment(item({ assignee: null }), { assignee: ['__unassigned__', 'bob'] })).toBe(true);
-    expect(filterAssignment(item({ assignee: 'claude' }), { assignee: ['__unassigned__'] })).toBe(false);
+    expect(filterTicket(item({ assignee: null }), { assignee: ['__unassigned__', 'bob'] })).toBe(true);
+    expect(filterTicket(item({ assignee: 'claude' }), { assignee: ['__unassigned__'] })).toBe(false);
   });
   it('__standalone__ matches null projectSlug inside an array (OR with real slugs)', () => {
-    expect(filterAssignment(item({ projectSlug: null }), { project: ['__standalone__', 'beta'] })).toBe(true);
-    expect(filterAssignment(item({ projectSlug: 'alpha' }), { project: ['__standalone__', 'beta'] })).toBe(false);
-    expect(filterAssignment(item({ projectSlug: 'beta' }), { project: ['__standalone__', 'beta'] })).toBe(true);
+    expect(filterTicket(item({ projectSlug: null }), { project: ['__standalone__', 'beta'] })).toBe(true);
+    expect(filterTicket(item({ projectSlug: 'alpha' }), { project: ['__standalone__', 'beta'] })).toBe(false);
+    expect(filterTicket(item({ projectSlug: 'beta' }), { project: ['__standalone__', 'beta'] })).toBe(true);
   });
   it('activity still works alongside multi-value fields', () => {
     const old = new Date(Date.now() - 30 * 86400_000).toISOString();
-    expect(filterAssignment(item({ updated: old }), { activity: 'stale' })).toBe(true);
-    expect(filterAssignment(item({ updated: FRESH }), { activity: 'stale' })).toBe(false);
+    expect(filterTicket(item({ updated: old }), { activity: 'stale' })).toBe(true);
+    expect(filterTicket(item({ updated: FRESH }), { activity: 'stale' })).toBe(false);
   });
 });
 

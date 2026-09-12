@@ -39,7 +39,7 @@ function resolveStandaloneTicketsDir(opts: IndexOptions): string {
 }
 
 /** Identity carried from the owning ticket onto every sidecar doc. */
-interface AssignmentIdentity {
+interface TicketIdentity {
   ticketId: string | null;
   ticketSlug: string;
   projectSlug: string | null;
@@ -87,17 +87,17 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     }
   }
 
-  // ── assignments (project-nested + standalone) ───────────────────────────
-  const { withAssignmentMd } = await listTicketsByProject(projectsDir, ticketsDir);
-  for (const entry of withAssignmentMd) {
-    const assignmentMdPath = resolve(entry.ticketDir, 'ticket.md');
-    let assignmentContent: string;
+  // ── tickets (project-nested + standalone) ───────────────────────────
+  const { withTicketMd } = await listTicketsByProject(projectsDir, ticketsDir);
+  for (const entry of withTicketMd) {
+    const ticketMdPath = resolve(entry.ticketDir, 'ticket.md');
+    let ticketContent: string;
     try {
-      assignmentContent = await readFile(assignmentMdPath, 'utf-8');
+      ticketContent = await readFile(ticketMdPath, 'utf-8');
     } catch {
       continue;
     }
-    const ticket = parseTicketFull(assignmentContent);
+    const ticket = parseTicketFull(ticketContent);
 
     // A ticket is excluded by default when EITHER it or its owning
     // project is archived. Both flags propagate onto the docs as `archived`.
@@ -108,7 +108,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
 
     if (!includeArchived && archived) continue;
 
-    const identity: AssignmentIdentity = {
+    const identity: TicketIdentity = {
       ticketId: ticket.id || null,
       ticketSlug: entry.ticketSlug,
       projectSlug: entry.projectSlug,
@@ -119,7 +119,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     };
 
     // ticket.md itself
-    docs.push(makeAssignmentDoc(assignmentMdPath, 'ticket', ticket.title, ticket.body, identity));
+    docs.push(makeTicketDoc(ticketMdPath, 'ticket', ticket.title, ticket.body, identity));
 
     // latest plan only
     const planName = await latestPlanFile(entry.ticketDir);
@@ -128,7 +128,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       if (await fileExists(planPath)) {
         try {
           const plan = parsePlan(await readFile(planPath, 'utf-8'));
-          docs.push(makeAssignmentDoc(planPath, 'plan', ticket.title, plan.body, identity));
+          docs.push(makeTicketDoc(planPath, 'plan', ticket.title, plan.body, identity));
         } catch {
           /* skip unreadable plan */
         }
@@ -141,7 +141,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       if (!(await fileExists(sidecarPath))) continue;
       try {
         const body = sidecar.body(await readFile(sidecarPath, 'utf-8'));
-        docs.push(makeAssignmentDoc(sidecarPath, sidecar.kind, ticket.title, body, identity));
+        docs.push(makeTicketDoc(sidecarPath, sidecar.kind, ticket.title, body, identity));
       } catch {
         /* skip unreadable sidecar */
       }
@@ -151,12 +151,12 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   return docs;
 }
 
-function makeAssignmentDoc(
+function makeTicketDoc(
   path: string,
   fileKind: FileKind,
   title: string,
   body: string,
-  identity: AssignmentIdentity,
+  identity: TicketIdentity,
 ): SearchDoc {
   return {
     id: path,

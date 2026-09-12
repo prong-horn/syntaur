@@ -7,7 +7,7 @@
  * DDL. Keeping it here breaks the otherwise-circular `session-db ↔ engagement-db`
  * dependency. See decision-record.md Decision 10.
  *
- * `engagement` is the canonical append-only session↔assignment M:N edge:
+ * `engagement` is the canonical append-only session↔ticket M:N edge:
  * intervals carrying a `stage`, with at most one OPEN row per session enforced
  * by the partial unique index. Token snapshots (`tokens_at_open`/
  * `tokens_at_close`) are JSON `TokenSnapshot` blobs (see `engagement-tokens.ts`)
@@ -34,6 +34,6 @@ CREATE TABLE IF NOT EXISTS engagement (
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_per_session
   ON engagement(session_id) WHERE ended_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_engagement_session ON engagement(session_id);
-CREATE INDEX IF NOT EXISTS idx_engagement_assignment ON engagement(assignment_id);
+CREATE INDEX IF NOT EXISTS idx_engagement_ticket ON engagement(assignment_id);
 CREATE INDEX IF NOT EXISTS idx_engagement_slug ON engagement(project_slug, assignment_slug);
 `;

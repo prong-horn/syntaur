@@ -11,7 +11,7 @@
 
 /**
  * Context passed to every protocol-instruction renderer. Identical to the
- * existing template renderer param shapes (CursorAssignmentParams /
+ * existing template renderer param shapes (CursorTicketParams /
  * CodexAgentsParams), so descriptors can reference those renderers directly.
  */
 export interface ProtocolContext {
@@ -30,7 +30,7 @@ export interface ProtocolContext {
 export type RendererKey =
   | 'codexAgents'
   | 'cursorProtocol'
-  | 'cursorAssignment'
+  | 'cursorTicket'
   | 'openCodeConfig'
   | 'hermesSoul';
 

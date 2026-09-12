@@ -1,7 +1,7 @@
 /**
  * Read-only staleness watchdog (pure core).
  *
- * Proactively surfaces assignments whose status has gone stale WITHOUT anyone
+ * Proactively surfaces tickets whose status has gone stale WITHOUT anyone
  * loading the dashboard, by emitting an audit event the first time a ticket
  * becomes stale and another when it recovers. Modeled on the idempotent
  * `gcExpiredLeases` sweep: running the same tick twice with the same inputs emits
@@ -17,8 +17,6 @@ import type { StaleReason } from './classify.js';
 
 export interface StaleCandidate {
   ticketId?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId?: string;
   projectSlug: string | null;
   /** Empty → not currently stale. */
   reasons: StaleReason[];
@@ -28,8 +26,6 @@ export type WatchdogEventType = 'staleness-detected' | 'staleness-cleared';
 
 export interface WatchdogEvent {
   ticketId?: string;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentId?: string;
   projectSlug: string | null;
   type: WatchdogEventType;
   /** The reasons at detection time; empty for a clear event. */
@@ -58,7 +54,7 @@ export function runStalenessWatchdogTick(
 ): WatchdogSummary {
   const staleNow = new Map<string, StaleCandidate>();
   for (const c of candidates) {
-    const id = c.ticketId ?? c.assignmentId;
+    const id = c.ticketId;
     if (!id) continue;
     if (c.reasons.length > 0) staleNow.set(id, c);
   }

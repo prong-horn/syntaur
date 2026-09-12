@@ -77,7 +77,7 @@ export async function runLs(
     standaloneTicketsDir(),
     { archived: options.archived ? 'only' : 'exclude' },
   );
-  let items = board.assignments;
+  let items = board.tickets;
 
   if (options.status) {
     const statuses = options.status.split(',').map((s) => s.trim()).filter(Boolean);
@@ -145,7 +145,7 @@ export async function runLs(
 
 /**
  * Materialize the full AQL item (frontmatter fields + facts + history
- * virtuals) for one board row. CLI-scale (hundreds of assignments) — full
+ * virtuals) for one board row. CLI-scale (hundreds of tickets) — full
  * loads are fine; the dashboard ships the same shape in payloads instead.
  */
 async function loadQueryItem(
@@ -235,23 +235,23 @@ function renderTable(items: TicketBoardItem[]): string {
 
 export const lsCommand = new Command('ls')
   .description(
-    'List assignments across all projects with optional filters by status, project, tag, or age.',
+    'List tickets across all projects with optional filters by status, project, tag, or age.',
   )
   .option('--status <list>', 'Comma-separated status filter (e.g. pending,in_progress)')
   .option('--project <slug>', 'Filter to one project')
-  .option('--tag <list>', 'Comma-separated tag filter (assignment must have ALL tags)')
-  .option('--age <duration>', 'Only include assignments updated within duration (e.g. 7d, 24h, 2w, 1m)')
+  .option('--tag <list>', 'Comma-separated tag filter (ticket must have ALL tags)')
+  .option('--age <duration>', 'Only include tickets updated within duration (e.g. 7d, 24h, 2w, 1m)')
   .option(
     '--query <expr>',
     'AQL boolean filter over fields + facts (e.g. "disposition:blocked AND phase:ready_to_implement", "planApproved:true AND workspaceSet:false", "phase:planning AND statusAge > 3d")',
   )
-  .option('--archived', 'List only archived assignments (hidden from the default view)')
+  .option('--archived', 'List only archived tickets (hidden from the default view)')
   .option('--json', 'Emit JSON instead of a table')
   .action(async (options: LsOptions) => {
     try {
       const { items } = await runLs(options);
       if (options.json) {
-        console.log(JSON.stringify({ assignments: items }, null, 2));
+        console.log(JSON.stringify({ tickets: items }, null, 2));
       } else {
         console.log(renderTable(items));
       }

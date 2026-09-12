@@ -71,7 +71,7 @@ describe('runSessionRegister', () => {
   it('registers an UNATTRIBUTED row even when context.json carries ticket scalars, but still merges session fields into context.json', async () => {
     // The SessionStart hook no longer auto-binds the ticket from the cwd
     // context.json scalar (that cwd-scalar auto-bind is the
-    // multi-assignment-in-one-worktree clobber being eliminated). The row binds
+    // multi-ticket-in-one-worktree clobber being eliminated). The row binds
     // its ticket via the explicit grab flow / engagement edge, NOT here.
     await mkdir(join(cwd, '.syntaur'), { recursive: true });
     await writeFile(

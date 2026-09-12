@@ -26,7 +26,7 @@ function toRendererParams(ctx: ProtocolContext) {
 export const RENDERERS: Record<RendererKey, (ctx: ProtocolContext) => string> = {
   codexAgents: (ctx) => renderCodexAgents(toRendererParams(ctx)),
   cursorProtocol: () => renderCursorProtocol(),
-  cursorAssignment: (ctx) => renderCursorTicket(toRendererParams(ctx)),
+  cursorTicket: (ctx) => renderCursorTicket(toRendererParams(ctx)),
   openCodeConfig: (ctx) => renderOpenCodeConfig({ projectDir: ctx.projectDir }),
   hermesSoul: (ctx) => renderHermesSoul(toRendererParams(ctx)),
 };

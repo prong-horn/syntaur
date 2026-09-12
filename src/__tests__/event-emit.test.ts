@@ -10,7 +10,7 @@ import {
   initEventsDb,
   closeEventsDb,
   resetEventsDb,
-  listEventsByAssignment,
+  listEventsByTicket,
 } from '../db/events-db.js';
 import {
   recordStatusEvent,
@@ -153,7 +153,7 @@ describe('recordStatusEvent self-guard (R5)', () => {
       to: 'draft',
       command: 'edit',
     });
-    expect(listEventsByAssignment('a1')).toHaveLength(0);
+    expect(listEventsByTicket('a1')).toHaveLength(0);
   });
 
   it('emits one status-change when from !== to', () => {
@@ -166,7 +166,7 @@ describe('recordStatusEvent self-guard (R5)', () => {
       to: 'review',
       command: 'edit',
     });
-    const events = listEventsByAssignment('a1');
+    const events = listEventsByTicket('a1');
     expect(events).toHaveLength(1);
     expect(events[0].type).toBe('status-change');
   });
@@ -179,7 +179,7 @@ describe('CLI status transition emits exactly one status-change', () => {
     const id = (await readFm()).id;
 
     openEvents(); // no-op if the live emit already opened the singleton
-    const events = listEventsByAssignment(id);
+    const events = listEventsByTicket(id);
     const statusEvents = events.filter((e) => e.type === 'status-change');
     expect(statusEvents).toHaveLength(1);
     const details = JSON.parse(statusEvents[0].details ?? '{}');
@@ -199,7 +199,7 @@ describe('same-status fact set (R5)', () => {
 
     const id = (await readFm()).id;
     openEvents();
-    const events = listEventsByAssignment(id);
+    const events = listEventsByTicket(id);
     expect(events.filter((e) => e.type === 'fact-set')).toHaveLength(1);
     expect(events.filter((e) => e.type === 'status-change')).toHaveLength(0);
   });
@@ -217,7 +217,7 @@ describe('migration suppression', () => {
     // The migration seeded a statusHistory entry but must emit NO live event.
     expect((await readFm()).statusHistory.length).toBeGreaterThan(0);
     openEvents();
-    expect(listEventsByAssignment(id)).toHaveLength(0);
+    expect(listEventsByTicket(id)).toHaveLength(0);
   });
 
   it('withSuppressedEvents suppresses recordStatusEvent and restores after', () => {
@@ -232,7 +232,7 @@ describe('migration suppression', () => {
         command: 'edit',
       });
     });
-    expect(listEventsByAssignment('s1')).toHaveLength(0);
+    expect(listEventsByTicket('s1')).toHaveLength(0);
     // Restored: a post-suppression emit lands.
     recordStatusEvent({
       ticketId: 's1',
@@ -242,7 +242,7 @@ describe('migration suppression', () => {
       to: 'review',
       command: 'edit',
     });
-    expect(listEventsByAssignment('s1')).toHaveLength(1);
+    expect(listEventsByTicket('s1')).toHaveLength(1);
   });
 });
 

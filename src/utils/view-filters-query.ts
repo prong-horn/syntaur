@@ -1,6 +1,6 @@
 /**
  * Bidirectional translators between the dashboard's chip-based `ViewFilters`
- * and an AQL (Assignment Query Language) query string.
+ * and an AQL (Ticket Query Language) query string.
  *
  * This is the correctness linchpin of the query-language saved-views feature:
  * a chip-only `ViewFilters` must round-trip through a query string exactly.

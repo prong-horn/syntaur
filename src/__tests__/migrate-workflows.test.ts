@@ -25,7 +25,7 @@ import { findWorkflowStructureProblems } from '../utils/doctor/checks/workflows.
 import { parseWorkflowFile, serializeWorkflowFile } from '../utils/workflow-file.js';
 import { DEFAULT_DERIVE_CONFIG } from '../utils/derive-config.js';
 import { readConfig, type StatusConfig } from '../utils/config.js';
-import { ASSIGNMENT_FIELDS, compileQuery } from '../utils/query/index.js';
+import { TICKET_FIELDS, compileQuery } from '../utils/query/index.js';
 import { getWorkflowBundle } from '../utils/workflow-resolve.js';
 import { loadWorkflowLibrary, invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import { buildDeriveContext } from '../lifecycle/derive-context.js';
@@ -37,7 +37,7 @@ import {
 } from '../lifecycle/recompute.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
-import type { AssignmentFacts } from '../lifecycle/derive.js';
+import type { TicketFacts } from '../lifecycle/derive.js';
 
 // ── Fixtures: the LIVE default-workflow bundle (verified 2026-07-13) ─────────
 // Mirrors the real config.md `workflows.default`: 11 definitions (incl. the
@@ -121,7 +121,7 @@ const EXPECTED_DEFAULT: StageWorkflow = {
   terminalFailure: 'failed',
 };
 
-function facts(overrides: Partial<AssignmentFacts> = {}): AssignmentFacts {
+function facts(overrides: Partial<TicketFacts> = {}): TicketFacts {
   return {
     hasRealObjective: false,
     acRealTotal: 0,
@@ -139,7 +139,7 @@ function facts(overrides: Partial<AssignmentFacts> = {}): AssignmentFacts {
     reworkRequested: false,
     pinned: false,
     ...overrides,
-  } as AssignmentFacts;
+  } as TicketFacts;
 }
 
 function engineInput(overrides: Partial<EngineInput> = {}): EngineInput {
@@ -418,9 +418,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
       await writeFile(join(dir, 'ticket.md'), ticketMd(t), 'utf-8');
     }
     for (const t of standalone) {
-      const dir = join(home, 'assignments', t.slug);
+      const dir = join(home, 'tickets', t.slug);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, 'assignment.md'), ticketMd({ ...t }), 'utf-8');
+      await writeFile(join(dir, 'ticket.md'), ticketMd({ ...t }), 'utf-8');
     }
   }
 
@@ -489,9 +489,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   it('dry-run writes NOTHING — not under the root, and never under the copied defaultProjectDir trap', async () => {
     // Put a trap ticket where the copied config's absolute defaultProjectDir
     // points (the REAL root in the live scenario) — it must never be touched.
-    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const homeBefore = await snapshotTree(home);
@@ -503,9 +503,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   });
 
   it('apply migrates ONLY under --root; the trap root is untouched', async () => {
-    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const trapBefore = await snapshotTree(trap);
@@ -747,7 +747,7 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(orphan.phase).toBe('review');
     // Fresh standalone (no phase, no history) → placeTicket() → draft.
     const fresh = parseTicketFrontmatter(
-      await readFile(join(home, 'assignments', 'fresh-standalone-0001', 'assignment.md'), 'utf-8'),
+      await readFile(join(home, 'tickets', 'fresh-standalone-0001', 'ticket.md'), 'utf-8'),
     );
     expect(fresh.status).toBe('draft');
   });
@@ -935,7 +935,7 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
 // ── T7: the AQL compat window (aliases + parse-time deprecation, §4.5) ───────
 
 describe('AQL compat window (T7)', () => {
-  const registry = ASSIGNMENT_FIELDS;
+  const registry = TICKET_FIELDS;
   const now = Date.now();
 
   /** A post-compat-window item: NO phase/disposition mirrors — only the stage

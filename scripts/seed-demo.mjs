@@ -977,7 +977,7 @@ function seedAgentSessions(dbPath, projectMap) {
     CREATE TABLE IF NOT EXISTS sessions (
       session_id TEXT PRIMARY KEY,
       mission_slug TEXT,
-      assignment_slug TEXT,
+      ticket_slug TEXT,
       agent TEXT NOT NULL,
       started TEXT NOT NULL,
       ended TEXT,
@@ -988,7 +988,7 @@ function seedAgentSessions(dbPath, projectMap) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_mission ON sessions(mission_slug);
-    CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(mission_slug, assignment_slug);
+    CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(mission_slug, ticket_slug);
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
     INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
@@ -996,7 +996,7 @@ function seedAgentSessions(dbPath, projectMap) {
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO sessions
-      (session_id, mission_slug, assignment_slug, agent, started, ended, status, path, description)
+      (session_id, mission_slug, ticket_slug, agent, started, ended, status, path, description)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 

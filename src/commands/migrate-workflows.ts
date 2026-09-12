@@ -88,21 +88,21 @@ interface DivergenceRow {
  * whose pre-marker ladder branch would re-derive over the seeded stage.
  */
 async function migrationWrite(
-  assignmentPath: string,
+  ticketPath: string,
   mutate: (content: string) => string,
 ): Promise<'written' | 'unchanged'> {
-  const release = await acquireLock(resolve(assignmentPath, '..'));
+  const release = await acquireLock(resolve(ticketPath, '..'));
   try {
     for (let attempt = 0; attempt < CAS_RETRIES; attempt++) {
-      const original = await readFile(assignmentPath, 'utf-8');
+      const original = await readFile(ticketPath, 'utf-8');
       const next = mutate(original);
       if (next === original) return 'unchanged';
-      const current = await readFile(assignmentPath, 'utf-8');
+      const current = await readFile(ticketPath, 'utf-8');
       if (contentHash(current) !== contentHash(original)) continue;
-      await writeFileForce(assignmentPath, next);
+      await writeFileForce(ticketPath, next);
       return 'written';
     }
-    throw new Error(`migration write skipped after ${CAS_RETRIES} concurrent-edit retries: ${assignmentPath}`);
+    throw new Error(`migration write skipped after ${CAS_RETRIES} concurrent-edit retries: ${ticketPath}`);
   } finally {
     await release();
   }
@@ -398,7 +398,7 @@ export async function computeSeedDecision(
   if (stage === null) {
     const body = content.replace(/^---\n[\s\S]*?\n---/, '');
     const facts = await computeFacts({
-      assignmentDir: resolve(target.path, '..'),
+      ticketDir: resolve(target.path, '..'),
       frontmatter: fm,
       body,
       projectDir: target.projectDir,
@@ -571,7 +571,7 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
   if (options.dryRun) {
     printDivergenceReport(rows, mode);
     console.log(
-      `${mode}migrate-workflows: ${targets.length} assignment(s) scanned — ` +
+      `${mode}migrate-workflows: ${targets.length} ticket(s) scanned — ` +
         `${counts.preserved} terminal (preserved verbatim), ${counts.unchanged} already in place, ` +
         `${counts.seeded} would seed, ${counts.remapped} would remap; ` +
         `${missing.length} per-file workflow(s) would be written; marker NOT set.`,
@@ -628,7 +628,7 @@ export async function migrateWorkflowsCommand(options: MigrateWorkflowsOptions):
 
   printDivergenceReport(rows, mode);
   console.log(
-    `migrate-workflows: ${targets.length} assignment(s) scanned — ` +
+    `migrate-workflows: ${targets.length} ticket(s) scanned — ` +
       `${counts.preserved} terminal (preserved verbatim), ${counts.unchanged} already in place, ` +
       `${counts.seeded} seeded, ${counts.remapped} remapped; ` +
       `${expected.length} per-file workflow(s) in place, config block removed, ` +

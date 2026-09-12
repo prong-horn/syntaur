@@ -59,7 +59,7 @@ const SORT_LABELS: Record<SessionSort, string> = {
   started_asc: 'Oldest first',
   duration_desc: 'Longest first',
   duration_asc: 'Shortest first',
-  assignment_asc: 'Ticket A-Z',
+  ticket_asc: 'Ticket A-Z',
   agent_asc: 'Agent A-Z',
   spend_desc: 'Most expensive',
   tokens_desc: 'Most tokens',

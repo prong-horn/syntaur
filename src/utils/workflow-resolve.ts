@@ -15,12 +15,8 @@ export const DEFAULT_WORKFLOW_ID = 'default';
 export interface ResolveWorkflowInput {
   /** `workflow:` on the ticket frontmatter — explicit override, wins. */
   ticketWorkflow?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentWorkflow?: string | null;
   /** The ticket's `type:` — keys into the project's `workflowByType` map. */
   ticketType?: string | null;
-  /** @deprecated Dashboard compat until Task 2 */
-  assignmentType?: string | null;
   /** Project `defaultWorkflow`. */
   projectDefaultWorkflow?: string | null;
   /** Project `workflowByType` map (type → workflow id). */
@@ -53,8 +49,8 @@ export function resolveWorkflowId(input: ResolveWorkflowInput): string {
     globalDefaultWorkflow,
     available,
   } = input;
-  const ticketWorkflow = input.ticketWorkflow ?? input.assignmentWorkflow;
-  const ticketType = input.ticketType ?? input.assignmentType;
+  const ticketWorkflow = input.ticketWorkflow;
+  const ticketType = input.ticketType;
 
   const typeMapped =
     ticketType && projectWorkflowByType ? projectWorkflowByType[ticketType] : null;

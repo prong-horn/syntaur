@@ -93,9 +93,9 @@ const manifestStale: Check = {
       const manifestPath = resolve(projectDir, 'manifest.md');
       if (!(await fileExists(manifestPath))) continue;
       const manifestMtime = (await stat(manifestPath)).mtimeMs;
-      const newestAssignment = await newestAssignmentMtime(projectDir);
-      if (newestAssignment === 0) continue;
-      if (newestAssignment > manifestMtime) {
+      const newestTicket = await newestTicketMtime(projectDir);
+      if (newestTicket === 0) continue;
+      if (newestTicket > manifestMtime) {
         results.push({
           id: this.id,
           category: this.category,
@@ -151,21 +151,21 @@ const orphanFiles: Check = {
 
 export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles];
 
-async function newestAssignmentMtime(projectDir: string): Promise<number> {
-  const assignmentsRoot = resolve(projectDir, 'tickets');
-  if (!(await fileExists(assignmentsRoot))) return 0;
+async function newestTicketMtime(projectDir: string): Promise<number> {
+  const ticketsRoot = resolve(projectDir, 'tickets');
+  if (!(await fileExists(ticketsRoot))) return 0;
   let newest = 0;
   let entries;
   try {
-    entries = await readdir(assignmentsRoot, { withFileTypes: true });
+    entries = await readdir(ticketsRoot, { withFileTypes: true });
   } catch {
     return 0;
   }
   for (const e of entries) {
     if (!e.isDirectory()) continue;
-    const assignmentMd = resolve(assignmentsRoot, e.name, 'ticket.md');
+    const ticketMd = resolve(ticketsRoot, e.name, 'ticket.md');
     try {
-      const s = await stat(assignmentMd);
+      const s = await stat(ticketMd);
       if (s.mtimeMs > newest) newest = s.mtimeMs;
     } catch {
       // no ticket.md — skip (orphan check covers that)

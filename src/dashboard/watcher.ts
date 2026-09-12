@@ -52,12 +52,12 @@ export interface WatcherOptions {
    * `onConfigChanged` — derive rules may have changed, so the server runs a
    * recompute-all sweep (design v3, Piece 3 trigger set). */
   configPath?: string;
-  /** Debounced per-assignment hook fired alongside `ticket-updated` —
+  /** Debounced per-ticket hook fired alongside `ticket-updated` —
    * the server wires this to `recomputeAndWrite` so out-of-band edits
    * (agents/humans editing files directly) re-derive. The recompute's own
    * write fires one more event that no-ops (no change → no write), so the
    * cycle terminates. */
-  onAssignmentChanged?: (projectSlug: string | null, ticketSlug: string) => void;
+  onTicketChanged?: (projectSlug: string | null, ticketSlug: string) => void;
   /** Debounced hook for config.md changes (recompute-all trigger). */
   onConfigChanged?: () => void;
   /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
@@ -78,7 +78,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     dbPath,
     configPath,
     onMessage,
-    onAssignmentChanged,
+    onTicketChanged,
     onConfigChanged,
     debounceMs = 300,
   } = options;
@@ -128,8 +128,8 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
           timestamp: new Date().toISOString(),
         };
         onMessage(message);
-        if (ticketSlug && onAssignmentChanged) {
-          onAssignmentChanged(projectSlug, ticketSlug);
+        if (ticketSlug && onTicketChanged) {
+          onTicketChanged(projectSlug, ticketSlug);
         }
       }, debounceMs),
     );
@@ -139,7 +139,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   projectsWatcher.on('add', handleProjectChange);
   projectsWatcher.on('unlink', handleProjectChange);
 
-  // --- Standalone assignments watcher ---
+  // --- Standalone tickets watcher ---
   let standaloneWatcher: ReturnType<typeof watch> | null = null;
 
   if (ticketsDir) {
@@ -172,7 +172,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
             timestamp: new Date().toISOString(),
           };
           onMessage(message);
-          if (onAssignmentChanged) onAssignmentChanged(null, ticketId);
+          if (onTicketChanged) onTicketChanged(null, ticketId);
         }, debounceMs),
       );
     }

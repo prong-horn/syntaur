@@ -93,7 +93,7 @@ export function buildContextSection(context: ContextSectionInput): string {
     : '(unresolved)';
   const lines = [
     `Project: ${context.projectSlug ?? '(standalone)'}`,
-    `Assignment: ${context.ticketSlug}${context.ticketTitle ? ` — ${escapeAngles(context.ticketTitle)}` : ''}`,
+    `Ticket: ${context.ticketSlug}${context.ticketTitle ? ` — ${escapeAngles(context.ticketTitle)}` : ''}`,
     `Working directory: ${cwdLabel}`,
     ...(context.branch ? [`Branch: ${context.branch}`] : []),
     ...(tier === 'home'

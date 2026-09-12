@@ -17,12 +17,12 @@ import {
 // (which maps `@shared/stage-engine` + includes the module) under the dashboard
 // `tsc -b` build, plus the browser-safe purity guard in workflow-resolve.test.ts.
 import type { StageWorkflow, WorkflowStage, StageCheck } from '../utils/stage-model.js';
-import type { AssignmentFacts } from '../lifecycle/derive.js';
+import type { TicketFacts } from '../lifecycle/derive.js';
 import type { AttestationRecord, Solicitation } from '../lifecycle/types.js';
 
 // ── builders ─────────────────────────────────────────────────────────────────
 
-function facts(overrides: Partial<AssignmentFacts> = {}): AssignmentFacts {
+function facts(overrides: Partial<TicketFacts> = {}): TicketFacts {
   return {
     hasRealObjective: false,
     acRealTotal: 0,
@@ -40,7 +40,7 @@ function facts(overrides: Partial<AssignmentFacts> = {}): AssignmentFacts {
     reworkRequested: false,
     pinned: false,
     ...overrides,
-  } as AssignmentFacts;
+  } as TicketFacts;
 }
 
 function input(overrides: Partial<EngineInput> = {}): EngineInput {
@@ -218,7 +218,7 @@ describe('evaluateCheck disambiguation', () => {
       { check: '', not: 'codeReviewedChangesRequested' },
       's',
       0,
-      input({ facts: facts({ codeReviewedChangesRequested: true } as Partial<AssignmentFacts>) }),
+      input({ facts: facts({ codeReviewedChangesRequested: true } as Partial<TicketFacts>) }),
     );
     expect(held.passed).toBe(false);
     expect(held.label).toBe('not codeReviewedChangesRequested');
@@ -226,7 +226,7 @@ describe('evaluateCheck disambiguation', () => {
       { check: '', not: 'codeReviewedChangesRequested' },
       's',
       0,
-      input({ facts: facts({ codeReviewedChangesRequested: false } as Partial<AssignmentFacts>) }),
+      input({ facts: facts({ codeReviewedChangesRequested: false } as Partial<TicketFacts>) }),
     );
     expect(clear.passed).toBe(true);
   });
@@ -437,7 +437,7 @@ describe('advance', () => {
       wf.stages[0],
       wf,
       input({
-        facts: facts({ acAllChecked: true, codeReviewedChangesRequested: true } as Partial<AssignmentFacts>),
+        facts: facts({ acAllChecked: true, codeReviewedChangesRequested: true } as Partial<TicketFacts>),
         evidence: { codeReviewed: evidence([{ record: dissent, valid: true }]) },
       }),
     );

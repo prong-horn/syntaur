@@ -68,18 +68,18 @@ describe('renderProject', () => {
 });
 
 describe('renderTicket', () => {
-  it('produces correct frontmatter for new assignment', () => {
+  it('produces correct frontmatter for new ticket', () => {
     const out = renderTicket({
       id: 'uuid-1',
-      slug: 'test-assignment',
-      title: 'Test Assignment',
+      slug: 'test-ticket',
+      title: 'Test Ticket',
       timestamp: TIMESTAMP,
       priority: 'medium',
       dependsOn: [],
       links: [],
     });
     expect(out).toContain('id: uuid-1');
-    expect(out).toContain('slug: test-assignment');
+    expect(out).toContain('slug: test-ticket');
     expect(out).toContain('status: draft');
     expect(out).toContain('priority: medium');
     expect(out).toContain('assignee: null');

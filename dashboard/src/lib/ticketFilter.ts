@@ -157,9 +157,6 @@ export function filterTicket(
   return true;
 }
 
-/** @deprecated Use filterTicket */
-export const filterAssignment = filterTicket;
-
 export function ticketDetailHref(item: TicketBoardItem): string {
   return `/t/${item.id}`;
 }

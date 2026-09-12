@@ -28,7 +28,7 @@ function kinds(input: NeedsAttentionInput): string[] {
 }
 
 describe('classifyNeedsAttention (contradiction-based, fail-safe)', () => {
-  it('terminal assignments are never stale', () => {
+  it('terminal tickets are never stale', () => {
     expect(kinds(base({ isTerminal: true }))).toEqual([]);
   });
 

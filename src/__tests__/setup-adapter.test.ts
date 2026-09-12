@@ -16,7 +16,7 @@ describe('setup-adapter command', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
     projectDir = join(tempDir, 'projects', 'test-project');
-    ticketDir = join(projectDir, 'tickets', 'test-assignment');
+    ticketDir = join(projectDir, 'tickets', 'test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(join(projectDir, 'project.md'), '---\ntitle: Test\n---\n');
     await writeFile(join(ticketDir, 'ticket.md'), '---\nstatus: pending\n---\n');
@@ -46,7 +46,7 @@ describe('setup-adapter command', () => {
 
   const baseOptions = (dir: string) => ({
     project: 'test-project',
-    ticket: 'test-assignment',
+    ticket: 'test-ticket',
     dir: join(dir, 'projects'),
   });
 
@@ -59,7 +59,7 @@ describe('setup-adapter command', () => {
     expect(protocol).toContain('alwaysApply: true');
     expect(protocol).toContain('Syntaur Protocol');
     expect(ticket).toContain('test-project');
-    expect(ticket).toContain('test-assignment');
+    expect(ticket).toContain('test-ticket');
   });
 
   it('generates Codex adapter files', async () => {
@@ -68,7 +68,7 @@ describe('setup-adapter command', () => {
     const agents = await readFile(agentsPath, 'utf-8');
     expect(agents).toContain('Syntaur Protocol');
     expect(agents).toContain('test-project');
-    expect(agents).toContain('test-assignment');
+    expect(agents).toContain('test-ticket');
   });
 
   it('generates OpenCode adapter files', async () => {
@@ -86,14 +86,14 @@ describe('setup-adapter command', () => {
     await setupAdapterCommand('pi', baseOptions(tempDir));
     const agents = await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('Syntaur Protocol');
-    expect(agents).toContain('test-assignment');
+    expect(agents).toContain('test-ticket');
   });
 
   it('generates OpenClaw adapter file (AGENTS.md)', async () => {
     await setupAdapterCommand('openclaw', baseOptions(tempDir));
     const agents = await readFile(resolve(cwdDir, 'AGENTS.md'), 'utf-8');
     expect(agents).toContain('Syntaur Protocol');
-    expect(agents).toContain('test-assignment');
+    expect(agents).toContain('test-ticket');
   });
 
   it('generates Hermes adapter file (SOUL.md)', async () => {
@@ -101,7 +101,7 @@ describe('setup-adapter command', () => {
     const soul = await readFile(resolve(cwdDir, 'SOUL.md'), 'utf-8');
     expect(soul).toMatch(/^# SOUL/);
     expect(soul).toContain('Syntaur Protocol');
-    expect(soul).toContain('test-assignment');
+    expect(soul).toContain('test-ticket');
   });
 
   it('refuses native-plugin-only frameworks (claude)', async () => {
@@ -162,7 +162,7 @@ describe('setup-adapter command', () => {
     ).rejects.toThrow('not found');
   });
 
-  it('throws on missing assignment', async () => {
+  it('throws on missing ticket', async () => {
     await expect(
       setupAdapterCommand('codex', {
         ...baseOptions(tempDir),

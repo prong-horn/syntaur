@@ -56,9 +56,9 @@ fi
 # scalars were demoted out of context.json). Codex's PreToolUse stdin MAY carry
 # .session_id; if absent, fall back to the ancestor-pid runtime markers (same
 # scheme as session-cleanup.sh). Pass whatever id we have to the CLI explicitly.
-# If the CLI is unavailable or resolves nothing, ASSIGNMENT_DIR/MISSION_DIR stay
+# If the CLI is unavailable or resolves nothing, TICKET_DIR/MISSION_DIR stay
 # empty → WORKSPACE-ONLY enforcement below (NOT fail-open).
-ASSIGNMENT_DIR=""
+TICKET_DIR=""
 MISSION_DIR=""
 WORKSPACE_ROOT=""
 
@@ -102,7 +102,7 @@ if command -v syntaur >/dev/null 2>&1; then
   BOUNDARY_JSON=$(cd "$CONTEXT_DIR" 2>/dev/null && \
     syntaur session boundary --json ${SID:+--session-id "$SID"} 2>/dev/null)
   if [ -n "$BOUNDARY_JSON" ]; then
-    ASSIGNMENT_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.ticketDir // empty' 2>/dev/null)
+    TICKET_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.ticketDir // empty' 2>/dev/null)
     MISSION_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.projectDir // empty' 2>/dev/null)
     WORKSPACE_ROOT=$(echo "$BOUNDARY_JSON" | jq -r '.workspaceRoot // empty' 2>/dev/null)
   fi
@@ -113,7 +113,7 @@ if [ -z "$WORKSPACE_ROOT" ]; then
   WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$CONTEXT_FILE" 2>/dev/null)
 fi
 
-[ -n "$ASSIGNMENT_DIR" ] && ASSIGNMENT_DIR="${ASSIGNMENT_DIR/#\~/$HOME}"
+[ -n "$TICKET_DIR" ] && TICKET_DIR="${TICKET_DIR/#\~/$HOME}"
 [ -n "$MISSION_DIR" ] && MISSION_DIR="${MISSION_DIR/#\~/$HOME}"
 if [ -n "$WORKSPACE_ROOT" ] && [ "$WORKSPACE_ROOT" != "null" ]; then
   WORKSPACE_ROOT="${WORKSPACE_ROOT/#\~/$HOME}"
@@ -124,7 +124,7 @@ fi
 # Every prefix test is guarded so an EMPTY $DIR never globs to "/*" and allows
 # the whole filesystem. No ticket → only workspace-root/context match →
 # WORKSPACE-ONLY enforcement (NOT fail-open).
-if [ -n "$ASSIGNMENT_DIR" ] && [[ "$FILE_PATH" == "$ASSIGNMENT_DIR"/* ]]; then
+if [ -n "$TICKET_DIR" ] && [[ "$FILE_PATH" == "$TICKET_DIR"/* ]]; then
   allow_and_exit
 fi
 
@@ -151,8 +151,8 @@ if [ -n "$WORKSPACE_ROOT" ] && [[ "$FILE_PATH" == "$WORKSPACE_ROOT"/* ]]; then
   allow_and_exit
 fi
 
-if [ -n "$ASSIGNMENT_DIR" ]; then
-  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: ticket dir ($ASSIGNMENT_DIR), project resources/memories${MISSION_DIR:+ ($MISSION_DIR)}, workspace (${WORKSPACE_ROOT:-none})."
+if [ -n "$TICKET_DIR" ]; then
+  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: ticket dir ($TICKET_DIR), project resources/memories${MISSION_DIR:+ ($MISSION_DIR)}, workspace (${WORKSPACE_ROOT:-none})."
 else
   REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. No active ticket for this session — writes are restricted to the workspace (${WORKSPACE_ROOT:-none})."
 fi

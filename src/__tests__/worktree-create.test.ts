@@ -34,7 +34,7 @@ async function runCli(args: string[], cwd: string, syntaurHome: string): Promise
   });
 }
 
-const ASSIGNMENT_MD = `---
+const TICKET_MD = `---
 id: abc
 slug: demo
 title: "Demo"
@@ -68,7 +68,7 @@ describe('syntaur worktree create', () => {
     );
     ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
     await mkdir(ticketDir, { recursive: true });
-    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT_MD);
+    await writeFile(resolve(ticketDir, 'ticket.md'), TICKET_MD);
 
     scratch = await mkdtemp(join(tmpdir(), 'syntaur-wtc-repo-'));
     repo = resolve(scratch, 'repo');

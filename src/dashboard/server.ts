@@ -27,7 +27,7 @@ import {
   writeHotkeyBindingsConfig,
   deleteHotkeyBindingsConfig,
   readConfig,
-  getAssignmentTypes,
+  getTicketTypes,
 } from '../utils/config.js';
 import {
   BINDABLE_ACTION_KINDS,
@@ -84,8 +84,8 @@ export interface DashboardServerOptions {
   port: number;
   projectsDir: string;
   /**
-   * Absolute path to the standalone assignments directory (`~/.syntaur/tickets/`).
-   * Standalone assignments have `project: null` and live in folders named by UUID.
+   * Absolute path to the standalone tickets directory (`~/.syntaur/tickets/`).
+   * Standalone tickets have `project: null` and live in folders named by UUID.
    */
   ticketsDir: string;
   playbooksDir: string;
@@ -209,7 +209,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.get('/api/config/types', async (_req, res) => {
     try {
       const config = await readConfig();
-      const types = getAssignmentTypes(config);
+      const types = getTicketTypes(config);
       res.json({
         definitions: types.definitions,
         default: types.default,
@@ -534,8 +534,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
       const result = await listTicketsBoard(projectsDir, ticketsDir);
       res.json(result);
     } catch (error) {
-      console.error('Error listing assignments:', error);
-      res.status(500).json({ error: 'Failed to list assignments' });
+      console.error('Error listing tickets:', error);
+      res.status(500).json({ error: 'Failed to list tickets' });
     }
   });
 
@@ -567,13 +567,13 @@ export function createDashboardServer(options: DashboardServerOptions) {
     try {
       const detail = await getTicketDetailById(projectsDir, ticketsDir, req.params.id);
       if (!detail) {
-        res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
+        res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
         return;
       }
       res.json(detail);
     } catch (error) {
-      console.error('Error getting assignment by id:', error);
-      res.status(500).json({ error: 'Failed to get assignment' });
+      console.error('Error getting ticket by id:', error);
+      res.status(500).json({ error: 'Failed to get ticket' });
     }
   });
 
@@ -581,7 +581,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     try {
       const resolved = await resolveTicketById(projectsDir, ticketsDir, req.params.id);
       if (!resolved) {
-        res.status(404).json({ error: `Assignment "${req.params.id}" not found` });
+        res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
         return;
       }
       await reconcileActiveSessions(projectsDir, ticketsDir);
@@ -601,10 +601,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir, ticketsDir));
 
-  // --- Write API (create projects/assignments) ---
+  // --- Write API (create projects/tickets) ---
   app.use(createWriteRouter(projectsDir, ticketsDir));
 
-  // --- Usage API (per-assignment / per-project token usage rollups) ---
+  // --- Usage API (per-ticket / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir, ticketsDir));
 
   // --- Events API (per-ticket audit Activity timeline) ---
@@ -615,7 +615,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   // Best-effort read-only; returns safe empty shape rather than 500ing.
   app.use('/api', createInboxRouter(projectsDir, ticketsDir));
 
-  // --- Assignment chat API + ACP session broker ---
+  // --- Ticket chat API + ACP session broker ---
   // The broker is the only thing in Syntaur that owns an agent process. It is
   // constructed after initSessionDb (its chat tables live in the same file) and
   // torn down FIRST in stop(), while the DBs are still open.
@@ -694,7 +694,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
   return {
     async start(): Promise<void> {
       // Derived-status recompute wiring (design v3, Piece 3 trigger set):
-      // watcher → per-assignment recompute (out-of-band edits re-derive);
+      // watcher → per-ticket recompute (out-of-band edits re-derive);
       // config.md → recompute-all (the rules changed); boot → reconciliation
       // sweep (covers edits made while the server was down).
       const { recomputeAndWrite, recomputeAll, resolveRecomputeContext, isDeriveMigrated } = await import(
@@ -748,7 +748,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
             workflowResolver,
           });
           if (summary.changed > 0) {
-            console.log(`derive ${cause}: ${summary.changed}/${summary.scanned} assignment(s) re-derived.`);
+            console.log(`derive ${cause}: ${summary.changed}/${summary.scanned} ticket(s) re-derived.`);
           }
           for (const w of summary.warnings) console.warn(w);
         } catch (err) {
@@ -764,7 +764,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
         configPath: resolve(syntaurRoot(), 'config.md'),
         onMessage: broadcast,
-        onAssignmentChanged: (projectSlug, ticketSlug) => {
+        onTicketChanged: (projectSlug, ticketSlug) => {
           void recomputeOne(projectSlug, ticketSlug);
         },
         onConfigChanged: () => {

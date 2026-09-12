@@ -71,13 +71,13 @@ describe('claude-code statusline.sh', () => {
     expect(res.stdout).toMatch(/ · /);
   });
 
-  it('renders project/assignment label with title for a project-nested context.json', async () => {
+  it('renders project/ticket label with title for a project-nested context.json', async () => {
     gitInit(sandbox);
     const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo-assn');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      '---\nid: 00000000-0000-0000-0000-000000000000\nslug: demo-assn\ntitle: "Demo Assignment"\nstatus: in_progress\n---\n',
+      '---\nid: 00000000-0000-0000-0000-000000000000\nslug: demo-assn\ntitle: "Demo Ticket"\nstatus: in_progress\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
@@ -97,7 +97,7 @@ describe('claude-code statusline.sh', () => {
     );
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('feat/demo');
-    expect(res.stdout).toContain('my-proj/demo-assn — Demo Assignment');
+    expect(res.stdout).toContain('my-proj/demo-assn — Demo Ticket');
     expect(res.stdout).toContain('yyyyyyyyyyyyyyyyyyyyyyyy0a0b0c0d');
   });
 

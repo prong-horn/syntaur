@@ -7,7 +7,7 @@ import {
   getEventsDb,
   closeEventsDb,
   resetEventsDb,
-  listEventsByAssignment,
+  listEventsByTicket,
 } from '../db/events-db.js';
 import { migrateEventsCommand } from '../commands/migrate-events.js';
 
@@ -79,15 +79,15 @@ async function seedProject(
   history: HistoryEntry[],
   opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
 ): Promise<void> {
-  const dir = resolve(projectsDir, project, 'assignments', slug);
+  const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), ticketMd(slug, id, history, opts), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), ticketMd(slug, id, history, opts), 'utf-8');
 }
 
 async function seedStandalone(uuid: string, history: HistoryEntry[]): Promise<void> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'assignment.md'), ticketMd(uuid, uuid, history), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), ticketMd(uuid, uuid, history), 'utf-8');
 }
 
 function countAllEvents(): number {
@@ -131,7 +131,7 @@ describe('migrateEventsCommand', () => {
     await seedProject('p1', 'a1', 'a1-id', HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
 
-    const events = listEventsByAssignment('a1-id');
+    const events = listEventsByTicket('a1-id');
     expect(events).toHaveLength(2);
     // newest-first
     expect(events.map((e) => e.at)).toEqual([U, C]);
@@ -168,8 +168,8 @@ describe('migrateEventsCommand', () => {
     await seedProject('p1', 'a2', 'a2-id', HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
     expect(countAllEvents()).toBe(4);
-    expect(listEventsByAssignment('a1-id')).toHaveLength(2);
-    expect(listEventsByAssignment('a2-id')).toHaveLength(2);
+    expect(listEventsByTicket('a1-id')).toHaveLength(2);
+    expect(listEventsByTicket('a2-id')).toHaveLength(2);
   });
 
   it('planApproval yields exactly one plan-approval event with the deterministic source_key', async () => {
@@ -178,14 +178,14 @@ describe('migrateEventsCommand', () => {
     });
     await migrateEventsCommand({ dir: projectsDir, apply: true });
 
-    const planEvents = listEventsByAssignment('a1-id', { types: ['plan-approval'] });
+    const planEvents = listEventsByTicket('a1-id', { types: ['plan-approval'] });
     expect(planEvents).toHaveLength(1);
     const pe = planEvents[0];
     expect(pe.at).toBe('2026-03-03T00:00:00Z');
     expect(pe.actor).toBe('agent:rev');
     expect(pe.source_key).toBe('backfill:a1-id:plan-approval');
     // status-change + plan-approval = 3 total for this ticket
-    expect(listEventsByAssignment('a1-id')).toHaveLength(3);
+    expect(listEventsByTicket('a1-id')).toHaveLength(3);
   });
 
   it('backfills standalone tickets (uuid dir, project_slug null)', async () => {
@@ -193,7 +193,7 @@ describe('migrateEventsCommand', () => {
     await seedStandalone(uuid, HISTORY);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
 
-    const events = listEventsByAssignment(uuid);
+    const events = listEventsByTicket(uuid);
     expect(events).toHaveLength(2);
     expect(events.every((e) => e.project_slug === null)).toBe(true);
   });
@@ -206,7 +206,7 @@ describe('migrateEventsCommand', () => {
     ];
     await seedProject('p1', 'a1', 'a1-id', sameStatusOnly);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
-    expect(listEventsByAssignment('a1-id')).toHaveLength(0);
+    expect(listEventsByTicket('a1-id')).toHaveLength(0);
     expect(countAllEvents()).toBe(0);
   });
 
@@ -222,7 +222,7 @@ describe('migrateEventsCommand', () => {
     await seedProject('p1', 'a1', 'a1-id', mixed);
     await migrateEventsCommand({ dir: projectsDir, apply: true });
 
-    const events = listEventsByAssignment('a1-id');
+    const events = listEventsByTicket('a1-id');
     expect(events).toHaveLength(2);
     const keys = events.map((e) => e.source_key).sort();
     expect(keys).toEqual(['backfill:a1-id:status:0', 'backfill:a1-id:status:2']);

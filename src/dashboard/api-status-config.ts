@@ -25,13 +25,13 @@ import { DEFAULT_COMMAND_TARGETS } from '../lifecycle/state-machine.js';
 import { getStatusConfig, clearStatusConfigCache, installRecordsInvalidation } from './api.js';
 import { validateDeriveCondition } from '../lifecycle/derive.js';
 import {
-  scanAssignmentsByStatus,
+  scanTicketsByStatus,
   applyStatusResolutions,
   verifyNoDriftedOrphans,
   scanWorkflowUsage,
   StatusResolutionError,
   type StatusResolution,
-  type AffectedAssignment,
+  type AffectedTicket,
 } from '../utils/status-config-resolution.js';
 
 const AFFECTED_SAMPLE_CAP = 50;
@@ -47,14 +47,14 @@ export interface AffectedResponse {
   id: string;
   count: number;
   truncated: boolean;
-  assignments: AffectedTicketSummary[];
+  tickets: AffectedTicketSummary[];
 }
 
-function toSummary(a: AffectedAssignment): AffectedTicketSummary {
+function toSummary(a: AffectedTicket): AffectedTicketSummary {
   return {
     display: a.display,
     projectSlug: a.projectSlug,
-    ticketSlug: a.ticketSlug ?? a.ticketSlug ?? '',
+    ticketSlug: a.ticketSlug ?? '',
     status: a.status,
   };
 }
@@ -73,13 +73,13 @@ function respondIfWorkflowsMigrated(err: unknown, res: Response): boolean {
   return false;
 }
 
-function buildAffectedResponse(id: string, list: AffectedAssignment[]): AffectedResponse {
+function buildAffectedResponse(id: string, list: AffectedTicket[]): AffectedResponse {
   const truncated = list.length > AFFECTED_SAMPLE_CAP;
   return {
     id,
     count: list.length,
     truncated,
-    assignments: list.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
+    tickets: list.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
   };
 }
 
@@ -210,8 +210,8 @@ export function createStatusConfigRouter(
   // `req.params.workflowId` in these handlers; the legacy `/api/config/statuses`
   // mount has no such param and every handler falls back to `default`.
   const router = Router({ mergeParams: true });
-  // The POST/DELETE routes rewrite assignment.md status fields (and may remove
-  // assignment dirs) via applyStatusResolutions; clear the shared records cache
+  // The POST/DELETE routes rewrite ticket.md status fields (and may remove
+  // ticket dirs) via applyStatusResolutions; clear the shared records cache
   // synchronously once each mutation resolves so the client's immediate refetch
   // sees fresh status counts rather than the pre-remap snapshot.
   installRecordsInvalidation(router);
@@ -236,15 +236,15 @@ export function createStatusConfigRouter(
       // Scope to tickets resolving to THIS workflow so a status shared with
       // another workflow doesn't over-report.
       const resolver = makeWorkflowContextResolver(await readConfig());
-      const affected = await scanAssignmentsByStatus(projectsDir, ticketsDir, [id], {
+      const affected = await scanTicketsByStatus(projectsDir, ticketsDir, [id], {
         resolver,
         workflowId: requestWorkflowId(req),
       });
       const list = affected.get(id) ?? [];
       res.json(buildAffectedResponse(id, list));
     } catch (error) {
-      console.error('Error getting affected assignments:', error);
-      res.status(500).json({ error: 'Failed to get affected assignments' });
+      console.error('Error getting affected tickets:', error);
+      res.status(500).json({ error: 'Failed to get affected tickets' });
     }
   });
 
@@ -357,9 +357,9 @@ export function createStatusConfigRouter(
 
       // ── Validation BEFORE mutation ───────────────────────────────────────
       // Every payload validation (facts, derive, transitions, fact-references)
-      // runs here, before scanAssignmentsByStatus/applyStatusResolutions touch
-      // any assignment file. Previously fact validation ran AFTER resolutions
-      // were applied, so an invalid-facts save could remap/delete assignments on
+      // runs here, before scanTicketsByStatus/applyStatusResolutions touch
+      // any ticket file. Previously fact validation ran AFTER resolutions
+      // were applied, so an invalid-facts save could remap/delete tickets on
       // disk and *then* 400. All checks below read only the request body and
       // currentConfig — no disk writes — so the move is safe.
 
@@ -505,13 +505,13 @@ export function createStatusConfigRouter(
         }
       }
 
-      // Scan affected assignments for every dropped id, SCOPED to this workflow
+      // Scan affected tickets for every dropped id, SCOPED to this workflow
       // (a shared status id in another workflow must not be touched by an edit
       // to this one). The resolver is reused for the post-apply drift re-scan.
       const scanScope = { resolver: makeWorkflowContextResolver(await readConfig()), workflowId };
-      let affectedMap: Awaited<ReturnType<typeof scanAssignmentsByStatus>>;
+      let affectedMap: Awaited<ReturnType<typeof scanTicketsByStatus>>;
       try {
-        affectedMap = await scanAssignmentsByStatus(projectsDir, ticketsDir, droppedIds, scanScope);
+        affectedMap = await scanTicketsByStatus(projectsDir, ticketsDir, droppedIds, scanScope);
       } catch (err) {
         if (err instanceof StatusResolutionError) {
           const mapped = mapResolutionErrorToHttp(err, null);
@@ -521,7 +521,7 @@ export function createStatusConfigRouter(
         throw err;
       }
 
-      // Reject unresolved drops with affected assignments.
+      // Reject unresolved drops with affected tickets.
       const unresolved: AffectedResponse[] = [];
       const resolvedById = new Set(resolutions.map((r) => r.id));
       for (const id of droppedIds) {
@@ -548,7 +548,7 @@ export function createStatusConfigRouter(
         throw err;
       }
 
-      // Step A.5: final drift check. Catches the case where an assignment
+      // Step A.5: final drift check. Catches the case where an ticket
       // moved from one dropped id to another between scan and apply (the
       // intra-resolution TOCTOU guard misses this). If anything still
       // references a dropped id, abort before config write so the user can
@@ -569,7 +569,7 @@ export function createStatusConfigRouter(
 
       // Step B: write the new config. If this throws, the resolutions have
       // already landed on disk; per Decision 3 the old config is still in
-      // place and no assignment.invalid-status errors exist (every remap
+      // place and no ticket.invalid-status errors exist (every remap
       // target was in oldIds, every delete is gone). Surface the partial-apply
       // 500 to the client so it can refresh and retry.
       try {
@@ -594,7 +594,7 @@ export function createStatusConfigRouter(
       // Step C: cache + return. Use per-resolution counts from `applied.byId`
       // (which already account for TOCTOU skips) rather than scan-time list
       // lengths — otherwise the user sees inflated counts when a concurrent
-      // writer moved an assignment out of scope.
+      // writer moved an ticket out of scope.
       clearStatusConfigCache();
       const config = await getStatusConfig(workflowId);
       const byId: Record<string, { mode: 'remap' | 'delete'; count: number; target?: string }> = {};
@@ -643,8 +643,8 @@ export function createStatusConfigRouter(
           workflowId,
           blockers: usage.blockers,
           boundProjects: usage.boundProjects,
-          tickets: usage.assignments.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
-          ticketCount: usage.assignments.length,
+          tickets: usage.tickets.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
+          ticketCount: usage.tickets.length,
         });
         return;
       }

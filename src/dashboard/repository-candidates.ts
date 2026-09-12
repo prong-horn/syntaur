@@ -1,22 +1,22 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
-import { parseProject, parseAssignmentFull } from './parser.js';
+import { parseProject, parseTicketFull } from './parser.js';
 
 export interface RepositoryCandidate {
   path: string;
   source: 'project' | 'sibling';
-  /** Slug of the sibling assignment that provided this repo. Null for `project`-sourced. */
+  /** Slug of the sibling ticket that provided this repo. Null for `project`-sourced. */
   sourceTicketSlug: string | null;
 }
 
 /**
- * A candidate assignment to "branch off" — one that already has a resolved
+ * A candidate ticket to "branch off" — one that already has a resolved
  * workspace (both `workspace.repository` and `workspace.branch` set). Branching
  * off it reuses its repository and uses its branch as the new worktree's parent.
  */
-export interface SourceAssignment {
-  /** Stable unique identifier (the assignment UUID). */
+export interface SourceTicket {
+  /** Stable unique identifier (the ticket UUID). */
   id: string;
   slug: string;
   title: string;
@@ -25,13 +25,13 @@ export interface SourceAssignment {
 }
 
 /**
- * Build a {@link SourceAssignment} from a parsed assignment, or `null` when it
+ * Build a {@link SourceTicket} from a parsed ticket, or `null` when it
  * lacks a usable workspace (missing/blank repository or branch).
  */
-function toSourceAssignment(
-  parsed: ReturnType<typeof parseAssignmentFull>,
+function toSourceTicket(
+  parsed: ReturnType<typeof parseTicketFull>,
   fallbackId: string,
-): SourceAssignment | null {
+): SourceTicket | null {
   const repository = parsed.workspace.repository?.trim();
   const branch = parsed.workspace.branch?.trim();
   if (!repository || !branch) return null;
@@ -46,11 +46,11 @@ function toSourceAssignment(
 }
 
 /**
- * Collect repository candidates for a project-nested assignment.
+ * Collect repository candidates for a project-nested ticket.
  *
  * Order: project-configured first (in declaration order), then
- * sibling-harvested from other assignments in the same project. Deduped by
- * absolute path; the first occurrence wins. Missing project.md or assignments
+ * sibling-harvested from other tickets in the same project. Deduped by
+ * absolute path; the first occurrence wins. Missing project.md or tickets
  * directory returns `[]`.
  */
 export async function getProjectRepositoryCandidates(
@@ -73,14 +73,14 @@ export async function getProjectRepositoryCandidates(
     }
   }
 
-  const assignmentsDir = resolve(projectsDir, projectSlug, 'tickets');
-  if (await fileExists(assignmentsDir)) {
-    const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
+  if (await fileExists(ticketsDir)) {
+    const entries = await readdir(ticketsDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
-      if (!(await fileExists(assignmentMd))) continue;
-      const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
+      const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+      if (!(await fileExists(ticketMd))) continue;
+      const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
       const repo = parsed.workspace.repository?.trim();
       if (!repo) continue;
       const abs = resolve(repo);
@@ -94,28 +94,28 @@ export async function getProjectRepositoryCandidates(
 }
 
 /**
- * Collect repository candidates for a standalone assignment by harvesting
- * `workspace.repository` from sibling standalone assignments. Excludes the
- * assignment id passed in (typically the one the user is configuring).
+ * Collect repository candidates for a standalone ticket by harvesting
+ * `workspace.repository` from sibling standalone tickets. Excludes the
+ * ticket id passed in (typically the one the user is configuring).
  */
 export async function getStandaloneRepositoryCandidates(
-  assignmentsDir: string,
-  excludeAssignmentId: string,
+  ticketsDir: string,
+  excludeTicketId: string,
 ): Promise<RepositoryCandidate[]> {
-  if (!(await fileExists(assignmentsDir))) {
+  if (!(await fileExists(ticketsDir))) {
     return [];
   }
 
   const seen = new Set<string>();
   const out: RepositoryCandidate[] = [];
 
-  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (entry.name === excludeAssignmentId) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) continue;
-    const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
+    if (entry.name === excludeTicketId) continue;
+    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+    if (!(await fileExists(ticketMd))) continue;
+    const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
     const repo = parsed.workspace.repository?.trim();
     if (!repo) continue;
     const abs = resolve(repo);
@@ -128,30 +128,30 @@ export async function getStandaloneRepositoryCandidates(
 }
 
 /**
- * List sibling assignments in a project that can be branched off (both
+ * List sibling tickets in a project that can be branched off (both
  * `workspace.repository` and `workspace.branch` are set). Excludes the
- * assignment being configured and dedupes by slug (the project dir name, which
- * is unique within a project). Missing assignments directory returns `[]`.
+ * ticket being configured and dedupes by slug (the project dir name, which
+ * is unique within a project). Missing tickets directory returns `[]`.
  */
-export async function getProjectSourceAssignments(
+export async function getProjectSourceTickets(
   projectsDir: string,
   projectSlug: string,
   excludeSlug: string,
-): Promise<SourceAssignment[]> {
-  const assignmentsDir = resolve(projectsDir, projectSlug, 'tickets');
-  if (!(await fileExists(assignmentsDir))) return [];
+): Promise<SourceTicket[]> {
+  const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
+  if (!(await fileExists(ticketsDir))) return [];
 
   const seen = new Set<string>();
-  const out: SourceAssignment[] = [];
+  const out: SourceTicket[] = [];
 
-  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === excludeSlug) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) continue;
-    const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
-    const source = toSourceAssignment(parsed, entry.name);
+    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+    if (!(await fileExists(ticketMd))) continue;
+    const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
+    const source = toSourceTicket(parsed, entry.name);
     if (!source) continue;
     // Exclude + dedupe by the directory name (route-authoritative, unique within
     // the project) rather than parsed frontmatter, which could be malformed.
@@ -164,28 +164,28 @@ export async function getProjectSourceAssignments(
 }
 
 /**
- * List standalone assignments that can be branched off (both
+ * List standalone tickets that can be branched off (both
  * `workspace.repository` and `workspace.branch` are set). Excludes the
- * assignment being configured and dedupes by the UUID `id` (standalone slugs
+ * ticket being configured and dedupes by the UUID `id` (standalone slugs
  * are display-only and may collide). Missing directory returns `[]`.
  */
-export async function getStandaloneSourceAssignments(
-  assignmentsDir: string,
-  excludeAssignmentId: string,
-): Promise<SourceAssignment[]> {
-  if (!(await fileExists(assignmentsDir))) return [];
+export async function getStandaloneSourceTickets(
+  ticketsDir: string,
+  excludeTicketId: string,
+): Promise<SourceTicket[]> {
+  if (!(await fileExists(ticketsDir))) return [];
 
   const seen = new Set<string>();
-  const out: SourceAssignment[] = [];
+  const out: SourceTicket[] = [];
 
-  const entries = await readdir(assignmentsDir, { withFileTypes: true });
+  const entries = await readdir(ticketsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (entry.name === excludeAssignmentId) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) continue;
-    const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
-    const source = toSourceAssignment(parsed, entry.name);
+    if (entry.name === excludeTicketId) continue;
+    const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
+    if (!(await fileExists(ticketMd))) continue;
+    const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));
+    const source = toSourceTicket(parsed, entry.name);
     if (!source) continue;
     // Exclude + dedupe by the directory name (the authoritative UUID) rather
     // than parsed frontmatter.

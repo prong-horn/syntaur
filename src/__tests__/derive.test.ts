@@ -7,7 +7,7 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 import {
   deriveDimensions,
   validateDeriveCondition,
-  type AssignmentFacts,
+  type TicketFacts,
 } from '../lifecycle/derive.js';
 import {
   computeFacts,
@@ -32,7 +32,7 @@ const KNOWN = new Set([
   'failed',
 ]);
 
-const BASE_FACTS: AssignmentFacts = {
+const BASE_FACTS: TicketFacts = {
   hasRealObjective: false,
   acRealTotal: 0,
   acRealChecked: 0,
@@ -50,7 +50,7 @@ const BASE_FACTS: AssignmentFacts = {
   pinned: false,
 };
 
-function derive(facts: Partial<AssignmentFacts>, overrides: Partial<Parameters<typeof deriveDimensions>[0]> = {}) {
+function derive(facts: Partial<TicketFacts>, overrides: Partial<Parameters<typeof deriveDimensions>[0]> = {}) {
   return deriveDimensions({
     facts: { ...BASE_FACTS, ...facts },
     derive: DEFAULT_DERIVE_CONFIG,
@@ -110,7 +110,7 @@ describe('deriveDimensions — phase ladder', () => {
     };
     // With ACs checked the rung would normally hold review; asserting
     // reworkRequested must drop it back to in_progress (rung gains AND NOT rework).
-    const reworked = derive({ ...base, reworkRequested: true } as Partial<AssignmentFacts>)!;
+    const reworked = derive({ ...base, reworkRequested: true } as Partial<TicketFacts>)!;
     expect(reworked.phase).toBe('in_progress');
     // sanity: without rework, ACs-checked still holds review (existing behavior)
     expect(derive(base)!.phase).toBe('review');
@@ -147,7 +147,7 @@ describe('deriveDimensions — disposition orthogonality', () => {
 });
 
 describe('deriveDimensions — terminal + override', () => {
-  it('terminal assignments defer entirely', () => {
+  it('terminal tickets defer entirely', () => {
     expect(derive({}, { currentStatus: 'completed' })).toBeNull();
     expect(derive({}, { currentStatus: 'failed' })).toBeNull();
   });
@@ -188,7 +188,7 @@ afterAll(async () => {
   await Promise.all(tmpDirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
-async function makeAssignmentDir(): Promise<string> {
+async function makeTicketDir(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'syntaur-derive-'));
   tmpDirs.push(dir);
   return dir;
@@ -238,7 +238,7 @@ describe('fact computation', () => {
   });
 
   it('latestPlanFile picks the highest revision', async () => {
-    const dir = await makeAssignmentDir();
+    const dir = await makeTicketDir();
     expect(await latestPlanFile(dir)).toBeNull();
     await writeFile(join(dir, 'plan.md'), '# plan');
     expect(await latestPlanFile(dir)).toBe('plan.md');
@@ -248,7 +248,7 @@ describe('fact computation', () => {
   });
 
   it('isPlanApproved is revision-bound: replan or edit invalidates', async () => {
-    const dir = await makeAssignmentDir();
+    const dir = await makeTicketDir();
     const planContent = '# The plan\n\n1. do it\n';
     await writeFile(join(dir, 'plan.md'), planContent);
     const approval = { file: 'plan.md', digest: planDigest(planContent), by: 'human', at: '' };
@@ -264,8 +264,8 @@ describe('fact computation', () => {
     expect(await isPlanApproved(dir, { planApproval: approval })).toBe(false);
   });
 
-  it('computeFacts end-to-end on a real-looking assignment', async () => {
-    const dir = await makeAssignmentDir();
+  it('computeFacts end-to-end on a real-looking ticket', async () => {
+    const dir = await makeTicketDir();
     const planContent = '# The plan';
     await writeFile(join(dir, 'plan.md'), planContent);
     const fm = `---

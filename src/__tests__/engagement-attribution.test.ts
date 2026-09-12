@@ -9,7 +9,7 @@ import { openEngagement, getOpenEngagement } from '../db/engagement-db.js';
 
 /**
  * The headline regression for the engagement-attribution rewiring: two sessions
- * working two different assignments from ONE shared worktree/cwd must each
+ * working two different tickets from ONE shared worktree/cwd must each
  * resolve their OWN ticket. Pre-rewiring, a single cwd-scoped context.json
  * scalar made the second grab clobber the first. Now the active ticket is
  * keyed on the session's open engagement, so the shared cwd is irrelevant.
@@ -22,8 +22,8 @@ let origHome: string | undefined;
 let origSessionId: string | undefined;
 
 const PROJECT = 'shared-proj';
-const A_SLUG = 'assignment-a';
-const B_SLUG = 'assignment-b';
+const A_SLUG = 'ticket-a';
+const B_SLUG = 'ticket-b';
 const A_ID = 'aaaaaaaa-0000-1111-2222-333333333333';
 const B_ID = 'bbbbbbbb-0000-1111-2222-333333333333';
 const SESSION_A = 'session-alpha';
@@ -104,7 +104,7 @@ beforeEach(async () => {
 
   resetSessionDb();
   initSessionDb(resolve(tmpRoot, 'syntaur.db'));
-  // Two sessions, two assignments, ONE shared worktree/cwd.
+  // Two sessions, two tickets, ONE shared worktree/cwd.
   openEngagement({
     sessionId: SESSION_A,
     ticketId: A_ID,

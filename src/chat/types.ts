@@ -1,5 +1,5 @@
 /**
- * Assignment-chat vocabulary — the types every other `src/chat/` module imports.
+ * Ticket-chat vocabulary — the types every other `src/chat/` module imports.
  *
  * Two layers, per Decision 2:
  *   - `ChatEvent` is the lossless append-only log record (`<ticketDir>/chat/events.jsonl`).
@@ -77,7 +77,7 @@ export interface ChatEvent {
 }
 
 /**
- * The author ids assignment-scope rows carry (Decision 3). A `user.message` and
+ * The author ids ticket-scope rows carry (Decision 3). A `user.message` and
  * a routing notice belong to no agent session, so `event.agentId` names the
  * human or Syntaur itself; the SPA resolves both to a name and a colour.
  */
@@ -112,7 +112,7 @@ export interface ChatAttachment {
 
 /**
  * `user.message` payload — `messageId` is minted at queue time and is what
- * DELETE targets. Recorded in the ASSIGNMENT scope (Decision 3), so one event
+ * DELETE targets. Recorded in the TICKET scope (Decision 3), so one event
  * carries the whole routing decision for a fan-out.
  *
  * A later state-only event (the `withdrawn` flip) carries just `messageId` and
@@ -494,7 +494,7 @@ export interface ChatSessionSummary {
 }
 
 /**
- * The per-assignment participant set — `<ticketDir>/chat/participants.json`
+ * The per-ticket participant set — `<ticketDir>/chat/participants.json`
  * (Decision 1). Ids are always filtered to definitions that still exist.
  */
 export interface Participants {

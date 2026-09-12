@@ -27,9 +27,9 @@ function applyPatches(into: Map<string, ChatItem>, patches: ItemPatch[]): void {
 
 export function normalizeEvents(events: ChatEvent[], agentId = 'claude'): ChatItem[] {
   const normalizer = new ChatNormalizer({
-    ticketId: 'assignment-fixture',
+    ticketId: 'ticket-fixture',
     agentId,
-    sessionKey: `assignment-fixture:${agentId}`,
+    sessionKey: `ticket-fixture:${agentId}`,
   });
   const items = new Map<string, ChatItem>();
   for (const event of events) applyPatches(items, normalizer.ingest(event));
@@ -248,9 +248,9 @@ describe('permissions', () => {
 
   it('marks auto-approved responses on the sealed item', () => {
     const base = {
-      ticketId: 'assignment-fixture',
+      ticketId: 'ticket-fixture',
       agentId: 'claude',
-      sessionKey: 'assignment-fixture:claude',
+      sessionKey: 'ticket-fixture:claude',
       turnId: 'turn-1',
       ts: '2026-09-05T12:00:00.000Z',
     };
@@ -417,19 +417,19 @@ describe('pure helpers', () => {
 });
 
 /**
- * Task 5 — the ticket scope (`${ticketId}:@assignment`, Decision 3).
+ * Task 5 — the ticket scope (`${ticketId}:@ticket`, Decision 3).
  * Routing rows belong to no agent session: a fan-out `user.message`, the
  * `handoff` rows between agents, and the router's notices all live here, and
  * each item's author comes from the EVENT rather than from the normalizer's own
  * agent id.
  */
-describe('assignment scope (Task 5)', () => {
-  const ASSIGNMENT = 'assignment-1';
-  const SCOPE = `${ASSIGNMENT}:@assignment`;
+describe('ticket scope (Task 5)', () => {
+  const TICKET = 'ticket-1';
+  const SCOPE = `${TICKET}:@ticket`;
 
   function scope(): { normalizer: ChatNormalizer; items: Map<string, ChatItem>; seq: number } {
     return {
-      normalizer: new ChatNormalizer({ ticketId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE }),
+      normalizer: new ChatNormalizer({ ticketId: TICKET, agentId: 'system', sessionKey: SCOPE }),
       items: new Map<string, ChatItem>(),
       seq: 0,
     };
@@ -446,7 +446,7 @@ describe('assignment scope (Task 5)', () => {
       ctx.normalizer.ingest({
         seq: ctx.seq++,
         ts: `2026-09-02T12:00:0${ctx.seq}.000Z`,
-        ticketId: ASSIGNMENT,
+        ticketId: TICKET,
         agentId,
         sessionKey: SCOPE,
         turnId: null,
@@ -612,7 +612,7 @@ describe('assignment scope (Task 5)', () => {
       budget: 4,
     }, 'planner');
 
-    const replayed = new ChatNormalizer({ ticketId: ASSIGNMENT, agentId: 'system', sessionKey: SCOPE });
+    const replayed = new ChatNormalizer({ ticketId: TICKET, agentId: 'system', sessionKey: SCOPE });
     const rebuilt = new Map<string, ChatItem>();
     for (const event of events) applyPatches(rebuilt, replayed.ingest(event));
     expect([...rebuilt.values()]).toEqual([...ctx.items.values()]);

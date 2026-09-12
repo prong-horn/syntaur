@@ -1,5 +1,5 @@
 /**
- * AQL — Assignment Query Language. Public surface.
+ * AQL — Ticket Query Language. Public surface.
  *
  * One engine, many consumers: derive rules (phase ladder / disposition),
  * `syntaur ls --query`, and dashboard filters all share this module.
@@ -8,7 +8,7 @@
 
 import type { QueryError, QueryNode } from './ast.js';
 import { compileNode, CompileError, type EvalContext, type Predicate } from './evaluate.js';
-import { ASSIGNMENT_FIELDS, resolveField, type FieldRegistry, type QueryItem } from './fields.js';
+import { TICKET_FIELDS, resolveField, type FieldRegistry, type QueryItem } from './fields.js';
 import { parseQuery } from './parser.js';
 
 export type { QueryError, QueryNode, ComparisonOp } from './ast.js';
@@ -18,7 +18,7 @@ export { parseQuery, ParseError } from './parser.js';
 export { compileNode, CompileError } from './evaluate.js';
 export type { EvalContext, Predicate } from './evaluate.js';
 export {
-  ASSIGNMENT_FIELDS,
+  TICKET_FIELDS,
   PRIORITY_ORDER,
   resolveField,
   readField,
@@ -77,7 +77,7 @@ export function collectDeprecationWarnings(
  */
 export function compileQuery(
   input: string,
-  registry: FieldRegistry = ASSIGNMENT_FIELDS,
+  registry: FieldRegistry = TICKET_FIELDS,
 ):
   | { query: CompiledQuery; errors: []; warnings: QueryWarning[] }
   | { query: null; errors: QueryError[]; warnings: [] } {
@@ -97,7 +97,7 @@ export function compileQuery(
 }
 
 /** Validate a query (parse + field check) without evaluating — for doctor/config checks. */
-export function validateQuery(input: string, registry: FieldRegistry = ASSIGNMENT_FIELDS): QueryError[] {
+export function validateQuery(input: string, registry: FieldRegistry = TICKET_FIELDS): QueryError[] {
   return compileQuery(input, registry).errors;
 }
 

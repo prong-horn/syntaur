@@ -23,7 +23,7 @@ function git(cwd: string, args: string[]): string {
   return result.stdout.trim();
 }
 
-const ASSIGNMENT_TEMPLATE = `---
+const TICKET_TEMPLATE = `---
 id: abc
 slug: demo
 title: "Demo"
@@ -97,7 +97,7 @@ describe('git-worktree helpers', () => {
 
   it('createWorktreeAndRecord updates ticket frontmatter', async () => {
     const ticketPath = resolve(scratch, 'ticket.md');
-    await writeFile(ticketPath, ASSIGNMENT_TEMPLATE);
+    await writeFile(ticketPath, TICKET_TEMPLATE);
     const wtPath = resolve(scratch, 'wt3');
 
     await createWorktreeAndRecord({
@@ -124,7 +124,7 @@ describe('git-worktree helpers', () => {
     const ticketPath = resolve(readonlyDir, 'ticket.md');
     // Write a stub so readFile succeeds but writeFile fails
     await import('node:fs/promises').then((fs) => fs.chmod(readonlyDir, 0o755));
-    await writeFile(ticketPath, ASSIGNMENT_TEMPLATE);
+    await writeFile(ticketPath, TICKET_TEMPLATE);
     await import('node:fs/promises').then((fs) => fs.chmod(readonlyDir, 0o555));
 
     const wtPath = resolve(scratch, 'wt4');

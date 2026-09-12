@@ -321,24 +321,24 @@ describe.sequential('throwaway harness refresh and agent test', () => {
 
 // --- Task 5: live session bookkeeping ----------------------------------------
 
-const ASSIGNMENT_ID = 'a0a0a0a0-0000-4000-8000-00000000a5e5';
+const TICKET_ID = 'a0a0a0a0-0000-4000-8000-00000000a5e5';
 
-let assignmentDir: string;
+let ticketDir: string;
 let worktree: string;
 let frames: Array<{ type: string; payload: unknown }>;
 let fakes: Map<string, FakeAgent>;
 let spawnHarnesses: Harness[];
 let resolvedHarnesses: Harness[];
 
-const assignment = (): ResolvedTicket => ({
-  ticketDir: assignmentDir,
+const ticket = (): ResolvedTicket => ({
+  ticketDir: ticketDir,
   projectSlug: 'syntaur-meta',
   ticketSlug: 'chat-demo',
-  id: ASSIGNMENT_ID,
+  id: TICKET_ID,
   standalone: false,
 });
 
-const sessionKey = (agentId: string) => `${ASSIGNMENT_ID}:${agentId}`;
+const sessionKey = (agentId: string) => `${TICKET_ID}:${agentId}`;
 
 async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -349,7 +349,7 @@ async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 800
   throw new Error(`timed out waiting for ${what}`);
 }
 
-const items = (): ChatItem[] => broker.items(assignment(), { limit: 500 });
+const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const handoffs = () => items().filter((i) => i.type === 'handoff');
 const systemTexts = () =>
   items()
@@ -367,12 +367,12 @@ const worksThenSays = (text: string, id = 'm1'): FakeTurn => ({
   ],
 });
 
-async function writeAssignmentMd(): Promise<void> {
+async function writeTicketMd(): Promise<void> {
   await writeFile(
-    join(assignmentDir, 'ticket.md'),
+    join(ticketDir, 'ticket.md'),
     [
       '---',
-      `id: ${ASSIGNMENT_ID}`,
+      `id: ${TICKET_ID}`,
       'slug: chat-demo',
       'title: "Chat demo"',
       'status: ready_to_implement',
@@ -390,8 +390,8 @@ async function writeAssignmentMd(): Promise<void> {
 }
 
 async function writeParticipantsFile(participants: Participants): Promise<void> {
-  await mkdir(join(assignmentDir, 'chat'), { recursive: true });
-  await writeFile(participantsPath(assignmentDir), `${JSON.stringify(participants, null, 2)}\n`, 'utf-8');
+  await mkdir(join(ticketDir, 'chat'), { recursive: true });
+  await writeFile(participantsPath(ticketDir), `${JSON.stringify(participants, null, 2)}\n`, 'utf-8');
 }
 
 const plannerInput = (overrides: Record<string, unknown> = {}) => ({
@@ -430,7 +430,7 @@ const fakeConfigOptions = [
   },
 ];
 
-function makeAssignmentBroker(
+function makeTicketBroker(
   scripts: Record<string, FakeTurn[]> = {},
   opts: {
     sessionIds?: Record<string, string[]>;
@@ -499,7 +499,7 @@ function staleSessionFrames(agentId: string): boolean[] {
 describe.sequential('live session bookkeeping (Task 5)', () => {
   beforeEach(async () => {
     sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-bookkeeping-'));
-    assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
+    ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
     worktree = join(sandbox, 'worktree');
     clients = [];
     frames = [];
@@ -510,9 +510,9 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     closeUsageDb();
     initSessionDb(join(sandbox, 'syntaur.db'));
     initUsageDb(join(sandbox, 'syntaur.db'));
-    await mkdir(assignmentDir, { recursive: true });
+    await mkdir(ticketDir, { recursive: true });
     await mkdir(worktree, { recursive: true });
-    await writeAssignmentMd();
+    await writeTicketMd();
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
   });
 
@@ -529,11 +529,11 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('save while idle-with-live-client re-attaches and re-applies pins', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({ planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] });
+    makeTicketBroker({ planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] });
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    const before = await broker.getSession(assignment(), 'planner');
+    const before = await broker.getSession(ticket(), 'planner');
     expect(before?.acpSessionId).toBe('acp-planner');
     const clientBefore = clients[0];
     expect(clientBefore.alive()).toBe(true);
@@ -545,7 +545,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
     const fake = fakes.get('planner')!;
     const callsBefore = fake.calls.length;
-    await broker.send({ assignment: assignment(), text: '@planner again' });
+    await broker.send({ ticket: ticket(), text: '@planner again' });
     await idleTurns(2);
 
     const tail = fake.calls.slice(callsBefore);
@@ -560,11 +560,11 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await writeAgentDefinition(sandbox, plannerInput());
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'gate', gate }, { kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
-    const sendP = broker.send({ assignment: assignment(), text: '@planner hold' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner hold' });
     await waitUntil(
       () => fakes.has('planner') && (fakes.get('planner')?.prompts.length ?? 0) === 1,
       'prompt started',
@@ -576,21 +576,21 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await sendP;
     await idleTurns(1);
 
-    await broker.send({ assignment: assignment(), text: '@planner after' });
+    await broker.send({ ticket: ticket(), text: '@planner after' });
     await idleTurns(2);
     expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
   });
 
   it('harness change drops the persisted session row and opens with session/new', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       },
       { sessionIds: { planner: ['acp-planner'] } },
     );
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     expect(getChatSessionByKey(sessionKey('planner'))?.acp_session_id).toBe('acp-planner');
 
@@ -601,7 +601,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await broker.saveAgent(plannerInput({ harness: 'codex' }));
     expect(getChatSessionByKey(sessionKey('planner'))).toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await broker.send({ ticket: ticket(), text: '@planner on codex' });
     await idleTurns(2);
     expect(fake.calls).toContain('session/new');
     expect(fake.calls).not.toContain('session/resume');
@@ -622,11 +622,11 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await writeParticipantsFile({ agents: ['implementer'], defaultAgent: 'implementer' });
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
-    makeAssignmentBroker({
+    makeTicketBroker({
       implementer: [{ steps: [{ kind: 'gate', gate }, { kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
-    const sendP = broker.send({ assignment: assignment(), text: '@implementer hold' });
+    const sendP = broker.send({ ticket: ticket(), text: '@implementer hold' });
     await waitUntil(
       () => fakes.has('implementer') && (fakes.get('implementer')?.prompts.length ?? 0) === 1,
       'prompt started',
@@ -635,7 +635,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     release();
     await sendP.catch(() => {});
 
-    const participants = JSON.parse(await readFile(participantsPath(assignmentDir), 'utf-8')) as Participants;
+    const participants = JSON.parse(await readFile(participantsPath(ticketDir), 'utf-8')) as Participants;
     expect(participants.agents).not.toContain('implementer');
     expect(systemTexts().some((t) => t.includes('@implementer is no longer in this chat'))).toBe(true);
     expect(frames.some((f) => f.type === 'chat-participants')).toBe(true);
@@ -652,24 +652,24 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       systemPrompt: 'Override prompt.',
     });
     await writeParticipantsFile({ agents: ['claude'], defaultAgent: 'claude' });
-    makeAssignmentBroker(
+    makeTicketBroker(
       { claude: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
       { sessionIds: { claude: ['acp-claude'] } },
     );
 
-    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await broker.send({ ticket: ticket(), text: '@claude hello' });
     await idleTurns(1);
     const client = clients[0];
     expect(client.alive()).toBe(true);
 
     await broker.deleteAgent('claude');
     expect(client.alive()).toBe(false);
-    const participants = JSON.parse(await readFile(participantsPath(assignmentDir), 'utf-8')) as Participants;
+    const participants = JSON.parse(await readFile(participantsPath(ticketDir), 'utf-8')) as Participants;
     expect(participants.agents).toContain('claude');
 
     const fake = fakes.get('claude')!;
     fake.calls.length = 0;
-    await broker.send({ assignment: assignment(), text: '@claude again' });
+    await broker.send({ ticket: ticket(), text: '@claude again' });
     await idleTurns(2);
     expect(fake.calls).toContain('session/resume');
     expect(systemTexts().some((t) => t.includes('@claude is back to its built-in definition'))).toBe(true);
@@ -686,12 +686,12 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       systemPrompt: 'Cursor override.',
     });
     await writeParticipantsFile({ agents: ['claude'], defaultAgent: 'claude' });
-    makeAssignmentBroker(
+    makeTicketBroker(
       { claude: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
       { sessionIds: { claude: ['acp-claude'] } },
     );
 
-    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await broker.send({ ticket: ticket(), text: '@claude hello' });
     await idleTurns(1);
     expect(spawnHarnesses).toContain('cursor');
 
@@ -702,7 +702,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     );
 
     spawnHarnesses.length = 0;
-    await broker.send({ assignment: assignment(), text: '@claude builtin' });
+    await broker.send({ ticket: ticket(), text: '@claude builtin' });
     await idleTurns(2);
     expect(spawnHarnesses[0]).toBe('claude');
     expect(fakes.get('claude')!.calls).toContain('session/new');
@@ -711,13 +711,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('drops ghost participant ids lazily with one system row', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
     await writeParticipantsFile({ agents: ['planner', 'ghost'], defaultAgent: 'planner' });
-    makeAssignmentBroker();
+    makeTicketBroker();
 
-    const first = await broker.getParticipants(assignment());
+    const first = await broker.getParticipants(ticket());
     expect(first.participants.agents).toEqual(['planner']);
     expect(systemTexts().filter((t) => t.includes('@ghost is no longer in this chat'))).toHaveLength(1);
 
-    const second = await broker.getParticipants(assignment());
+    const second = await broker.getParticipants(ticket());
     expect(second.participants.agents).toEqual(['planner']);
     expect(systemTexts().filter((t) => t.includes('@ghost is no longer in this chat'))).toHaveLength(1);
   });
@@ -725,13 +725,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('construction race: saveAgent updates the session definition before publish', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Before roster' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
     await broker.stopAll();
 
@@ -740,7 +740,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       releaseConstructionLoad = resolve;
     });
     let gatedOnce = false;
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
@@ -760,13 +760,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
     );
 
-    const sessionP = broker.getSession(assignment(), 'codex');
+    const sessionP = broker.getSession(ticket(), 'codex');
     const saveP = broker.saveAgent(plannerInput({ description: 'After roster' }));
     await saveP;
     releaseConstructionLoad();
     expect(await sessionP).not.toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await broker.send({ ticket: ticket(), text: '@codex roster check' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
 
     const fake = fakes.get('codex')!;
@@ -780,20 +780,20 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('construction race: saveAgent during session build rechecks standing fingerprint', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Before roster' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBeTruthy();
     await broker.stopAll();
 
     const standingGate = gateDefinitionsLoad(2);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
@@ -801,14 +801,14 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: standingGate.loadDefinitions },
     );
 
-    const sessionP = broker.getSession(assignment(), 'codex');
+    const sessionP = broker.getSession(ticket(), 'codex');
     await standingGate.waitEntered();
     const saveP = broker.saveAgent(plannerInput({ description: 'After roster' }));
     await saveP;
     standingGate.release();
     expect(await sessionP).not.toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await broker.send({ ticket: ticket(), text: '@codex roster check' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
     await idleTurns(1);
 
@@ -824,20 +824,20 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('construction race: setParticipants during session build rechecks standing fingerprint', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBeTruthy();
     await broker.stopAll();
 
     const standingGate = gateDefinitionsLoad(2);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
@@ -845,16 +845,16 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: standingGate.loadDefinitions },
     );
 
-    const sessionP = broker.getSession(assignment(), 'codex');
+    const sessionP = broker.getSession(ticket(), 'codex');
     await standingGate.waitEntered();
-    await broker.setParticipants(assignment(), {
+    await broker.setParticipants(ticket(), {
       agents: ['planner', 'codex', 'claude'],
       defaultAgent: 'planner',
     });
     standingGate.release();
     expect(await sessionP).not.toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await broker.send({ ticket: ticket(), text: '@codex roster check' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
     await idleTurns(1);
 
@@ -870,18 +870,18 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('construction race: detach during session build does not publish or spawn', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
     await broker.stopAll();
 
     const standingGate = gateDefinitionsLoad(2);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
@@ -889,10 +889,10 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: standingGate.loadDefinitions },
     );
 
-    const sessionP = broker.getSession(assignment(), 'codex');
+    const sessionP = broker.getSession(ticket(), 'codex');
     await standingGate.waitEntered();
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     expect(await sessionP).toBeNull();
     expect(fakes.has('codex')).toBe(false);
@@ -903,7 +903,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
     const standingGate = gateDefinitionsLoad(2);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
@@ -911,10 +911,10 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: standingGate.loadDefinitions },
     );
 
-    const sendP = broker.send({ assignment: assignment(), text: '@codex hi' });
+    const sendP = broker.send({ ticket: ticket(), text: '@codex hi' });
     await standingGate.waitEntered();
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     const { messageId } = await sendP;
 
@@ -932,7 +932,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
     const standingGate = gateDefinitionsLoad(2);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
@@ -940,9 +940,9 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: standingGate.loadDefinitions },
     );
 
-    const sendP = broker.send({ assignment: assignment(), text: '@codex hi' });
+    const sendP = broker.send({ ticket: ticket(), text: '@codex hi' });
     await standingGate.waitEntered();
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     const { messageId } = await sendP;
 
@@ -952,7 +952,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(userMessage?.targets ?? []).not.toContain('codex');
     expect(userMessage?.mentions ?? []).toContain('codex');
 
-    await broker.setParticipants(assignment(), {
+    await broker.setParticipants(ticket(), {
       agents: ['planner', 'codex'],
       defaultAgent: 'planner',
     });
@@ -960,7 +960,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     clients = [];
     fakes = new Map();
 
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
       codex: [
         { steps: [{ kind: 'update', update: textChunk('OK after reattach', 'c1') }] },
@@ -973,13 +973,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
         p.prompt.map((b) => (b as { text?: string }).text ?? '').join('\n'),
       );
 
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
     await idleTurns(1);
     expect(promptTexts().join('\n')).not.toContain('@codex hi');
     expect(promptTexts().join('\n')).toContain('@codex hello');
 
-    await broker.send({ assignment: assignment(), text: '@codex follow up' });
+    await broker.send({ ticket: ticket(), text: '@codex follow up' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 2, 'codex follow-up prompt');
     await idleTurns(1);
     expect(promptTexts().join('\n')).toContain('@codex follow up');
@@ -995,7 +995,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       buildSessionLoads += 1;
       return buildSessionLoads === 4;
     });
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [worksThenSays('Outlined. Over to @codex', 'p1')],
         codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
@@ -1004,9 +1004,9 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     );
 
     armCodexBuild = true;
-    const sendP = broker.send({ assignment: assignment(), text: '@planner outline it' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner outline it' });
     await standingGate.waitEntered();
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
     standingGate.release();
     await sendP;
     await waitUntil(
@@ -1026,7 +1026,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       ({ stack }) =>
         detachOnHandoffRoute && stack.includes('routeReply') && stack.includes('ensureSession'),
     );
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [
           { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
@@ -1037,16 +1037,16 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       { loadDefinitions: routeDetachGate.loadDefinitions },
     );
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
     const codexPromptsBefore = fakes.get('codex')?.prompts.length ?? 0;
 
     detachOnHandoffRoute = true;
-    const sendP = broker.send({ assignment: assignment(), text: '@planner outline it' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner outline it' });
     await routeDetachGate.waitEntered();
-    await broker.setParticipants(assignment(), { agents: ['planner'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner'], defaultAgent: 'planner' });
     routeDetachGate.release();
     await sendP;
     await waitUntil(
@@ -1060,7 +1060,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('allows re-creating a deleted agent without restarting the broker', async () => {
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [
         { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
         { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
@@ -1068,7 +1068,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     });
 
     await broker.saveAgent(plannerInput({ description: 'First version' }));
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     const fake = fakes.get('planner')!;
     const callsBefore = fake.calls.length;
@@ -1077,9 +1077,9 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await broker.saveAgent(plannerInput({ description: 'Recreated version' }));
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
 
-    expect(await broker.getSession(assignment(), 'planner')).not.toBeNull();
+    expect(await broker.getSession(ticket(), 'planner')).not.toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@planner again' });
+    await broker.send({ ticket: ticket(), text: '@planner again' });
     await idleTurns(2);
 
     const tail = fake.calls.slice(callsBefore);
@@ -1096,7 +1096,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       releaseConstructionLoad = resolve;
     });
     let gatedOnce = false;
-    makeAssignmentBroker(
+    makeTicketBroker(
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
       {
         loadDefinitions: async (root) => {
@@ -1113,20 +1113,20 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
     );
 
-    const sessionP = broker.getSession(assignment(), 'planner');
+    const sessionP = broker.getSession(ticket(), 'planner');
     const deleteP = broker.deleteAgent('planner');
     releaseConstructionLoad();
     expect(await sessionP).toBeNull();
     await deleteP;
-    expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+    expect(await broker.getSession(ticket(), 'planner')).toBeNull();
   });
 
   it('construction race: saveAgent harness change opens a fresh adapter session', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude' }));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     await broker.stopAll();
 
@@ -1135,7 +1135,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       releaseConstructionLoad = resolve;
     });
     let gatedOnce = false;
-    makeAssignmentBroker(
+    makeTicketBroker(
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }] },
       {
         loadDefinitions: async (root) => {
@@ -1152,14 +1152,14 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
     );
 
-    const sessionP = broker.getSession(assignment(), 'planner');
+    const sessionP = broker.getSession(ticket(), 'planner');
     const saveP = broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
     await saveP;
     releaseConstructionLoad();
     const summary = await sessionP;
     expect(summary?.harness).toBe('codex');
 
-    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await broker.send({ ticket: ticket(), text: '@planner on codex' });
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1171,12 +1171,12 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('construction race: same-harness save applies new pins after resume', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5' }));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    const acpId = getChatSession(ASSIGNMENT_ID, 'planner')!.acp_session_id;
+    const acpId = getChatSession(TICKET_ID, 'planner')!.acp_session_id;
     expect(acpId).toBeTruthy();
     await broker.stopAll();
 
@@ -1185,7 +1185,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       releaseConstructionLoad = resolve;
     });
     let gatedOnce = false;
-    makeAssignmentBroker(
+    makeTicketBroker(
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }] },
       {
         loadDefinitions: async (root) => {
@@ -1200,13 +1200,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       },
     );
 
-    const sessionP = broker.getSession(assignment(), 'planner');
+    const sessionP = broker.getSession(ticket(), 'planner');
     const saveP = broker.saveAgent(plannerInput({ model: 'claude-sonnet-5' }));
     await saveP;
     releaseConstructionLoad();
     await sessionP;
 
-    await broker.send({ assignment: assignment(), text: '@planner after race' });
+    await broker.send({ ticket: ticket(), text: '@planner after race' });
     await waitUntil(() => fakes.has('planner'), 'planner adapter');
     await idleTurns(2);
 
@@ -1219,14 +1219,14 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       ),
     ).toBe(true);
     expect(fake.calls.indexOf('session/set_config_option')).toBeGreaterThan(resumeAt);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.acp_session_id).toBe(acpId);
+    expect(getChatSession(TICKET_ID, 'planner')?.acp_session_id).toBe(acpId);
     expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
   });
 
   it('rejects traversal ids on save, delete, and test', async () => {
     const sentinel = join(sandbox, 'sentinel.txt');
     await writeFile(sentinel, 'keep');
-    makeAssignmentBroker();
+    makeTicketBroker();
 
     await expect(
       broker.saveAgent({
@@ -1246,21 +1246,21 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('applies saved pins to an unmaterialised session after restart', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5' }));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    const acpId = getChatSession(ASSIGNMENT_ID, 'planner')!.acp_session_id;
+    const acpId = getChatSession(TICKET_ID, 'planner')!.acp_session_id;
     expect(acpId).toBeTruthy();
 
     await broker.stopAll();
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
     });
     await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5' }));
 
-    await broker.send({ assignment: assignment(), text: '@planner after save' });
+    await broker.send({ ticket: ticket(), text: '@planner after save' });
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1272,25 +1272,25 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       ),
     ).toBe(true);
     expect(systemTexts().some((t) => t.includes("Applied @planner's updated definition"))).toBe(true);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.acp_session_id).toBe(acpId);
+    expect(getChatSession(TICKET_ID, 'planner')?.acp_session_id).toBe(acpId);
   });
 
   it('rotates an unmaterialised session when the saved harness changes', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude', model: 'claude-opus-5' }));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.harness).toBe('claude');
+    expect(getChatSession(TICKET_ID, 'planner')?.harness).toBe('claude');
 
     await broker.stopAll();
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
     });
     await broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
 
-    await broker.send({ assignment: assignment(), text: '@planner new harness' });
+    await broker.send({ ticket: ticket(), text: '@planner new harness' });
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1302,25 +1302,25 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('harness rotation during build leaves a rebuildable chat index', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude', model: 'claude-opus-5' }));
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     await broker.stopAll();
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] }],
     });
     await broker.saveAgent(plannerInput({ harness: 'codex', model: 'claude-opus-5' }));
-    await broker.send({ assignment: assignment(), text: '@planner new harness' });
+    await broker.send({ ticket: ticket(), text: '@planner new harness' });
     await idleTurns(2);
     await broker.stopAll();
 
     const { listChatItems } = await import('../db/chat-db.js');
     const { rebuildChatIndex } = await import('../chat/store.js');
-    const live = listChatItems(ASSIGNMENT_ID, { limit: 500 });
-    const result = await rebuildChatIndex(assignmentDir, ASSIGNMENT_ID);
-    const rebuilt = listChatItems(ASSIGNMENT_ID, { limit: 500 });
+    const live = listChatItems(TICKET_ID, { limit: 500 });
+    const result = await rebuildChatIndex(ticketDir, TICKET_ID);
+    const rebuilt = listChatItems(TICKET_ID, { limit: 500 });
     expect(rebuilt.map((i) => i.itemId).sort()).toEqual(live.map((i) => i.itemId).sort());
     expect(result.items).toBe(live.length);
   });
@@ -1328,24 +1328,24 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
   it('re-sends standing after restart when a roster description changes', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBeTruthy();
 
     await broker.stopAll();
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] }],
     });
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
 
-    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await broker.send({ ticket: ticket(), text: '@codex roster check' });
     await idleTurns(3);
 
     const fake = fakes.get('codex')!;
@@ -1358,18 +1358,18 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
 
   it('does not commit standing until the prompt succeeds', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [
         { steps: [{ kind: 'error', message: 'standing failed' }] },
         { steps: [{ kind: 'update', update: textChunk('OK', 'm2') }] },
       ],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeNull();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@planner retry' });
+    await broker.send({ ticket: ticket(), text: '@planner retry' });
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1377,16 +1377,16 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       .map((b) => (b as { text?: string }).text ?? '')
       .join('\n');
     expect(retryPrompt).toContain('<context>');
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeTruthy();
   });
 
   it('commits standing fingerprint after a successful first prompt', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
 
     const fake = fakes.get('planner')!;
@@ -1394,7 +1394,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       .map((b) => (b as { text?: string }).text ?? '')
       .join('\n');
     expect(promptText).toContain('<context>');
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeTruthy();
   });
 
 const rosterAgentLines = (text: string): string[] =>
@@ -1468,27 +1468,27 @@ const plannerSlashCommands = [
   it('does not commit standing when invalidated during an in-flight normal prompt', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [
         { steps: [{ kind: 'hang' }] },
         { steps: [{ kind: 'update', update: textChunk('OK codex', 'c2') }] },
       ],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex standing prompt');
-    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+    const fingerprintBefore = getChatSession(TICKET_ID, 'codex')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
-    expect(await broker.cancel(assignment(), 'codex')).toBe(true);
+    expect(await broker.cancel(ticket(), 'codex')).toBe(true);
     await idleTurns(2);
 
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
 
     const promptsBefore = fakes.get('codex')!.prompts.length;
-    await broker.send({ assignment: assignment(), text: '@codex again' });
+    await broker.send({ ticket: ticket(), text: '@codex again' });
     await idleTurns(3);
     const promptText = fakes
       .get('codex')!
@@ -1503,7 +1503,7 @@ const plannerSlashCommands = [
   it('does not commit standing when invalidated during slash-command standing ack', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [
           { steps: [{ kind: 'hang' }] },
@@ -1514,19 +1514,19 @@ const plannerSlashCommands = [
       { availableCommands: { planner: plannerSlashCommands } },
     );
 
-    const sendP = broker.send({ assignment: assignment(), text: '@planner /plan' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner /plan' });
     await waitUntil(() => (fakes.get('planner')?.prompts.length ?? 0) >= 1, 'standing ack prompt');
-    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint ?? null;
+    const fingerprintBefore = getChatSession(TICKET_ID, 'planner')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
-    expect(await broker.cancel(assignment(), 'planner')).toBe(true);
+    expect(await broker.cancel(ticket(), 'planner')).toBe(true);
     await sendP;
     await idleTurns(2);
 
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
 
     const promptsBefore = fakes.get('planner')!.prompts.length;
-    await broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await broker.send({ ticket: ticket(), text: '@planner /plan' });
     await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
     await idleTurns(2);
     const standingPrompt = fakes
@@ -1545,7 +1545,7 @@ const plannerSlashCommands = [
     const standingGate = gateDefinitionsWhen(
       ({ stack }) => armStandingGate && stack.includes('buildStanding'),
     );
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
         codex: [
@@ -1555,23 +1555,23 @@ const plannerSlashCommands = [
       },
       { loadDefinitions: standingGate.loadDefinitions },
     );
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
 
     armStandingGate = true;
-    const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
+    const sendP = broker.send({ ticket: ticket(), text: '@codex hello' });
     await standingGate.waitEntered();
-    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+    const fingerprintBefore = getChatSession(TICKET_ID, 'codex')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
     standingGate.release();
     await sendP;
     await idleTurns(2);
 
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
 
     const promptsBefore = fakes.get('codex')!.prompts.length;
-    await broker.send({ assignment: assignment(), text: '@codex again' });
+    await broker.send({ ticket: ticket(), text: '@codex again' });
     await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
     await idleTurns(1);
     const promptText = fakes
@@ -1588,7 +1588,7 @@ const plannerSlashCommands = [
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans v1' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
     const standingGate = gateDefinitionsLoad(8);
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [
           { steps: [{ kind: 'update', update: textChunk('ack', 'ack') }] },
@@ -1602,19 +1602,19 @@ const plannerSlashCommands = [
       },
     );
 
-    const sendP = broker.send({ assignment: assignment(), text: '@planner /plan' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner /plan' });
     await standingGate.waitEntered();
-    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint ?? null;
+    const fingerprintBefore = getChatSession(TICKET_ID, 'planner')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
     standingGate.release();
     await sendP;
     await idleTurns(2);
 
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBe(fingerprintBefore);
 
     const promptsBefore = fakes.get('planner')!.prompts.length;
-    await broker.send({ assignment: assignment(), text: '@planner /plan' });
+    await broker.send({ ticket: ticket(), text: '@planner /plan' });
     await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
     await idleTurns(2);
     const standingPrompt = fakes
@@ -1629,7 +1629,7 @@ const plannerSlashCommands = [
   it('re-sends standing when a participant is attached', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [
         { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
         { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
@@ -1639,22 +1639,22 @@ const plannerSlashCommands = [
         { steps: [{ kind: 'update', update: textChunk('OK codex2', 'c2') }] },
       ],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')?.standing_fingerprint).toBeTruthy();
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'planner')?.standing_fingerprint).toBeTruthy();
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBeTruthy();
 
     const plannerPromptsBefore = fakes.get('planner')!.prompts.length;
     const codexPromptsBefore = fakes.get('codex')!.prompts.length;
-    await broker.setParticipants(assignment(), {
+    await broker.setParticipants(ticket(), {
       agents: ['planner', 'codex', 'claude'],
       defaultAgent: 'planner',
     });
 
-    await broker.send({ assignment: assignment(), text: '@planner after attach' });
-    await broker.send({ assignment: assignment(), text: '@codex after attach' });
+    await broker.send({ ticket: ticket(), text: '@planner after attach' });
+    await broker.send({ ticket: ticket(), text: '@codex after attach' });
     await idleTurns(4);
 
     const plannerStanding = fakes
@@ -1674,7 +1674,7 @@ const plannerSlashCommands = [
   it('re-sends standing when a participant is detached', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex', 'claude'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [
         { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
         { steps: [{ kind: 'update', update: textChunk('OK2', 'm2') }] },
@@ -1682,16 +1682,16 @@ const plannerSlashCommands = [
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
       claude: [{ steps: [{ kind: 'update', update: textChunk('OK claude', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
-    await broker.send({ assignment: assignment(), text: '@claude hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@claude hello' });
     await idleTurns(3);
 
     const promptsBefore = fakes.get('planner')!.prompts.length;
-    await broker.setParticipants(assignment(), { agents: ['planner', 'claude'], defaultAgent: 'planner' });
+    await broker.setParticipants(ticket(), { agents: ['planner', 'claude'], defaultAgent: 'planner' });
 
-    await broker.send({ assignment: assignment(), text: '@planner after detach' });
+    await broker.send({ ticket: ticket(), text: '@planner after detach' });
     await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'planner standing retry');
     await idleTurns(1);
     const standingPrompt = fakes
@@ -1710,7 +1710,7 @@ const plannerSlashCommands = [
     const standingGate = gateDefinitionsWhen(
       ({ stack }) => armStandingGate && stack.includes('buildStanding'),
     );
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
         codex: [
@@ -1720,15 +1720,15 @@ const plannerSlashCommands = [
       },
       { loadDefinitions: standingGate.loadDefinitions },
     );
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
 
     armStandingGate = true;
-    const sendP = broker.send({ assignment: assignment(), text: '@codex hello' });
+    const sendP = broker.send({ ticket: ticket(), text: '@codex hello' });
     await standingGate.waitEntered();
-    const fingerprintBefore = getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint ?? null;
+    const fingerprintBefore = getChatSession(TICKET_ID, 'codex')?.standing_fingerprint ?? null;
 
-    await broker.setParticipants(assignment(), {
+    await broker.setParticipants(ticket(), {
       agents: ['planner', 'codex', 'claude'],
       defaultAgent: 'planner',
     });
@@ -1736,10 +1736,10 @@ const plannerSlashCommands = [
     await sendP;
     await idleTurns(2);
 
-    expect(getChatSession(ASSIGNMENT_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
+    expect(getChatSession(TICKET_ID, 'codex')?.standing_fingerprint).toBe(fingerprintBefore);
 
     const promptsBefore = fakes.get('codex')!.prompts.length;
-    await broker.send({ assignment: assignment(), text: '@codex after attach' });
+    await broker.send({ ticket: ticket(), text: '@codex after attach' });
     await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
     await idleTurns(1);
     const promptText = fakes
@@ -1755,20 +1755,20 @@ const plannerSlashCommands = [
   it('re-sends standing when a roster model changes', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ model: 'claude-opus-5', description: 'Plans' }));
     await writeParticipantsFile({ agents: ['planner', 'codex'], defaultAgent: 'planner' });
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
       codex: [{ steps: [{ kind: 'update', update: textChunk('OK codex', 'c1') }] }],
     });
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
-    await broker.send({ assignment: assignment(), text: '@codex hello' });
+    await broker.send({ ticket: ticket(), text: '@codex hello' });
     await idleTurns(2);
     const codexFake = fakes.get('codex')!;
     const promptsBefore = codexFake.prompts.length;
 
     await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5', description: 'Plans' }));
 
-    await broker.send({ assignment: assignment(), text: '@codex roster check' });
+    await broker.send({ ticket: ticket(), text: '@codex roster check' });
     await idleTurns(3);
 
     const promptText = codexFake.prompts
@@ -1782,30 +1782,30 @@ const plannerSlashCommands = [
 
   it('drops orphaned chat_sessions rows when deleting an agent', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
     upsertChatSession({
       sessionKey: sessionKey('planner'),
-      ticketId: ASSIGNMENT_ID,
+      ticketId: TICKET_ID,
       projectSlug: 'syntaur-meta',
-      assignmentSlug: 'chat-demo',
+      ticketSlug: 'chat-demo',
       agentId: 'planner',
       harness: 'claude',
       acpSessionId: 'stale-acp-id',
       state: 'idle',
     });
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')).not.toBeNull();
+    expect(getChatSession(TICKET_ID, 'planner')).not.toBeNull();
 
     await broker.deleteAgent('planner');
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')).toBeNull();
+    expect(getChatSession(TICKET_ID, 'planner')).toBeNull();
 
     await broker.saveAgent(plannerInput({ description: 'Fresh row' }));
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    expect(getChatSession(ASSIGNMENT_ID, 'planner')).toBeNull();
+    expect(getChatSession(TICKET_ID, 'planner')).toBeNull();
 
-    await broker.send({ assignment: assignment(), text: '@planner after stale row' });
+    await broker.send({ ticket: ticket(), text: '@planner after stale row' });
     await idleTurns(1);
 
     const fake = fakes.get('planner')!;
@@ -1816,20 +1816,20 @@ const plannerSlashCommands = [
 
   it('construction race: deleteAgent rejects send with 404 and leaves no session', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker({
+    makeTicketBroker({
       planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }],
     });
 
-    const sendP = broker.send({ assignment: assignment(), text: '@planner delete race' });
+    const sendP = broker.send({ ticket: ticket(), text: '@planner delete race' });
     const deleteP = broker.deleteAgent('planner');
     await expect(sendP).rejects.toBeInstanceOf(ChatSendError);
     await deleteP;
-    expect(await broker.getSession(assignment(), 'planner')).toBeNull();
+    expect(await broker.getSession(ticket(), 'planner')).toBeNull();
   });
 
   it('write chain survives a rejected save then valid save and delete', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
-    makeAssignmentBroker();
+    makeTicketBroker();
 
     await expect(broker.saveAgent(plannerInput({ color: 'purple' as never }))).rejects.toSatisfy(
       (err: unknown) =>
@@ -1844,7 +1844,7 @@ const plannerSlashCommands = [
   it('ensureAdapter picks up a hand-edited permissions change and auto-answers', async () => {
     await writeAgentDefinition(sandbox, plannerInput());
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    makeAssignmentBroker(
+    makeTicketBroker(
       {
         planner: [
           { steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] },
@@ -1868,14 +1868,14 @@ const plannerSlashCommands = [
       { sessionIds: { planner: ['acp-planner'] } },
     );
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
 
     const agentPath = join(sandbox, 'agents', 'planner.md');
     const content = await readFile(agentPath, 'utf-8');
     await writeFile(agentPath, content.replace(/^mode:/m, 'permissions: auto\nmode:'));
 
-    await broker.send({ assignment: assignment(), text: '@planner run' });
+    await broker.send({ ticket: ticket(), text: '@planner run' });
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1888,12 +1888,12 @@ const plannerSlashCommands = [
   it('ensureAdapter respawns when a hand-edited harness change is detected', async () => {
     await writeAgentDefinition(sandbox, plannerInput({ harness: 'claude' }));
     await writeParticipantsFile({ agents: ['planner'], defaultAgent: 'planner' });
-    makeAssignmentBroker(
+    makeTicketBroker(
       { planner: [{ steps: [{ kind: 'update', update: textChunk('OK', 'm1') }] }] },
       { sessionIds: { planner: ['acp-planner'] } },
     );
 
-    await broker.send({ assignment: assignment(), text: '@planner hello' });
+    await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     const fake = fakes.get('planner')!;
     fake.calls.length = 0;
@@ -1902,13 +1902,13 @@ const plannerSlashCommands = [
     const content = await readFile(agentPath, 'utf-8');
     await writeFile(agentPath, content.replace(/^harness: claude/m, 'harness: codex'));
 
-    await broker.send({ assignment: assignment(), text: '@planner on codex' });
+    await broker.send({ ticket: ticket(), text: '@planner on codex' });
     await idleTurns(2);
 
     expect(fake.calls).toContain('initialize');
     expect(fake.calls).toContain('session/new');
     expect(fake.calls).not.toContain('session/resume');
-    const summary = await broker.getSession(assignment(), 'planner');
+    const summary = await broker.getSession(ticket(), 'planner');
     expect(summary?.harness).toBe('codex');
   });
 });

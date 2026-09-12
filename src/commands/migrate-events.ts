@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { expandHome, ticketsDir as getStandaloneDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
-import { parseAssignmentFull, type ParsedAssignmentFull } from '../dashboard/parser.js';
+import { parseTicketFull, type ParsedTicketFull } from '../dashboard/parser.js';
 import {
   initEventsDb,
   getEventsDb,
@@ -26,30 +26,30 @@ interface SynthEvent {
 
 interface EventTarget {
   display: string;
-  assignmentId: string;
+  ticketId: string;
   projectSlug: string | null;
   events: SynthEvent[];
 }
 
-async function parseSafe(path: string): Promise<ParsedAssignmentFull | null> {
+async function parseSafe(path: string): Promise<ParsedTicketFull | null> {
   try {
-    return parseAssignmentFull(await readFile(path, 'utf-8'));
+    return parseTicketFull(await readFile(path, 'utf-8'));
   } catch {
     return null;
   }
 }
 
 /**
- * Synthesize the backfill events for one assignment from its frontmatter. Each
+ * Synthesize the backfill events for one ticket from its frontmatter. Each
  * event carries a DETERMINISTIC `sourceKey` so re-running `--apply` inserts 0
  * (idempotency is per-event via `INSERT OR IGNORE` on `source_key`, NOT a
- * per-assignment skip):
+ * per-ticket skip):
  *   - one `status-change` per `statusHistory` entry whose `from !== to` —
  *     `backfill:<id>:status:<index>` (same-status entries are skipped, matching
  *     the live emit's from!==to guard; index stays the ORIGINAL one for idempotency)
  *   - one `plan-approval` if `planApproval` is present — `backfill:<id>:plan-approval`
  */
-function synthesizeEvents(fm: ParsedAssignmentFull): SynthEvent[] {
+function synthesizeEvents(fm: ParsedTicketFull): SynthEvent[] {
   const events: SynthEvent[] = [];
 
   fm.statusHistory.forEach((entry, index) => {
@@ -81,10 +81,10 @@ function synthesizeEvents(fm: ParsedAssignmentFull): SynthEvent[] {
 }
 
 /**
- * Scan the projects base + the standalone base for assignments and synthesize
+ * Scan the projects base + the standalone base for tickets and synthesize
  * their backfill events. Mirrors `migrate-status-history.collectTargets`:
- * handles the standalone shape (`baseDir/<uuid>/assignment.md`, `projectSlug`
- * null) AND the nested shape (`baseDir/<project>/assignments/<slug>/assignment.md`).
+ * handles the standalone shape (`baseDir/<uuid>/ticket.md`, `projectSlug`
+ * null) AND the nested shape (`baseDir/<project>/tickets/<slug>/ticket.md`).
  */
 async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
   const targets: EventTarget[] = [];
@@ -96,13 +96,13 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
 
-      // Standalone shape: baseDir/<uuid>/assignment.md (v1) or ticket.md (Phase A)
+      // Standalone shape: baseDir/<uuid>/ticket.md (v1) or ticket.md (Phase A)
       const directTicketMd = resolve(baseDir, m.name, 'ticket.md');
-      const directAssignmentMd = resolve(baseDir, m.name, 'assignment.md');
+      const directLegacyTicketMd = resolve(baseDir, m.name, 'assignment.md');
       const standaloneMd = (await fileExists(directTicketMd))
         ? directTicketMd
-        : (await fileExists(directAssignmentMd))
-          ? directAssignmentMd
+        : (await fileExists(directLegacyTicketMd))
+          ? directLegacyTicketMd
           : null;
       if (standaloneMd) {
         if (seen.has(standaloneMd)) continue;
@@ -113,7 +113,7 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
           if (events.length > 0) {
             targets.push({
               display: `standalone/${m.name}`,
-              assignmentId: fm.id,
+              ticketId: fm.id,
               projectSlug: null,
               events,
             });
@@ -122,24 +122,24 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
         continue;
       }
 
-      // Project shape: baseDir/<project>/assignments/<slug>/assignment.md
-      const assignmentsBase = resolve(baseDir, m.name, 'assignments');
-      if (await fileExists(assignmentsBase)) {
-        const slugs = await readdir(assignmentsBase, { withFileTypes: true });
+      // Project shape (v1): baseDir/<project>/tickets/<slug>/ticket.md
+      const legacyTicketsDir = resolve(baseDir, m.name, 'assignments');
+      if (await fileExists(legacyTicketsDir)) {
+        const slugs = await readdir(legacyTicketsDir, { withFileTypes: true });
         for (const a of slugs) {
           if (!a.isDirectory()) continue;
           if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-          const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
-          if (!(await fileExists(assignmentMd))) continue;
-          if (seen.has(assignmentMd)) continue;
-          seen.add(assignmentMd);
-          const fm = await parseSafe(assignmentMd);
+          const ticketMd = resolve(legacyTicketsDir, a.name, 'assignment.md');
+          if (!(await fileExists(ticketMd))) continue;
+          if (seen.has(ticketMd)) continue;
+          seen.add(ticketMd);
+          const fm = await parseSafe(ticketMd);
           if (!fm || !fm.id) continue;
           const events = synthesizeEvents(fm);
           if (events.length === 0) continue;
           targets.push({
             display: `${m.name}/${a.name}`,
-            assignmentId: fm.id,
+            ticketId: fm.id,
             projectSlug: m.name,
             events,
           });
@@ -163,7 +163,7 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
           if (events.length === 0) continue;
           targets.push({
             display: `${m.name}/${a.name}`,
-            assignmentId: fm.id,
+            ticketId: fm.id,
             projectSlug: m.name,
             events,
           });
@@ -176,11 +176,11 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
 
 /**
  * One-time backfill: synthesize append-only `events` rows from each
- * assignment's `statusHistory` + `planApproval` frontmatter. Dry-run by
+ * ticket's `statusHistory` + `planApproval` frontmatter. Dry-run by
  * default; `--apply` writes. Idempotency is per-EVENT via a deterministic
  * `source_key` + `INSERT OR IGNORE` (re-running `--apply` inserts 0 rows;
- * survives partial failures; concurrency-safe) — NOT a per-assignment skip.
- * Each assignment's inserts run in a single events-db transaction.
+ * survives partial failures; concurrency-safe) — NOT a per-ticket skip.
+ * Each ticket's inserts run in a single events-db transaction.
  */
 export async function migrateEventsCommand(
   options: MigrateEventsOptions,
@@ -194,12 +194,12 @@ export async function migrateEventsCommand(
   const totalEvents = targets.reduce((sum, t) => sum + t.events.length, 0);
 
   if (targets.length === 0) {
-    console.log('No assignments with statusHistory/planApproval to backfill.');
+    console.log('No tickets with statusHistory/planApproval to backfill.');
     return;
   }
 
   console.log(
-    `Found ${targets.length} assignment${targets.length === 1 ? '' : 's'} with ${totalEvents} event${
+    `Found ${targets.length} ticket${targets.length === 1 ? '' : 's'} with ${totalEvents} event${
       totalEvents === 1 ? '' : 's'
     } to backfill ${options.apply ? '(applying)' : '(dry-run; use --apply to write)'}:`,
   );
@@ -221,11 +221,11 @@ export async function migrateEventsCommand(
 
   let inserted = 0;
   for (const t of targets) {
-    const countBefore = countEvents(t.assignmentId);
+    const countBefore = countEvents(t.ticketId);
     const writeAll = db.transaction(() => {
       for (const e of t.events) {
         recordEvent({
-          assignmentId: t.assignmentId,
+          ticketId: t.ticketId,
           projectSlug: t.projectSlug,
           type: e.type,
           details: e.details,
@@ -236,7 +236,7 @@ export async function migrateEventsCommand(
       }
     });
     writeAll();
-    inserted += countEvents(t.assignmentId) - countBefore;
+    inserted += countEvents(t.ticketId) - countBefore;
   }
 
   console.log(
@@ -246,10 +246,10 @@ export async function migrateEventsCommand(
   );
 }
 
-/** Count events for an assignment (used to measure inserts before/after apply). */
-function countEvents(assignmentId: string): number {
+/** Count events for an ticket (used to measure inserts before/after apply). */
+function countEvents(ticketId: string): number {
   const row = getEventsDb()
     .prepare('SELECT COUNT(*) AS n FROM events WHERE assignment_id = ?')
-    .get(assignmentId) as { n: number };
+    .get(ticketId) as { n: number };
   return row.n;
 }

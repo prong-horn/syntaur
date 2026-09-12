@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { computeEngineStep } from '../lifecycle/engine-step.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import type { AttestationEnv } from '../lifecycle/facts.js';
-import type { AssignmentFacts } from '../lifecycle/derive.js';
+import type { TicketFacts } from '../lifecycle/derive.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
 
 const WF: StageWorkflow = {
@@ -32,7 +32,7 @@ ${extra}---
 `;
 }
 
-const facts = (o: Record<string, unknown>): AssignmentFacts => o as unknown as AssignmentFacts;
+const facts = (o: Record<string, unknown>): TicketFacts => o as unknown as TicketFacts;
 
 describe('computeEngineStep', () => {
   it('gate move: cascades forward while gates pass, freezing at terminal', () => {

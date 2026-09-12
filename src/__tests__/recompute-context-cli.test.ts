@@ -38,7 +38,7 @@ async function runCli(
 }
 
 /**
- * Seed an OPEN engagement (the session↔assignment edge) into the same
+ * Seed an OPEN engagement (the session↔ticket edge) into the same
  * `syntaur.db` the spawned CLI reads via SYNTAUR_HOME, so a no-positional
  * `recompute` resolves the active ticket from the engagement rather than
  * the demoted context.json scalar.
@@ -59,7 +59,7 @@ function seedOpenEngagement(
   closeSessionDb();
 }
 
-const ASSIGNMENT = `---
+const TICKET = `---
 id: ctx-test-id
 slug: ctx-test
 title: "Context Recompute Test"
@@ -107,7 +107,7 @@ describe("syntaur recompute resolves the ticket from the session's open engageme
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     aPath = join(aDir, 'ticket.md');
-    await writeFile(aPath, ASSIGNMENT);
+    await writeFile(aPath, TICKET);
 
     // A separate "workspace" cwd. context.json is now only a workspace marker
     // (its ticket scalar is no longer a resolution source); the active

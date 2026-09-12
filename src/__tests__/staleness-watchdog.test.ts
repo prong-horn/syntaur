@@ -9,7 +9,7 @@ function cand(id: string, stale: boolean, project: string | null = 'p1'): StaleC
 }
 
 describe('runStalenessWatchdogTick', () => {
-  it('emits staleness-detected once per newly-stale assignment', () => {
+  it('emits staleness-detected once per newly-stale ticket', () => {
     const seen = new Set<string>();
     const events: WatchdogEvent[] = [];
     const summary = runStalenessWatchdogTick([cand('a', true), cand('b', false)], seen, (e) => events.push(e));

@@ -6,13 +6,13 @@ import {
   overrideTargetsForStatus,
 } from '../../dashboard/src/lib/statusMeta';
 import type { StatusConfigResponse, StatusDefinition } from '../../dashboard/src/hooks/useStatusConfig';
-import type { AssignmentTransitionAction } from '../../dashboard/src/hooks/useProjects';
+import type { TicketTransitionAction } from '../../dashboard/src/hooks/useProjects';
 
-// Build a complete AssignmentTransitionAction; overrideTargetsForStatus only reads
+// Build a complete TicketTransitionAction; overrideTargetsForStatus only reads
 // `targetStatus` and `disabled`, but the fixture must satisfy the full type.
 const makeTransition = (
-  overrides: Partial<AssignmentTransitionAction> & Pick<AssignmentTransitionAction, 'targetStatus'>,
-): AssignmentTransitionAction => ({
+  overrides: Partial<TicketTransitionAction> & Pick<TicketTransitionAction, 'targetStatus'>,
+): TicketTransitionAction => ({
   command: 'cmd',
   label: 'Action',
   description: '',

@@ -6,8 +6,6 @@ import type { HopTrigger, GateSnapshotEntry, DissentCause } from './stage-engine
 import type { StageRoute } from '../utils/stage-model.js';
 
 export type TicketStatus = string;
-/** @deprecated Dashboard compat until Task 2 */
-export type AssignmentStatus = TicketStatus;
 
 export type TransitionCommand = string;
 

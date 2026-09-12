@@ -44,7 +44,7 @@ export interface SearchDoc {
   /** Absolute file path on disk. */
   path: string;
   fileKind: FileKind;
-  /** Human title (assignment/project title), used as a Fuse key. */
+  /** Human title (ticket/project title), used as a Fuse key. */
   title: string;
   /** The markdown body to full-text search. */
   body: string;
@@ -123,7 +123,7 @@ export interface SearchProvider {
  */
 export const FILE_KIND_ALIASES: Record<string, FileKind> = {
   ticket: 'ticket',
-  assignments: 'ticket',
+  tickets: 'ticket',
   plan: 'plan',
   plans: 'plan',
   progress: 'progress',

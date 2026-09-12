@@ -47,7 +47,7 @@ const SCHEMA_VERSION = '12';
 // 'syntaurd' | 'tmux'; NULL = the session predates the daemon → eligible
 // for the tmux attach/launch fallback gate).
 //
-// v6 base schema: the scalar assignment binding (`project_slug`/`assignment_slug`)
+// v6 base schema: the scalar ticket binding (`project_slug`/`assignment_slug`)
 // has moved OFF `sessions` onto the `engagement` edge; `activity` (liveness) is
 // added. Fresh installs get this shape directly; existing installs reach it via
 // the v5→v6 migration below.
@@ -153,7 +153,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
   db.pragma('journal_mode = WAL');
   db.pragma('busy_timeout = 5000');
   db.exec(SCHEMA_SQL);
-  // The engagement edge table (session↔assignment M:N). Idempotent
+  // The engagement edge table (session↔ticket M:N). Idempotent
   // `CREATE TABLE IF NOT EXISTS`, so it is safe to run here — outside the
   // migration transaction — on the same footing as the base session tables.
   // The v5→v6 migration also runs this (harmlessly) before backfilling.
@@ -162,10 +162,10 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // it is safe here (outside the migration transaction). The v7→v8 step re-runs
   // it harmlessly for databases that upgrade rather than install fresh.
   db.exec(SUMMARIZE_STATE_DDL);
-  // Assignment chat (`chat_sessions` / `chat_items`). Same footing again:
+  // Ticket chat (`chat_sessions` / `chat_items`). Same footing again:
   // idempotent CREATE TABLE IF NOT EXISTS, executed outside the migration
   // transaction. Both tables are a rebuildable index over
-  // `<assignmentDir>/chat/events.jsonl`, never a source of truth.
+  // `<ticketDir>/chat/events.jsonl`, never a source of truth.
   db.exec(CHAT_DDL);
 
   // Track schema versions. Each subsystem owns its own row in `meta`
@@ -191,7 +191,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
   //      migration and the version is re-checked inside the transaction so
   //      the second process becomes a no-op once the first commits.
   // Narrow for the transaction closure — TS doesn't track the module-level
-  // `db` assignment across the closure boundary.
+  // `db` ticket across the closure boundary.
   const database = db;
   const runMigrations = database.transaction(() => {
     // --- chat v1 → v2: `chat_sessions.last_delivered_seq` (Decision 4) ---
@@ -275,7 +275,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
       }
     }
 
-    // --- v1 → v2: make project/assignment nullable, add description ---
+    // --- v1 → v2: make project/ticket nullable, add description ---
     const vBeforeV2 = (
       database
         .prepare("SELECT value FROM meta WHERE key = 'schema_version'")
@@ -301,7 +301,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
         DROP TABLE sessions;
         ALTER TABLE sessions_v2 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(project_slug, assignment_slug);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '2' WHERE key = 'schema_version';
       `);
@@ -362,7 +362,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
         DROP TABLE sessions;
         ALTER TABLE sessions_v3 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(project_slug, assignment_slug);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '3' WHERE key = 'schema_version';
       `);
@@ -399,7 +399,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
         DROP TABLE sessions;
         ALTER TABLE sessions_v4 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(project_slug, assignment_slug);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '4' WHERE key = 'schema_version';
       `);
@@ -437,13 +437,13 @@ export function initSessionDb(dbPath?: string): Database.Database {
         DROP TABLE sessions;
         ALTER TABLE sessions_v5 RENAME TO sessions;
         CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_slug);
-        CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+        CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(project_slug, assignment_slug);
         CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
         UPDATE meta SET value = '5' WHERE key = 'schema_version';
       `);
     }
 
-    // --- v5 → v6: move the scalar assignment binding onto the engagement edge
+    // --- v5 → v6: move the scalar ticket binding onto the engagement edge
     // and add the `activity` liveness column — ONE migration. Order matters:
     // create engagement, backfill from the still-present slug columns, THEN drop
     // them. All inside this EXCLUSIVE transaction so it is crash-atomic.
@@ -775,7 +775,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
   // to a scan, which is the right trade: they are deliberate, rare, and a full
   // index would tax every write to serve them.
   //
-  // Only the two `started` sorts are covered. `assignment_asc` / `agent_asc`
+  // Only the two `started` sorts are covered. `ticket_asc` / `agent_asc`
   // order on joined engagement columns and were ALREADY unindexed before this
   // change, so the pin prefix costs them nothing.
   db.exec(`
@@ -942,7 +942,12 @@ async function parseMarkdownSessionsIndex(
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    if (trimmed.startsWith('| Assignment') || trimmed.startsWith('|Assignment')) {
+    if (
+      trimmed.startsWith('| Ticket') ||
+      trimmed.startsWith('|Ticket') ||
+      trimmed.startsWith('| Assignment') ||
+      trimmed.startsWith('|Assignment')
+    ) {
       inTable = true;
       headerSeen = false;
       continue;

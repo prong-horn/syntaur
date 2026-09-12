@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS events (
   details TEXT,
   source_key TEXT UNIQUE
 );
-CREATE INDEX IF NOT EXISTS idx_events_assignment_at ON events(assignment_id, at);
+CREATE INDEX IF NOT EXISTS idx_events_ticket_at ON events(assignment_id, at);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 `;
@@ -49,8 +49,6 @@ interface InsertEventRow {
 /** Caller-facing input for the single exported writer, `recordEvent`. */
 export interface RecordEventInput {
   ticketId?: string;
-  /** @deprecated Dashboard/migrate compat until Task 2 */
-  assignmentId?: string;
   projectSlug?: string | null;
   type: string;
   /** Object (JSON-stringified before storage) or a pre-stringified string. NEVER pass secrets/raw bodies. */
@@ -167,7 +165,7 @@ function insertEvent(row: InsertEventRow): void {
 export function recordEvent(input: RecordEventInput): void {
   try {
     if (!db) initEventsDb();
-    const ticketId = input.ticketId ?? input.assignmentId;
+    const ticketId = input.ticketId;
     if (!ticketId) throw new Error('recordEvent requires ticketId');
 
     let details: string | null = null;
@@ -195,7 +193,7 @@ export function recordEvent(input: RecordEventInput): void {
  * List events for a ticket, newest-first (`ORDER BY at DESC`). Optional
  * filters: `since` (`at >= since`), `types` (`type IN (...)`), `limit`.
  */
-export function listEventsByAssignment(
+export function listEventsByTicket(
   ticketId: string,
   filters?: ListEventsFilters,
 ): EventRow[] {
@@ -233,7 +231,7 @@ export function listEventsByAssignment(
  * dry-run preview count — NOT as an idempotency gate (idempotency is the
  * `source_key` UNIQUE constraint via `INSERT OR IGNORE`).
  */
-export function hasEventsForAssignment(ticketId: string): boolean {
+export function hasEventsForTicket(ticketId: string): boolean {
   const database = getEventsDb();
   const row = database
     .prepare('SELECT 1 FROM events WHERE assignment_id = ? LIMIT 1')

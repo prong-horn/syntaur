@@ -16,7 +16,7 @@ interface DoctorOptions {
   ticket?: string;
 }
 
-interface AssignmentValidationResult {
+interface TicketValidationResult {
   ok: boolean;
   path: string;
   errors: string[];
@@ -35,7 +35,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
 export async function validateTicketFile(
   inputPath: string,
   cwd: string = process.cwd(),
-): Promise<AssignmentValidationResult> {
+): Promise<TicketValidationResult> {
   const absolute = isAbsolute(inputPath) ? inputPath : resolve(cwd, inputPath);
   const errors: string[] = [];
   const warnings: string[] = [];

@@ -29,8 +29,6 @@ export function chatLogPath(ticketDir: string): string {
 
 export interface AppendEventInput {
   ticketId?: string;
-  /** @deprecated test compat until Phase A settles */
-  assignmentId?: string;
   agentId: string;
   sessionKey: string;
   turnId: string | null;
@@ -77,7 +75,7 @@ export async function openChatLog(ticketDir: string): Promise<ChatLog> {
       const event: ChatEvent = {
         seq: seq++,
         ts: input.ts ?? new Date().toISOString(),
-        ticketId: input.ticketId ?? input.assignmentId ?? '',
+        ticketId: input.ticketId ?? '',
         agentId: input.agentId,
         sessionKey: input.sessionKey,
         turnId: input.turnId,

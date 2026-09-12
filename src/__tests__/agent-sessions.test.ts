@@ -42,7 +42,7 @@ let dbPath: string;
 function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     projectSlug: 'test-project',
-    ticketSlug: 'test-assignment',
+    ticketSlug: 'test-ticket',
     agent: 'claude',
     sessionId: `session-${Math.random().toString(36).slice(2, 10)}`,
     started: '2026-03-26T10:00:00Z',
@@ -74,12 +74,12 @@ describe('appendSession + listAllSessions', () => {
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe(session.sessionId);
     expect(all[0].projectSlug).toBe('test-project');
-    expect(all[0].ticketSlug).toBe('test-assignment');
+    expect(all[0].ticketSlug).toBe('test-ticket');
     expect(all[0].agent).toBe('claude');
     expect(all[0].status).toBe('active');
   });
 
-  it('inserts and retrieves a standalone session (null project/assignment)', async () => {
+  it('inserts and retrieves a standalone session (null project/ticket)', async () => {
     const session = makeSession({ projectSlug: null, ticketSlug: null, description: 'standalone test' });
     await appendSession('', session);
 
@@ -212,7 +212,7 @@ describe('reconcileActiveSessions', () => {
   it('marks sessions as completed when ticket is completed', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
@@ -231,7 +231,7 @@ describe('reconcileActiveSessions', () => {
   it('marks sessions as stopped when ticket is failed', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
@@ -247,10 +247,10 @@ describe('reconcileActiveSessions', () => {
     expect(all[0].status).toBe('stopped');
   });
 
-  it('skips standalone sessions (null project/assignment)', async () => {
+  it('skips standalone sessions (null project/ticket)', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
@@ -271,10 +271,10 @@ describe('reconcileActiveSessions', () => {
     expect(standalone?.status).toBe('active');
   });
 
-  it('does not update sessions for in-progress assignments', async () => {
+  it('does not update sessions for in-progress tickets', async () => {
     const projectsDir = resolve(testDir, 'projects');
     const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
+    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
@@ -306,7 +306,7 @@ activeSessions: 1
 
 # Active Sessions
 
-| Assignment | Agent | Session ID | Started | Status | Path |
+| Ticket | Agent | Session ID | Started | Status | Path |
 |------------|-------|------------|---------|--------|------|
 | task-1 | claude | sess-abc | 2026-03-26T10:00:00Z | active | /tmp/work |
 | task-2 | codex | sess-def | 2026-03-26T09:00:00Z | completed | /tmp/other |
@@ -344,7 +344,7 @@ activeSessions: 1
 
 # Active Sessions
 
-| Assignment | Agent | Session ID | Started | Status | Path |
+| Ticket | Agent | Session ID | Started | Status | Path |
 |------------|-------|------------|---------|--------|------|
 | task-r | claude | sess-root | 2026-03-26T10:00:00Z | stopped | / |
 `,
@@ -374,7 +374,7 @@ activeSessions: 2
 
 # Active Sessions
 
-| Assignment | Agent | Session ID | Started | Status | Path |
+| Ticket | Agent | Session ID | Started | Status | Path |
 |------------|-------|------------|---------|--------|------|
 | task-1 | claude | dup-sess | 2026-03-26T10:00:00Z | completed | /tmp/work |
 | task-1 | claude | dup-sess | 2026-03-26T11:00:00Z | active | /tmp/work |
@@ -405,7 +405,7 @@ activeSessions: 1
 
 # Active Sessions
 
-| Assignment | Agent | Session ID | Started | Status | Path |
+| Ticket | Agent | Session ID | Started | Status | Path |
 |------------|-------|------------|---------|--------|------|
 | task-1 | claude | sess-xyz | 2026-03-26T10:00:00Z | active | /tmp/work |
 `,
@@ -444,7 +444,7 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX idx_sessions_project ON sessions(project_slug);
-      CREATE INDEX idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+      CREATE INDEX idx_sessions_ticket ON sessions(project_slug, assignment_slug);
       CREATE INDEX idx_sessions_status ON sessions(status);
       CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
       INSERT INTO meta (key, value) VALUES ('schema_version', '2');
@@ -604,7 +604,7 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at, later dropped by
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX idx_sessions_project ON sessions(project_slug);
-      CREATE INDEX idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+      CREATE INDEX idx_sessions_ticket ON sessions(project_slug, assignment_slug);
       CREATE INDEX idx_sessions_status ON sessions(status);
       CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
       INSERT INTO meta (key, value) VALUES ('schema_version', '3');
@@ -671,7 +671,7 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       );
       CREATE INDEX idx_sessions_project ON sessions(project_slug);
-      CREATE INDEX idx_sessions_assignment ON sessions(project_slug, assignment_slug);
+      CREATE INDEX idx_sessions_ticket ON sessions(project_slug, assignment_slug);
       CREATE INDEX idx_sessions_status ON sessions(status);
       CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
       INSERT INTO meta (key, value) VALUES ('schema_version', '4');
@@ -1116,7 +1116,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
         e2 = switchEngagement({
           sessionId: 's-race',
           projectSlug: 'test-project',
-          ticketSlug: 'test-assignment',
+          ticketSlug: 'test-ticket',
           stage: 'review',
           startedAt: '2026-03-26T11:00:00.000Z',
         });
@@ -1182,7 +1182,7 @@ describe('H2: open-baseline token snapshot on every runtime open', () => {
 
     const open = getOpenEngagement('h2-rec');
     expect(open).not.toBeNull();
-    expect(open!.assignment_slug).toBe('test-assignment'); // binding recovered
+    expect(open!.assignment_slug).toBe('test-ticket'); // binding recovered
     expect(parseSnapshot(open!.tokens_at_open)).toEqual(SAMPLE);
   });
 

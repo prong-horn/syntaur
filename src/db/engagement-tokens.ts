@@ -4,7 +4,7 @@
  * Per-stage cost (a FUTURE ticket) = tokens_at_close − tokens_at_open for an
  * engagement. This module only handles **capture**: it produces a `TokenSnapshot`
  * — a per-model cumulative map plus provenance — that callers snapshot ONCE at a
- * stage/assignment transition and store verbatim in `engagement.tokens_at_open`/
+ * stage/ticket transition and store verbatim in `engagement.tokens_at_open`/
  * `tokens_at_close`. See decision-record.md Decision 2.
  *
  * Design choices (Decision 2, finalized):

@@ -81,7 +81,7 @@ ${criteriaLines}
 
 ## Context
 
-<!-- Links to relevant docs, code, or other assignments. -->
+<!-- Links to relevant docs, code, or other tickets. -->
 
 ## Links
 

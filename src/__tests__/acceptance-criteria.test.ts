@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { toggleAcceptanceCriterion } from '../dashboard/acceptance-criteria.js';
 
-const ASSIGNMENT_WITH_CRITERIA = `---
-id: assignment-1
-slug: test-assignment
-title: Test Assignment
+const TICKET_WITH_CRITERIA = `---
+id: ticket-1
+slug: test-ticket
+title: Test Ticket
 status: pending
 priority: medium
 created: "2026-03-20T10:00:00Z"
@@ -21,7 +21,7 @@ workspace:
 tags: []
 ---
 
-# Test Assignment
+# Test Ticket
 
 ## Objective
 
@@ -39,7 +39,7 @@ Notes go here.
 
 describe('toggleAcceptanceCriterion', () => {
   it('toggles an unchecked criterion to checked without changing other content', () => {
-    const result = toggleAcceptanceCriterion(ASSIGNMENT_WITH_CRITERIA, 0, true);
+    const result = toggleAcceptanceCriterion(TICKET_WITH_CRITERIA, 0, true);
     expect('error' in result).toBe(false);
     expect((result as { content: string }).content).toContain('- [x] First criterion');
     expect((result as { content: string }).content).toContain('- [x] Second criterion');
@@ -47,7 +47,7 @@ describe('toggleAcceptanceCriterion', () => {
   });
 
   it('toggles a checked criterion back to unchecked', () => {
-    const result = toggleAcceptanceCriterion(ASSIGNMENT_WITH_CRITERIA, 1, false);
+    const result = toggleAcceptanceCriterion(TICKET_WITH_CRITERIA, 1, false);
     expect('error' in result).toBe(false);
     expect((result as { content: string }).content).toContain('- [ ] Second criterion');
   });
@@ -59,7 +59,7 @@ describe('toggleAcceptanceCriterion', () => {
   });
 
   it('rejects an out-of-range checklist index', () => {
-    expect(toggleAcceptanceCriterion(ASSIGNMENT_WITH_CRITERIA, 3, true)).toEqual({
+    expect(toggleAcceptanceCriterion(TICKET_WITH_CRITERIA, 3, true)).toEqual({
       error: 'Acceptance criteria item 3 not found.',
     });
   });

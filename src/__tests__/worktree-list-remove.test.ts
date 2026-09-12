@@ -27,7 +27,7 @@ function git(cwd: string, args: string[]): void {
   if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${r.stderr}`);
 }
 
-const ASSIGNMENT = `---
+const TICKET = `---
 id: aaaa
 slug: a
 title: "A"
@@ -65,7 +65,7 @@ describe('syntaur worktree list/remove', () => {
     await mkdir(dir, { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
     ticketPath = resolve(dir, 'ticket.md');
-    await writeFile(ticketPath, ASSIGNMENT, 'utf-8');
+    await writeFile(ticketPath, TICKET, 'utf-8');
   });
 
   afterEach(async () => {

@@ -100,18 +100,18 @@ describe('syntaur ls', () => {
     await rm(syntaurHome, { recursive: true, force: true });
   });
 
-  it('lists all assignments with --json', async () => {
+  it('lists all tickets with --json', async () => {
     const r = await runCli(['ls', '--json'], syntaurHome);
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
-    expect(data.assignments).toHaveLength(3);
+    expect(data.tickets).toHaveLength(3);
   });
 
   it('filters by --status', async () => {
     const r = await runCli(['ls', '--status', 'pending', '--json'], syntaurHome);
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
-    const slugs = data.assignments.map((a: { slug: string }) => a.slug).sort();
+    const slugs = data.tickets.map((a: { slug: string }) => a.slug).sort();
     expect(slugs).toEqual(['a-old', 'a-pending']);
   });
 
@@ -119,7 +119,7 @@ describe('syntaur ls', () => {
     const r = await runCli(['ls', '--age', '30d', '--json'], syntaurHome);
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
-    const slugs = data.assignments.map((a: { slug: string }) => a.slug).sort();
+    const slugs = data.tickets.map((a: { slug: string }) => a.slug).sort();
     expect(slugs).toEqual(['a-pending', 'a-progress']);
   });
 
@@ -127,8 +127,8 @@ describe('syntaur ls', () => {
     const r = await runCli(['ls', '--tag', 'x,y', '--json'], syntaurHome);
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
-    expect(data.assignments).toHaveLength(1);
-    expect(data.assignments[0].slug).toBe('a-pending');
+    expect(data.tickets).toHaveLength(1);
+    expect(data.tickets[0].slug).toBe('a-pending');
   });
 
   it('hides archived by default and shows only archived with --archived', async () => {
@@ -143,14 +143,14 @@ describe('syntaur ls', () => {
 
     const def = await runCli(['ls', '--json'], syntaurHome);
     expect(def.code, def.stderr).toBe(0);
-    const defSlugs = JSON.parse(def.stdout).assignments.map((a: { slug: string }) => a.slug);
+    const defSlugs = JSON.parse(def.stdout).tickets.map((a: { slug: string }) => a.slug);
     expect(defSlugs).not.toContain('a-archived');
     expect(defSlugs).toHaveLength(3);
 
     const arch = await runCli(['ls', '--archived', '--json'], syntaurHome);
     expect(arch.code, arch.stderr).toBe(0);
-    const archAssignments = JSON.parse(arch.stdout).assignments;
-    expect(archAssignments).toHaveLength(1);
-    expect(archAssignments[0].slug).toBe('a-archived');
+    const archTickets = JSON.parse(arch.stdout).tickets;
+    expect(archTickets).toHaveLength(1);
+    expect(archTickets[0].slug).toBe('a-archived');
   });
 });

@@ -9,7 +9,7 @@ import {
 
 /**
  * Result of attempting to recreate a deleted worktree for a target. Router-
- * agnostic so both the assignment routes (`api-write.ts`) and the session route
+ * agnostic so both the ticket routes (`api-write.ts`) and the session route
  * (`api-agent-sessions.ts`) map the same outcomes to HTTP without duplicating
  * the resolve → validate → rebuild logic.
  */
@@ -24,7 +24,7 @@ export type RecreateOutcome =
 
 /**
  * Recreate the worktree for a target, deriving the EXACT path + git inputs from
- * persisted state (assignment frontmatter / session row) — never from a client-
+ * persisted state (ticket frontmatter / session row) — never from a client-
  * supplied path. Bypasses the create-flow's "worktree already configured" /
  * "branch already exists" 409 guards, because recreate intentionally rebuilds at
  * an already-recorded path with a possibly-existing branch.
@@ -35,7 +35,7 @@ export async function recreateForTarget(
 ): Promise<RecreateOutcome> {
   const t = await resolveRecreateTarget(deps, target);
   if (!t) return { status: 'not-found' };
-  // An assignment can validly have a repository but no worktree path; that is
+  // An ticket can validly have a repository but no worktree path; that is
   // not a recreate case (nothing recorded to rebuild).
   if (t.worktreePath === '') return { status: 'no-path' };
   // Idempotent: another concurrent click already rebuilt it. The re-fired

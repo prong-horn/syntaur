@@ -26,7 +26,7 @@ async function runCli(args: string[], cwd: string, syntaurHome: string): Promise
   });
 }
 
-const ASSIGNMENT_MD = `---
+const TICKET_MD = `---
 id: abc-1
 slug: demo
 title: "Demo"
@@ -97,7 +97,7 @@ describe('syntaur plan version', () => {
     );
     ticketDir = resolve(projectsDir, 'p', 'tickets', 'demo');
     await mkdir(ticketDir, { recursive: true });
-    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT_MD);
+    await writeFile(resolve(ticketDir, 'ticket.md'), TICKET_MD);
     await writeFile(resolve(ticketDir, 'plan.md'), PLAN_MD);
   });
 
@@ -127,13 +127,13 @@ describe('syntaur plan version', () => {
   });
 
   it('does NOT rewrite non-canonical checkbox lines that happen to reference the old plan link', async () => {
-    const customAssignment = ASSIGNMENT_MD.replace(
+    const customTicket = TICKET_MD.replace(
       '- [ ] Implement [plan](./plan.md)\n- [ ] Review implementation of [plan](./plan.md)',
       `- [ ] Implement [plan](./plan.md)
 - [ ] Review implementation of [plan](./plan.md)
 - [ ] Custom follow-up referencing [plan](./plan.md) in prose`,
     );
-    await writeFile(resolve(ticketDir, 'ticket.md'), customAssignment);
+    await writeFile(resolve(ticketDir, 'ticket.md'), customTicket);
     const result = await runCli(
       ['plan', 'version', '--ticket', 'demo', '--project', 'p'],
       syntaurHome,

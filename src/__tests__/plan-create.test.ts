@@ -21,7 +21,7 @@ async function runCli(args: string[], home: string): Promise<RunResult> {
   });
 }
 
-const ASSIGNMENT = `---
+const TICKET = `---
 id: aaaa
 slug: a
 title: "A"
@@ -46,7 +46,7 @@ describe('syntaur plan create', () => {
     ticketDir = resolve(home, 'projects', 'p', 'tickets', 'a');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(home, 'projects', 'p', 'project.md'), '---\nslug: p\ntitle: "P"\n---\n# P\n', 'utf-8');
-    await writeFile(resolve(ticketDir, 'ticket.md'), ASSIGNMENT, 'utf-8');
+    await writeFile(resolve(ticketDir, 'ticket.md'), TICKET, 'utf-8');
   });
 
   afterEach(async () => {

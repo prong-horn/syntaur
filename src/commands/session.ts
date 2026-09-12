@@ -50,7 +50,7 @@ async function readContext(cwd: string): Promise<ContextFile | null> {
 
 async function findOpenHandoff(ticketDir: string): Promise<string | null> {
   // The Syntaur protocol uses a single root handoff.md per ticket (managed
-  // by complete-assignment). Surface it whenever it exists and has any body
+  // by complete-ticket). Surface it whenever it exists and has any body
   // content beyond the placeholder so the resuming agent reads the latest
   // outbound baton. We treat any non-empty handoff.md as a signal — there is
   // currently no per-handoff `status: open` flag in the canonical schema.
@@ -88,7 +88,7 @@ interface ResumeOutput {
   warnings: string[];
 }
 
-/** Read the `title:` frontmatter field from a resolved assignment's ticket.md. */
+/** Read the `title:` frontmatter field from a resolved ticket's ticket.md. */
 async function readTicketTitle(ticketDir: string): Promise<string | null> {
   const path = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(path))) return null;
@@ -167,18 +167,18 @@ function renderHumanOutput(out: ResumeOutput): string {
     for (const w of out.warnings) lines.push(`  - ${w}`);
     return lines.join('\n');
   }
-  // Assignment dir/slugs come from the RESOLVED engagement target; branch and
+  // Ticket dir/slugs come from the RESOLVED engagement target; branch and
   // workspace-root are workspace markers still read from context.json.
   const asg = out.ticket!;
   const ctx = out.context;
   lines.push('Resuming Syntaur session');
   lines.push('');
   lines.push(`  Project:        ${asg.projectSlug ?? '(standalone)'}`);
-  lines.push(`  Assignment:     ${asg.ticketSlug ?? asg.id}`);
+  lines.push(`  Ticket:     ${asg.ticketSlug ?? asg.id}`);
   if (asg.title) lines.push(`  Title:          ${asg.title}`);
   if (ctx?.branch) lines.push(`  Branch:         ${ctx.branch}`);
   if (ctx?.workspaceRoot) lines.push(`  Workspace root: ${ctx.workspaceRoot}`);
-  lines.push(`  Assignment dir: ${asg.ticketDir}`);
+  lines.push(`  Ticket dir: ${asg.ticketDir}`);
   if (out.openHandoff) {
     lines.push('');
     lines.push(`Open handoff: ${out.openHandoff}`);
@@ -399,7 +399,7 @@ export async function runSessionRegister(
     {
       // UNATTRIBUTED on register. The SessionStart hook no longer auto-binds the
       // ticket from the cwd context.json scalar — that cwd-scalar auto-bind is
-      // the multi-assignment-in-one-worktree clobber being eliminated. A session
+      // the multi-ticket-in-one-worktree clobber being eliminated. A session
       // binds its ticket explicitly via `syntaur track-session --project
       // --ticket` (the grab flow); on a resume/revive `appendSession` recovers
       // the binding from the session's OWN latest engagement (reviveStopped below).

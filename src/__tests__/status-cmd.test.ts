@@ -36,7 +36,7 @@ describe('syntaur status', () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-status-'));
     // defaultProjectDir must point at THIS temp home so remove/rename scans
-    // resolve the fixture assignments (the CLI scans config.defaultProjectDir).
+    // resolve the fixture tickets (the CLI scans config.defaultProjectDir).
     await writeFile(
       resolve(home, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
@@ -155,7 +155,7 @@ describe('syntaur status', () => {
     expect(await readFile(path, 'utf-8')).toContain('status: in_progress');
   });
 
-  it('remove --force edits config only and never deletes the affected assignment', async () => {
+  it('remove --force edits config only and never deletes the affected ticket', async () => {
     await runCli(['status', 'init'], home);
     const path = await writeTicket('a', 'in_progress');
     const r = await runCli(['status', 'remove', 'in_progress', '--force'], home);
@@ -374,7 +374,7 @@ describe('syntaur status', () => {
       expect((await list()).statuses.some((s) => s.id === 'draft')).toBe(true);
     });
 
-    it('(f) status rename only rewrites assignments resolving to the target workflow', async () => {
+    it('(f) status rename only rewrites tickets resolving to the target workflow', async () => {
       // Two workflows share the `in_progress` status id. defaultWorkflow = default.
       await seedWorkflows(
         {

@@ -12,7 +12,7 @@
  * isn't a stage in this workflow).
  */
 
-import type { AssignmentFacts } from './derive.js';
+import type { TicketFacts } from './derive.js';
 import type {
   TicketFrontmatter,
   FrozenCheck,
@@ -94,7 +94,7 @@ function hopToHistory(hop: Hop, at: string, cause: string, by: string | null): S
 export function computeEngineStep(input: {
   content: string;
   frontmatter: TicketFrontmatter;
-  facts: AssignmentFacts;
+  facts: TicketFacts;
   workflow: StageWorkflow;
   env: AttestationEnv;
   move: EngineMove;

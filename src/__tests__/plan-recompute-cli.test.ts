@@ -20,7 +20,7 @@ async function runCli(args: string[], home: string): Promise<{ code: number; std
   });
 }
 
-const ASSIGNMENT = `---
+const TICKET = `---
 id: pr-test-id
 slug: pr-test
 title: "Plan Recompute Test"
@@ -69,7 +69,7 @@ describe('plan create/version recompute derived status at the source', () => {
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     aPath = join(aDir, 'ticket.md');
-    await writeFile(aPath, ASSIGNMENT);
+    await writeFile(aPath, TICKET);
   });
 
   afterEach(async () => {

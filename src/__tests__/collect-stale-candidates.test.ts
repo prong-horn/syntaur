@@ -78,7 +78,7 @@ afterEach(async () => {
 });
 
 describe('collectStaleCandidates', () => {
-  it('returns only contradiction-stale assignments, keyed by id with reasons', async () => {
+  it('returns only contradiction-stale tickets, keyed by id with reasons', async () => {
     const candidates = await collectStaleCandidates(projectsDir, resolve(testDir, 'standalone'));
     const ids = candidates.map((c) => c.ticketId);
     expect(ids).toContain('stale-1');

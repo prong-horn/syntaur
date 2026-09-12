@@ -11,7 +11,7 @@ import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import {
   runEngineTransition,
   runEngineOverride,
-  isEngineActiveForAssignment,
+  isEngineActiveForTicket,
 } from '../lifecycle/engine-transition.js';
 import { assertStageFactOnOpen } from '../lifecycle/stage-fact-bridge.js';
 import { reopenCommand } from '../commands/reopen.js';
@@ -307,15 +307,15 @@ describe('runEngineTransition / runEngineOverride — the CLI+dashboard adapters
     expect(parseTicketFrontmatter(await readFile(path, 'utf-8')).status).toBe('building');
   });
 
-  it('isEngineActiveForAssignment: true only with marker AND a resolved workflow', async () => {
+  it('isEngineActiveForTicket: true only with marker AND a resolved workflow', async () => {
     const withWf = await writeTicket(ticketMd({ status: 'building' }));
     // marker unset → false even though the workflow resolves.
-    expect(await isEngineActiveForAssignment(withWf, null)).toBe(false);
+    expect(await isEngineActiveForTicket(withWf, null)).toBe(false);
     await markStagesMigrated();
-    expect(await isEngineActiveForAssignment(withWf, null)).toBe(true);
+    expect(await isEngineActiveForTicket(withWf, null)).toBe(true);
     // marker set but the ticket resolves to no per-file workflow → false.
     const noWf = await writeTicket(ticketMd({ status: 'draft', workflow: null }));
-    expect(await isEngineActiveForAssignment(noWf, null)).toBe(false);
+    expect(await isEngineActiveForTicket(noWf, null)).toBe(false);
   });
 
   it('stage-fact bridge passes the work-start verb (WS-3 Task 0): implement does not fire a request-review route', async () => {

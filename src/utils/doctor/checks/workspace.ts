@@ -21,15 +21,15 @@ interface ContextFile {
   boundAt?: string;
 }
 
-const ASSIGNMENT_FIELDS = ['projectSlug', 'ticketSlug', 'projectDir', 'ticketDir'] as const;
+const TICKET_FIELDS = ['projectSlug', 'ticketSlug', 'projectDir', 'ticketDir'] as const;
 // context.json is a WORKSPACE MARKER now — these are the fields the launcher/grab
 // flow writes. The active ticket resolves from the session's open engagement,
 // NOT from this file (the legacy ticket scalars were removed).
 const WORKSPACE_MARKER_FIELDS = ['repository', 'worktreePath', 'workspaceRoot', 'branch'] as const;
 
-function hasAnyAssignmentField(ctx: ContextFile | null): boolean {
+function hasAnyTicketField(ctx: ContextFile | null): boolean {
   if (!ctx) return false;
-  return ASSIGNMENT_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
+  return TICKET_FIELDS.some((k) => typeof ctx[k] === 'string' && ctx[k]!.length > 0);
 }
 
 function hasWorkspaceMarker(ctx: ContextFile | null): boolean {
@@ -44,7 +44,7 @@ function isStandaloneSession(ctx: ContextFile | null): boolean {
   const hasSessionMeta =
     (typeof ctx.sessionId === 'string' && ctx.sessionId.length > 0) ||
     (typeof ctx.transcriptPath === 'string' && ctx.transcriptPath.length > 0);
-  return !hasAnyAssignmentField(ctx) && hasSessionMeta;
+  return !hasAnyTicketField(ctx) && hasSessionMeta;
 }
 
 async function loadContext(ctx: CheckContext): Promise<{
@@ -100,7 +100,7 @@ const contextValid: Check = {
     // (or legacy ticket scalars from before the demotion) is valid. The
     // active ticket resolves from the session's open engagement, so the
     // ticket scalars are no longer a required part of this file's contract.
-    if (hasWorkspaceMarker(data) || hasAnyAssignmentField(data)) {
+    if (hasWorkspaceMarker(data) || hasAnyTicketField(data)) {
       return pass(this, 'workspace marker context');
     }
     return {
@@ -116,8 +116,8 @@ const contextValid: Check = {
   },
 };
 
-const contextAssignmentResolves: Check = {
-  id: 'workspace.context-assignment-resolves',
+const contextTicketResolves: Check = {
+  id: 'workspace.context-ticket-resolves',
   category: CATEGORY,
   title: 'Context references a ticket that exists on disk',
   async run(ctx) {
@@ -125,15 +125,15 @@ const contextAssignmentResolves: Check = {
     if (!exists) return skipped(this, 'no context to resolve');
     if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no ticket to resolve');
     if (!data?.ticketDir) return skipped(this, 'context has no ticketDir');
-    const assignmentMd = resolve(data.ticketDir, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) {
+    const ticketMd = resolve(data.ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMd))) {
       return {
         id: this.id,
         category: this.category,
         title: this.title,
         status: 'error',
         detail: `context points to ${data.ticketDir} but ticket.md is missing`,
-        affected: [assignmentMd, path],
+        affected: [ticketMd, path],
         remediation: {
           kind: 'manual',
           suggestion: 'Remove the stale .syntaur/context.json or restore the ticket',
@@ -155,10 +155,10 @@ const contextTerminal: Check = {
     if (!exists) return skipped(this, 'no context to check');
     if (isStandaloneSession(data)) return skipped(this, 'standalone session context — no ticket to check');
     if (!data?.ticketDir) return skipped(this, 'context has no ticketDir');
-    const assignmentMd = resolve(data.ticketDir, 'ticket.md');
-    if (!(await fileExists(assignmentMd))) return skipped(this, 'ticket file missing');
+    const ticketMd = resolve(data.ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMd))) return skipped(this, 'ticket file missing');
     try {
-      const content = await readFile(assignmentMd, 'utf-8');
+      const content = await readFile(ticketMd, 'utf-8');
       const parsed = parseTicketFull(content);
       // Terminality per the ticket's OWN workflow (custom terminal statuses).
       const parent = dirname(data.ticketDir);
@@ -171,7 +171,7 @@ const contextTerminal: Check = {
           title: this.title,
           status: 'warn',
           detail: `context references ticket with terminal status "${parsed.status}"`,
-          affected: [assignmentMd],
+          affected: [ticketMd],
           remediation: {
             kind: 'manual',
             suggestion: 'Grab a new ticket or remove the stale .syntaur/context.json',
@@ -187,7 +187,7 @@ const contextTerminal: Check = {
   },
 };
 
-export const workspaceChecks: Check[] = [contextValid, contextAssignmentResolves, contextTerminal];
+export const workspaceChecks: Check[] = [contextValid, contextTicketResolves, contextTerminal];
 
 function pass(check: { id: string; category: string; title: string }, detail?: string): CheckResult {
   return {

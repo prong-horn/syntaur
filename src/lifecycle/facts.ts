@@ -13,7 +13,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
-import { type AssignmentFacts, factFieldNames } from './derive.js';
+import { type TicketFacts, factFieldNames } from './derive.js';
 import { parseTicketFrontmatter } from './frontmatter.js';
 import type { TicketFrontmatter, AttestationRecord } from './types.js';
 import type { FactDeclaration } from '../utils/config.js';
@@ -161,8 +161,6 @@ export async function areDependenciesSatisfied(
 
 export interface ComputeFactsInput {
   ticketDir?: string;
-  /** @deprecated Dashboard/migrate compat until Task 2 */
-  assignmentDir?: string;
   frontmatter: TicketFrontmatter;
   body: string;
   /** Project dir for dependency checks; null for standalone tickets. */
@@ -218,7 +216,7 @@ export interface AttestationDetail {
 }
 
 export interface ComputeFactsResult {
-  facts: AssignmentFacts;
+  facts: TicketFacts;
   attestations: AttestationDetail[];
 }
 
@@ -311,7 +309,7 @@ export async function resolveBindingEnv(
  * is a thin delegate returning just `.facts`.
  */
 export async function computeFactsDetailed(input: ComputeFactsInput): Promise<ComputeFactsResult> {
-  const ticketDir = input.ticketDir ?? input.assignmentDir;
+  const ticketDir = input.ticketDir;
   if (!ticketDir) throw new Error('computeFactsDetailed requires ticketDir');
   const { frontmatter, body, projectDir, terminalStatuses } = input;
   const declarations = input.declarations ?? [];
@@ -340,7 +338,7 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
     planFileDigest !== null &&
     approval.digest === planFileDigest;
 
-  const facts: AssignmentFacts = {
+  const facts: TicketFacts = {
     hasRealObjective: hasRealObjective(body),
     acRealTotal: ac.total,
     acRealChecked: ac.checked,
@@ -353,7 +351,7 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
     // migration — the work-start bridge sets/clears them inside the same CAS
     // payload as the engine move. They must keep exporting from frontmatter:
     // the compiled default gates hold on `NOT reworkRequested:true`, and
-    // downstream AssignmentFacts consumers (inbox, payload mirrors) read them.
+    // downstream TicketFacts consumers (inbox, payload mirrors) read them.
     implementationStarted: frontmatter.implementationStarted,
     depsSatisfied,
     unresolvedQuestions,
@@ -413,6 +411,6 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
 }
 
 /** Materialize the full fact set for one ticket (thin delegate). */
-export async function computeFacts(input: ComputeFactsInput): Promise<AssignmentFacts> {
+export async function computeFacts(input: ComputeFactsInput): Promise<TicketFacts> {
   return (await computeFactsDetailed(input)).facts;
 }

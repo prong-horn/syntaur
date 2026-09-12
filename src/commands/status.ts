@@ -42,8 +42,8 @@ function renameTicketStatusRefs(content: string, id: string, newId: string, now:
   return renameStatusInHistory(next, id, newId);
 }
 import {
-  scanAssignmentsReferencingStatus,
-  type AffectedAssignment,
+  scanTicketsReferencingStatus,
+  type AffectedTicket,
   type WorkflowScanScope,
 } from '../utils/status-config-resolution.js';
 
@@ -187,7 +187,7 @@ async function persistBundle(bundle: EffectiveBundle, after: StatusConfig): Prom
   await writeStatusConfig(after);
 }
 
-/** Scope a remove/rename scan to the target workflow's assignments when a
+/** Scope a remove/rename scan to the target workflow's tickets when a
  * `workflows:` map exists, so a rename/remove never rewrites or blocks on tickets
  * bound to OTHER workflows sharing the same status id. Legacy configs have one
  * lifecycle → no scoping needed (byte-identical to prior behavior). */
@@ -510,7 +510,7 @@ export async function runStatusReorder(csv: string, opts: { dryRun?: boolean }):
 
 // ----- remove ---------------------------------------------------------------
 
-function formatAffected(list: AffectedAssignment[]): string {
+function formatAffected(list: AffectedTicket[]): string {
   return list.map((a) => `  - ${a.display}`).join('\n');
 }
 
@@ -528,7 +528,7 @@ export async function runStatusRemove(
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned ticket can reference the id only there.
-  const affected = await scanAssignmentsReferencingStatus(
+  const affected = await scanTicketsReferencingStatus(
     projectsDir,
     standaloneDir,
     id,
@@ -537,8 +537,8 @@ export async function runStatusRemove(
 
   if (affected.length > 0 && !opts.force) {
     throw new Error(
-      `${affected.length} assignment(s) still use status "${id}":\n${formatAffected(affected)}\n` +
-        `Re-run with --force to remove the status anyway (the affected assignments keep their now-invalid status; ` +
+      `${affected.length} ticket(s) still use status "${id}":\n${formatAffected(affected)}\n` +
+        `Re-run with --force to remove the status anyway (the affected tickets keep their now-invalid status; ` +
         `\`syntaur doctor\` will flag them).`,
     );
   }
@@ -550,7 +550,7 @@ export async function runStatusRemove(
     order: before.order.filter((o) => o !== id),
     transitions: effectiveTransitions(before).filter((t) => t.from !== id && t.to !== id),
     // Derive rules referencing the removed id are preserved as-is — doctor /
-    // validateDeriveConfig flags them, mirroring the affected-assignments policy.
+    // validateDeriveConfig flags them, mirroring the affected-tickets policy.
     derive: before.derive ?? null,
     // Preserve custom fact declarations across status mutations — same
     // silent-deletion bug class as derive (Settings/CLI rebuild the block).
@@ -560,7 +560,7 @@ export async function runStatusRemove(
   if (opts.dryRun) {
     printBlockDiff(before, after);
     if (affected.length > 0) {
-      console.log(`\n(${affected.length} assignment(s) would be left referencing the removed "${id}".)`);
+      console.log(`\n(${affected.length} ticket(s) would be left referencing the removed "${id}".)`);
     }
     return;
   }
@@ -619,7 +619,7 @@ export async function runStatusRename(
   const { projectsDir, standaloneDir } = await scanDirs();
   // Rename must reach cached `phase` and history phase keys too, not just the
   // headline — a blocked/pinned ticket can reference the id only there.
-  const affected = await scanAssignmentsReferencingStatus(
+  const affected = await scanTicketsReferencingStatus(
     projectsDir,
     standaloneDir,
     id,
@@ -879,9 +879,9 @@ statusCommand
 
 statusCommand
   .command('remove')
-  .description('Remove a status (config-only; affected assignments keep their status)')
+  .description('Remove a status (config-only; affected tickets keep their status)')
   .argument('<id>', 'Status id to remove')
-  .option('--force', 'Remove even when assignments still reference the status')
+  .option('--force', 'Remove even when tickets still reference the status')
   .option('--dry-run', 'Print the diff without writing')
   .action(async (id: string, opts: { force?: boolean; dryRun?: boolean }) => {
     try {

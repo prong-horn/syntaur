@@ -5,7 +5,7 @@ import { resolve, join } from 'node:path';
 import { renderTicket } from '../templates/index.js';
 import { createProjectCommand } from '../commands/create-project.js';
 import { newCommand } from '../commands/new.js';
-import { getTicketTypes, readConfig, DEFAULT_ASSIGNMENT_TYPES } from '../utils/config.js';
+import { getTicketTypes, readConfig, DEFAULT_TICKET_TYPES } from '../utils/config.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
 
 let testDir: string;
@@ -23,7 +23,7 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-describe('assignment template `type` field', () => {
+describe('ticket template `type` field', () => {
   it('renders an explicit type into the frontmatter', () => {
     const out = renderTicket({
       id: 'id-1',
@@ -64,13 +64,13 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const assignmentMd = await readFile(
+    const ticketMd = await readFile(
       resolve(testDir, 'p', 'tickets', 'fix-a-bug', 'ticket.md'),
       'utf-8',
     );
-    expect(assignmentMd).toContain('type: bug');
+    expect(ticketMd).toContain('type: bug');
 
-    const [fm] = extractFrontmatter(assignmentMd);
+    const [fm] = extractFrontmatter(ticketMd);
     expect(getField(fm, 'type')).toBe('bug');
   });
 
@@ -81,11 +81,11 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const assignmentMd = await readFile(
+    const ticketMd = await readFile(
       resolve(testDir, 'p', 'tickets', 'do-thing', 'ticket.md'),
       'utf-8',
     );
-    const [fm] = extractFrontmatter(assignmentMd);
+    const [fm] = extractFrontmatter(ticketMd);
     expect(getField(fm, 'type')).toBe('feature');
   });
 });
@@ -95,7 +95,7 @@ describe('getTicketTypes', () => {
     // readConfig reads from SYNTAUR_HOME/config.md which does not exist here.
     const cfg = await readConfig();
     const types = getTicketTypes(cfg);
-    expect(types).toBe(DEFAULT_ASSIGNMENT_TYPES);
+    expect(types).toBe(DEFAULT_TICKET_TYPES);
     expect(types.default).toBe('feature');
     expect(types.definitions.map((d) => d.id)).toEqual([
       'feature',

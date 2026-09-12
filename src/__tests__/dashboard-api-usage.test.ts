@@ -102,7 +102,7 @@ afterEach(async () => {
 
 /**
  * Seed one CLOSED engagement window so the snapshot-cost reader (M2) has a
- * per-assignment cost. open cost 0 → close cost `costDelta`, so the window cost
+ * per-ticket cost. open cost 0 → close cost `costDelta`, so the window cost
  * equals `costDelta`. Standalone (`projectSlug === ''`) stores `project_slug NULL`.
  */
 function seedWindow(
@@ -191,7 +191,7 @@ describe('GET /api/usage', () => {
 });
 
 describe('GET /api/usage/projects/:projectSlug', () => {
-  it('restricts to a single project and groups by assignment', async () => {
+  it('restricts to a single project and groups by ticket', async () => {
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     seed('p2', 'a1', 300, 2.0);
@@ -244,7 +244,7 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(a1.negativeDeltaCount).toBe(0);
   });
 
-  it('surfaces snapshot-window confidence counts on the per-assignment summary', async () => {
+  it('surfaces snapshot-window confidence counts on the per-ticket summary', async () => {
     const ticketId = 'a1-usage-id';
     await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5);
@@ -260,7 +260,7 @@ describe('GET /api/usage/projects/:projectSlug', () => {
 });
 
 describe('GET /api/tickets/:id/usage', () => {
-  it('returns daily + events for a specific assignment', async () => {
+  it('returns daily + events for a specific ticket', async () => {
     const ticketId = 'a1-usage-id';
     await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5);
@@ -283,7 +283,7 @@ describe('GET /api/tickets/:id/usage', () => {
     seed('p1', 'a1', 100, 0.5);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
-    // M2: per-assignment cost is the snapshot-window delta, not the cumulative row.
+    // M2: per-ticket cost is the snapshot-window delta, not the cumulative row.
     seedWindow('p1', 'a1', 0.5);
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);

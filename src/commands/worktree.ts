@@ -279,13 +279,13 @@ export async function runWorktreeGc(
   const base = options.base ?? 'main';
   const entries = await listWorktrees(repository);
 
-  // Reverse map: canonical worktree path -> owning assignment(s). A path can be
+  // Reverse map: canonical worktree path -> owning ticket(s). A path can be
   // claimed by more than one ticket record; we keep ALL owners so a single
   // completed record can never mask a still-active one (see classification).
   const config = await readConfig();
   const walk = await listTicketsByProject(config.defaultProjectDir, ticketsDir());
   const owners = new Map<string, GcOwner[]>();
-  for (const entry of walk.withAssignmentMd) {
+  for (const entry of walk.withTicketMd) {
     try {
       const content = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
       const fm = parseTicketFrontmatter(content);
@@ -470,7 +470,7 @@ function printGcReport(result: WorktreeGcResult): void {
 }
 
 export const worktreeCommand = new Command('worktree')
-  .description('Manage git worktrees bound to Syntaur assignments');
+  .description('Manage git worktrees bound to Syntaur tickets');
 
 worktreeCommand
   .command('create')

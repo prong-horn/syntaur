@@ -43,6 +43,6 @@ export async function completeCommand(
       workflowResolver,
     });
     const changed = results.filter((r) => r.changed).length;
-    if (changed > 0) console.log(`Re-derived ${changed} dependent assignment(s).`);
+    if (changed > 0) console.log(`Re-derived ${changed} dependent ticket(s).`);
   }
 }

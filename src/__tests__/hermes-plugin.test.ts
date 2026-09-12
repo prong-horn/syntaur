@@ -62,8 +62,8 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       'assert boundary.is_write_allowed("/proj/memories/note.md", ctx)[0] is True',
       'assert boundary.is_write_allowed("/proj/memories/_index.md", ctx)[0] is False',
       'assert boundary.is_write_allowed("/ws/src/app.py", ctx)[0] is True',
-      'assert boundary.is_write_allowed("/work/assignment-other/x", ctx)[0] is False',
-      '# NO fail-open after the context.json demotion: missing assignment/project',
+      'assert boundary.is_write_allowed("/work/ticket-other/x", ctx)[0] is False',
+      '# NO fail-open after the context.json demotion: missing ticket/project',
       '# fields narrow the allowlist, they do not disable enforcement.',
       'assert boundary.is_write_allowed("/anywhere", {})[0] is False',
       '# workspace-only enforcement via the workspaceRoot marker (no engagement)',
@@ -187,7 +187,7 @@ describeIf('hermes plugin — python (py_compile + behavioral)', () => {
       const staleProj = join(tmp, 'stale', 'proj');
       mkdirSync(join(ws, '.syntaur'), { recursive: true });
       mkdirSync(staleAssign, { recursive: true });
-      // LEGACY context.json carrying STALE assignment/project scalars (pre-demotion).
+      // LEGACY context.json carrying STALE ticket/project scalars (pre-demotion).
       writeFileSync(
         join(ws, '.syntaur', 'context.json'),
         JSON.stringify({

@@ -8,7 +8,7 @@ import { resolveTicketById, type ResolvedTicket } from './ticket-resolver.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
 import type { EngagementBinding } from './engagement-binding.js';
 
-export interface AssignmentTargetOptions {
+export interface TicketTargetOptions {
   project?: string;
   dir?: string;
   cwd?: string;
@@ -22,14 +22,14 @@ export interface AssignmentTargetOptions {
   resolveEngagement?: () => Promise<EngagementBinding | null>;
 }
 
-export class AssignmentTargetError extends Error {}
+export class TicketTargetError extends Error {}
 
 /**
- * `.syntaur/context.json` is a WORKSPACE MARKER, not the active-assignment
+ * `.syntaur/context.json` is a WORKSPACE MARKER, not the active-ticket
  * source. The authoritative active (ticket, stage) lives on the session's
  * open engagement (see resolveTicketTarget Case 3); the legacy
  * `projectSlug`/`ticketSlug`/`ticketDir` scalars were removed here to
- * close the multi-assignment-in-one-worktree clobber.
+ * close the multi-ticket-in-one-worktree clobber.
  */
 export interface ContextJsonShape {
   // Session metadata (populated by Claude Code's SessionStart hook). These are
@@ -72,7 +72,7 @@ async function readTicketFrontmatterId(ticketDir: string): Promise<string | null
 /**
  * Resolve a ticket target across the three input shapes:
  *
- *   1. `--project <slug> + <assignment-slug>` (positional, explicit)
+ *   1. `--project <slug> + <ticket-slug>` (positional, explicit)
  *   2. bare UUID (positional, resolves standalone or project-nested via frontmatter id)
  *   3. no positional → the session's OPEN engagement (via `opts.resolveEngagement`).
  *      The legacy `.syntaur/context.json` ticket scalar is NO LONGER a
@@ -81,13 +81,13 @@ async function readTicketFrontmatterId(ticketDir: string): Promise<string | null
  *
  * `--dir` overrides the projects base dir for cases 1 and 3 (project-nested).
  *
- * Throws AssignmentTargetError on any unresolved input. The returned shape
+ * Throws TicketTargetError on any unresolved input. The returned shape
  * mirrors `ResolvedTicket` from ticket-resolver.ts; Case 3 also carries
  * the engagement `stage`.
  */
 export async function resolveTicketTarget(
   input: string | undefined,
-  opts: AssignmentTargetOptions = {},
+  opts: TicketTargetOptions = {},
 ): Promise<ResolvedTicket> {
   const config = await readConfig();
   const baseDir = opts.dir ? expandHome(opts.dir) : config.defaultProjectDir;
@@ -95,27 +95,27 @@ export async function resolveTicketTarget(
   // Case 1: --project + positional slug
   if (opts.project) {
     if (!input) {
-      throw new AssignmentTargetError(
+      throw new TicketTargetError(
         '--project requires a ticket slug as a positional argument.',
       );
     }
     if (!isValidSlug(opts.project)) {
-      throw new AssignmentTargetError(`Invalid project slug "${opts.project}".`);
+      throw new TicketTargetError(`Invalid project slug "${opts.project}".`);
     }
     if (!isValidSlug(input)) {
-      throw new AssignmentTargetError(`Invalid ticket slug "${input}".`);
+      throw new TicketTargetError(`Invalid ticket slug "${input}".`);
     }
     const projectDir = resolve(baseDir, opts.project);
     const projectMdPath = resolve(projectDir, 'project.md');
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new AssignmentTargetError(
+      throw new TicketTargetError(
         `Project "${opts.project}" not found at ${projectDir}.`,
       );
     }
     const ticketDir = resolve(projectDir, 'tickets', input);
-    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(assignmentMdPath))) {
-      throw new AssignmentTargetError(
+    const ticketMdPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMdPath))) {
+      throw new TicketTargetError(
         `Ticket "${input}" not found in project "${opts.project}".`,
       );
     }
@@ -133,7 +133,7 @@ export async function resolveTicketTarget(
   if (input) {
     const resolved = await resolveTicketById(baseDir, ticketsDirFn(), input);
     if (!resolved) {
-      throw new AssignmentTargetError(
+      throw new TicketTargetError(
         `Ticket "${input}" not found. Provide --project <slug> + <slug> or a valid standalone UUID.`,
       );
     }
@@ -146,7 +146,7 @@ export async function resolveTicketTarget(
     return reconstructFromBinding(binding, baseDir);
   }
 
-  throw new AssignmentTargetError(
+  throw new TicketTargetError(
     'No open engagement for this session. Pass --ticket <slug> (and --project) to target a ticket, or grab one first.',
   );
 }
@@ -168,14 +168,14 @@ export async function reconstructFromBinding(
       !binding.ticketSlug ||
       !isValidSlug(binding.ticketSlug)
     ) {
-      throw new AssignmentTargetError(
-        `Open engagement has invalid slugs: project="${binding.projectSlug}" assignment="${binding.ticketSlug}".`,
+      throw new TicketTargetError(
+        `Open engagement has invalid slugs: project="${binding.projectSlug}" ticket="${binding.ticketSlug}".`,
       );
     }
     const ticketDir = resolve(baseDir, binding.projectSlug, 'tickets', binding.ticketSlug);
-    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(assignmentMdPath))) {
-      throw new AssignmentTargetError(
+    const ticketMdPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMdPath))) {
+      throw new TicketTargetError(
         `Open engagement points to a missing ticket: ${ticketDir}.`,
       );
     }
@@ -196,7 +196,7 @@ export async function reconstructFromBinding(
   // Standalone engagement: prefer the resolved id, else the slug-as-UUID.
   const standaloneId = binding.ticketId ?? binding.ticketSlug;
   if (!standaloneId) {
-    throw new AssignmentTargetError(
+    throw new TicketTargetError(
       'Open engagement has neither a ticket id nor a slug to resolve.',
     );
   }
@@ -209,14 +209,14 @@ export async function reconstructFromBinding(
     standaloneId.includes('..') ||
     standaloneId.startsWith('.')
   ) {
-    throw new AssignmentTargetError(
+    throw new TicketTargetError(
       `Open engagement has an unsafe standalone ticket id: "${standaloneId}".`,
     );
   }
   const dir = resolve(ticketsDirFn(), standaloneId);
-  const assignmentMdPath = resolve(dir, 'ticket.md');
-  if (!(await fileExists(assignmentMdPath))) {
-    throw new AssignmentTargetError(
+  const ticketMdPath = resolve(dir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) {
+    throw new TicketTargetError(
       `Open engagement points to a missing standalone ticket: ${dir}.`,
     );
   }

@@ -265,7 +265,7 @@ program
 
 program
   .command('migrate-statuses')
-  .description('Suggest pending -> ready_for_planning promotions for fleshed-out assignments (use --apply to write)')
+  .description('Suggest pending -> ready_for_planning promotions for fleshed-out tickets (use --apply to write)')
   .option('--dir <path>', 'Override default project directory')
   .option('--apply', 'Apply the migration (default: dry-run)')
   .action(
@@ -397,7 +397,7 @@ program
 program
   .command('recompute')
   .description('Recompute derived status for one ticket or --all (headless reconcile)')
-  .argument('[assignment]', 'Ticket slug or standalone UUID')
+  .argument('[ticket]', 'Ticket slug or standalone UUID')
   .option('--all', 'Recompute every ticket (projects + standalone)')
   .option('--project <slug>', 'Target project slug')
   .option('--agent <name>', 'Acting agent id')
@@ -489,7 +489,7 @@ program
 
 program
   .command('reopen')
-  .description('Reopen a completed or failed assignment')
+  .description('Reopen a completed or failed ticket')
   .argument('<ticket>', 'Ticket slug')
   .option('--project <slug>', 'Target project slug')
   .option('--dir <path>', 'Override default project directory')
@@ -598,7 +598,7 @@ program
   )
   .option(
     '--segments <list>',
-    'Comma-separated segment list, e.g. "git,assignment,session,model,ctx".',
+    'Comma-separated segment list, e.g. "git,ticket,session,model,ctx".',
   )
   .option('--separator <string>', 'Segment separator (default " · ")')
   .option('--wrap <path>', 'Path to an external statusline script to compose as a "wrap" segment')
@@ -666,7 +666,7 @@ program
 
 program
   .command('track-session')
-  .description('Register an agent session (optionally linked to a project/assignment)')
+  .description('Register an agent session (optionally linked to a project/ticket)')
   .option('--project <slug>', 'Target project slug')
   .option('--ticket <slug>', 'Ticket slug')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')

@@ -45,13 +45,13 @@ export async function resolveTicketById(
       for (const p of projects) {
         if (!p.isDirectory()) continue;
         if (p.name.startsWith('.') || p.name.startsWith('_')) continue;
-        const assignmentsPath = resolve(projectsDir, p.name, 'tickets');
-        if (!(await fileExists(assignmentsPath))) continue;
+        const ticketsPath = resolve(projectsDir, p.name, 'tickets');
+        if (!(await fileExists(ticketsPath))) continue;
 
-        const entries = await readdir(assignmentsPath, { withFileTypes: true });
+        const entries = await readdir(ticketsPath, { withFileTypes: true });
         for (const a of entries) {
           if (!a.isDirectory()) continue;
-          const aPath = resolve(assignmentsPath, a.name, 'ticket.md');
+          const aPath = resolve(ticketsPath, a.name, 'ticket.md');
           if (!(await fileExists(aPath))) continue;
 
           try {
@@ -60,7 +60,7 @@ export async function resolveTicketById(
             const fileId = getField(fm, 'id');
             if (fileId === id) {
               projectMatch = {
-                ticketDir: resolve(assignmentsPath, a.name),
+                ticketDir: resolve(ticketsPath, a.name),
                 projectSlug: p.name,
                 ticketSlug: a.name,
                 id,

@@ -58,7 +58,7 @@ const dbReachable: Check = {
 const ghostSessions: Check = {
   id: 'dashboard.ghost-sessions',
   category: CATEGORY,
-  title: 'Session records reference assignments that still exist on disk',
+  title: 'Session records reference tickets that still exist on disk',
   async run(ctx) {
     if (!ctx.db) {
       return skipped(this, 'skipped: db not reachable');

@@ -73,9 +73,9 @@ export async function commentCommand(
   // Audit event (best-effort): comment-added. Details carry author + a short
   // excerpt/length ONLY — never the full body (no sensitive data in the log).
   try {
-    const assignmentMd = resolve(ticketDir, 'ticket.md');
-    if (await fileExists(assignmentMd)) {
-      const fm = parseTicketFrontmatter(await readFile(assignmentMd, 'utf-8'));
+    const ticketMd = resolve(ticketDir, 'ticket.md');
+    if (await fileExists(ticketMd)) {
+      const fm = parseTicketFrontmatter(await readFile(ticketMd, 'utf-8'));
       emitEvent({
         ticketId: fm.id,
         projectSlug,

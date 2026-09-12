@@ -8,7 +8,7 @@ export const DEFAULT_PROJECT_BOARD_COLUMNS = [
 
 export const PROJECT_BOARD_COLUMNS = DEFAULT_PROJECT_BOARD_COLUMNS;
 
-export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
+export const DEFAULT_TICKET_BOARD_COLUMNS = [
   'draft',
   'pending',
   'ready_for_planning',
@@ -20,12 +20,12 @@ export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
   'failed',
 ] as const;
 
-export const ASSIGNMENT_BOARD_COLUMNS = DEFAULT_ASSIGNMENT_BOARD_COLUMNS;
+export const TICKET_BOARD_COLUMNS = DEFAULT_TICKET_BOARD_COLUMNS;
 
 export function getTicketColumns(configOrder?: string[]): string[] {
   return configOrder && configOrder.length > 0
     ? configOrder
-    : [...DEFAULT_ASSIGNMENT_BOARD_COLUMNS];
+    : [...DEFAULT_TICKET_BOARD_COLUMNS];
 }
 
 export function moveItem<T>(

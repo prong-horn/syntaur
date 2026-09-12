@@ -34,7 +34,7 @@ let fake: FakeAgent;
 let clients: AcpClient[];
 let wss: WebSocketServer | null;
 
-const ASSIGNMENT_ID = 'a1b2c3d4-0000-4000-8000-000000000001';
+const TICKET_ID = 'a1b2c3d4-0000-4000-8000-000000000001';
 
 /** Minimal 1×1 PNG (68 bytes). */
 const PNG_1X1 = Buffer.from(
@@ -52,7 +52,7 @@ async function uploadChatAttachment(
     'x-attachment-filename': encodeURIComponent(filename),
   };
   if (mime !== undefined) headers['x-attachment-mime'] = mime;
-  return fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments`), {
+  return fetch(url(`/tickets/${TICKET_ID}/chat/attachments`), {
     method: 'POST',
     headers,
     body: new Uint8Array(bytes),
@@ -133,7 +133,7 @@ beforeEach(async () => {
     join(ticketDir, 'ticket.md'),
     [
       '---',
-      `id: ${ASSIGNMENT_ID}`,
+      `id: ${TICKET_ID}`,
       'slug: chat-demo',
       'title: "Chat demo"',
       'status: ready_to_implement',
@@ -182,8 +182,8 @@ describe('GET /api/chat/agents', () => {
   });
 });
 
-describe('assignment resolution', () => {
-  it('404s on an unknown assignment', async () => {
+describe('ticket resolution', () => {
+  it('404s on an unknown ticket', async () => {
     await boot();
     for (const path of [
       '/tickets/nope/chat/items',
@@ -199,7 +199,7 @@ describe('assignment resolution', () => {
 describe('POST /tickets/:id/chat/messages', () => {
   it('accepts a message, streams a reply and records it', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -210,11 +210,11 @@ describe('POST /tickets/:id/chat/messages', () => {
 
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
     await waitUntil(
-      () => broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 }).some((i) => i.type === 'agent.message'),
+      () => broker.items({ id: TICKET_ID } as never, { limit: 50 }).some((i) => i.type === 'agent.message'),
       'the reply item',
     );
 
-    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${TICKET_ID}/chat/items`))).json()) as {
       items: Array<{ type: string; text?: string }>;
       oldestSeq: number | null;
     };
@@ -226,7 +226,7 @@ describe('POST /tickets/:id/chat/messages', () => {
   it('rejects an empty message with 400', async () => {
     await boot();
     for (const body of [{}, { text: '' }, { text: '   ' }]) {
-      const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+      const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),
@@ -239,7 +239,7 @@ describe('POST /tickets/:id/chat/messages', () => {
     await boot();
     const up = await uploadChatAttachment('solo.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: '', attachmentIds: [att.id] }),
@@ -251,7 +251,7 @@ describe('POST /tickets/:id/chat/messages', () => {
     await boot();
     const up = await uploadChatAttachment('dim.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -261,7 +261,7 @@ describe('POST /tickets/:id/chat/messages', () => {
       }),
     });
     expect(res.status).toBe(202);
-    const items = broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 });
+    const items = broker.items({ id: TICKET_ID } as never, { limit: 50 });
     const msg = items.find(
       (i) => i.type === 'user.message' && Array.isArray((i as { attachments?: unknown[] }).attachments),
     ) as { attachments?: Array<{ width?: number; height?: number }> } | undefined;
@@ -271,7 +271,7 @@ describe('POST /tickets/:id/chat/messages', () => {
 
   it('rejects unknown and excess attachment ids', async () => {
     await boot();
-    const unknown = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const unknown = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', attachmentIds: ['00000000-0000-4000-8000-000000000099'] }),
@@ -281,7 +281,7 @@ describe('POST /tickets/:id/chat/messages', () => {
     const up = await uploadChatAttachment('a.png', PNG_1X1, 'image/png');
     const att = (await up.json()) as { id: string };
     const ids = Array.from({ length: 5 }, (_, i) => (i === 0 ? att.id : `00000000-0000-4000-8000-00000000000${i}`));
-    const tooMany = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const tooMany = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', attachmentIds: ids }),
@@ -295,7 +295,7 @@ describe('POST /tickets/:id/chat/messages', () => {
       join(ticketDir, 'ticket.md'),
       [
         '---',
-        `id: ${ASSIGNMENT_ID}`,
+        `id: ${TICKET_ID}`,
         'slug: chat-demo',
         'project: syntaur-meta',
         'workspace:',
@@ -306,7 +306,7 @@ describe('POST /tickets/:id/chat/messages', () => {
       ].join('\n'),
       'utf-8',
     );
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -317,7 +317,7 @@ describe('POST /tickets/:id/chat/messages', () => {
 
   it('404s for an unknown agent id', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi', agentId: 'nobody' }),
@@ -328,11 +328,11 @@ describe('POST /tickets/:id/chat/messages', () => {
 
 describe('GET /tickets/:id/chat/messages/:messageId (Task 1, Decision 3)', () => {
   const state = async (messageId: string) =>
-    fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${encodeURIComponent(messageId)}`));
+    fetch(url(`/tickets/${TICKET_ID}/chat/messages/${encodeURIComponent(messageId)}`));
 
   it('reports `ended` once the message’s turn has finished', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -342,7 +342,7 @@ describe('GET /tickets/:id/chat/messages/:messageId (Task 1, Decision 3)', () =>
     await waitUntil(
       () =>
         broker
-          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .items({ id: TICKET_ID } as never, { limit: 50 })
           .some((i) => i.type === 'turn.status' && (i as { state: string }).state === 'ended'),
       'the turn to end',
     );
@@ -359,7 +359,7 @@ describe('GET /tickets/:id/chat/messages/:messageId (Task 1, Decision 3)', () =>
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }]);
 
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hold' }),
@@ -382,7 +382,7 @@ describe('DELETE /tickets/:id/chat/messages/:messageId', () => {
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }, { steps: [] }]);
 
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'A' }),
@@ -390,20 +390,20 @@ describe('DELETE /tickets/:id/chat/messages/:messageId', () => {
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
 
     const queued = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: 'B' }),
       })
     ).json()) as { messageId: string };
 
-    const del = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const del = await fetch(url(`/tickets/${TICKET_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(del.status).toBe(200);
     expect(await del.json()).toEqual({ withdrawn: true });
 
-    const again = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const again = await fetch(url(`/tickets/${TICKET_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(again.status).toBe(409);
@@ -414,17 +414,17 @@ describe('DELETE /tickets/:id/chat/messages/:messageId', () => {
 describe('POST /tickets/:id/chat/cancel', () => {
   it('cancels the running turn and reports false when nothing is running', async () => {
     await boot([{ steps: [{ kind: 'awaitCancel' }] }]);
-    const idle = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
+    const idle = await fetch(url(`/tickets/${TICKET_ID}/chat/cancel`), { method: 'POST' });
     expect(await idle.json()).toEqual({ cancelled: false });
 
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'essay' }),
     });
     await waitUntil(() => fake.prompts.length === 1, 'the prompt');
 
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/cancel`), { method: 'POST' });
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/cancel`), { method: 'POST' });
     expect(await res.json()).toEqual({ cancelled: true });
   });
 });
@@ -447,7 +447,7 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
         ],
       },
     ]);
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'run it' }),
@@ -455,20 +455,20 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
 
     let requestId = '';
     await waitUntil(() => {
-      const items = broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 });
+      const items = broker.items({ id: TICKET_ID } as never, { limit: 50 });
       const perm = items.find((i) => i.type === 'permission.request') as { requestId: string } | undefined;
       if (perm) requestId = perm.requestId;
       return Boolean(perm);
     }, 'the permission item');
 
     const bad = await fetch(
-      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${TICKET_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({}) },
     );
     expect(bad.status).toBe(400);
 
     const ok = await fetch(
-      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${TICKET_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -478,7 +478,7 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
     expect(ok.status).toBe(200);
     expect(fake.permissionAnswers[0]).toEqual({ outcome: { outcome: 'selected', optionId: 'allow' } });
 
-    const gone = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/nope`), {
+    const gone = await fetch(url(`/tickets/${TICKET_ID}/chat/permissions/nope`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ optionId: 'allow' }),
@@ -513,7 +513,7 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
         ],
       },
     ]);
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'run both' }),
@@ -521,14 +521,14 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
 
     let requestId = '';
     await waitUntil(() => {
-      const items = broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 });
+      const items = broker.items({ id: TICKET_ID } as never, { limit: 50 });
       const perm = items.find((i) => i.type === 'permission.request') as { requestId: string } | undefined;
       if (perm) requestId = perm.requestId;
       return Boolean(perm);
     }, 'the permission item');
 
     const bad = await fetch(
-      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${TICKET_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -538,7 +538,7 @@ describe('POST /tickets/:id/chat/permissions/:requestId', () => {
     expect(bad.status).toBe(400);
 
     const ok = await fetch(
-      url(`/tickets/${ASSIGNMENT_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
+      url(`/tickets/${TICKET_ID}/chat/permissions/${encodeURIComponent(requestId)}`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -555,37 +555,37 @@ describe('GET /tickets/:id/chat/session and POST reindex', () => {
   it('reports the session and rebuilds the index from the log', async () => {
     await boot();
     const before = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/session`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/session`))
     ).json()) as { session: { state: string; harness: string; acpSessionId: string | null } };
     expect(before.session).toMatchObject({ state: 'none', harness: 'claude', acpSessionId: null });
 
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi' }),
     });
     await waitUntil(
       () =>
-        broker.items({ id: ASSIGNMENT_ID } as never, { limit: 50 }).some((i) => i.type === 'agent.message'),
+        broker.items({ id: TICKET_ID } as never, { limit: 50 }).some((i) => i.type === 'agent.message'),
       'the reply',
     );
 
     const after = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/session`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/session`))
     ).json()) as { session: { acpSessionId: string | null; model: string | null } };
     expect(after.session.acpSessionId).toBe('acp-1');
 
-    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${TICKET_ID}/chat/items`))).json()) as {
       items: unknown[];
     };
     const rebuilt = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/reindex`), { method: 'POST' })
+      await fetch(url(`/tickets/${TICKET_ID}/chat/reindex`), { method: 'POST' })
     ).json()) as { events: number; items: number };
     expect(rebuilt.events).toBeGreaterThan(0);
     expect(rebuilt.items).toBe(items.items.length);
 
     const afterRebuild = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/items`))
     ).json()) as { items: unknown[] };
     expect(afterRebuild.items).toEqual(items.items);
   });
@@ -593,7 +593,7 @@ describe('GET /tickets/:id/chat/session and POST reindex', () => {
   it('pages items with ?before and ?limit', async () => {
     await boot([{ steps: [] }, { steps: [] }, { steps: [] }]);
     for (const text of ['one', 'two', 'three']) {
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -603,18 +603,18 @@ describe('GET /tickets/:id/chat/session and POST reindex', () => {
     await waitUntil(
       () =>
         broker
-          .items({ id: ASSIGNMENT_ID } as never, { limit: 100 })
+          .items({ id: TICKET_ID } as never, { limit: 100 })
           .filter((i) => i.type === 'turn.status')
           .every((i) => (i as { state: string }).state === 'ended'),
       'all turns to end',
     );
 
     const page = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items?limit=2`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/items?limit=2`))
     ).json()) as { items: Array<{ seqFirst: number }>; oldestSeq: number };
     expect(page.items).toHaveLength(2);
     const older = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items?limit=2&before=${page.oldestSeq}`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/items?limit=2&before=${page.oldestSeq}`))
     ).json()) as { items: Array<{ seqFirst: number }> };
     expect(older.items.every((i) => i.seqFirst < page.oldestSeq)).toBe(true);
   });
@@ -628,7 +628,7 @@ describe('/ws chat frames', () => {
     ws.on('message', (data) => received.push(JSON.parse(String(data)) as WsMessage));
     await new Promise<void>((r) => ws.on('open', () => r()));
 
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hi' }),
@@ -647,7 +647,7 @@ describe('/ws chat frames', () => {
     const itemFrames = received.filter((m) => m.type === 'chat-item');
     for (const frame of itemFrames) {
       const payload = frame.payload as { ticketId: string; patch: { op: string } };
-      expect(payload.ticketId).toBe(ASSIGNMENT_ID);
+      expect(payload.ticketId).toBe(TICKET_ID);
       expect(payload.patch.op).toMatch(/^(upsert|retract)$/);
       expect(frame.ticketSlug).toBe('chat-demo');
     }
@@ -674,7 +674,7 @@ describe('chat attachment routes (Task 1)', () => {
     expect(stored).toHaveLength(1);
     expect(stored[0]).toBe(`${att.id}__dot.png.png`);
 
-    const fileRes = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/${att.id}`));
+    const fileRes = await fetch(url(`/tickets/${TICKET_ID}/chat/attachments/${att.id}`));
     expect(fileRes.status).toBe(200);
     expect(fileRes.headers.get('content-type')).toBe('image/png');
     expect(fileRes.headers.get('x-content-type-options')).toBe('nosniff');
@@ -710,10 +710,10 @@ describe('chat attachment routes (Task 1)', () => {
 
   it('404s malformed and unknown attachment ids', async () => {
     await boot();
-    const bad = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/not-a-uuid`));
+    const bad = await fetch(url(`/tickets/${TICKET_ID}/chat/attachments/not-a-uuid`));
     expect(bad.status).toBe(404);
     const missing = await fetch(
-      url(`/tickets/${ASSIGNMENT_ID}/chat/attachments/00000000-0000-4000-8000-000000000099`),
+      url(`/tickets/${TICKET_ID}/chat/attachments/00000000-0000-4000-8000-000000000099`),
     );
     expect(missing.status).toBe(404);
   });
@@ -722,7 +722,7 @@ describe('chat attachment routes (Task 1)', () => {
 describe('participants routes (Task 1, Decision 1)', () => {
   it('reports the derived default and every definition', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`));
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/participants`));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       participants: { agents: string[]; defaultAgent: string | null };
@@ -745,7 +745,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
     await new Promise<void>((r) => ws.on('open', () => r()));
     ws.on('message', (data) => frames.push(JSON.parse(String(data))));
 
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['codex'], defaultAgent: 'codex', hopBudget: 2 }),
@@ -759,13 +759,13 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
     await waitUntil(() => frames.some((f) => f.type === 'chat-participants'), 'a chat-participants frame');
     const frame = frames.find((f) => f.type === 'chat-participants')!;
-    expect((frame.payload as { ticketId: string }).ticketId).toBe(ASSIGNMENT_ID);
+    expect((frame.payload as { ticketId: string }).ticketId).toBe(TICKET_ID);
     expect((frame.payload as { participants: { defaultAgent: string } }).participants.defaultAgent).toBe(
       'codex',
     );
 
     const reread = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`))
+      await fetch(url(`/tickets/${TICKET_ID}/chat/participants`))
     ).json()) as { participants: { agents: string[] } };
     expect(reread.participants.agents).toEqual(['codex']);
     ws.close();
@@ -773,7 +773,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
   it('rejects an unknown id with 400', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['ghost'], defaultAgent: null }),
@@ -784,7 +784,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
 
   it('rejects a default that is not attached with 400', async () => {
     await boot();
-    const res = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/participants`), {
+    const res = await fetch(url(`/tickets/${TICKET_ID}/chat/participants`), {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ agents: ['claude'], defaultAgent: 'codex' }),
@@ -802,7 +802,7 @@ describe('participants routes (Task 1, Decision 1)', () => {
 describe('POST /tickets/:id/chat/items/:itemId/file', () => {
   async function replyItemId(): Promise<string> {
     await boot();
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'hello' }),
@@ -811,18 +811,18 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     await waitUntil(
       () =>
         broker
-          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .items({ id: TICKET_ID } as never, { limit: 50 })
           .some((i) => i.type === 'agent.message' && i.sealed),
       'the sealed reply',
     );
     const reply = broker
-      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .items({ id: TICKET_ID } as never, { limit: 50 })
       .find((i) => i.type === 'agent.message' && i.sealed)!;
     return reply.itemId;
   }
 
   async function fileItem(itemId: string, body: Record<string, unknown>) {
-    return fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items/${encodeURIComponent(itemId)}/file`), {
+    return fetch(url(`/tickets/${TICKET_ID}/chat/items/${encodeURIComponent(itemId)}/file`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -843,7 +843,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     expect(decisionMd).toContain('_Filed from chat (@claude,');
     expect(parseDecisionRecord(decisionMd).decisionCount).toBe(1);
 
-    const items = (await (await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/items`))).json()) as {
+    const items = (await (await fetch(url(`/tickets/${TICKET_ID}/chat/items`))).json()) as {
       items: Array<{ type: string; text?: string }>;
     };
     const filed = items.items.find((i) => i.type === 'system' && i.text?.startsWith('Filed '));
@@ -869,7 +869,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
 
   it('uses (you, …) provenance for the humans own message filed as progress', async () => {
     await boot();
-    const send = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    const send = await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'my thought' }),
@@ -879,12 +879,12 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     await waitUntil(
       () =>
         broker
-          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .items({ id: TICKET_ID } as never, { limit: 50 })
           .some((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId),
       'the user message item',
     );
     const userItem = broker
-      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .items({ id: TICKET_ID } as never, { limit: 50 })
       .find((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)!;
     const res = await fileItem(userItem.itemId, { kind: 'progress', body: 'mine' });
     expect(res.status).toBe(201);
@@ -903,7 +903,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     const gate = new Promise<void>((r) => (release = r));
     await boot([{ steps: [{ kind: 'gate', gate }] }, { steps: [] }]);
 
-    await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+    await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'busy turn' }),
@@ -911,14 +911,14 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     await waitUntil(() => fake.prompts.length === 1, 'the first prompt');
 
     const queued = (await (
-      await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages`), {
+      await fetch(url(`/tickets/${TICKET_ID}/chat/messages`), {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text: 'withdraw me' }),
       })
     ).json()) as { messageId: string };
 
-    const del = await fetch(url(`/tickets/${ASSIGNMENT_ID}/chat/messages/${queued.messageId}`), {
+    const del = await fetch(url(`/tickets/${TICKET_ID}/chat/messages/${queued.messageId}`), {
       method: 'DELETE',
     });
     expect(del.status).toBe(200);
@@ -926,7 +926,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     await waitUntil(
       () =>
         broker
-          .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+          .items({ id: TICKET_ID } as never, { limit: 50 })
           .some(
             (i) =>
               i.type === 'user.message' &&
@@ -936,7 +936,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
       'the withdrawn user message item',
     );
     const withdrawnItem = broker
-      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .items({ id: TICKET_ID } as never, { limit: 50 })
       .find(
         (i) =>
           i.type === 'user.message' &&
@@ -983,7 +983,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     expect((await fileItem('missing-item', { kind: 'progress', body: 'x' })).status).toBe(404);
 
     const status = broker
-      .items({ id: ASSIGNMENT_ID } as never, { limit: 50 })
+      .items({ id: TICKET_ID } as never, { limit: 50 })
       .find((i) => i.type === 'turn.status')!;
     expect((await fileItem(status.itemId, { kind: 'progress', body: 'x' })).status).toBe(400);
   });

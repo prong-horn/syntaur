@@ -132,16 +132,16 @@ fi
 
 # ticket — project/slug — title  (or standalone/uuid-prefix — title)
 # external   — comma-joined external tracker IDs declared by the ticket
-ASSIGNMENT_SEG=""
+TICKET_SEG=""
 EXTERNAL_SEG=""
 CONTEXT_FILE="$CWD/.syntaur/context.json"
 if [ -f "$CONTEXT_FILE" ]; then
   PROJECT_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-  ASSIGNMENT_SLUG=$(jq -r '.ticketSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-  ASSIGNMENT_DIR=$(jq -r '.ticketDir // empty' "$CONTEXT_FILE" 2>/dev/null)
+  TICKET_SLUG=$(jq -r '.ticketSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
+  TICKET_DIR=$(jq -r '.ticketDir // empty' "$CONTEXT_FILE" 2>/dev/null)
   TITLE=""
-  if [ -n "$ASSIGNMENT_DIR" ] && [ -f "$ASSIGNMENT_DIR/ticket.md" ]; then
-    TITLE=$(awk '/^title:/{sub(/^title:[[:space:]]*"?/,""); sub(/"?[[:space:]]*$/,""); print; exit}' "$ASSIGNMENT_DIR/ticket.md" 2>/dev/null)
+  if [ -n "$TICKET_DIR" ] && [ -f "$TICKET_DIR/ticket.md" ]; then
+    TITLE=$(awk '/^title:/{sub(/^title:[[:space:]]*"?/,""); sub(/"?[[:space:]]*$/,""); print; exit}' "$TICKET_DIR/ticket.md" 2>/dev/null)
     # externalIds parser: walks the YAML block under `externalIds:`, pairs each
     # `- system: X` with its following `id: Y`, and prints a comma-joined list
     # of the ids (most terminals don't have width for system prefixes; users
@@ -166,18 +166,18 @@ if [ -f "$CONTEXT_FILE" ]; then
         }
       }
       END { print out }
-    ' "$ASSIGNMENT_DIR/ticket.md" 2>/dev/null)
+    ' "$TICKET_DIR/ticket.md" 2>/dev/null)
   fi
   LABEL=""
-  if [ -n "$PROJECT_SLUG" ] && [ -n "$ASSIGNMENT_SLUG" ]; then
-    LABEL="$PROJECT_SLUG/$ASSIGNMENT_SLUG"
-  elif [ -n "$ASSIGNMENT_SLUG" ]; then
-    LABEL="standalone/${ASSIGNMENT_SLUG:0:8}"
+  if [ -n "$PROJECT_SLUG" ] && [ -n "$TICKET_SLUG" ]; then
+    LABEL="$PROJECT_SLUG/$TICKET_SLUG"
+  elif [ -n "$TICKET_SLUG" ]; then
+    LABEL="standalone/${TICKET_SLUG:0:8}"
   fi
   if [ -n "$LABEL" ] && [ -n "$TITLE" ]; then
-    ASSIGNMENT_SEG="$LABEL — $TITLE"
+    TICKET_SEG="$LABEL — $TITLE"
   elif [ -n "$LABEL" ]; then
-    ASSIGNMENT_SEG="$LABEL"
+    TICKET_SEG="$LABEL"
   fi
 fi
 
@@ -223,7 +223,7 @@ for name in $SEGMENTS_RAW; do
   case "$name" in
     wrap)       value="$WRAP_SEG" ;;
     git)        value="$GIT_SEG" ;;
-    ticket) value="$ASSIGNMENT_SEG" ;;
+    ticket) value="$TICKET_SEG" ;;
     external)   value="$EXTERNAL_SEG" ;;
     session)    value="$SESSION_SEG" ;;
     model)      value="$MODEL_SEG" ;;

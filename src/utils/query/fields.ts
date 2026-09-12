@@ -48,7 +48,7 @@ export const PRIORITY_ORDER = ['low', 'medium', 'high', 'critical'];
  * Piece 1). Consumers may extend or restrict (e.g. derive rules evaluate over
  * facts only).
  */
-export const ASSIGNMENT_FIELDS: FieldRegistry = {
+export const TICKET_FIELDS: FieldRegistry = {
   // ── core fields ──────────────────────────────────────────────────────────
   status: { kind: 'enum' },
   priority: { kind: 'ordinal', order: PRIORITY_ORDER },
