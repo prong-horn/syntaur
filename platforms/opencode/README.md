@@ -8,14 +8,14 @@ OpenCode discovers skills from `SKILL.md` files in several directories and reads
 
 ## Setup
 
-Generate adapter files for a specific assignment:
+Generate adapter files for a specific ticket:
 
 ```bash
-syntaur setup-adapter opencode --project <project-slug> --assignment <assignment-slug>
+syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-slug>
 ```
 
 This creates:
-- `AGENTS.md` — Protocol instructions and assignment context
+- `AGENTS.md` — Protocol instructions and ticket context
 - `opencode.json` — Optional config with instruction pointers
 
 ## Skill discovery paths

@@ -21,8 +21,8 @@ def load_context(cwd):
     """Read <cwd>/.syntaur/context.json; return its WORKSPACE-MARKER fields, or
     None when absent/unparseable (caller treats None as "not in a workspace").
 
-    Deliberately does NOT surface the demoted assignment scalars
-    (assignmentDir/projectDir): the active assignment/project dirs are resolved
+    Deliberately does NOT surface the demoted ticket scalars
+    (ticketDir/projectDir): the active ticket/project dirs are resolved
     from the session's open engagement by the caller and merged in. Surfacing
     stale legacy scalars here would let them leak through on a boundary-resolution
     failure, so the {}-failure path could wrongly allow writes under a stale dir
@@ -70,21 +70,21 @@ def _is_under(child, parent):
 def is_write_allowed(abs_file_path, ctx, context_file_abs=None):
     """Return (allowed: bool, reason: str|None) for a write to abs_file_path.
 
-    Allowed when the path is under the assignment dir, under project
+    Allowed when the path is under the ticket dir, under project
     resources/memories (excluding derived `_*` files), equal to the context file,
     or under the workspace root. Otherwise blocked.
     """
-    # context.json is a WORKSPACE MARKER now (the assignment scalars were
-    # demoted); the active assignment resolves from the session's open engagement.
-    # When the caller cannot supply assignmentDir/projectDir (no engagement
+    # context.json is a WORKSPACE MARKER now (the ticket scalars were
+    # demoted); the active ticket resolves from the session's open engagement.
+    # When the caller cannot supply ticketDir/projectDir (no engagement
     # resolved), we do NOT fail open — we enforce WORKSPACE-ONLY via the
     # workspaceRoot marker below. Each dir check is guarded for absence, so a
-    # missing assignmentDir/projectDir simply narrows the allowlist rather than
-    # disabling it. (Assignment-record writes under ~/.syntaur go through the CLI,
+    # missing tssignmentDir/projectDir simply narrows the allowlist rather than
+    # disabling it. (Ticket-record writes under ~/.syntaur go through the CLI,
     # not the agent's file tools, so they never hit this hook.)
     f = _norm(abs_file_path)
 
-    if ctx.get("assignmentDir") and _is_under(f, ctx["assignmentDir"]):
+    if ctx.get("ticketDir") and _is_under(f, ctx["ticketDir"]):
         return True, None
 
     project_dir = ctx.get("projectDir")
@@ -101,8 +101,8 @@ def is_write_allowed(abs_file_path, ctx, context_file_abs=None):
         return True, None
 
     reason = (
-        "Syntaur write boundary violation: cannot write to '%s'. Allowed: assignment dir "
+        "Syntaur write boundary violation: cannot write to '%s'. Allowed: ticket dir "
         "(%s), project resources/memories, workspace (%s)."
-        % (f, ctx.get("assignmentDir") or "n/a", ctx.get("workspaceRoot") or "n/a")
+        % (f, ctx.get("ticketDir") or "n/a", ctx.get("workspaceRoot") or "n/a")
     )
     return False, reason

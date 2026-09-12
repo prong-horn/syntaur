@@ -1,7 +1,7 @@
 """Syntaur Tier-3 enforcement plugin for Hermes Agent.
 
 Registers two lifecycle hooks via `register(ctx)`:
-  - pre_tool_call : block (best-effort) + log writes outside the assignment boundary
+  - pre_tool_call : block (best-effort) + log writes outside the ticket boundary
   - on_session_end: mark the Syntaur dashboard session "stopped"
 
 plus the Syntaur slash commands. Stdlib only; never raises from a hook (the Hermes
@@ -24,11 +24,11 @@ PATH_KEYS = ("file_path", "path", "filename", "target_file")
 # the rest point the agent at the installed Tier-1 skill of the same name.
 CORE_COMMANDS = [
     {"name": "doctor-syntaur", "description": "Run `syntaur doctor` diagnostics", "kind": "passthrough", "argv": ["doctor"]},
-    {"name": "grab-assignment", "description": "Claim a Syntaur assignment into this session", "kind": "guidance", "skill": "grab-assignment"},
-    {"name": "log-progress", "description": "Append a progress entry to the active assignment", "kind": "guidance", "skill": "log-progress"},
-    {"name": "complete-assignment", "description": "Write a handoff and complete the assignment", "kind": "guidance", "skill": "complete-assignment"},
-    {"name": "resume-session", "description": "Re-orient on the active assignment", "kind": "guidance", "skill": "resume-session"},
-    {"name": "set-workspace", "description": "Set workspace fields on the active assignment", "kind": "guidance", "skill": "set-workspace"},
+    {"name": "grab-ticket", "description": "Claim a Syntaur ticket into this session", "kind": "guidance", "skill": "grab-ticket"},
+    {"name": "log-progress", "description": "Append a progress entry to the active ticket", "kind": "guidance", "skill": "log-progress"},
+    {"name": "complete-ticket", "description": "Write a handoff and complete the ticket", "kind": "guidance", "skill": "complete-ticket"},
+    {"name": "resume-session", "description": "Re-orient on the active ticket", "kind": "guidance", "skill": "resume-session"},
+    {"name": "set-workspace", "description": "Set workspace fields on the active ticket", "kind": "guidance", "skill": "set-workspace"},
     {"name": "track-session", "description": "Register this session in the Syntaur dashboard", "kind": "guidance", "skill": "track-session"},
 ]
 
@@ -61,10 +61,10 @@ def _dashboard_port():
 
 
 def _resolve_boundary(cwd, session_id=None):
-    """Resolve the write boundary {assignmentDir, projectDir, workspaceRoot} from
+    """Resolve the write boundary {ticketDir, projectDir, workspaceRoot} from
     the session's OPEN engagement via the CLI. context.json is a workspace marker
-    now — the active assignment lives on the engagement, so the enforcer can no
-    longer read assignmentDir/projectDir straight from the file. Returns {} on any
+    now — the active ticket lives on the engagement, so the enforcer can no
+    longer read ticketDir/projectDir straight from the file. Returns {} on any
     failure, which makes is_write_allowed fall back to workspace-only enforcement
     (never fail-open)."""
     argv = ["syntaur", "session", "boundary", "--json", "--cwd", cwd]
@@ -93,7 +93,7 @@ def _log_violation(reason):
 
 
 def _on_pre_tool_call(tool_name=None, args=None, task_id=None, **kwargs):
-    """Block (best-effort) + log writes outside the assignment boundary."""
+    """Block (best-effort) + log writes outside the ticket boundary."""
     try:
         path = _extract_write_path(tool_name, args)
         if not path:
@@ -102,11 +102,11 @@ def _on_pre_tool_call(tool_name=None, args=None, task_id=None, **kwargs):
         ctx = boundary.load_context(cwd)
         if not ctx:
             return None  # no .syntaur/context.json → not in a workspace → allow
-        # Resolve the real assignment/project boundary from the session's open
+        # Resolve the real ticket/project boundary from the session's open
         # engagement and merge it over the workspace markers in context.json.
         # If nothing resolves, is_write_allowed enforces workspace-only.
         resolved = _resolve_boundary(cwd, ctx.get("sessionId"))
-        for k in ("assignmentDir", "projectDir", "workspaceRoot"):
+        for k in ("ticketDir", "projectDir", "workspaceRoot"):
             if resolved.get(k):
                 ctx[k] = resolved[k]
         abs_path = path if os.path.isabs(path) else os.path.join(cwd, path)
@@ -158,7 +158,7 @@ def _make_command_handler(cmd):
                 return "Failed to run syntaur %s: %s" % (" ".join(cmd["argv"]), exc)
         return (
             'Follow the Syntaur "%s" skill (installed via skills). It resolves the active '
-            "assignment from the session's open engagement (.syntaur/context.json is a "
+            "ticket from the session's open engagement (.syntaur/context.json is a "
             "workspace marker)." % cmd["skill"]
         )
 

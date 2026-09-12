@@ -1,7 +1,7 @@
 /**
  * Assignment-chat REST API.
  *
- * Mounted at `/api` (the routes carry their own `/assignments/...` prefix, the
+ * Mounted at `/api` (the routes carry their own `/tickets/...` prefix, the
  * way `api-events.ts` and `api-inbox.ts` do). Every route resolves the
  * assignment through `resolveTicketById`, so a project-nested slug and a
  * standalone UUID work identically.
@@ -89,7 +89,7 @@ export function createChatRouter(
 
   // --- history -------------------------------------------------------------
 
-  router.get('/assignments/:id/chat/items', async (req, res) => {
+  router.get('/tickets/:id/chat/items', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -109,7 +109,7 @@ export function createChatRouter(
     }
   });
 
-  router.get('/assignments/:id/chat/session', async (req, res) => {
+  router.get('/tickets/:id/chat/session', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -123,7 +123,7 @@ export function createChatRouter(
   // --- attachments ---------------------------------------------------------
 
   router.post(
-    '/assignments/:id/chat/attachments',
+    '/tickets/:id/chat/attachments',
     (req, res, next) => {
       raw({ type: () => true, limit: MAX_CHAT_ATTACHMENT_BYTES })(req, res, (err) => {
         if (err) {
@@ -172,7 +172,7 @@ export function createChatRouter(
     },
   );
 
-  router.get('/assignments/:id/chat/attachments/:attachmentId', async (req, res) => {
+  router.get('/tickets/:id/chat/attachments/:attachmentId', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -195,7 +195,7 @@ export function createChatRouter(
 
   // --- writes --------------------------------------------------------------
 
-  router.post('/assignments/:id/chat/messages', async (req, res) => {
+  router.post('/tickets/:id/chat/messages', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -256,7 +256,7 @@ export function createChatRouter(
    * polls this instead of a pid. A 404 means the chat has never seen the id,
    * which the scheduler treats as "unknown", not "finished".
    */
-  router.get('/assignments/:id/chat/messages/:messageId', async (req, res) => {
+  router.get('/tickets/:id/chat/messages/:messageId', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -276,7 +276,7 @@ export function createChatRouter(
    * the item id is `${scopeId}:${ordinal}` and is not known to the client until
    * the item exists.
    */
-  router.delete('/assignments/:id/chat/messages/:messageId', async (req, res) => {
+  router.delete('/tickets/:id/chat/messages/:messageId', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -291,7 +291,7 @@ export function createChatRouter(
     }
   });
 
-  router.post('/assignments/:id/chat/cancel', async (req, res) => {
+  router.post('/tickets/:id/chat/cancel', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -303,7 +303,7 @@ export function createChatRouter(
     }
   });
 
-  router.post('/assignments/:id/chat/permissions/:requestId', async (req, res) => {
+  router.post('/tickets/:id/chat/permissions/:requestId', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -332,7 +332,7 @@ export function createChatRouter(
     }
   });
 
-  router.post('/assignments/:id/chat/questions/:requestId', async (req, res) => {
+  router.post('/tickets/:id/chat/questions/:requestId', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -359,7 +359,7 @@ export function createChatRouter(
   });
 
   /** Rebuild `chat_items` from `chat/events.jsonl` (Decision 2's recovery path). */
-  router.post('/assignments/:id/chat/reindex', async (req, res) => {
+  router.post('/tickets/:id/chat/reindex', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -369,7 +369,7 @@ export function createChatRouter(
     }
   });
 
-  router.post('/assignments/:id/chat/items/:itemId/file', async (req, res) => {
+  router.post('/tickets/:id/chat/items/:itemId/file', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -447,7 +447,7 @@ export function createChatRouter(
 
   // --- participants (Decision 1) -------------------------------------------
 
-  router.get('/assignments/:id/chat/participants', async (req, res) => {
+  router.get('/tickets/:id/chat/participants', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;
@@ -462,7 +462,7 @@ export function createChatRouter(
    * hopBudget? }` shape the GET reports; the broker validates it against the
    * definitions on disk and broadcasts `chat-participants`.
    */
-  router.put('/assignments/:id/chat/participants', async (req, res) => {
+  router.put('/tickets/:id/chat/participants', async (req, res) => {
     try {
       const assignment = await resolveOr404(req, res);
       if (!assignment) return;

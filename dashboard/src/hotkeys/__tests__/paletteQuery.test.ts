@@ -16,8 +16,8 @@ describe('splitPaletteQuery — alias expansion', () => {
   });
 
   it('alias + atom + free text', () => {
-    expect(split('t: jirt:ABC payment')).toEqual({
-      aqlExpr: 'kind:ticket jirt:ABC',
+    expect(split('t: jira:ABC payment')).toEqual({
+      aqlExpr: 'kind:ticket jira:ABC',
       fuzzy: 'payment',
     });
   });
@@ -60,7 +60,7 @@ describe('splitPaletteQuery — atom vs free text', () => {
   });
 
   it('quoted value with hyphen/digit is a single atom', () => {
-    expect(split('jirt:"123-ABC"')).toEqual({ aqlExpr: 'jirt:"123-ABC"', fuzzy: '' });
+    expect(split('jira:"123-ABC"')).toEqual({ aqlExpr: 'jira:"123-ABC"', fuzzy: '' });
   });
 });
 
@@ -100,11 +100,11 @@ describe('splitPaletteQuery — robustness', () => {
       't:',
       't:payment',
       'status:done',
-      't: jirt:ABC payment',
+      't: jira:ABC payment',
       'status:(done, blocked)',
       '-status:done',
       'NOT status:done',
-      'jirt:"123-ABC"',
+      'jira:"123-ABC"',
       'status:done OR status:blocked',
       '-t:',
       'NOT t:',
@@ -213,9 +213,9 @@ describe('PALETTE_FIELDS semantics', () => {
 
   it('jira substring with case-insensitive system selection', () => {
     const item = { externalIds: [{ system: 'JIRA', id: 'PROJ-123', url: null }] };
-    expect(matches('jirt:PROJ-123', item)).toBe(true);
-    expect(matches('jirt:proj', item)).toBe(true); // substring + case-insensitive
-    expect(matches('jirt:NOPE', item)).toBe(false);
+    expect(matches('jira:PROJ-123', item)).toBe(true);
+    expect(matches('jira:proj', item)).toBe(true); // substring + case-insensitive
+    expect(matches('jira:NOPE', item)).toBe(false);
   });
 
   it('externalid flattened "system:id" haystack', () => {

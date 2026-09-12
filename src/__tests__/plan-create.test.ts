@@ -65,7 +65,7 @@ describe('syntaur plan create', () => {
     expect(plan).toContain('status: draft');
 
     const ticket = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
-    expect(assignment.replace(/^---[\s\S]*?---\n?/, '')).toBe(
+    expect(ticket.replace(/^---[\s\S]*?---\n?/, '')).toBe(
       before.replace(/^---[\s\S]*?---\n?/, ''),
     );
   });

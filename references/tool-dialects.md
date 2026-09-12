@@ -3,7 +3,7 @@
 Syntaur ships its skills **verbatim** to every agent (no build-time tool-name
 rewriting), exactly as the Agent Skills ecosystem (skills.sh) does across 56
 agents. This works because Syntaur skills are overwhelmingly **`syntaur <cmd>`
-CLI-driven** — they tell the agent to run `syntaur grab-assignment`,
+CLI-driven** — they tell the agent to run `syntaur grab-ticket`,
 `syntaur start`, etc., not to call raw `Read`/`Edit`/`Bash` tools — so each
 agent's native tool dialect is largely irrelevant to whether a Syntaur skill
 works.

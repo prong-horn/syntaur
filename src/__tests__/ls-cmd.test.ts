@@ -84,7 +84,7 @@ describe('syntaur ls', () => {
       await mkdir(adir, { recursive: true });
       await writeFile(
         resolve(adir, 'ticket.md'),
-        assignmentMd({
+        ticketMd({
           id: a.id,
           slug: a.slug,
           title: a.slug,

@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Throwaway ACP client harness: validates claude-agent-acp and codex-acp as assignment-chat backends (assignment acp-adapter-spike)",
+  "description": "Throwaway ACP client harness: validates claude-agent-acp and codex-acp as ticket-chat backends (ticket acp-adapter-spike)",
   "scripts": {
     "target": "./target.sh",
     "spike": "node run.ts",

@@ -1035,7 +1035,7 @@ export async function reconcileActiveSessions(
       if (status) assignmentStatuses.set(key, status);
     } else if (assignmentsDir) {
       const status = await readAssignmentStatusFromPath(
-        resolve(assignmentsDir, aslug, 'assignment.md'),
+        resolve(assignmentsDir, aslug, 'ticket.md'),
       );
       if (status) assignmentStatuses.set(key, status);
     }

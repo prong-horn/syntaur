@@ -103,7 +103,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     const projectSlug = parts[0];
     let ticketSlug: string | undefined;
 
-    if (parts.length >= 3 && parts[1] === 'assignments') {
+    if (parts.length >= 3 && parts[1] === 'tickets') {
       ticketSlug = parts[2];
     }
 

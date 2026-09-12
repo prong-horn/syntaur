@@ -5,42 +5,42 @@ const f = 'src/chat/broker.ts';
 let c = readFileSync(f, 'utf8');
 
 const reps = [
-  [/import type \{ ResolvedAssignment \}/g, 'import type { ResolvedTicket }'],
-  [/from '\.\.\/utils\/assignment-resolver\.js'/g, "from '../utils/ticket-resolver.js'"],
-  [/ResolvedAssignment/g, 'ResolvedTicket'],
-  [/assignmentScopeKey/g, 'ticketScopeKey'],
-  [/assignmentScopes/g, 'ticketScopes'],
-  [/assignmentScope\(/g, 'ticketScope('],
-  [/ensureAssignmentSessions/g, 'ensureTicketSessions'],
-  [/touchedAssignments/g, 'touchedTickets'],
-  [/session\.assignment/g, 'session.ticket'],
-  [/AssignmentScope/g, 'TicketScope'],
-  [/interface Session \{\n  key: string;\n  assignment: ResolvedTicket/g,
+  [/import type \{ ResolvedTicket \}/g, 'import type { ResolvedTicket }'],
+  [/from '\.\.\/utils\/ticket-resolver\.js'/g, "from '../utils/ticket-resolver.js'"],
+  [/ResolvedTicket/g, 'ResolvedTicket'],
+  [/ticketScopeKey/g, 'ticketScopeKey'],
+  [/ticketScopes/g, 'ticketScopes'],
+  [/ticketScope\(/g, 'ticketScope('],
+  [/ensureTicketSessions/g, 'ensureTicketSessions'],
+  [/touchedTickets/g, 'touchedTickets'],
+  [/session\.ticket/g, 'session.ticket'],
+  [/TicketScope/g, 'TicketScope'],
+  [/interface Session \{\n  key: string;\n  ticket: ResolvedTicket/g,
    'interface Session {\n  key: string;\n  ticket: ResolvedTicket'],
-  [/existing\.assignment = assignment/g, 'existing.ticket = ticket'],
-  [/export function assignmentScopeKey/g, 'export function ticketScopeKey'],
-  [/\bassignmentId\b/g, 'ticketId'],
-  [/\bassignmentDir\b/g, 'ticketDir'],
-  [/\bassignmentSlug\b/g, 'ticketSlug'],
-  [/\bassignmentRef\b/g, 'ticketRef'],
-  [/\bassignment\.ticketDir\b/g, 'ticket.ticketDir'],
-  [/\bassignment\.id\b/g, 'ticket.id'],
-  [/\(assignment: ResolvedTicket\)/g, '(ticket: ResolvedTicket)'],
-  [/function ticketScope\(assignment:/g, 'function ticketScope(ticket:'],
-  [/async function routingContext\(assignment:/g, 'async function routingContext(ticket:'],
-  [/async function ensureTicketSessions\(assignment:/g, 'async function ensureTicketSessions(ticket:'],
-  [/withdraw\(assignment:/g, 'withdraw(ticket:'],
-  [/cancel\(assignment:/g, 'cancel(ticket:'],
-  [/items\(assignment:/g, 'items(ticket:'],
-  [/reindex\(assignment:/g, 'reindex(ticket:'],
+  [/existing\.ticket = ticket/g, 'existing.ticket = ticket'],
+  [/export function ticketScopeKey/g, 'export function ticketScopeKey'],
+  [/\bticketId\b/g, 'ticketId'],
+  [/\bticketDir\b/g, 'ticketDir'],
+  [/\bticketSlug\b/g, 'ticketSlug'],
+  [/\bticketRef\b/g, 'ticketRef'],
+  [/\bticket\.ticketDir\b/g, 'ticket.ticketDir'],
+  [/\bticket\.id\b/g, 'ticket.id'],
+  [/\(ticket: ResolvedTicket\)/g, '(ticket: ResolvedTicket)'],
+  [/function ticketScope\(ticket:/g, 'function ticketScope(ticket:'],
+  [/async function routingContext\(ticket:/g, 'async function routingContext(ticket:'],
+  [/async function ensureTicketSessions\(ticket:/g, 'async function ensureTicketSessions(ticket:'],
+  [/withdraw\(ticket:/g, 'withdraw(ticket:'],
+  [/cancel\(ticket:/g, 'cancel(ticket:'],
+  [/items\(ticket:/g, 'items(ticket:'],
+  [/reindex\(ticket:/g, 'reindex(ticket:'],
   [/\bticket: ResolvedTicket,\n    definition/g, 'ticket: ResolvedTicket,\n    definition'],
 ];
 
 for (const [pat, rep] of reps) c = c.replace(pat, rep);
 
 // Keep scope key literal per Phase A plan
-c = c.replace(/`\\$\\{ticketId\\}:@ticket`/g, '`${ticketId}:@assignment`');
-c = c.replace(/return `\\$\\{ticketId\\}:@ticket`;/g, 'return `${ticketId}:@assignment`;');
+c = c.replace(/`\\$\\{ticketId\\}:@ticket`/g, '`${ticketId}:@ticket`');
+c = c.replace(/return `\\$\\{ticketId\\}:@ticket`;/g, 'return `${ticketId}:@ticket`;');
 
 // Fix any double-renames
 c = c.replace(/ticketScopeKey\(ticket\.id\)/g, 'ticketScopeKey(ticket.id)');

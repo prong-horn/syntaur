@@ -27,12 +27,12 @@ export interface SyntaurContext {
 
 /**
  * The resolved write boundary for a session — mirrors the CLI's
- * `syntaur session boundary --json` contract. The assignment/project dirs come
- * from the session's OPEN engagement (NOT context.json, whose assignment scalars
+ * `syntaur session boundary --json` contract. The ticket/project dirs come
+ * from the session's OPEN engagement (NOT context.json, whose ticket scalars
  * were demoted). `workspaceRoot` is the context.json marker.
  */
 export interface SyntaurBoundary {
-  assignmentDir?: string;
+  ticketDir?: string;
   projectDir?: string;
   workspaceRoot?: string;
 }
@@ -47,7 +47,7 @@ function expandHome(p: string): string {
 /**
  * Read `<cwd>/.syntaur/context.json`. context.json is now a WORKSPACE MARKER —
  * this only surfaces `workspaceRoot` / `sessionId` / `projectSlug`. The active
- * assignment/project dirs live on the session's engagement (resolveBoundary).
+ * ticket/project dirs live on the session's engagement (resolveBoundary).
  * null when absent/unparseable.
  */
 export function loadContext(cwd: string): SyntaurContext | null {
@@ -100,11 +100,11 @@ export function resolveBoundary(cwd: string, sessionId?: string): SyntaurBoundar
   }
   const str = (v: unknown): string | undefined =>
     typeof v === 'string' && v.length > 0 ? v : undefined;
-  const assignmentDir = str(parsed.assignmentDir);
+  const ticketDir = str(parsed.ticketDir);
   const projectDir = str(parsed.projectDir);
   const workspaceRoot = str(parsed.workspaceRoot);
   return {
-    assignmentDir: assignmentDir ? expandHome(assignmentDir) : undefined,
+    ticketDir: ticketDir ? expandHome(ticketDir) : undefined,
     projectDir: projectDir ? expandHome(projectDir) : undefined,
     workspaceRoot: workspaceRoot ? expandHome(workspaceRoot) : undefined,
   };
@@ -127,13 +127,13 @@ function basename(p: string): string {
 /**
  * Decide whether a write to `absFilePath` is allowed under the resolved boundary.
  * Mirrors `platforms/codex/scripts/enforce-boundaries.sh`:
- *  - allow under assignmentDir (if resolved)
+ *  - allow under ticketDir (if resolved)
  *  - allow under projectDir/resources/ and projectDir/memories/ EXCEPT derived `_*` files
  *  - allow the `.syntaur/context.json` file itself (caller passes cwd-resolved path)
  *  - allow under workspaceRoot (if set)
  *  - otherwise block
  *
- * CRITICAL: no fail-open. When the boundary has no assignment/project (no open
+ * CRITICAL: no fail-open. When the boundary has no ticket/project (no open
  * engagement) but a workspace is known, only the workspace-root (and context
  * file) gates can match → WORKSPACE-ONLY enforcement. Every `isUnder` check is
  * already empty-safe (`isUnder` returns false for an empty parent).
@@ -145,7 +145,7 @@ export function isWriteAllowed(
 ): { allowed: boolean; reason?: string } {
   const file = resolve(absFilePath);
 
-  if (boundary.assignmentDir && isUnder(file, boundary.assignmentDir)) return { allowed: true };
+  if (boundary.ticketDir && isUnder(file, boundary.ticketDir)) return { allowed: true };
 
   if (boundary.projectDir) {
     const resourcesDir = resolve(boundary.projectDir, 'resources');
@@ -159,11 +159,11 @@ export function isWriteAllowed(
 
   if (boundary.workspaceRoot && isUnder(file, boundary.workspaceRoot)) return { allowed: true };
 
-  const reason = boundary.assignmentDir
-    ? `Syntaur write boundary violation: cannot write to '${file}'. Allowed: assignment dir ` +
-      `(${boundary.assignmentDir}), project resources/memories, workspace ` +
+  const reason = boundary.ticketDir
+    ? `Syntaur write boundary violation: cannot write to '${file}'. Allowed: ticket dir ` +
+      `(${boundary.ticketDir}), project resources/memories, workspace ` +
       `(${boundary.workspaceRoot ?? 'n/a'}).`
-    : `Syntaur write boundary violation: cannot write to '${file}'. No active assignment for ` +
+    : `Syntaur write boundary violation: cannot write to '${file}'. No active ticket for ` +
       `this session — writes are restricted to the workspace (${boundary.workspaceRoot ?? 'n/a'}).`;
   return { allowed: false, reason };
 }
@@ -212,14 +212,14 @@ export interface CoreCommand {
 
 // Slash commands match the existing CC/Codex bare command names for parity. Only
 // `doctor-syntaur` shells out (no required args); the rest point the agent at the
-// installed Tier-1 skill, which derives assignment/session from .syntaur/context.json.
+// installed Tier-1 skill, which derives ticket/session from .syntaur/context.json.
 export const CORE_COMMANDS: CoreCommand[] = [
   { name: 'doctor-syntaur', description: 'Run `syntaur doctor` diagnostics', kind: 'passthrough', argv: ['doctor'] },
-  { name: 'grab-assignment', description: 'Claim a Syntaur assignment into this session', kind: 'guidance', skill: 'grab-assignment' },
-  { name: 'log-progress', description: 'Append a progress entry to the active assignment', kind: 'guidance', skill: 'log-progress' },
-  { name: 'complete-assignment', description: 'Write a handoff and complete the assignment', kind: 'guidance', skill: 'complete-assignment' },
-  { name: 'resume-session', description: 'Re-orient on the active assignment', kind: 'guidance', skill: 'resume-session' },
-  { name: 'set-workspace', description: 'Set workspace fields on the active assignment', kind: 'guidance', skill: 'set-workspace' },
+  { name: 'grab-ticket', description: 'Claim a Syntaur ticket into this session', kind: 'guidance', skill: 'grab-ticket' },
+  { name: 'log-progress', description: 'Append a progress entry to the active ticket', kind: 'guidance', skill: 'log-progress' },
+  { name: 'complete-ticket', description: 'Write a handoff and complete the ticket', kind: 'guidance', skill: 'complete-ticket' },
+  { name: 'resume-session', description: 'Re-orient on the active ticket', kind: 'guidance', skill: 'resume-session' },
+  { name: 'set-workspace', description: 'Set workspace fields on the active ticket', kind: 'guidance', skill: 'set-workspace' },
   { name: 'track-session', description: 'Register this session in the Syntaur dashboard', kind: 'guidance', skill: 'track-session' },
 ];
 
@@ -284,7 +284,7 @@ export default function activate(pi: {
     if (!path) return; // not a write → allow
     const cwd = process.cwd();
     // context.json presence is the Syntaur-workspace marker. Absent → not a
-    // Syntaur workspace → allow (unchanged). Present → enforce. The assignment
+    // Syntaur workspace → allow (unchanged). Present → enforce. The ticket
     // boundary is resolved from the session's OPEN engagement via the CLI — NOT
     // the demoted context.json scalars. No engagement → workspace-only.
     if (!hasContextFile(cwd)) return; // not a Syntaur workspace → allow
@@ -315,7 +315,7 @@ export default function activate(pi: {
         notify(
           ctx,
           `Follow the Syntaur "${cmd.skill}" skill (installed via skills). It derives the active ` +
-            `assignment/session from .syntaur/context.json — run its steps to ${cmd.description.toLowerCase()}.`,
+            `ticket/session from .syntaur/context.json — run its steps to ${cmd.description.toLowerCase()}.`,
         );
       },
     });

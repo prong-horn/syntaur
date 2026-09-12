@@ -16,7 +16,7 @@ generated: "${params.timestamp}"
 - [Project Overview](./project.md)
 
 ## Indexes
-- [Assignments](./_index-tickets.md)
+- [Tickets](./_index-tickets.md)
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
 - [Status](./_status.md)

@@ -121,7 +121,7 @@ function makeBroker(
   clientsByAgent = new Map();
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'assignments'),
+    assignmentsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     // Cloned: the broker broadcasts the live item object, which the normalizer
     // keeps mutating. In the server the WS layer serialises it immediately.
@@ -178,12 +178,12 @@ async function idleAll(turns: number): Promise<void> {
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-routing-'));
-  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'assignments', 'chat-demo');
+  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
   worktree = join(sandbox, 'worktree');
   await mkdir(assignmentDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
   await writeFile(
-    join(assignmentDir, 'assignment.md'),
+    join(assignmentDir, 'ticket.md'),
     [
       '---',
       `id: ${ASSIGNMENT_ID}`,
@@ -543,7 +543,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     const log = await openChatLog(assignmentDir);
     for (const line of lines) {
       await log.append({
-        assignmentId: ASSIGNMENT_ID,
+        ticketId: ASSIGNMENT_ID,
         agentId: line.agentId ?? 'human',
         sessionKey: line.sessionKey ?? SCOPE_KEY,
         turnId: line.turnId ?? null,
@@ -824,7 +824,7 @@ describe('the history delta and its cursor (Task 4)', () => {
     expect(standing).toContain('You are @planner (Planner)');
     expect(standing).toContain('Participants:');
     expect(standing).toContain('@implementer — Implementer, claude');
-    expect(standing).toContain('Human: the assignment owner');
+    expect(standing).toContain('Human: the ticket owner');
   });
 
   it('carries an updated description in the roster after saveAgent', async () => {

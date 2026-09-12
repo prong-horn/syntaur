@@ -23,12 +23,12 @@ beforeEach(async () => {
   const pDir = resolve(projectsDir, 'p');
   await mkdir(resolve(pDir, 'tickets', 'a1'), { recursive: true });
   await writeFile(resolve(pDir, 'project.md'), '---\nid: pid\nslug: p\ntitle: "P"\narchived: false\narchivedAt: null\narchivedReason: null\n---\n');
-  await writeFile(resolve(pDir, 'tickets', 'a1', 'ticket.md'), assignmentMd('a1id', 'a1', 'in_progress'));
+  await writeFile(resolve(pDir, 'tickets', 'a1', 'ticket.md'), ticketMd('a1id', 'a1', 'in_progress'));
 
   // Standalone ticket resolvable by UUID.
   const sDir = resolve(home, 'tickets', 'standalone-uuid');
   await mkdir(sDir, { recursive: true });
-  await writeFile(resolve(sDir, 'ticket.md'), assignmentMd('standalone-uuid', 'solo', 'review').replace('project: p\n', ''));
+  await writeFile(resolve(sDir, 'ticket.md'), ticketMd('standalone-uuid', 'solo', 'review').replace('project: p\n', ''));
 });
 
 afterEach(async () => {

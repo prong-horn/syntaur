@@ -60,9 +60,9 @@ fi
 if [ -z "$SEGMENTS_RAW" ]; then
   # Default: include wrap as leading segment only if a wrap path is set.
   if [ -n "$WRAP_PATH" ]; then
-    SEGMENTS_RAW="wrap,git,assignment,session"
+    SEGMENTS_RAW="wrap,git,ticket,session"
   else
-    SEGMENTS_RAW="git,assignment,session"
+    SEGMENTS_RAW="git,ticket,session"
   fi
 fi
 

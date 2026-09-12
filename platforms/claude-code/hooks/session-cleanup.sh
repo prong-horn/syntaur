@@ -30,10 +30,10 @@ syntaur_bounded_stop() {
 }
 syntaur_bounded_stop || true
 
-# Keep derived status fresh on session end so an assignment doesn't sit stale
+# Keep derived status fresh on session end so an ticket doesn't sit stale
 # after the agent walks away. Best-effort, bounded (~3s, no `timeout` on macOS),
 # and migration-gated (`--if-migrated`) so it can't re-derive pre-migration
-# assignments during rollout. Resolves the assignment from the ending session's
+# tickets during rollout. Resolves the ticket from the ending session's
 # latest engagement (passed via --session-id); no-ops silently when none.
 HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null)
 HOOK_SID=$(printf '%s' "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)

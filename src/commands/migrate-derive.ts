@@ -65,10 +65,20 @@ async function listTargets(projectsDir: string, standaloneDir: string): Promise<
     try {
       slugs = await readdir(resolve(projectDir, 'assignments'));
     } catch {
-      continue;
+      /* none */
     }
     for (const slug of slugs) {
       const path = resolve(projectDir, 'assignments', slug, 'assignment.md');
+      if (await fileExists(path)) targets.push({ path, projectDir, ref: `${project}/${slug}` });
+    }
+    let ticketSlugs: string[] = [];
+    try {
+      ticketSlugs = await readdir(resolve(projectDir, 'tickets'));
+    } catch {
+      /* none */
+    }
+    for (const slug of ticketSlugs) {
+      const path = resolve(projectDir, 'tickets', slug, 'ticket.md');
       if (await fileExists(path)) targets.push({ path, projectDir, ref: `${project}/${slug}` });
     }
   }
@@ -79,7 +89,9 @@ async function listTargets(projectsDir: string, standaloneDir: string): Promise<
     /* none */
   }
   for (const id of ids) {
-    const path = resolve(standaloneDir, id, 'assignment.md');
+    const ticketPath = resolve(standaloneDir, id, 'ticket.md');
+    const legacyPath = resolve(standaloneDir, id, 'assignment.md');
+    const path = (await fileExists(ticketPath)) ? ticketPath : legacyPath;
     if (await fileExists(path)) targets.push({ path, projectDir: null, ref: id });
   }
   return targets;

@@ -249,7 +249,7 @@ describe('resolveTicketTarget', () => {
           stage: 'plan',
         }),
       }),
-    ).rejects.toThrow(/missing assignment/);
+    ).rejects.toThrow(/missing ticket/);
   });
 
   it('does not let a workspace-marker-only context.json resolve a ticket', async () => {

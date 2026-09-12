@@ -44,7 +44,7 @@ const A_PAYMENT = {
   ticketType: 'feature',
   project: 'billing',
   externalIds: [{ system: 'jira', id: 'PROJ-123', url: null }],
-  keywords: ['PROJ-123', 'jirt:PROJ-123'],
+  keywords: ['PROJ-123', 'jira:PROJ-123'],
 };
 const A_REFUND = {
   type: 'ticket',
@@ -68,8 +68,8 @@ describe('palette gate + rank integration', () => {
     expect(titles(runPalette('status:done', INDEX))).toEqual(['Refund logic']);
   });
 
-  it('jirt:PROJ-123 narrows to the entity carrying that external ID', () => {
-    expect(titles(runPalette('jirt:PROJ-123', INDEX))).toEqual(['Payment flow']);
+  it('jira:PROJ-123 narrows to the entity carrying that external ID', () => {
+    expect(titles(runPalette('jira:PROJ-123', INDEX))).toEqual(['Payment flow']);
   });
 
   it('t: payment → tickets fuzzy-ranked by "payment"', () => {
@@ -87,8 +87,8 @@ describe('palette gate + rank integration', () => {
     expect(titles(runPalette('PROJ-123', INDEX))).toEqual(['Payment flow']);
   });
 
-  it('t: jirt:PROJ payment combines gate + fuzzy', () => {
-    expect(titles(runPalette('t: jirt:PROJ payment', INDEX))).toEqual(['Payment flow']);
+  it('t: jira:PROJ payment combines gate + fuzzy', () => {
+    expect(titles(runPalette('t: jira:PROJ payment', INDEX))).toEqual(['Payment flow']);
   });
 
   it('type:feature matches via ticketType, not the entity kind', () => {
@@ -121,11 +121,11 @@ describe('palette external-ID boundary', () => {
     status: 'pending',
     ticketType: 'chore',
     externalIds: [{ system: 'jira', id: '123-ABC', url: null }],
-    keywords: ['123-ABC', 'jirt:123-ABC'],
+    keywords: ['123-ABC', 'jira:123-ABC'],
   };
 
   it('a leading-digit external ID is matchable when quoted', () => {
-    expect(titles(runPalette('jirt:"123-ABC"', [A_LEGACY]))).toEqual(['Legacy import']);
+    expect(titles(runPalette('jira:"123-ABC"', [A_LEGACY]))).toEqual(['Legacy import']);
   });
 
   it('the same ID is still findable as bare free text via keywords', () => {

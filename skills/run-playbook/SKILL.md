@@ -50,7 +50,7 @@ Each entry looks like:
 
 ```markdown
 - **[Commit Discipline](commit-discipline.md)** — Make small, logical commits …
-  _When to use: When making git commits during assignment work_
+  _When to use: When making git commits during tssignment work_
 ```
 
 The slug is the link target stem (`commit-discipline` from `commit-discipline.md`).

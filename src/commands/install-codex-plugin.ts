@@ -158,9 +158,9 @@ export async function installCodexPluginCommand(
 
   console.log('\nThe plugin is now available to Codex.');
   console.log(
-    '  Protocol skills: syntaur-protocol, create-project, new, grab-ticket, plan-assignment, complete-assignment, manage-statuses, clear-assignment, replan, resume-session, syntaur-worktree, list-assignments, log-progress, set-workspace, track-session, run-playbook, doctor-syntaur',
+    '  Protocol skills: syntaur-protocol, create-project, create-ticket, grab-ticket, plan-ticket, complete-ticket, manage-statuses, clear-ticket, replan, resume-session, syntaur-worktree, list-tickets, log-progress, set-workspace, track-session, run-playbook, doctor-syntaur',
   );
   console.log('  Codex-specific: track-session skill (rollout path aware)');
-  console.log('  Slash commands: /track-session, /replan, /resume-session, /syntaur-worktree, /list-assignments, /log-progress, /set-workspace');
+  console.log('  Slash commands: /track-session, /replan, /resume-session, /syntaur-worktree, /list-tickets, /log-progress, /set-workspace');
   console.log('  Hooks: write boundary enforcement, session cleanup');
 }

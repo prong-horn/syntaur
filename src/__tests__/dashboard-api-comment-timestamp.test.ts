@@ -6,9 +6,12 @@ import { tmpdir } from 'node:os';
 import { createWriteRouter } from '../dashboard/api-write.js';
 
 let testDir: string;
+let ticketsDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-comment-ts-test-'));
+  ticketsDir = resolve(testDir, 'tickets');
+  await mkdir(ticketsDir, { recursive: true });
 });
 
 afterEach(async () => {
@@ -112,13 +115,13 @@ tags: []
 describe('B5 — comment write produces a single YAML-quoted updated timestamp', () => {
   it('writes updated: "<iso>" — not a double-encoded updated: "\\"<iso>\\""', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'first comment', author: 'human', type: 'note' },
     );
     expect(res.statusCode).toBe(201);

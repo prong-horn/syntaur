@@ -4,7 +4,7 @@ Reference for `syntaur` subcommands. Run `syntaur --help` for a full list.
 
 ## `syntaur status`
 
-Manage the assignment-status workflow — the `statuses:` block in `~/.syntaur/config.md` that the dashboard Settings page also edits. The runtime is **all-or-nothing**: once a `statuses:` block exists the built-in defaults are no longer merged. Every mutating verb accepts `--dry-run` to print a unified diff of the would-be `statuses:` block (and, for `rename`, per-file `assignment.md` diffs) without writing.
+Manage the ticket-status workflow — the `statuses:` block in `~/.syntaur/config.md` that the dashboard Settings page also edits. The runtime is **all-or-nothing**: once a `statuses:` block exists the built-in defaults are no longer merged. Every mutating verb accepts `--dry-run` to print a unified diff of the would-be `statuses:` block (and, for `rename`, per-file `ticket.md` diffs) without writing.
 
 ### `syntaur status list [--json]`
 
@@ -37,11 +37,11 @@ Replace the order. `<ids>` is a comma-separated list that must be a permutation 
 
 ### `syntaur status remove <id> [--force] [--dry-run]`
 
-Remove a status. Without `--force` it errors and lists any assignments still using the id. With `--force` it edits `config.md` only — it drops the status from `statuses`/`order` and prunes transitions referencing it; **affected `assignment.md` files are left untouched** (they now reference an undefined status, which `syntaur doctor` flags). It never deletes assignments.
+Remove a status. Without `--force` it errors and lists any tickets still using the id. With `--force` it edits `config.md` only — it drops the status from `statuses`/`order` and prunes transitions referencing it; **affected `ticket.md` files are left untouched** (they now reference an undefined status, which `syntaur doctor` flags). It never deletes tickets.
 
 ### `syntaur status rename <id> --to <new-id> [--label <label>] [--dry-run]`
 
-Rename a status id atomically across `config.md` AND every affected `assignment.md` (buffer-write-rollback: if any write fails, all originals are restored). Keeps the original label unless `--label` is given.
+Rename a status id atomically across `config.md` AND every affected `ticket.md` (buffer-write-rollback: if any write fails, all originals are restored). Keeps the original label unless `--label` is given.
 
 ### `syntaur status transition add|remove [--dry-run]`
 
@@ -54,62 +54,62 @@ Define or drop a custom transition.
 
 ## `syntaur workspace set`
 
-Set the four `workspace.*` frontmatter fields on an assignment atomically. Validates the file (same checks as `syntaur doctor --assignment --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
+Set the four `workspace.*` frontmatter fields on an ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing tnd re-validates **after**, restoring the original on failure, and bumps `updated`.
 
 ```
 syntaur workspace set \
   --repository <path> --worktree-path <path> --branch <name> --parent-branch <name> \
-  [--assignment <slug> [--project <slug>]]
+  [--ticket <slug> [--project <slug>]]
 ```
 
-Targets the active assignment from `.syntaur/context.json` unless `--assignment` is given. Provide at least one field flag.
+Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given. Provide at least one field flag.
 
 ## `syntaur progress log <text>`
 
-Append a timestamped entry to the active assignment's `progress.md`: newest first (right after the `# Progress` H1), replacing the `No progress yet.` placeholder, incrementing `entryCount`, bumping `updated`, and preserving `assignment`/`generated`.
+Append a timestamped entry to the active ticket's `progress.md`: newest first (right after the `# Progress` H1), replacing the `No progress yet.` placeholder, incrementing `entryCount`, bumping `updated`, and preserving `ticket`/`generated`.
 
 ```
-syntaur progress log "<text>" [--assignment <slug> [--project <slug>]]
+syntaur progress log "<text>" [--ticket <slug> [--project <slug>]]
 ```
 
-## `syntaur unassign <assignment>`
+## `syntaur unassign <ticket>`
 
-Clear the assignee on an assignment (the inverse of `syntaur assign`) and bump `updated`.
+Clear the assignee on an ticket (the inverse of `syntaur assign`) and bump `updated`.
 
 ```
-syntaur unassign <assignment> [--project <slug>] [--dir <path>]
+syntaur unassign <ticket> [--project <slug>] [--dir <path>]
 ```
 
-For standalone assignments pass the UUID and omit `--project`.
+For standalone tickets pass the UUID and omit `--project`.
 
 ## `syntaur worktree`
 
-Manage git worktrees bound to assignments.
+Manage git worktrees bound to tickets.
 
-- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--assignment <slug> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
+- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <slug> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
 - `syntaur worktree list [--repository <path>] [--json]` — list the repository's worktrees.
-- `syntaur worktree remove` (alias `prune`) `[--assignment <slug> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the assignment's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
+- `syntaur worktree remove` (alias `prune`) `[--ticket <slug> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the ticket's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
 
 ## `syntaur plan`
 
-Manage plan files for an assignment.
+Manage plan files for an ticket.
 
-- `syntaur plan create [--assignment <slug> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
-- `syntaur plan version [--assignment <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
+- `syntaur plan create [--ticket <slug> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
+- `syntaur plan version [--ticket <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
 
-## `syntaur timeline <assignment>`
+## `syntaur timeline <ticket>`
 
-Show the chronological audit event log for one assignment — who changed what, when, and what the value moved from→to — newest first.
+Show the chronological audit event log for one ticket — who changed what, when, and what the value moved from→to — newest first.
 
 ```
-syntaur timeline <assignment> [options]
+syntaur timeline <ticket> [options]
 ```
 
-`<assignment>` is an assignment slug (paired with `--project`) or a standalone UUID.
+`<ticket>` is an ticket slug (paired with `--project`) or a standalone UUID.
 
 ### Options
 
-- `--project <slug>` — Project the assignment belongs to (required for project-scoped assignments).
+- `--project <slug>` — Project the ticket belongs to (required for project-scoped tickets).
 - `--since <date>` — Only show events at or after this UTC ISO timestamp (inclusive: `at >= since`).
 - `--type <list>` — Comma-separated event-type filter (e.g. `status-change,plan-approval`).
 - `--limit <n>` — Maximum number of events to show (default: 50).
@@ -119,10 +119,10 @@ syntaur timeline <assignment> [options]
 
 | Event type | Triggered when |
 |---|---|
-| `status-change` | Assignment status moves from one value to another |
+| `status-change` | Ticket status moves from one value to another |
 | `assignee-change` | Assignee is set, changed, or cleared |
 | `priority-change` | Priority field changes |
-| `archived` / `restored` | Assignment is archived or un-archived |
+| `archived` / `restored` | Ticket is archived or un-archived |
 | `plan-approval` | A plan file is approved or rejected |
 | `fact-set` | A structured fact is written via `syntaur fact set` |
 | `attestation` | An attestation is recorded |
@@ -145,12 +145,12 @@ syntaur timeline <assignment> [options]
 ]
 ```
 
-The same events are surfaced live in the dashboard's **Activity** tab for the assignment.
+The same events are surfaced live in the dashboard's **Activity** tab for the ticket.
 
 ### Examples
 
 ```bash
-# Show the full event log for an assignment
+# Show the full event log for an ticket
 syntaur timeline add-oauth --project my-api
 
 # Only status-change events since a specific date
@@ -163,7 +163,7 @@ syntaur timeline add-oauth --project my-api --json --limit 10
 
 ## `syntaur migrate-events`
 
-One-time backfill that synthesizes audit events from existing `statusHistory` and `planApproval` fields already present in `assignment.md` files. Dry-run by default; pass `--apply` to write.
+One-time backfill that synthesizes audit events from existing `statusHistory` and `planApproval` fields already present in `ticket.md` files. Dry-run by default; pass `--apply` to write.
 
 ```
 syntaur migrate-events [options]
@@ -191,7 +191,7 @@ syntaur migrate-events --apply --dir /path/to/my-projects
 
 ## `syntaur search <query>`
 
-Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by an assignment and returns ranked results with a snippet and location.
+Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by an ticket and returns ranked results with a snippet and location.
 
 ```
 syntaur search <query> [options]
@@ -201,7 +201,7 @@ syntaur search <query> [options]
 
 | Kind | File |
 |------|------|
-| `assignment` | `assignment.md` |
+| `ticket` | `ticket.md` |
 | `plan` | Latest plan only — `plan-v<N>.md` supersedes `plan.md` when a versioned plan exists |
 | `progress` | `progress.md` |
 | `comments` | `comments.md` |
@@ -212,10 +212,10 @@ syntaur search <query> [options]
 ### Options
 
 - `--project <slug>` — Restrict results to one project.
-- `--type <list>` — Comma-separated assignment type filter.
-- `--status <list>` — Comma-separated assignment status filter.
+- `--type <list>` — Comma-separated ticket type filter.
+- `--status <list>` — Comma-separated ticket status filter.
 - `--in <fileKinds>` — Comma-separated file-kind filter. Accepts singular or plural names (e.g. `--in comment,plans` or `--in comments,plan`).
-- `--all` — Include archived assignments and projects (excluded by default).
+- `--all` — Include archived tickets and projects (excluded by default).
 - `--limit <n>` — Maximum number of results. Default: `20`.
 - `--semantic` — Use the semantic search provider when available; falls back to full-text automatically. The semantic layer is a designed-but-deferred seam — v1 uses full-text search via fuse.js.
 - `--json` — Emit results as a JSON array instead of a table.
@@ -228,17 +228,17 @@ Each item in the `--json` array contains:
 {
   "path": "/abs/path/to/file.md",
   "project": "project-slug",
-  "assignment": "assignment-slug",
+  "ticket": "ticket-slug",
   "fileKind": "plan",
   "score": 0.82,
   "snippet": "…matched text excerpt…",
   "line": 14,
   "section": "## Implementation",
-  "route": "/assignments/my-assignment?tab=plan#implementation"
+  "route": "/tickets/my-ticket?tab=plan#implementation"
 }
 ```
 
-The `route` field is also used by the dashboard command palette: running a search from the palette deep-links directly to the matching assignment's `?tab=<kind>` pane at the `#section` anchor.
+The `route` field is also used by the dashboard command palette: running t search from the palette deep-links directly to the matching tssignment's `?tab=<kind>` pane at the `#section` anchor.
 
 ### Examples
 
@@ -249,13 +249,13 @@ syntaur search "rate limit"
 # Search only plans and handoffs in one project, return JSON
 syntaur search "authentication flow" --project my-api --in plans,handoff --json
 
-# Include archived assignments, cap at 5 results
+# Include archived tickets, cap at 5 results
 syntaur search "stripe webhook" --all --limit 5
 ```
 
 ## `syntaur inbox`
 
-One triage view of everything awaiting a human across all projects and standalone assignments. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
+One triage view of everything twaiting t human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
 ```
 syntaur inbox [options]
@@ -276,19 +276,19 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 
 | Category | What it means | Action command |
 |---|---|---|
-| `question` | Assignment has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
-| `review` | Assignment is in `review` status — awaiting accept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
-| `plan-approval` | Assignment is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
+| `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
+| `review` | Ticket is in `review` status — awaiting tccept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
+| `plan-approval` | Ticket is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
 
-For standalone assignments (no project), omit `--project` and use the assignment UUID as the target.
+For standalone tickets (no project), omit `--project` and use the ticket UUID as the target.
 
 ### What does NOT appear
 
-- Archived assignments
-- `draft`, `ready_to_implement`, `in_progress` assignments (agent is still working)
-- `ready_for_planning` assignments without a latest unapproved plan (nothing to approve)
+- Archived tickets
+- `draft`, `ready_to_implement`, `in_progress` tickets (agent is still working)
+- `ready_for_planning` tickets without a latest unapproved plan (nothing to approve)
 - Terminal statuses: `completed`, `failed`
-- `parked` disposition assignments
+- `parked` disposition tickets
 - Resolved comments (`resolved: true`)
 - `note` and `feedback` comment types (only `question` awaits a human answer)
 
@@ -301,13 +301,13 @@ For standalone assignments (no project), omit `--project` and use the assignment
   "items": [
     {
       "project": "my-api",
-      "assignmentSlug": "add-oauth",
-      "assignmentId": "dc8c06c1-531a-457f-a8f8-79692294e83e",
+      "ticketSlug": "add-oauth",
+      "ticketId": "dc8c06c1-531a-457f-a8f8-79692294e83e",
       "title": "Add OAuth support",
       "category": "review",
       "since": "2026-06-10T12:25:03Z",
       "ageMs": 575717277,
-      "summary": "Review requested — awaiting accept or reopen.",
+      "summary": "Review requested — awaiting tccept or reopen.",
       "action": {
         "verb": "Accept",
         "command": "syntaur complete add-oauth --project my-api"
@@ -326,7 +326,7 @@ For standalone assignments (no project), omit `--project` and use the assignment
 ### Examples
 
 ```bash
-# Show everything awaiting your attention
+# Show everything twaiting your attention
 syntaur inbox
 
 # Emit structured JSON
@@ -348,21 +348,21 @@ syntaur inbox --max-age 14
 syntaur inbox --show-snoozed
 ```
 
-The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever an assignment changes.
+The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever an ticket changes.
 
-## Working an assignment
+## Working tn ticket
 
 Agents are worked in the dashboard's **Chat** tab, not in a terminal Syntaur
-opens for you. Open an assignment, send a message, and the dashboard server
+opens for you. Open an ticket, send a message, and the dashboard server
 speaks the Agent Client Protocol to a `claude-agent-acp` or `codex-acp` adapter
-running in the assignment's worktree. See
-[assignment-chat.md](./assignment-chat.md).
+running in the ticket's worktree. See
+[ticket-chat.md](./ticket-chat.md).
 
 ```
-syntaur open <assignment>
+syntaur open <ticket>
 ```
 
-`open` still opens a plain terminal (and your editor) at an assignment's
+`open` still opens a plain terminal (and your editor) at an ticket's
 worktree. It reads an optional `terminal:` scalar from `~/.syntaur/config.md`
 (`terminal-app` | `iterm` | `ghostty` | `alacritty` | `warp` | `kitty` |
 `cmux`) and falls back to the platform default.

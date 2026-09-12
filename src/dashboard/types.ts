@@ -552,6 +552,7 @@ export interface PlaybooksResponse {
 export type EditableDocumentType =
   | 'project'
   | 'assignment'
+  | 'ticket'
   | 'plan'
   | 'scratchpad'
   | 'handoff'
@@ -564,7 +565,7 @@ export interface EditableDocumentResponse {
   content: string;
   projectSlug: string | null;
   ticketSlug?: string;
-  /** For standalone assignments, the UUID (routes use /assignments/:id/...). */
+  /** For standalone assignments, the UUID (routes use /tickets/:id/...). */
   ticketId?: string;
   appendOnly: boolean;
 }

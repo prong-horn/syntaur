@@ -22,20 +22,20 @@ function walk(dir, files = [], skip = new Set()) {
 {
   let c = readFileSync(join(ROOT, 'src/chat/broker.ts'), 'utf8');
   c = c.replace(
-    /for \(const assignment of touchedTickets\.values\(\)\) \{\s+const participants = await readParticipants\(ticket\.ticketDir/g,
+    /for \(const ticket of touchedTickets\.values\(\)\) \{\s+const participants = await readParticipants\(ticket\.ticketDir/g,
     'for (const ticket of touchedTickets.values()) {\n        const participants = await readParticipants(ticket.ticketDir',
   );
-  c = c.replace(/\brecordTicket\(assignment,/g, 'recordTicket(ticket,');
-  c = c.replace(/async send\(\{ assignment, agentId/g, 'async send({ ticket, agentId');
-  c = c.replace(/routingContext\(assignment\)/g, 'routingContext(ticket)');
-  // AgentSession fields: dashboard still uses assignmentSlug through Task 2
-  c = c.replace(/ticketSlug:/g, 'assignmentSlug:');
-  c = c.replace(/ticketId:/g, 'assignmentId:');
+  c = c.replace(/\brecordTicket\(ticket,/g, 'recordTicket(ticket,');
+  c = c.replace(/async send\(\{ ticket, agentId/g, 'async send({ ticket, agentId');
+  c = c.replace(/routingContext\(ticket\)/g, 'routingContext(ticket)');
+  // AgentSession fields: dashboard still uses ticketSlug through Task 2
+  c = c.replace(/ticketSlug:/g, 'ticketSlug:');
+  c = c.replace(/ticketId:/g, 'ticketId:');
   writeFileSync(join(ROOT, 'src/chat/broker.ts'), c);
   console.log('fixed broker.ts');
 }
 
-// --- commands: opts.assignment -> opts.ticket ---
+// --- commands: opts.ticket -> opts.ticket ---
 const CMD_FILES = [
   'src/commands/plan.ts',
   'src/commands/progress.ts',
@@ -51,14 +51,14 @@ for (const rel of CMD_FILES) {
   const p = join(ROOT, rel);
   let c = readFileSync(p, 'utf8');
   const orig = c;
-  c = c.replace(/\bopts\.assignment\b/g, 'opts.ticket');
-  c = c.replace(/\boptions\.assignment\b/g, 'options.ticket');
-  c = c.replace(/\bassignmentArg\b/g, 'ticketArg');
+  c = c.replace(/\bopts\.ticket\b/g, 'opts.ticket');
+  c = c.replace(/\boptions\.ticket\b/g, 'options.ticket');
+  c = c.replace(/\bticketArg\b/g, 'ticketArg');
   // open.ts recreate deps
-  c = c.replace(/ticketsDir: ticketsDir\(\)/g, 'assignmentsDir: ticketsDir()');
-  c = c.replace(/kind: 'ticket'/g, "kind: 'assignment'");
+  c = c.replace(/ticketsDir: ticketsDir\(\)/g, 'ticketsDir: ticketsDir()');
+  c = c.replace(/kind: 'ticket'/g, "kind: 'ticket'");
   // track-session / session AgentSession
-  c = c.replace(/assignmentSlug: options\.ticket/g, 'assignmentSlug: options.ticket');
+  c = c.replace(/ticketSlug: options\.ticket/g, 'ticketSlug: options.ticket');
   if (c !== orig) {
     writeFileSync(p, c);
     console.log('fixed', rel);
@@ -69,7 +69,7 @@ for (const rel of CMD_FILES) {
 {
   const p = join(ROOT, 'src/commands/plan.ts');
   let c = readFileSync(p, 'utf8');
-  c = c.replace(/\bticketMd\b/g, 'assignmentMd');
+  c = c.replace(/\bticketMd\b/g, 'ticketMd');
   writeFileSync(p, c);
 }
 
@@ -77,8 +77,8 @@ for (const rel of CMD_FILES) {
 {
   const p = join(ROOT, 'src/commands/setup-adapter.ts');
   let c = readFileSync(p, 'utf8');
-  c = c.replace(/\boptions\.assignment\b/g, 'options.ticket');
-  c = c.replace(/\bopts\.assignment\b/g, 'opts.ticket');
+  c = c.replace(/\boptions\.ticket\b/g, 'options.ticket');
+  c = c.replace(/\bopts\.ticket\b/g, 'opts.ticket');
   writeFileSync(p, c);
 }
 

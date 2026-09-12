@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Syntaur write boundary enforcement hook for Codex plugins.
 # Reads JSON from stdin and returns a block decision only for writes outside the
-# active assignment boundary. Any parse or runtime error falls back to allow.
+# active ticket boundary. Any parse or runtime error falls back to allow.
 
 allow_and_exit() {
   echo '{}'
@@ -52,7 +52,7 @@ if [ ! -f "$CONTEXT_FILE" ]; then
   allow_and_exit
 fi
 
-# Resolve the write boundary from the session's OPEN engagement (the assignment
+# Resolve the write boundary from the session's OPEN engagement (the ticket
 # scalars were demoted out of context.json). Codex's PreToolUse stdin MAY carry
 # .session_id; if absent, fall back to the ancestor-pid runtime markers (same
 # scheme as session-cleanup.sh). Pass whatever id we have to the CLI explicitly.
@@ -102,7 +102,7 @@ if command -v syntaur >/dev/null 2>&1; then
   BOUNDARY_JSON=$(cd "$CONTEXT_DIR" 2>/dev/null && \
     syntaur session boundary --json ${SID:+--session-id "$SID"} 2>/dev/null)
   if [ -n "$BOUNDARY_JSON" ]; then
-    ASSIGNMENT_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.assignmentDir // empty' 2>/dev/null)
+    ASSIGNMENT_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.ticketDir // empty' 2>/dev/null)
     MISSION_DIR=$(echo "$BOUNDARY_JSON" | jq -r '.projectDir // empty' 2>/dev/null)
     WORKSPACE_ROOT=$(echo "$BOUNDARY_JSON" | jq -r '.workspaceRoot // empty' 2>/dev/null)
   fi
@@ -122,7 +122,7 @@ else
 fi
 
 # Every prefix test is guarded so an EMPTY $DIR never globs to "/*" and allows
-# the whole filesystem. No assignment → only workspace-root/context match →
+# the whole filesystem. No ticket → only workspace-root/context match →
 # WORKSPACE-ONLY enforcement (NOT fail-open).
 if [ -n "$ASSIGNMENT_DIR" ] && [[ "$FILE_PATH" == "$ASSIGNMENT_DIR"/* ]]; then
   allow_and_exit
@@ -152,9 +152,9 @@ if [ -n "$WORKSPACE_ROOT" ] && [[ "$FILE_PATH" == "$WORKSPACE_ROOT"/* ]]; then
 fi
 
 if [ -n "$ASSIGNMENT_DIR" ]; then
-  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: assignment dir ($ASSIGNMENT_DIR), project resources/memories${MISSION_DIR:+ ($MISSION_DIR)}, workspace (${WORKSPACE_ROOT:-none})."
+  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. Allowed paths: ticket dir ($ASSIGNMENT_DIR), project resources/memories${MISSION_DIR:+ ($MISSION_DIR)}, workspace (${WORKSPACE_ROOT:-none})."
 else
-  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. No active assignment for this session — writes are restricted to the workspace (${WORKSPACE_ROOT:-none})."
+  REASON="Syntaur write boundary violation: Cannot write to '$FILE_PATH'. No active ticket for this session — writes are restricted to the workspace (${WORKSPACE_ROOT:-none})."
 fi
 REASON_ESCAPED=$(echo "$REASON" | jq -Rs '.' 2>/dev/null)
 if [ -z "$REASON_ESCAPED" ]; then

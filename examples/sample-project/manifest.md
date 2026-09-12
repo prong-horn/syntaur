@@ -10,7 +10,7 @@ generated: "2026-03-18T14:30:00Z"
 - [Project Overview](./project.md)
 
 ## Indexes
-- [Assignments](./_index-assignments.md)
+- [Tickets](./_index-tickets.md)
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
 - [Status](./_status.md)

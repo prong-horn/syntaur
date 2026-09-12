@@ -5,11 +5,11 @@ behavior the Claude Code / Codex plugins have) to **pi** and **OpenClaw** (which
 pi-coding-agent):
 
 - **Write-boundary enforcement** — a `tool_call` handler blocks edits/writes outside the active
-  assignment's boundaries (assignment dir, project `resources/`+`memories/` excluding derived `_*`
+  ticket's boundaries (ticket dir, project `resources/`+`memories/` excluding derived `_*`
   files, and the workspace root), mirroring `platforms/codex/scripts/enforce-boundaries.sh`.
 - **Session cleanup** — a `session_shutdown` handler marks the dashboard session `stopped`.
-- **Slash commands** — `doctor-syntaur` runs `syntaur doctor`; the rest (`grab-assignment`,
-  `log-progress`, `complete-assignment`, `resume-session`, `set-workspace`,
+- **Slash commands** — `doctor-syntaur` runs `syntaur doctor`; the rest (`grab-ticket`,
+  `log-progress`, `complete-ticket`, `resume-session`, `set-workspace`,
   `track-session`) point the agent at the installed Tier-1 skill of the same name.
 
 ## Install

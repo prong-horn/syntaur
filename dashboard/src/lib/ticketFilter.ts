@@ -157,6 +157,9 @@ export function filterTicket(
   return true;
 }
 
+/** @deprecated Use filterTicket */
+export const filterAssignment = filterTicket;
+
 export function ticketDetailHref(item: TicketBoardItem): string {
   if (item.projectSlug === null) {
     return `/tickets/${item.id}`;

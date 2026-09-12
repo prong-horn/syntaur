@@ -69,22 +69,22 @@ async function createProjectFiles(
     await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(ticketDir, 'ticket.md'), ticket.assignmentMd, 'utf-8');
 
-    if (assignment.planMd) {
+    if (ticket.planMd) {
       await writeFile(resolve(ticketDir, 'plan.md'), ticket.planMd, 'utf-8');
     }
-    if (assignment.scratchpadMd) {
+    if (ticket.scratchpadMd) {
       await writeFile(resolve(ticketDir, 'scratchpad.md'), ticket.scratchpadMd, 'utf-8');
     }
-    if (assignment.handoffMd) {
+    if (ticket.handoffMd) {
       await writeFile(resolve(ticketDir, 'handoff.md'), ticket.handoffMd, 'utf-8');
     }
-    if (assignment.decisionMd) {
+    if (ticket.decisionMd) {
       await writeFile(resolve(ticketDir, 'decision-record.md'), ticket.decisionMd, 'utf-8');
     }
-    if (assignment.progressMd) {
+    if (ticket.progressMd) {
       await writeFile(resolve(ticketDir, 'progress.md'), ticket.progressMd, 'utf-8');
     }
-    if (assignment.commentsMd) {
+    if (ticket.commentsMd) {
       await writeFile(resolve(ticketDir, 'comments.md'), ticket.commentsMd, 'utf-8');
     }
   }
@@ -578,7 +578,7 @@ tags: []
     const result = await listTicketsBoard(testDir);
     const ticket = result.assignments.find((a) => a.slug === 'test-assignment');
     expect(ticket).toBeDefined();
-    expect(assignment!.status).toBe('in_progress');
+    expect(ticket!.status).toBe('in_progress');
 
     const commands = ticket!.availableTransitions.map((a) => a.command);
     // None of the previously-bogus from-pending-only commands should leak.

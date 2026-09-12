@@ -1,11 +1,11 @@
 # ACP adapter spike
 
 Throwaway ACP client that drives `claude-agent-acp` and `codex-acp` through the
-scenarios in `claude-info/plans/assignment-chat-design.md` §5.9a. It exists to
-answer the questions phase 2 (assignment chat) depends on; results live in
+scenarios in `claude-info/plans/ticket-chat-design.md` §5.9a. It exists to
+answer the questions phase 2 (ticket chat) depends on; results live in
 `RESULTS.md`, the raw transcripts in `src/__tests__/fixtures/acp/`.
 
-Assignment: `syntaur-meta/acp-adapter-spike`.
+Ticket: `syntaur-meta/acp-adapter-spike`.
 
 ## Prerequisites
 

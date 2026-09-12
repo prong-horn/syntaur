@@ -8,7 +8,7 @@ describe('renderComments', () => {
       ticket: 'do-thing',
       timestamp: '2026-04-20T12:00:00Z',
     });
-    expect(out).toContain('assignment: do-thing');
+    expect(out).toContain('ticket: do-thing');
     expect(out).toContain('entryCount: 0');
     expect(out).toContain('# Comments');
     expect(out).toContain('No comments yet.');
@@ -77,7 +77,7 @@ describe('parseComments round-trip', () => {
   it('round-trips a file with a question, a reply note, and a resolved question', () => {
     const file = [
       '---',
-      'assignment: example',
+      'ticket: example',
       'entryCount: 3',
       'generated: "2026-04-20T10:00:00Z"',
       'updated: "2026-04-20T14:00:00Z"',

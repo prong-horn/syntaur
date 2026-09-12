@@ -62,7 +62,7 @@ describe('syntaur worktree gc', () => {
   async function writeTicket(opts: { slug: string; status: string; worktreePath: string; branch: string; archived?: boolean }): Promise<void> {
     const dir = resolve(home, 'projects', 'p', 'tickets', opts.slug);
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), assignmentMd({ ...opts, repo }), 'utf-8');
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd({ ...opts, repo }), 'utf-8');
   }
 
   function addWorktree(branch: string, extraCommit: boolean): string {

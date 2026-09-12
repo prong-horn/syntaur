@@ -67,16 +67,22 @@ async function collectTargets(
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
 
-      // Standalone shape: baseDir/<uuid>/assignment.md
+      // Standalone shape: baseDir/<uuid>/assignment.md (v1) or ticket.md (Phase A)
+      const directTicketMd = resolve(baseDir, m.name, 'ticket.md');
       const directAssignmentMd = resolve(baseDir, m.name, 'assignment.md');
-      if (await fileExists(directAssignmentMd)) {
-        if (seen.has(directAssignmentMd)) continue;
-        const fm = await parseSafe(directAssignmentMd);
+      const standaloneMd = (await fileExists(directTicketMd))
+        ? directTicketMd
+        : (await fileExists(directAssignmentMd))
+          ? directAssignmentMd
+          : null;
+      if (standaloneMd) {
+        if (seen.has(standaloneMd)) continue;
+        const fm = await parseSafe(standaloneMd);
         if (fm && fm.statusHistory.length === 0) {
-          seen.add(directAssignmentMd);
+          seen.add(standaloneMd);
           targets.push({
             display: `standalone/${m.name}`,
-            assignmentMd: directAssignmentMd,
+            assignmentMd: standaloneMd,
             status: fm.status,
             seedAt: seedAtFor(fm, terminalStatuses),
           });
@@ -86,23 +92,46 @@ async function collectTargets(
 
       // Project shape: baseDir/<project>/assignments/<slug>/assignment.md
       const assignmentsBase = resolve(baseDir, m.name, 'assignments');
-      if (!(await fileExists(assignmentsBase))) continue;
-      const slugs = await readdir(assignmentsBase, { withFileTypes: true });
-      for (const a of slugs) {
-        if (!a.isDirectory()) continue;
-        if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-        const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
-        if (!(await fileExists(assignmentMd))) continue;
-        if (seen.has(assignmentMd)) continue;
-        const fm = await parseSafe(assignmentMd);
-        if (!fm || fm.statusHistory.length > 0) continue;
-        seen.add(assignmentMd);
-        targets.push({
-          display: `${m.name}/${a.name}`,
-          assignmentMd,
-          status: fm.status,
-          seedAt: seedAtFor(fm, terminalStatuses),
-        });
+      if (await fileExists(assignmentsBase)) {
+        const slugs = await readdir(assignmentsBase, { withFileTypes: true });
+        for (const a of slugs) {
+          if (!a.isDirectory()) continue;
+          if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+          const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
+          if (!(await fileExists(assignmentMd))) continue;
+          if (seen.has(assignmentMd)) continue;
+          const fm = await parseSafe(assignmentMd);
+          if (!fm || fm.statusHistory.length > 0) continue;
+          seen.add(assignmentMd);
+          targets.push({
+            display: `${m.name}/${a.name}`,
+            assignmentMd,
+            status: fm.status,
+            seedAt: seedAtFor(fm, terminalStatuses),
+          });
+        }
+      }
+
+      // Project shape (Phase A): baseDir/<project>/tickets/<slug>/ticket.md
+      const ticketsBase = resolve(baseDir, m.name, 'tickets');
+      if (await fileExists(ticketsBase)) {
+        const ticketSlugs = await readdir(ticketsBase, { withFileTypes: true });
+        for (const a of ticketSlugs) {
+          if (!a.isDirectory()) continue;
+          if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+          const ticketMd = resolve(ticketsBase, a.name, 'ticket.md');
+          if (!(await fileExists(ticketMd))) continue;
+          if (seen.has(ticketMd)) continue;
+          const fm = await parseSafe(ticketMd);
+          if (!fm || fm.statusHistory.length > 0) continue;
+          seen.add(ticketMd);
+          targets.push({
+            display: `${m.name}/${a.name}`,
+            assignmentMd: ticketMd,
+            status: fm.status,
+            seedAt: seedAtFor(fm, terminalStatuses),
+          });
+        }
       }
     }
   }

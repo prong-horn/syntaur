@@ -96,12 +96,18 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
       if (!m.isDirectory()) continue;
       if (m.name.startsWith('.') || m.name.startsWith('_')) continue;
 
-      // Standalone shape: baseDir/<uuid>/assignment.md (projectSlug null)
+      // Standalone shape: baseDir/<uuid>/assignment.md (v1) or ticket.md (Phase A)
+      const directTicketMd = resolve(baseDir, m.name, 'ticket.md');
       const directAssignmentMd = resolve(baseDir, m.name, 'assignment.md');
-      if (await fileExists(directAssignmentMd)) {
-        if (seen.has(directAssignmentMd)) continue;
-        seen.add(directAssignmentMd);
-        const fm = await parseSafe(directAssignmentMd);
+      const standaloneMd = (await fileExists(directTicketMd))
+        ? directTicketMd
+        : (await fileExists(directAssignmentMd))
+          ? directAssignmentMd
+          : null;
+      if (standaloneMd) {
+        if (seen.has(standaloneMd)) continue;
+        seen.add(standaloneMd);
+        const fm = await parseSafe(standaloneMd);
         if (fm && fm.id) {
           const events = synthesizeEvents(fm);
           if (events.length > 0) {
@@ -118,25 +124,50 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
 
       // Project shape: baseDir/<project>/assignments/<slug>/assignment.md
       const assignmentsBase = resolve(baseDir, m.name, 'assignments');
-      if (!(await fileExists(assignmentsBase))) continue;
-      const slugs = await readdir(assignmentsBase, { withFileTypes: true });
-      for (const a of slugs) {
-        if (!a.isDirectory()) continue;
-        if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-        const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
-        if (!(await fileExists(assignmentMd))) continue;
-        if (seen.has(assignmentMd)) continue;
-        seen.add(assignmentMd);
-        const fm = await parseSafe(assignmentMd);
-        if (!fm || !fm.id) continue;
-        const events = synthesizeEvents(fm);
-        if (events.length === 0) continue;
-        targets.push({
-          display: `${m.name}/${a.name}`,
-          assignmentId: fm.id,
-          projectSlug: m.name,
-          events,
-        });
+      if (await fileExists(assignmentsBase)) {
+        const slugs = await readdir(assignmentsBase, { withFileTypes: true });
+        for (const a of slugs) {
+          if (!a.isDirectory()) continue;
+          if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+          const assignmentMd = resolve(assignmentsBase, a.name, 'assignment.md');
+          if (!(await fileExists(assignmentMd))) continue;
+          if (seen.has(assignmentMd)) continue;
+          seen.add(assignmentMd);
+          const fm = await parseSafe(assignmentMd);
+          if (!fm || !fm.id) continue;
+          const events = synthesizeEvents(fm);
+          if (events.length === 0) continue;
+          targets.push({
+            display: `${m.name}/${a.name}`,
+            assignmentId: fm.id,
+            projectSlug: m.name,
+            events,
+          });
+        }
+      }
+
+      // Project shape (Phase A): baseDir/<project>/tickets/<slug>/ticket.md
+      const ticketsBase = resolve(baseDir, m.name, 'tickets');
+      if (await fileExists(ticketsBase)) {
+        const ticketSlugs = await readdir(ticketsBase, { withFileTypes: true });
+        for (const a of ticketSlugs) {
+          if (!a.isDirectory()) continue;
+          if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
+          const ticketMd = resolve(ticketsBase, a.name, 'ticket.md');
+          if (!(await fileExists(ticketMd))) continue;
+          if (seen.has(ticketMd)) continue;
+          seen.add(ticketMd);
+          const fm = await parseSafe(ticketMd);
+          if (!fm || !fm.id) continue;
+          const events = synthesizeEvents(fm);
+          if (events.length === 0) continue;
+          targets.push({
+            display: `${m.name}/${a.name}`,
+            assignmentId: fm.id,
+            projectSlug: m.name,
+            events,
+          });
+        }
       }
     }
   }

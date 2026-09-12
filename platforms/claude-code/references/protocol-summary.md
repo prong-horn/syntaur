@@ -11,13 +11,13 @@ Protocol version: **2.0**
     <project-slug>/
       manifest.md            # Derived: root navigation (read-only)
       project.md             # Human-authored: project overview (read-only)
-      _index-assignments.md  # Derived (read-only)
+      _index-tickets.md  # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
       _status.md             # Derived (read-only)
-      assignments/
-        <assignment-slug>/
-          assignment.md      # Agent-writable: source of truth for state
+      tickets/
+        <ticket-slug>/
+          ticket.md      # Agent-writable: source of truth for state
           plan*.md           # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md        # Agent-writable, append-only: timestamped progress log
           comments.md        # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
@@ -33,9 +33,9 @@ Protocol version: **2.0**
       memories/
         _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
-  assignments/
-    <assignment-id>/         # Standalone assignments — folder named by UUID, `project: null`
-      assignment.md          # Same schema as project-nested, `slug` is display-only
+  tickets/
+    <ticket-id>/         # Standalone tickets — folder named by UUID, `project: null`
+      ticket.md          # Same schema as project-nested, `slug` is display-only
       plan*.md
       progress.md
       comments.md
@@ -47,7 +47,7 @@ Protocol version: **2.0**
     <slug>.md                # User-authored: behavioral rules for agents
 ```
 
-## Assignment Lifecycle
+## Ticket Lifecycle
 
 | Status | Meaning |
 |--------|---------|
@@ -75,13 +75,13 @@ Protocol version: **2.0**
 
 ## Key Rules
 
-1. **Assignment frontmatter is the single source of truth** for all assignment state.
-2. **Project-nested assignments** live at `projects/<slug>/assignments/<aslug>/` (folder name = slug). **Standalone assignments** live at `assignments/<uuid>/` (folder name = UUID, `project: null`, slug display-only).
+1. **Ticket frontmatter is the single source of truth** for all ticket state.
+2. **Project-nested tickets** live at `projects/<slug>/tickets/<aslug>/` (folder name = slug). **Standalone tickets** live at `tickets/<uuid>/` (folder name = UUID, `project: null`, slug display-only).
 3. **Derived files** (underscore-prefixed) are never edited manually.
 4. **Slugs** are lowercase, hyphen-separated.
-5. **Dependencies** are declared via `dependsOn` in assignment frontmatter. Only valid within the same project — standalone assignments cannot declare `dependsOn`.
-6. An assignment cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
+5. **Dependencies** are declared via `dependsOn` in ticket frontmatter. Only valid within the same project — standalone tickets cannot declare `dependsOn`.
+6. An ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
-8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `assignment.md`.
+8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `ticket.md`.
 9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
-10. On resume, read any open `handoff.md` (assignment-level cross-ticket outbound) plus `assignment.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.
+10. On resume, read any open `handoff.md` (ticket-level cross-ticket outbound) plus `ticket.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.

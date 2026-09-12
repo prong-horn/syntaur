@@ -1,6 +1,6 @@
 import { escapeYamlString } from '../utils/yaml.js';
 
-export interface AssignmentParams {
+export interface TicketParams {
   id: string;
   slug: string;
   title: string;
@@ -16,7 +16,10 @@ export interface AssignmentParams {
   acceptanceCriteria?: string[];
 }
 
-export function renderTicket(params: AssignmentParams): string {
+/** @deprecated Use TicketParams */
+export type AssignmentParams = TicketParams;
+
+export function renderTicket(params: TicketParams): string {
   const safeTitle = escapeYamlString(params.title);
   const dependsOnYaml =
     params.dependsOn.length === 0

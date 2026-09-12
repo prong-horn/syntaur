@@ -15,7 +15,7 @@ When answering questions, read the actual source files rather than relying solel
 - **Protocol summary:** `${CLAUDE_PLUGIN_ROOT}/references/protocol-summary.md` (or `~/.claude/skills/syntaur-protocol/references/protocol-summary.md` for the installed skill version)
 - **File ownership:** `${CLAUDE_PLUGIN_ROOT}/references/file-ownership.md`
 - **Plugin manifest:** `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`
-- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-assignment,plan-assignment,complete-assignment,create-assignment,create-project,manage-statuses,clear-assignment,track-session,replan,resume-session,syntaur-worktree,list-assignments,log-progress,set-workspace,run-playbook,doctor-syntaur}/`
+- **Protocol skills (installed by `syntaur install-plugin`):** `~/.claude/skills/{syntaur-protocol,grab-ticket,plan-ticket,complete-ticket,create-ticket,create-project,manage-statuses,clear-ticket,track-session,replan,resume-session,syntaur-worktree,list-tickets,log-progress,set-workspace,run-playbook,doctor-syntaur}/`
 - **Protocol skills source (vendored via submodule):** `<syntaur-repo>/vendor/syntaur-skills/skills/` — standalone repo at https://github.com/prong-horn/syntaur-skills
 - **Slash commands (ship in plugin):** `${CLAUDE_PLUGIN_ROOT}/commands/` — thin wrappers that invoke the corresponding installed skill
 - **Hooks:** `${CLAUDE_PLUGIN_ROOT}/hooks/`
@@ -34,7 +34,7 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 - **Markdown-as-database:** YAML frontmatter for structured data + markdown body for prose
 - **Agent-framework agnostic:** Works with Claude Code, Cursor, Codex, OpenCode, or anything that reads files
 - **Human-readable:** Every file is plain markdown, viewable in any editor
-- **Single source of truth:** Assignment frontmatter is canonical; all indexes are derived projections
+- **Single source of truth:** Ticket frontmatter is canonical; all indexes are derived projections
 
 ---
 
@@ -48,13 +48,13 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
     <project-slug>/
       manifest.md                    # Derived: root navigation
       project.md                     # Human-authored: goal, context, success criteria
-      _index-assignments.md          # Derived: assignment summary table
+      _index-tickets.md          # Derived: ticket summary table
       _index-plans.md                # Derived: plan status summary
       _index-decisions.md            # Derived: decision record summary
       _status.md                     # Derived: project status rollup
-      assignments/
-        <assignment-slug>/
-          assignment.md              # Agent-writable: source of truth for state
+      tickets/
+        <ticket-slug>/
+          ticket.md              # Agent-writable: source of truth for state
           plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
@@ -67,9 +67,9 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
       memories/
         _index.md                    # Derived
         <memory-slug>.md             # Shared-writable
-  assignments/
-    <assignment-id>/                 # Standalone assignments — folder = UUID, project: null, slug display-only
-      assignment.md
+  tickets/
+    <ticket-id>/                 # Standalone tickets — folder = UUID, project: null, slug display-only
+      ticket.md
       plan*.md
       progress.md
       comments.md
@@ -85,15 +85,15 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 ### Human-Authored (READ-ONLY for agents)
 - `project.md` — project overview, goal, context, success criteria
 
-### Agent-Writable (single-writer per assignment)
-- `assignment.md` — source of truth for assignment state
+### Agent-Writable (single-writer per ticket)
+- `ticket.md` — source of truth for ticket state
 - `plan*.md` — versioned implementation plans (optional: `plan.md`, `plan-v2.md`, ...)
 - `progress.md` — append-only timestamped progress log (newest first). Replaces the old `## Progress` body section.
 - `scratchpad.md` — unstructured working notes
-- `handoff.md` — append-only **assignment-level cross-ticket outbound** at completion (written by `complete-assignment`)
+- `handoff.md` — append-only **ticket-level cross-ticket outbound** at completion (written by `complete-ticket`)
 - `decision-record.md` — append-only decision log
 
-Only the assigned agent may write to its own assignment folder.
+Only the assigned agent may write to its own ticket folder.
 
 ### CLI-Mediated Shared-Writable
 - `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
@@ -108,7 +108,7 @@ Only the assigned agent may write to its own assignment folder.
 
 ---
 
-## Assignment Lifecycle
+## Ticket Lifecycle
 
 ### States
 | Status | Meaning |
@@ -137,13 +137,13 @@ Only the assigned agent may write to its own assignment folder.
 | failed | reopen | in_progress |
 
 ### Dependency Semantics
-- `dependsOn` field lists assignment slugs that must be `completed` before this assignment can start
+- `dependsOn` field lists ticket slugs that must be `completed` before this ticket can start
 - `pending` + unmet dependencies = structural wait (automatic, no action needed)
 - `blocked` = runtime obstacle requiring human intervention (must set `blockedReason`)
 
 ### Project Status Rollup (computed, first-match-wins)
 1. `archived: true` in project.md → `archived`
-2. ALL assignments `completed` → `completed`
+2. ALL tickets `completed` → `completed`
 3. ANY `in_progress` or `review` → `active`
 4. ANY `failed` → `failed`
 5. ANY `blocked` → `blocked`
@@ -164,12 +164,12 @@ Only the assigned agent may write to its own assignment folder.
 | `syntaur setup-adapter <framework>` | Generate adapter files for cursor, codex, or opencode |
 | `syntaur uninstall [--all]` | Remove plugins and optionally `~/.syntaur` data |
 
-### Project & Assignment Creation
+### Project & Ticket Creation
 | Command | Description |
 |---------|-------------|
 | `syntaur create-project <title> [--slug S] [--dir D]` | Create new project with full scaffolding |
-| `syntaur create-assignment <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create assignment in a project |
-| `syntaur create-assignment <title> --one-off [--type T]` | Create standalone assignment at `~/.syntaur/assignments/<uuid>/` (project: null, slug display-only) |
+| `syntaur new <title> --project M [--priority P] [--depends-on D] [--slug S] [--type T]` | Create ticket in a project |
+| `syntaur new <title> --one-off [--type T]` | Create standalone ticket at `~/.syntaur/tickets/<uuid>/` (project: null, slug display-only) |
 
 ### Coordination (CLI-mediated writes)
 | Command | Description |
@@ -191,7 +191,7 @@ Only the assigned agent may write to its own assignment folder.
 ### Session Tracking
 | Command | Description |
 |---------|-------------|
-| `syntaur track-session --project M --assignment A --agent N --session-id <real-id> --transcript-path <path>` | Register agent session. `--session-id` is required and must be the agent runtime's real id (Claude: `~/.claude/sessions/<pid>.json` or SessionStart hook payload; Codex: `payload.id` from `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`). Do not synthesize. |
+| `syntaur track-session --project M --ticket A --agent N --session-id <real-id> --transcript-path <path>` | Register agent session. `--session-id` is required and must be the agent runtime's real id (Claude: `~/.claude/sessions/<pid>.json` or SessionStart hook payload; Codex: `payload.id` from `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`). Do not synthesize. |
 
 All commands support `--dir <path>` to override the default `~/.syntaur/projects/` directory.
 
@@ -208,10 +208,10 @@ plugin/
   agents/
     syntaur-expert.md                   # This agent
   commands/
-    grab-assignment/grab-assignment.md         # Slash wrapper for grab-assignment skill
-    plan-assignment/plan-assignment.md         # Slash wrapper for plan-assignment skill
-    complete-assignment/complete-assignment.md # Slash wrapper for complete-assignment skill
-    create-assignment/create-assignment.md     # Slash wrapper for create-assignment skill
+    grab-ticket/grab-ticket.md         # Slash wrapper for grab-ticket skill
+    plan-ticket/plan-ticket.md         # Slash wrapper for plan-ticket skill
+    complete-ticket/complete-ticket.md # Slash wrapper for complete-ticket skill
+    create-ticket/create-ticket.md     # Slash wrapper for create-ticket skill
     create-project/create-project.md           # Slash wrapper for create-project skill
     track-session/track-session.md             # Claude-specific session registration
     doctor-syntaur/...                         # Diagnose install
@@ -225,31 +225,31 @@ plugin/
 
 ~/.claude/skills/               # Installed by `syntaur install-plugin` (vendored from syntaur-skills repo)
   syntaur-protocol/SKILL.md     # Auto-activates on Syntaur file contexts
-  grab-assignment/SKILL.md
-  plan-assignment/SKILL.md
-  complete-assignment/SKILL.md
-  create-assignment/SKILL.md
+  grab-ticket/SKILL.md
+  plan-ticket/SKILL.md
+  complete-ticket/SKILL.md
+  create-ticket/SKILL.md
   create-project/SKILL.md
 ```
 
-Slash commands (`/grab-assignment` etc.) are thin wrappers that delegate to the installed skills. This lets the same protocol skills work in Claude Code (via slash command + auto-activation) and Codex (via auto-activation only).
+Slash commands (`/grab-ticket` etc.) are thin wrappers that delegate to the installed skills. This lets the same protocol skills work in Claude Code (via slash command + auto-activation) and Codex (via auto-activation only).
 
 ### Skills Summary
 
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
 | `/syntaur-protocol` | Background — auto-loaded when working with Syntaur files | Core write boundary rules and protocol knowledge |
-| `/grab-assignment` | User says "grab assignment" or starts work on a project | Discover pending assignments, claim one, create context.json |
+| `/grab-ticket` | User says "grab ticket" or starts work on a project | Discover pending tssignments, claim one, create context.json |
 | `/create-project` | User wants to create a new project | Run CLI scaffolding, guide through editing project files |
-| `/create-assignment` | User wants to add an assignment to a project | Create assignment with all supporting files |
-| `/plan-assignment` | User wants to plan current assignment | Explore workspace, write the next `plan-v<N>.md` |
-| `/complete-assignment` | User is done with assignment work | Verify criteria, write handoff, transition state, close session |
+| `/create-ticket` | User wants to add an ticket to a project | Create ticket with all supporting files |
+| `/plan-ticket` | User wants to plan current ticket | Explore workspace, write the next `plan-v<N>.md` |
+| `/complete-ticket` | User is done with ticket work | Verify criteria, write handoff, transition state, close session |
 
 ### Hooks
 
 | Hook | Event | Behavior |
 |------|-------|----------|
-| SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active assignment). |
+| SessionStart | Claude Code session starts | Runs session-start.sh to merge the real `session_id` + `transcript_path` into an EXISTING `.syntaur/context.json`. Does nothing if context.json is absent (no active ticket). |
 | SessionEnd | Claude Code session exits | Runs session-cleanup.sh to mark session as stopped |
 | PreToolUse | — | No write-boundary hook in Claude Code; boundaries are documentation-enforced (Codex enforces via its own PreToolUse hook) |
 
@@ -268,25 +268,25 @@ syntaur                    # Dashboard is the default command
 
 ### Features
 - **Overview page:** Project stats, quick actions, attention items
-- **Project detail:** Assignment listing and status
-- **Assignment detail:** Full assignment view with all fields, criteria checklist
-- **Kanban board:** Drag assignments between status columns
+- **Project detail:** Ticket listing tnd status
+- **Ticket detail:** Full ticket view with all fields, criteria checklist
+- **Kanban board:** Drag tssignments between status columns
 - **Agent sessions:** Track active/completed/stopped agent sessions
 - **Real-time updates:** WebSocket pushes file changes to the browser
-- **Markdown editing:** Edit project.md, assignment.md, plan files, scratchpad.md in-browser
+- **Markdown editing:** Edit project.md, ticket.md, plan files, scratchpad.md in-browser
 - **Attention queue:** Highlights blocked, failed, and review-pending items
 
 ### API Endpoints
 - `GET /api/overview` — Dashboard summary stats
 - `GET /api/projects` — List all projects
-- `GET /api/projects/:slug` — Project detail with assignments
-- `GET /api/projects/:slug/assignments/:aslug` — Assignment detail
-- `GET /api/assignments` — All assignments across projects
-- `GET /api/attention` — Items needing attention
+- `GET /api/projects/:slug` — Project detail with tickets
+- `GET /api/projects/:slug/tickets/:aslug` — Ticket detail
+- `GET /api/tickets` — All tickets across projects
+- `GET /api/attention` — Items needing tttention
 - `GET /api/agent-sessions` — Agent session list
 - `POST /api/projects` — Create project
-- `POST /api/projects/:slug/assignments` — Create assignment
-- `PATCH /api/projects/:slug/assignments/:aslug` — Update assignment
+- `POST /api/projects/:slug/tickets` — Create ticket
+- `PATCH /api/projects/:slug/tickets/:aslug` — Update ticket
 - WebSocket at `/ws` for real-time file change notifications
 
 ### Architecture
@@ -302,14 +302,14 @@ syntaur                    # Dashboard is the default command
 Syntaur supports Cursor, Codex, and OpenCode via generated adapter files.
 
 ```bash
-syntaur setup-adapter cursor --project <slug> --assignment <slug>
-syntaur setup-adapter codex --project <slug> --assignment <slug>
-syntaur setup-adapter opencode --project <slug> --assignment <slug>
+syntaur setup-adapter cursor --project <slug> --ticket <slug>
+syntaur setup-adapter codex --project <slug> --ticket <slug>
+syntaur setup-adapter opencode --project <slug> --ticket <slug>
 ```
 
 | Framework | Generated Files | Discovery |
 |-----------|----------------|-----------|
-| Cursor | `.cursor/rules/syntaur-protocol.mdc`, `.cursor/rules/syntaur-assignment.mdc` | Auto-read from `.cursor/rules/` |
+| Cursor | `.cursor/rules/syntaur-protocol.mdc`, `.cursor/rules/syntaur-ticket.mdc` | Auto-read from `.cursor/rules/` |
 | Codex | `AGENTS.md` at repo root | Root-to-leaf (applies to all files) |
 | OpenCode | `AGENTS.md` + `opencode.json` | Standard markdown + config |
 
@@ -321,28 +321,28 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 ### Frontmatter Fields by File Type
 
-**assignment.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
+**ticket.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
 
-**plan files (plan.md, plan-v2.md, ...):** assignment, status (draft/approved/in_progress/completed), created, updated — zero or more per assignment
+**plan files (plan.md, plan-v2.md, ...):** ticket, status (draft/approved/in_progress/completed), created, updated — zero or more per ticket
 
-**progress.md:** assignment, entryCount, generated, updated — body is reverse-chron `## <timestamp>` entries
+**progress.md:** ticket, entryCount, generated, updated — body is reverse-chron `## <timestamp>` entries
 
-**comments.md:** assignment, entryCount, generated, updated — body entries are `## <id>` with structured metadata lines (Recorded, Author, Type, optional Reply to, optional Resolved)
+**comments.md:** ticket, entryCount, generated, updated — body entries are `## <id>` with structured metadata lines (Recorded, Author, Type, optional Reply to, optional Resolved)
 
-**handoff.md:** assignment, updated, handoffCount
+**handoff.md:** ticket, updated, handoffCount
 
-**decision-record.md:** assignment, updated, decisionCount
+**decision-record.md:** ticket, updated, decisionCount
 
 **project.md:** id, slug, title, archived, archivedAt, archivedReason, created, updated, externalIds, tags
 
 **manifest.md:** version, project, generated
 
-**_status.md:** project, generated, status, progress (total/completed/in_progress/blocked/pending/review/failed), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every assignment's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
+**_status.md:** project, generated, status, progress (total/completed/in_progress/blocked/pending/review/failed), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every ticket's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
 
 ### Conventions
 - **Timestamps:** RFC 3339 / ISO 8601 with UTC: `2026-03-18T14:30:00Z`
 - **Paths:** Absolute expanded form in YAML (never `~`), relative in markdown links
-- **Slugs:** Lowercase, hyphen-separated, match folder names (project-nested). For standalone assignments, the folder is named by UUID and `slug` is display-only.
+- **Slugs:** Lowercase, hyphen-separated, match folder names (project-nested). For standalone tickets, the folder is named by UUID and `slug` is display-only.
 - **Protocol version:** `"2.0"` (string, not number)
 
 ---
@@ -357,9 +357,9 @@ npx syntaur@latest setup
 # 2. Create your first project
 syntaur create-project "My First Project"
 
-# 3. Create assignments
-syntaur create-assignment "Design the schema" --project my-first-project --priority high
-syntaur create-assignment "Implement the API" --project my-first-project --depends-on design-the-schema
+# 3. Create tickets
+syntaur new "Design the schema" --project my-first-project --priority high
+syntaur new "Implement the API" --project my-first-project --depends-on design-the-schema
 
 # 4. Start the dashboard
 syntaur dashboard
@@ -368,23 +368,23 @@ syntaur dashboard
 ### Agent Workflow
 ```bash
 # In Claude Code, use skills:
-/grab-assignment my-first-project       # Claim a pending assignment
-/plan-assignment                         # Write implementation plan
+/grab-ticket my-first-project       # Claim a pending tssignment
+/plan-ticket                         # Write implementation plan
 # ... do the work ...
-/complete-assignment                     # Handoff and complete
+/complete-ticket                     # Handoff and complete
 ```
 
 ---
 
 ## Context File (.syntaur/context.json)
 
-Created by `/grab-assignment` in the current working directory. The SessionStart hook merges `sessionId` / `transcriptPath` into this file on each Claude Code session start — it never creates the file, only enriches an existing one. Contents:
+Created by `/grab-ticket` in the current working directory. The SessionStart hook merges `sessionId` / `transcriptPath` into this file on each Claude Code session start — it never creates the file, only enriches an existing one. Contents:
 ```json
 {
   "projectSlug": "my-first-project",
-  "assignmentSlug": "design-the-schema",
+  "ticketSlug": "design-the-schema",
   "projectDir": "/Users/you/.syntaur/projects/my-first-project",
-  "assignmentDir": "/Users/you/.syntaur/projects/my-first-project/assignments/design-the-schema",
+  "ticketDir": "/Users/you/.syntaur/projects/my-first-project/tickets/design-the-schema",
   "workspaceRoot": "/Users/you/projects/my-app",
   "title": "Design the schema",
   "branch": "feature/design-the-schema",
@@ -394,17 +394,17 @@ Created by `/grab-assignment` in the current working directory. The SessionStart
 }
 ```
 
-Read by `/plan-assignment` and `/complete-assignment` to determine what the current agent is allowed to do (write boundaries are documentation-enforced in Claude Code; the Codex plugin enforces them with a PreToolUse hook). Note that the `sessionId` scalar above is a shared, **legacy hint** — a co-tenant sharing the workspace can clobber it. The active session id is resolved from the running process (env `$CLAUDE_CODE_SESSION_ID` / the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`, else `syntaur session resolve-id`); the scalar is only a last-resort fallback, never authoritative.
+Read by `/plan-ticket` and `/complete-ticket` to determine what the current agent is allowed to do (write boundaries are documentation-enforced in Claude Code; the Codex plugin enforces them with a PreToolUse hook). Note that the `sessionId` scalar above is a shared, **legacy hint** — a co-tenant sharing the workspace can clobber it. The active session id is resolved from the running process (env `$CLAUDE_CODE_SESSION_ID` / the peer `OPENCODE_SESSION_ID` / `PI_SESSION_ID`, else `syntaur session resolve-id`); the scalar is only a last-resort fallback, never authoritative.
 
 ---
 
 ## Common Questions
 
-**Q: How do I see what assignments are available?**
-A: Use `/grab-assignment <project-slug>` — it lists pending assignments. Or check the dashboard, or read `_index-assignments.md`.
+**Q: How do I see what tickets are available?**
+A: Use `/grab-ticket <project-slug>` — it lists pending tssignments. Or check the dashboard, or read `_index-tickets.md`.
 
-**Q: Can two agents work on the same assignment?**
-A: No. Single-writer guarantee — one agent per assignment folder. Use separate assignments for parallel work.
+**Q: Can two agents work on the same ticket?**
+A: No. Single-writer guarantee — one agent per ticket folder. Use separate tickets for parallel work.
 
 **Q: What if I need to ask the human a question?**
 A: Run `syntaur comment <slug> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
@@ -412,18 +412,18 @@ A: Run `syntaur comment <slug> "question text" --type question`. It appends to `
 **Q: What goes in `progress.md` vs `handoff.md`?**
 A: Two distinct artifacts.
 - `progress.md`: continuous reverse-chron log of what you've done — one entry per meaningful work unit, append-only.
-- `handoff.md`: **assignment-level cross-ticket outbound**, written at completion (via `complete-assignment`) for the next ticket / agent / human reviewer. Append-only. `syntaur session resume` surfaces an open handoff when present.
+- `handoff.md`: **ticket-level cross-ticket outbound**, written at completion (via `complete-ticket`) for the next ticket / agent / human reviewer. Append-only. `syntaur session resume` surfaces an open handoff when present.
 
 **Q: How do indexes get updated?**
-A: Derived files are rebuilt by tooling. They are projections of assignment frontmatter. When divergence occurs, re-run rebuild.
+A: Derived files are rebuilt by tooling. They are projections of ticket frontmatter. When divergence occurs, re-run rebuild.
 
 **Q: Can I use Syntaur without Claude Code?**
 A: Yes. Run `syntaur setup-adapter <framework>` for Cursor, Codex, or OpenCode. Any tool that reads/writes markdown can participate.
 
 **Q: Where is state stored?**
-A: Assignment frontmatter YAML is the single source of truth. Agent sessions are in SQLite at `~/.syntaur/syntaur.db`. Everything else is markdown files.
+A: Ticket frontmatter YAML is the single source of truth. Agent sessions are in SQLite at `~/.syntaur/syntaur.db`. Everything else is markdown files.
 
 **Q: How do dependencies work?**
-A: `dependsOn` lists assignment slugs. An assignment with pending status and unmet dependencies cannot transition to `in_progress` until all dependencies are `completed`.
+A: `dependsOn` lists ticket slugs. An ticket with pending status and unmet dependencies cannot transition to `in_progress` until all dependencies are `completed`.
 
 When in doubt about any detail, read the source files listed at the top of this prompt. The codebase is always the ground truth.

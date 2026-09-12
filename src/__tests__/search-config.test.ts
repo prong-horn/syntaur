@@ -52,10 +52,10 @@ describe('GET /api/config/search', () => {
 });
 
 describe('POST /api/config/search', () => {
-  it('persists a valid config and reports custom=true', async () => {
+  it('persists a valid config tnd reports custom=true', async () => {
     const payload = {
       defaultScope: 'project',
-      aliases: { a: 'ticket', pb: 'playbook' },
+      aliases: { t: 'ticket', pb: 'playbook' },
       externalIds: false,
     };
     const postRes = await fetch(baseUrl, {
@@ -146,14 +146,14 @@ describe('config.md persistence round-trip', () => {
   it('writeSearchConfig emits a search: block that readConfig parses back', async () => {
     const cfg = {
       defaultScope: 'ticket' as const,
-      aliases: { a: 'ticket' as const, p: 'project' as const },
+      aliases: { t: 'ticket' as const, p: 'project' as const },
       externalIds: false,
     };
     await writeSearchConfig(cfg);
 
     const raw = await readFile(resolve(tmpHome, '.syntaur/config.md'), 'utf-8');
     expect(raw).toMatch(/^search:$/m);
-    expect(raw).toMatch(/^\s+defaultScope: assignment$/m);
+    expect(raw).toMatch(/^\s+defaultScope: ticket$/m);
     expect(raw).toMatch(/^\s+externalIds: false$/m);
 
     const config = await readConfig();
@@ -186,7 +186,7 @@ describe('parseSearchConfig robustness', () => {
       'search:',
       '  defaultScope: project',
       '  aliases:',
-      '    a: assignment',
+      '    t: ticket',
       '  externalIds: false',
       '---',
       '',
@@ -195,7 +195,7 @@ describe('parseSearchConfig robustness', () => {
     const config = await readConfig();
     expect(config.searchConfig).toEqual({
       defaultScope: 'project',
-      aliases: { a: 'ticket' },
+      aliases: { t: 'ticket' },
       externalIds: false,
     });
   });
@@ -209,7 +209,7 @@ describe('parseSearchConfig robustness', () => {
         'search:',
         '  defaultScope: all',
         '  aliases:',
-        '    a: assignment',
+        '    t: ticket',
         `  externalIds: ${line}`,
         '---',
         '',
@@ -231,7 +231,7 @@ describe('parseSearchConfig robustness', () => {
       'search:',
       '  defaultScope: "project"',
       '  aliases:',
-      '    a: assignment',
+      '    t: ticket',
       '  externalIds: true',
       '---',
       '',

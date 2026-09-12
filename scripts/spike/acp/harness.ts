@@ -1,8 +1,8 @@
-// ACP spike harness (assignment acp-adapter-spike). Throwaway by design:
+// ACP spike harness (ticket acp-adapter-spike). Throwaway by design:
 // spawns an ACP adapter, wraps the SDK stream so every JSON-RPC frame in both
 // directions is logged, collects session/update notifications, and exposes the
 // handful of session/* calls the scenarios need. See ../../../claude-info/plans/
-// assignment-chat-design.md §5.9a for the scenarios this serves.
+// ticket-chat-design.md §5.9a for the scenarios this serves.
 
 import { spawn, spawnSync, execFileSync, type ChildProcess } from 'node:child_process';
 import { PassThrough, Readable, Writable } from 'node:stream';

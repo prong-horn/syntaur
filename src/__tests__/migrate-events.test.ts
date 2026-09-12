@@ -79,15 +79,15 @@ async function seedProject(
   history: HistoryEntry[],
   opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
 ): Promise<void> {
-  const dir = resolve(projectsDir, project, 'tickets', slug);
+  const dir = resolve(projectsDir, project, 'assignments', slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(slug, id, history, opts), 'utf-8');
+  await writeFile(resolve(dir, 'assignment.md'), ticketMd(slug, id, history, opts), 'utf-8');
 }
 
 async function seedStandalone(uuid: string, history: HistoryEntry[]): Promise<void> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(uuid, uuid, history), 'utf-8');
+  await writeFile(resolve(dir, 'assignment.md'), ticketMd(uuid, uuid, history), 'utf-8');
 }
 
 function countAllEvents(): number {

@@ -14,7 +14,7 @@ Driven declaratively by the registry in `src/targets/registry.ts`.
 
 | Framework | Generated Files | Discovery Mechanism |
 |-----------|----------------|---------------------|
-| **Cursor** | `.cursor/rules/syntaur-protocol.mdc`, `.cursor/rules/syntaur-assignment.mdc` | Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter |
+| **Cursor** | `.cursor/rules/syntaur-protocol.mdc`, `.cursor/rules/syntaur-ticket.mdc` | Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter |
 | **Codex** | `AGENTS.md` | Codex reads `AGENTS.md` at repo root |
 | **OpenCode** | `AGENTS.md`, `opencode.json` | OpenCode reads `AGENTS.md` at project root, plus optional `opencode.json` |
 | **Pi** | `AGENTS.md` | Pi reads `AGENTS.md` or `CLAUDE.md` |
@@ -22,7 +22,7 @@ Driven declaratively by the registry in `src/targets/registry.ts`.
 | **Hermes Agent** | `SOUL.md` | Hermes reads `SOUL.md` / context files |
 
 **User-authored agents:** end users can register a brand-new Tier-1+Tier-2 agent
-WITHOUT a Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/`.
+WITHOUT a Syntaur release by dropping t JSON descriptor in `~/.syntaur/targets/`.
 See `references/user-targets.md`.
 
 ## Tier-3 deep enforcement plugins (pi / OpenClaw / Hermes)
@@ -42,7 +42,7 @@ Caveats (see each plugin's `README.md`): **OpenClaw** is assumed to run on
 pi-coding-agent per the design memo — if a build diverges to its own plugin format,
 only the install dir needs repointing. **Hermes** `pre_tool_call` blocking is
 version-dependent (documented primarily as an observer hook), so the Hermes plugin
-logs every violation in addition to returning a deny signal; verify hard-block
+logs every violation in addition to returning t deny signal; verify hard-block
 against your live runtime. The boundary logic for both is unit-tested in
 `src/__tests__/pi-extension.test.ts` and `src/__tests__/hermes-plugin.test.ts`.
 
@@ -90,16 +90,16 @@ Two equivalent Tier-1 sources resolve the same 30 skills:
 
 ```bash
 # Generate Cursor adapter files in the current directory
-syntaur setup-adapter cursor --project <project-slug> --assignment <assignment-slug>
+syntaur setup-adapter cursor --project <project-slug> --ticket <ticket-slug>
 
 # Generate Codex adapter files
-syntaur setup-adapter codex --project <project-slug> --assignment <assignment-slug>
+syntaur setup-adapter codex --project <project-slug> --ticket <ticket-slug>
 
 # Generate OpenCode adapter files
-syntaur setup-adapter opencode --project <project-slug> --assignment <assignment-slug>
+syntaur setup-adapter opencode --project <project-slug> --ticket <ticket-slug>
 
 # Overwrite existing files
-syntaur setup-adapter cursor --project my-project --assignment my-task --force
+syntaur setup-adapter cursor --project my-project --ticket my-task --force
 ```
 
 ## What Gets Generated
@@ -107,12 +107,12 @@ syntaur setup-adapter cursor --project my-project --assignment my-task --force
 All adapters embed equivalent protocol knowledge:
 - **Directory structure** of `~/.syntaur/`
 - **Write boundary rules** (which files the agent can and cannot modify)
-- **Assignment lifecycle states** and valid transitions
+- **Ticket lifecycle states** and valid transitions
 - **CLI commands** for state transitions (`syntaur start`, `syntaur complete`, etc.)
-- **Reading order** for project and assignment files
-- **Current assignment context** (project slug, assignment slug, paths)
+- **Reading order** for project and ticket files
+- **Current ticket context** (project slug, ticket slug, paths)
 
-## Contributing a New Adapter
+## Contributing t New Adapter
 
 To add support for a new framework:
 
@@ -120,7 +120,7 @@ To add support for a new framework:
    reference file showing the format. This is documentation, not a runtime asset.
 
 2. **Create a TypeScript renderer** in `src/templates/<framework>.ts`:
-   - Define a params interface with `projectSlug`, `assignmentSlug`, `projectDir`, `assignmentDir`
+   - Define a params interface with `projectSlug`, `ticketSlug`, `projectDir`, `ticketDir`
    - Export a render function returning the file content as a string
    - Embed protocol knowledge directly in the template literal (do not read files at runtime)
 
@@ -133,7 +133,7 @@ To add support for a new framework:
    `instructions.files[]` listing each protocol file + its `renderer` key.
 
    **No-code alternative:** end users can register a Tier-1+Tier-2 agent WITHOUT a
-   Syntaur release by dropping a JSON descriptor in `~/.syntaur/targets/` -- see
+   Syntaur release by dropping t JSON descriptor in `~/.syntaur/targets/` -- see
    `references/user-targets.md`. Code changes here are only needed for built-in
    agents or new renderers.
 

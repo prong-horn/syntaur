@@ -6,7 +6,7 @@ export interface IndexStubParams {
   timestamp: string;
 }
 
-export function renderIndexAssignments(params: IndexStubParams): string {
+export function renderIndexTickets(params: IndexStubParams): string {
   return `---
 project: ${params.slug}
 generated: "${params.timestamp}"
@@ -20,12 +20,15 @@ by_status:
   failed: 0
 ---
 
-# Assignments
+# Tickets
 
 | Slug | Title | Status | Priority | Assignee | Dependencies | Updated |
 |------|-------|--------|----------|----------|--------------|---------|
 `;
 }
+
+/** @deprecated Use renderIndexTickets */
+export const renderIndexAssignments = renderIndexTickets;
 
 export function renderIndexPlans(params: IndexStubParams): string {
   return `---
@@ -35,7 +38,7 @@ generated: "${params.timestamp}"
 
 # Plans
 
-| Assignment | Plan Status | Updated |
+| Ticket | Plan Status | Updated |
 |------------|-------------|---------|
 `;
 }
@@ -48,7 +51,7 @@ generated: "${params.timestamp}"
 
 # Decision Records
 
-| Assignment | Count | Latest Decision | Latest Status | Updated |
+| Ticket | Count | Latest Decision | Latest Status | Updated |
 |------------|-------|-----------------|---------------|---------|
 `;
 }
@@ -75,9 +78,9 @@ needsAttention:
 # Project Status: ${params.title}
 
 **Status:** pending
-**Progress:** 0/0 assignments complete
+**Progress:** 0/0 tickets complete
 
-## Assignments
+## Tickets
 
 No tickets yet.
 
@@ -87,8 +90,8 @@ No dependencies yet.
 
 ## Needs Attention
 
-- **0 blocked** assignments
-- **0 failed** assignments
+- **0 blocked** tickets
+- **0 failed** tickets
 - **0 unanswered** questions
 `;
 }

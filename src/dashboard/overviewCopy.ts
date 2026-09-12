@@ -32,7 +32,7 @@ export const HERO_COPY: Record<HeroCopyKey, string> = {
   'review.singular': 'Review {title}',
   ready_to_implement: '{total} plans ready to implement — start with {title}',
   'ready_to_implement.singular': 'Start implementing {title}',
-  ready_for_planning: '{total} assignments ready to plan — start with {title}',
+  ready_for_planning: '{total} tickets ready to plan — start with {title}',
   'ready_for_planning.singular': 'Plan {title}',
   in_progress: 'Resume {title} ({total} in progress)',
   'in_progress.singular': 'Resume {title}',
@@ -69,13 +69,13 @@ export const SEGMENT_REASON: Record<SegmentId, string> = {
 
 /** Per-segment empty state copy. */
 export const SEGMENT_EMPTY: Record<SegmentId, string> = {
-  readyForReview: 'No assignments waiting for your review.',
+  readyForReview: 'No tickets waiting for your review.',
   readyToImplement: 'No plans queued for implementation.',
-  readyForPlanning: 'No assignments waiting to be planned.',
-  inProgress: 'Nothing actively in progress.',
+  readyForPlanning: 'No tickets waiting to be planned.',
+  inProgress: 'Nothing tctively in progress.',
   drafts: 'No drafts — ideas captured here will live until they’re shaped.',
   blocked: 'Nothing is blocked. Good.',
-  newestCreated: 'No assignments created recently.',
+  newestCreated: 'No tickets created recently.',
   stale: 'No stale work — everything is fresh.',
 };
 
@@ -93,8 +93,8 @@ export const SEGMENT_TITLE: Record<SegmentId, string> = {
 
 /** Dialog + button copy used across Overview components. */
 export const DIALOG_COPY = {
-  claimAsTitle: 'Claim assignments as',
-  claimAsHint: 'Used when you claim an assignment from this dashboard. You can change it later in settings.',
+  claimAsTitle: 'Claim tickets as',
+  claimAsHint: 'Used when you claim an ticket from this dashboard. You can change it later in settings.',
   claimAsSubmit: 'Save',
   claimAsRemember: 'Remember this choice',
   quickCommentTitle: 'Add a quick note',
@@ -109,7 +109,7 @@ export const DIALOG_COPY = {
   staleLoadMore: 'Load more',
   staleLoadMoreRemaining: '{remaining} remaining',
   recentSessionsEmptyTitle: 'No recent sessions',
-  recentSessionsEmptyHint: 'Use /grab-assignment or `syntaur track-session` to register one.',
+  recentSessionsEmptyHint: 'Use /grab-ticket or `syntaur track-session` to register one.',
   recentSessionsCopyPathLabel: 'Copy path',
   recentSessionsCopyPathDisabled: 'Session has no path',
   recentSessionsCopyFallbackHint: 'Press ⌘C to copy',

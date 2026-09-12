@@ -249,20 +249,20 @@ Body here.`;
 
   it('parses all fields including dependencies and workspace', () => {
     const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
-    expect(assignment.slug).toBe('implement-jwt-middleware');
-    expect(assignment.status).toBe('in_progress');
-    expect(assignment.assignee).toBe('claude-1');
-    expect(assignment.dependsOn).toEqual(['design-auth-schema']);
-    expect(assignment.links).toEqual(['other-project/some-task']);
-    expect(assignment.workspace.branch).toBe('feat/jwt-middleware');
-    expect(assignment.workspace.repository).toBe('/Users/test/projects/auth-service');
+    expect(ticket.slug).toBe('implement-jwt-middleware');
+    expect(ticket.status).toBe('in_progress');
+    expect(ticket.assignee).toBe('claude-1');
+    expect(ticket.dependsOn).toEqual(['design-auth-schema']);
+    expect(ticket.links).toEqual(['other-project/some-task']);
+    expect(ticket.workspace.branch).toBe('feat/jwt-middleware');
+    expect(ticket.workspace.repository).toBe('/Users/test/projects/auth-service');
   });
 
   it('defaults archive fields when absent (backward compatible)', () => {
     const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
-    expect(assignment.archived).toBe(false);
-    expect(assignment.archivedAt).toBeNull();
-    expect(assignment.archivedReason).toBeNull();
+    expect(ticket.archived).toBe(false);
+    expect(ticket.archivedAt).toBeNull();
+    expect(ticket.archivedReason).toBeNull();
   });
 
   it('parses archive fields when present', () => {
@@ -279,8 +279,8 @@ Body here.`;
 
   it('parses externalIds', () => {
     const ticket = parseTicketFull(ASSIGNMENT_WITH_DEPS);
-    expect(assignment.externalIds).toHaveLength(1);
-    expect(assignment.externalIds[0]).toEqual({
+    expect(ticket.externalIds).toHaveLength(1);
+    expect(ticket.externalIds[0]).toEqual({
       system: 'jira',
       id: 'AUTH-43',
       url: 'https://jira.example.com/browse/AUTH-43',
@@ -316,13 +316,13 @@ tags: []
 
 # Link-less External ID`;
     const ticket = parseTicketFull(ASSIGNMENT_URL_LESS);
-    expect(assignment.externalIds).toHaveLength(2);
-    expect(assignment.externalIds[0]).toEqual({
+    expect(ticket.externalIds).toHaveLength(2);
+    expect(ticket.externalIds[0]).toEqual({
       system: 'linear',
       id: 'ENG-7',
       url: null,
     });
-    expect(assignment.externalIds[1]).toEqual({
+    expect(ticket.externalIds[1]).toEqual({
       system: 'jira',
       id: 'PROJ-99',
       url: 'https://jira.example.com/browse/PROJ-99',
@@ -368,12 +368,12 @@ tags: []
 
 # Quirky URLs`;
     const ticket = parseTicketFull(ASSIGNMENT_QUIRKY_URLS);
-    expect(assignment.externalIds).toHaveLength(5);
-    expect(assignment.externalIds[0].url).toBeNull();
-    expect(assignment.externalIds[1].url).toBeNull();
-    expect(assignment.externalIds[2].url).toBe('https://example.com/A-3');
-    expect(assignment.externalIds[3].url).toBeNull();
-    expect(assignment.externalIds[4].url).toBeNull();
+    expect(ticket.externalIds).toHaveLength(5);
+    expect(ticket.externalIds[0].url).toBeNull();
+    expect(ticket.externalIds[1].url).toBeNull();
+    expect(ticket.externalIds[2].url).toBe('https://example.com/A-3');
+    expect(ticket.externalIds[3].url).toBeNull();
+    expect(ticket.externalIds[4].url).toBeNull();
   });
 });
 

@@ -259,7 +259,7 @@ describe('renderPlan', () => {
       timestamp: TIMESTAMP,
     });
     expect(out).toContain('status: draft');
-    expect(out).toContain('assignment: test');
+    expect(out).toContain('ticket: test');
     expect(out).toContain('# Plan: Test');
     expect(out).toContain('## Approach');
     expect(out).toContain('## Tasks');
@@ -273,7 +273,7 @@ describe('renderScratchpad', () => {
       ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
-    expect(out).toContain('assignment: test');
+    expect(out).toContain('ticket: test');
     expect(out).toContain(`updated: "${TIMESTAMP}"`);
     expect(out).toContain('# Scratchpad');
     expect(out).toContain('No working notes yet.');
@@ -315,7 +315,7 @@ describe('renderIndexAssignments', () => {
     expect(out).toContain('pending: 0');
     expect(out).toContain('in_progress: 0');
     expect(out).toContain('completed: 0');
-    expect(out).toContain('# Assignments');
+    expect(out).toContain('# Tickets');
   });
 });
 

@@ -24,40 +24,40 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur create-project "Ship dashboard overhaul"',
   },
   {
-    command: 'syntaur create-assignment',
-    description: 'Create a new assignment inside a project.',
-    example: 'syntaur create-assignment "Implement overview API" --project ui-overhaul',
+    command: 'syntaur new',
+    description: 'Create a new ticket inside a project.',
+    example: 'syntaur new "Implement overview API" --project ui-overhaul',
   },
   {
     command: 'syntaur assign',
-    description: 'Set the assignee for an assignment before work begins.',
+    description: 'Set the assignee for an ticket before work begins.',
     example: 'syntaur assign implement-overview --project ui-overhaul --agent codex-1',
   },
 
   // --- Lifecycle transitions ---
   {
     command: 'syntaur start',
-    description: 'Transition an assignment to in_progress.',
+    description: 'Transition an ticket to in_progress.',
     example: 'syntaur start implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur shape',
-    description: 'Transition a draft assignment to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
+    description: 'Transition a draft ticket to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
     example: 'syntaur shape implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur plan-ready',
-    description: 'Transition a ready_for_planning assignment to ready_to_implement once a plan has been written and approved.',
+    description: 'Transition a ready_for_planning tssignment to ready_to_implement once a plan has been written and approved.',
     example: 'syntaur plan-ready implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur implement',
-    description: 'Transition a ready_to_implement assignment to in_progress when coding begins.',
+    description: 'Transition a ready_to_implement ticket to in_progress when coding begins.',
     example: 'syntaur implement implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur migrate-statuses',
-    description: 'Suggest pending -> ready_for_planning promotions for fleshed-out assignments. Dry-run by default; pass --apply to write.',
+    description: 'Suggest pending -> ready_for_planning promotions for fleshed-out tickets. Dry-run by default; pass --apply to write.',
     example: 'syntaur migrate-statuses --apply',
   },
   {
@@ -67,27 +67,27 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur complete',
-    description: 'Mark an assignment completed after review or direct completion.',
+    description: 'Mark an ticket completed after review or direct completion.',
     example: 'syntaur complete implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur block',
-    description: 'Mark an assignment blocked and record the explicit reason.',
+    description: 'Mark an ticket blocked and record the explicit reason.',
     example: 'syntaur block implement-overview --project ui-overhaul --reason "Waiting on API spec"',
   },
   {
     command: 'syntaur unblock',
-    description: 'Move a blocked assignment back to in_progress after the blocker is cleared.',
+    description: 'Move a blocked ticket back to in_progress after the blocker is cleared.',
     example: 'syntaur unblock implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur fail',
-    description: 'Mark an assignment failed when it cannot be completed as planned.',
+    description: 'Mark an ticket failed when it cannot be completed as planned.',
     example: 'syntaur fail implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur reopen',
-    description: 'Reopen a completed or failed assignment back to in_progress.',
+    description: 'Reopen a completed or failed ticket back to in_progress.',
     example: 'syntaur reopen implement-overview --project ui-overhaul',
   },
 
@@ -117,16 +117,16 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur setup-adapter',
     description: 'Generate adapter instruction files for cursor, codex, or opencode in the current directory.',
-    example: 'syntaur setup-adapter cursor --project ui-overhaul --assignment implement-overview',
+    example: 'syntaur setup-adapter cursor --project ui-overhaul --ticket implement-overview',
   },
 
   // --- Session & server tracking (index 17) ---
   {
     command: 'syntaur track-session',
     description:
-      'Register an agent session. Requires --session-id from the agent runtime (real, not generated). Pass --transcript-path for the rollout/transcript file. --project and --assignment are optional.',
+      'Register an agent session. Requires --session-id from the agent runtime (real, not generated). Pass --transcript-path for the rollout/transcript file. --project and --ticket are optional.',
     example:
-      'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --assignment implement-overview',
+      'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --ticket implement-overview',
   },
 
   // --- Playbooks (indices 18-20) ---
@@ -169,18 +169,18 @@ const WORKFLOW: HelpChecklistItem[] = [
   },
   {
     title: 'Create a project',
-    detail: 'Use a project for a higher-level objective. Projects group related assignments.',
+    detail: 'Use a project for a higher-level objective. Projects group related tickets.',
     command: CLI_COMMANDS[2],
     href: '/create/project',
   },
   {
-    title: 'Create the first assignment',
-    detail: 'Assignments are the execution unit. Create one for each concrete chunk of work inside the project.',
+    title: 'Create the first ticket',
+    detail: 'Tickets are the execution unit. Create one for each concrete chunk of work inside the project.',
     command: CLI_COMMANDS[3],
   },
   {
     title: 'Assign the work',
-    detail: 'Setting an assignee before starting is recommended for clarity, but not required.',
+    detail: 'Setting tn assignee before starting is recommended for clarity, but not required.',
     command: CLI_COMMANDS[4],
   },
   {
@@ -190,7 +190,7 @@ const WORKFLOW: HelpChecklistItem[] = [
   },
   {
     title: 'Use the dashboard for triage and context',
-    detail: 'Overview shows the current queue, project pages show health, assignment pages show the execution surface.',
+    detail: 'Overview shows the current queue, project pages show health, ticket pages show the execution surface.',
     command: CLI_COMMANDS[12],
     href: '/',
   },
@@ -198,40 +198,40 @@ const WORKFLOW: HelpChecklistItem[] = [
 
 const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }> = {
   draft: {
-    meaning: 'The assignment is a just-created stub; objective and acceptance criteria are not yet fleshed out.',
-    useWhen: 'Use draft for newly-scaffolded assignments. Transition to ready_for_planning with `syntaur shape` once the Objective and AC are written.',
+    meaning: 'The ticket is a just-created stub; objective and acceptance criteria are not yet fleshed out.',
+    useWhen: 'Use draft for newly-scaffolded tickets. Transition to ready_for_planning with `syntaur shape` once the Objective and AC are written.',
   },
   pending: {
-    meaning: 'The assignment has not started yet.',
+    meaning: 'The ticket has not started yet.',
     useWhen: 'Use pending while waiting to start. If dependencies are unmet, pending is the normal waiting state.',
   },
   ready_for_planning: {
-    meaning: 'The assignment is fully shaped; a plan needs to be written before implementation can begin.',
-    useWhen: 'Use ready_for_planning after the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
+    meaning: 'The ticket is fully shaped; a plan needs to be written before implementation can begin.',
+    useWhen: 'Use ready_for_planning tfter the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
   },
   ready_to_implement: {
-    meaning: 'The plan has been written and approved; the assignment is ready to start coding.',
+    meaning: 'The plan has been written and approved; the ticket is ready to start coding.',
     useWhen: 'Use ready_to_implement once a plan.md exists and is approved. Transition to in_progress with `syntaur implement` when coding begins.',
   },
   in_progress: {
-    meaning: 'An assigned agent is actively working the assignment.',
+    meaning: 'An assigned agent is actively working the ticket.',
     useWhen: 'Use in_progress once the work has started and dependencies are satisfied.',
   },
   blocked: {
-    meaning: 'The assignment hit a manual or runtime obstacle.',
-    useWhen: 'Use blocked when work hits an obstacle. Adding a blockedReason is recommended for traceability.',
+    meaning: 'The ticket hit a manual or runtime obstacle.',
+    useWhen: 'Use blocked when work hits an obstacle. Adding t blockedReason is recommended for traceability.',
   },
   review: {
     meaning: 'Implementation is ready for inspection or validation.',
     useWhen: 'Use review after active work is ready to be checked before completion.',
   },
   completed: {
-    meaning: 'The assignment is done.',
+    meaning: 'The ticket is done.',
     useWhen: 'Use completed when the acceptance criteria are satisfied.',
   },
   failed: {
-    meaning: 'The assignment could not be completed as planned.',
-    useWhen: 'Use failed when the work cannot be recovered within the current assignment.',
+    meaning: 'The ticket could not be completed as planned.',
+    useWhen: 'Use failed when the work cannot be recovered within the current ticket.',
   },
 };
 
@@ -242,7 +242,7 @@ async function buildStatusGuide(): Promise<HelpStatusGuideEntry[]> {
     const defaults = DEFAULT_STATUS_GUIDE[s.id];
     return {
       status: s.id,
-      meaning: s.description ?? defaults?.meaning ?? `The assignment is in the "${s.label}" state.`,
+      meaning: s.description ?? defaults?.meaning ?? `The ticket is in the "${s.label}" state.`,
       useWhen: defaults?.useWhen ?? `Use ${s.id} when appropriate for the "${s.label}" workflow state.`,
     };
   });
@@ -256,7 +256,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         'Syntaur is a local-first, markdown-backed agent work system. The dashboard is a live view over project folders and files on disk.',
       bullets: [
         'Markdown files are the source of truth.',
-        'The UI reads project folders, assignment files, and derived indexes from the local filesystem.',
+        'The UI reads project folders, ticket files, and derived indexes from the local filesystem.',
         'Derived underscore-prefixed files are projections, not the canonical edit target.',
       ],
     },
@@ -264,12 +264,12 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Project',
         description:
-          'A project is the higher-level objective. It owns assignments and project-level configuration.',
+          'A project is the higher-level objective. It owns tickets and project-level configuration.',
       },
       {
-        term: 'Assignment',
+        term: 'Ticket',
         description:
-          'An assignment is a concrete unit of execution. Assignment frontmatter is the source of truth for status, priority, assignee, and dependencies.',
+          'An ticket is a concrete unit of execution. Ticket frontmatter is the source of truth for status, priority, assignee, and dependencies.',
       },
       {
         term: 'Manifest',
@@ -299,12 +299,12 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Workspace',
         description:
-          'The repository context for an assignment, including the repository path, worktree path, branch, and parent branch. Workspace fields connect an assignment to the code being worked on and define write boundaries.',
+          'The repository context for an ticket, including the repository path, worktree path, branch, and parent branch. Workspace fields connect an ticket to the code being worked on and define write boundaries.',
       },
       {
         term: 'Agent Session',
         description:
-          'A tracked AI session tied to assignment work. Sessions are registered via the track-session CLI command or the Claude Code plugin and visible on the Agent Sessions page.',
+          'A tracked AI session tied to ticket work. Sessions are registered via the track-session CLI command or the Claude Code plugin and visible on the Agent Sessions page.',
       },
     ],
     workflow: WORKFLOW,
@@ -317,8 +317,8 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'These files define project intent and instructions. The dashboard treats project status as derived except for the archive fields.',
       },
       {
-        label: 'Assignment working files',
-        files: ['assignment.md', 'plan*.md (optional, versioned)', 'scratchpad.md'],
+        label: 'Ticket working files',
+        files: ['ticket.md', 'plan*.md (optional, versioned)', 'scratchpad.md'],
         description:
           'These are agent-writable files. The dashboard lets you edit the source markdown while preserving unsupported frontmatter keys.',
       },
@@ -330,7 +330,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Derived files',
-        files: ['_status.md', '_index-assignments.md', '_index-plans.md', '_index-decisions.md'],
+        files: ['_status.md', '_index-tickets.md', '_index-plans.md', '_index-decisions.md'],
         description:
           'These files are read-only projections. They can lag behind source files, so the dashboard computes source-first state.',
       },
@@ -339,7 +339,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     navigation: [
       {
         label: 'Overview',
-        description: 'Triage hub showing assignments that need action, recent activity, progress stats, and first-run setup guidance.',
+        description: 'Triage hub showing tssignments that need action, recent activity, progress stats, and first-run setup guidance.',
         href: '/',
       },
       {
@@ -348,13 +348,13 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         href: '/projects',
       },
       {
-        label: 'Assignments',
-        description: 'Cross-project kanban board of all assignments. Drag cards between columns to change status, or filter by project, assignee, or status.',
-        href: '/assignments',
+        label: 'Tickets',
+        description: 'Cross-project kanban board of all tickets. Drag cards between columns to change status, or filter by project, assignee, or status.',
+        href: '/tickets',
       },
       {
         label: 'Agent Sessions',
-        description: 'Monitor which AI agents are currently working, what assignments they are linked to, and session duration. Sessions are registered via the Claude Code plugin or track-session CLI command.',
+        description: 'Monitor which AI agents are currently working, what tickets they are linked to, and session duration. Sessions are registered via the Claude Code plugin or track-session CLI command.',
         href: '/agent-sessions',
       },
       {
@@ -374,12 +374,12 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Project page',
-        description: 'The project page shows health stats, assignment list, and dependency graph.',
+        description: 'The project page shows health stats, ticket list, and dependency graph.',
         href: '/projects',
       },
       {
-        label: 'Assignment page',
-        description: 'The assignment workspace shows lifecycle actions, plan editor, scratchpad, handoff log, decision records, and agent sessions.',
+        label: 'Ticket page',
+        description: 'The ticket workspace shows lifecycle actions, plan editor, scratchpad, handoff log, decision records, and agent sessions.',
         href: '/projects',
       },
     ],
@@ -390,14 +390,14 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'Underscore-prefixed files are derived projections that can be rebuilt from canonical markdown sources. Editing them would create drift, so the UI treats them as read-only.',
       },
       {
-        question: 'Why can an assignment be pending even when nothing looks broken?',
+        question: 'Why can an ticket be pending even when nothing looks broken?',
         answer:
           'Pending often just means the work has not started yet or it is waiting on declared dependencies. Blocked is reserved for exceptional runtime obstacles that need intervention.',
       },
       {
-        question: 'How do I change an assignment\'s status?',
+        question: 'How do I change an ticket\'s status?',
         answer:
-          'Use lifecycle CLI commands (syntaur start, syntaur complete, etc.), drag cards on the kanban board, or use the Override Status dropdown on the assignment page. Any status can be set from any other status.',
+          'Use lifecycle CLI commands (syntaur start, syntaur complete, etc.), drag cards on the kanban board, or use the Override Status dropdown on the ticket page. Any status can be set from any other status.',
       },
       {
         question: 'How do I customize statuses?',
@@ -407,7 +407,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'What is a done state?',
         answer:
-          'A done state (also called terminal status) means the assignment is finished. Done states fill the completed portion of progress bars and satisfy dependency requirements. By default, "completed" and "failed" are done states. You can configure which statuses are done states in Settings.',
+          'A done state (also called terminal status) means the ticket is finished. Done states fill the completed portion of progress bars and satisfy dependency requirements. By default, "completed" and "failed" are done states. You can configure which statuses are done states in Settings.',
       },
       {
         question: 'What are playbooks and how do I use them?',
@@ -417,7 +417,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'How does agent session tracking work?',
         answer:
-          'When an AI agent starts working on an assignment, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked assignments and duration.',
+          'When an AI agent starts working on an ticket, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked tickets and duration.',
       },
     ],
     firstProjectChecklist: [
@@ -428,18 +428,18 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         href: '/create/project',
       },
       {
-        title: 'Create at least one assignment',
+        title: 'Create at least one ticket',
         detail: 'Break the project into executable work units with explicit priority and dependencies.',
         command: CLI_COMMANDS[2],
       },
       {
-        title: 'Assign and start the first assignment',
-        detail: 'Set an assignee, then start the assignment once prerequisites are complete.',
+        title: 'Assign and start the first ticket',
+        detail: 'Set an assignee, then start the ticket once prerequisites are complete.',
         command: CLI_COMMANDS[3],
       },
       {
-        title: 'Use the assignment workspace for execution',
-        detail: 'Keep the objective and acceptance criteria in assignment.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
+        title: 'Use the ticket workspace for execution',
+        detail: 'Keep the objective and acceptance criteria in ticket.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
         href: '/projects',
       },
       {
@@ -448,14 +448,14 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         title: 'Return to Overview for triage',
-        detail: 'Overview surfaces the queue of assignments that need action next.',
+        detail: 'Overview surfaces the queue of tickets that need action next.',
         href: '/',
       },
     ],
     links: [
       { label: 'Overview', href: '/' },
       { label: 'Project Directory', href: '/projects' },
-      { label: 'Assignments Board', href: '/assignments' },
+      { label: 'Tickets Board', href: '/tickets' },
       { label: 'Agent Sessions', href: '/agent-sessions' },
       { label: 'Playbooks', href: '/playbooks' },
       { label: 'Settings', href: '/settings' },

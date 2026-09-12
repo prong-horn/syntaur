@@ -644,8 +644,17 @@ export function createAgentSessionsRouter(
   // POST /api/agent-sessions — register a new session
   router.post('/', async (req, res) => {
     try {
-      const { projectSlug, assignmentSlug, agent, sessionId, path, description, transcriptPath } =
-        req.body;
+      const {
+        projectSlug,
+        ticketSlug: bodyTicketSlug,
+        assignmentSlug: legacyAssignmentSlug,
+        agent,
+        sessionId,
+        path,
+        description,
+        transcriptPath,
+      } = req.body;
+      const ticketSlug = bodyTicketSlug ?? legacyAssignmentSlug;
 
       if (!agent) {
         res.status(400).json({ error: 'agent is required' });
@@ -686,15 +695,15 @@ export function createAgentSessionsRouter(
       // the interval to repair the id. A registration-only POST (no
       // `assignmentSlug`) is NOT gated — it registers the bare session.
       let assignmentId: string | null = null;
-      if (assignmentSlug) {
+      if (ticketSlug) {
         const resolvedAssignment = await resolveAssignmentBySlug(
           projectsDir,
           assignmentsDir ?? assignmentsDirFn(),
           projectSlug || null,
-          assignmentSlug,
+          ticketSlug,
         );
         if (!resolvedAssignment.exists) {
-          res.status(404).json({ error: `Assignment "${assignmentSlug}" not found` });
+          res.status(404).json({ error: `Ticket "${ticketSlug}" not found` });
           return;
         }
         assignmentId = resolvedAssignment.id;
@@ -717,9 +726,9 @@ export function createAgentSessionsRouter(
         // L: a POST with no assignmentSlug is registration-only (unbound) — do
         // NOT open a project-bound engagement for an arbitrary session. Binding
         // requires a validated assignment selector (existence-checked above).
-        projectSlug: assignmentSlug ? projectSlug || null : null,
-        ticketSlug: assignmentSlug || null,
-        assignmentId,
+        projectSlug: ticketSlug ? projectSlug || null : null,
+        ticketSlug: ticketSlug || null,
+        ticketId: assignmentId,
         agent,
         sessionId,
         started: new Date().toISOString(),

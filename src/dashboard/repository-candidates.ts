@@ -7,7 +7,7 @@ export interface RepositoryCandidate {
   path: string;
   source: 'project' | 'sibling';
   /** Slug of the sibling assignment that provided this repo. Null for `project`-sourced. */
-  sourceAssignmentSlug: string | null;
+  sourceTicketSlug: string | null;
 }
 
 /**
@@ -69,16 +69,16 @@ export async function getProjectRepositoryCandidates(
       const abs = resolve(path);
       if (seen.has(abs)) continue;
       seen.add(abs);
-      out.push({ path: abs, source: 'project', sourceAssignmentSlug: null });
+      out.push({ path: abs, source: 'project', sourceTicketSlug: null });
     }
   }
 
-  const assignmentsDir = resolve(projectsDir, projectSlug, 'assignments');
+  const assignmentsDir = resolve(projectsDir, projectSlug, 'tickets');
   if (await fileExists(assignmentsDir)) {
     const entries = await readdir(assignmentsDir, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
-      const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+      const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
       if (!(await fileExists(assignmentMd))) continue;
       const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
       const repo = parsed.workspace.repository?.trim();
@@ -86,7 +86,7 @@ export async function getProjectRepositoryCandidates(
       const abs = resolve(repo);
       if (seen.has(abs)) continue;
       seen.add(abs);
-      out.push({ path: abs, source: 'sibling', sourceAssignmentSlug: parsed.slug });
+      out.push({ path: abs, source: 'sibling', sourceTicketSlug: parsed.slug });
     }
   }
 
@@ -113,7 +113,7 @@ export async function getStandaloneRepositoryCandidates(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === excludeAssignmentId) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
     if (!(await fileExists(assignmentMd))) continue;
     const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
     const repo = parsed.workspace.repository?.trim();
@@ -121,7 +121,7 @@ export async function getStandaloneRepositoryCandidates(
     const abs = resolve(repo);
     if (seen.has(abs)) continue;
     seen.add(abs);
-    out.push({ path: abs, source: 'sibling', sourceAssignmentSlug: parsed.slug });
+    out.push({ path: abs, source: 'sibling', sourceTicketSlug: parsed.slug });
   }
 
   return out;
@@ -138,7 +138,7 @@ export async function getProjectSourceAssignments(
   projectSlug: string,
   excludeSlug: string,
 ): Promise<SourceAssignment[]> {
-  const assignmentsDir = resolve(projectsDir, projectSlug, 'assignments');
+  const assignmentsDir = resolve(projectsDir, projectSlug, 'tickets');
   if (!(await fileExists(assignmentsDir))) return [];
 
   const seen = new Set<string>();
@@ -148,7 +148,7 @@ export async function getProjectSourceAssignments(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === excludeSlug) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
     if (!(await fileExists(assignmentMd))) continue;
     const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
     const source = toSourceAssignment(parsed, entry.name);
@@ -182,7 +182,7 @@ export async function getStandaloneSourceAssignments(
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     if (entry.name === excludeAssignmentId) continue;
-    const assignmentMd = resolve(assignmentsDir, entry.name, 'assignment.md');
+    const assignmentMd = resolve(assignmentsDir, entry.name, 'ticket.md');
     if (!(await fileExists(assignmentMd))) continue;
     const parsed = parseAssignmentFull(await readFile(assignmentMd, 'utf-8'));
     const source = toSourceAssignment(parsed, entry.name);

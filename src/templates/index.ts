@@ -8,7 +8,7 @@ export { renderProject } from './project.js';
 export type { ProjectParams } from './project.js';
 
 export { renderTicket, renderTicket as renderAssignment } from './ticket.js';
-export type { AssignmentParams } from './ticket.js';
+export type { TicketParams, AssignmentParams } from './ticket.js';
 
 export { renderPlan } from './plan.js';
 export type { PlanParams } from './plan.js';
@@ -29,7 +29,8 @@ export { renderDecisionRecord } from './decision-record.js';
 export type { DecisionRecordParams } from './decision-record.js';
 
 export {
-  renderIndexAssignments,
+  renderIndexTickets,
+  renderIndexTickets as renderIndexAssignments,
   renderIndexPlans,
   renderIndexDecisions,
   renderStatus,
@@ -39,8 +40,15 @@ export type { IndexStubParams } from './index-stubs.js';
 export { renderPlaybook } from './playbook.js';
 export type { PlaybookParams } from './playbook.js';
 
-export { renderCursorProtocol, renderCursorAssignment } from './cursor-rules.js';
-export type { CursorAssignmentParams } from './cursor-rules.js';
+export {
+  renderCursorProtocol,
+  renderCursorTicket,
+  renderCursorTicket as renderCursorAssignment,
+} from './cursor-rules.js';
+export type {
+  CursorTicketParams,
+  CursorTicketParams as CursorAssignmentParams,
+} from './cursor-rules.js';
 
 export { renderCodexAgents } from './codex-agents.js';
 export type { CodexAgentsParams } from './codex-agents.js';

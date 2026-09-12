@@ -643,8 +643,8 @@ export function createStatusConfigRouter(
           workflowId,
           blockers: usage.blockers,
           boundProjects: usage.boundProjects,
-          assignments: usage.assignments.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
-          assignmentCount: usage.assignments.length,
+          tickets: usage.assignments.slice(0, AFFECTED_SAMPLE_CAP).map(toSummary),
+          ticketCount: usage.assignments.length,
         });
         return;
       }

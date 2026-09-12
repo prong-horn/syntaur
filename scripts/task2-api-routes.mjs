@@ -20,41 +20,41 @@ function walk(dir, files = [], skip = new Set(['node_modules', 'dist', 'fixtures
 
 const ROUTE_REPLACEMENTS = [
   // paths (longest first)
-  ["'/api/projects/:slug/assignments/:aslug/", "'/api/projects/:slug/tickets/:aslug/"], // removed below
-  ["'/api/templates/assignment'", "'/api/templates/ticket'"],
-  ["'/api/assignments/", "'/api/tickets/"],
-  ["'/api/assignments'", "'/api/tickets'"],
-  ["'/api/projects/:slug/assignments'", "'/api/projects/:slug/tickets'"],
+  ["'/api/projects/:slug/tickets/:aslug/", "'/api/projects/:slug/tickets/:aslug/"], // removed below
+  ["'/api/templates/ticket'", "'/api/templates/ticket'"],
+  ["'/api/tickets/", "'/api/tickets/"],
+  ["'/api/tickets'", "'/api/tickets'"],
+  ["'/api/projects/:slug/tickets'", "'/api/projects/:slug/tickets'"],
 ];
 
 const CODE_REPLACEMENTS = [
-  ['listAssignmentsBoard', 'listTicketsBoard'],
-  ['getAssignmentDetailById', 'getTicketDetailById'],
-  ['getAssignmentDetail(', 'getTicketDetail('],
-  ['resolveAssignmentById', 'resolveTicketById'],
-  ['resolveAssignmentBySlug', 'resolveTicketBySlug'],
-  ['listSessionsByAssignment', 'listSessionsByTicket'],
-  ['recomputeAssignmentDir', 'recomputeTicketDir'],
-  ['isEngineActiveForAssignment', 'isEngineActiveForTicket'],
-  ['AssignmentBoardItem', 'TicketBoardItem'],
-  ['AssignmentDetail', 'TicketDetail'],
-  ['AssignmentSummary', 'TicketSummary'],
-  ['AssignmentUpdated', 'TicketUpdated'],
-  ["'assignment-updated'", "'ticket-updated'"],
-  ['assignment-updated', 'ticket-updated'],
-  ['source-assignments', 'source-tickets'],
-  ['sourceAssignments', 'sourceTickets'],
+  ['listTicketsBoard', 'listTicketsBoard'],
+  ['getTicketDetailById', 'getTicketDetailById'],
+  ['getTicketDetail(', 'getTicketDetail('],
+  ['resolveTicketById', 'resolveTicketById'],
+  ['resolveTicketBySlug', 'resolveTicketBySlug'],
+  ['listSessionsByTicket', 'listSessionsByTicket'],
+  ['recomputeTicketDir', 'recomputeTicketDir'],
+  ['isEngineActiveForTicket', 'isEngineActiveForTicket'],
+  ['TicketBoardItem', 'TicketBoardItem'],
+  ['TicketDetail', 'TicketDetail'],
+  ['TicketSummary', 'TicketSummary'],
+  ['TicketUpdated', 'TicketUpdated'],
+  ["'ticket-updated'", "'ticket-updated'"],
+  ['ticket-updated', 'ticket-updated'],
+  ['source-tickets', 'source-tickets'],
+  ['sourceTickets', 'sourceTickets'],
 ];
 
-function removeSlugAssignmentRoutes(content) {
-  // Drop router handlers whose path includes assignments/:aslug (slug form deleted per decision 5)
+function removeSlugTicketRoutes(content) {
+  // Drop router handlers whose path includes tickets/:aslug (slug form deleted per decision 5)
   const lines = content.split('\n');
   const out = [];
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
     const routeMatch = line.match(/router\.(get|post|put|patch|delete)\(\s*['`]([^'"`]+)['`]/);
-    if (routeMatch && routeMatch[2].includes('assignments/:aslug')) {
+    if (routeMatch && routeMatch[2].includes('tickets/:aslug')) {
       // skip until closing `});` at same indent level as router line
       const baseIndent = line.match(/^(\s*)/)[1];
       i++;
@@ -97,19 +97,19 @@ for (const rel of dashboardBackend) {
   let c = readFileSync(p, 'utf8');
   const orig = c;
   if (rel === 'src/dashboard/api-write.ts') {
-    c = removeSlugAssignmentRoutes(c);
+    c = removeSlugTicketRoutes(c);
   }
   c = applyReplacements(c, ROUTE_REPLACEMENTS);
   c = applyReplacements(c, CODE_REPLACEMENTS);
   // Response/json field renames in dashboard backend (not SQL columns)
-  c = c.replace(/\bassignmentSlug\b/g, 'ticketSlug');
-  c = c.replace(/\bassignmentId\b/g, 'ticketId');
-  c = c.replace(/\bassignmentDir\b/g, 'ticketDir');
-  c = c.replace(/\bassignmentPath\b/g, 'ticketPath');
-  c = c.replace(/\bassignmentsDir\b/g, 'ticketsDir');
+  c = c.replace(/\bticketSlug\b/g, 'ticketSlug');
+  c = c.replace(/\bticketId\b/g, 'ticketId');
+  c = c.replace(/\bticketDir\b/g, 'ticketDir');
+  c = c.replace(/\bticketPath\b/g, 'ticketPath');
+  c = c.replace(/\bticketsDir\b/g, 'ticketsDir');
   // Restore SQL column names in strings
-  c = c.replace(/\bassignment_id\b/g, 'assignment_id');
-  c = c.replace(/\bassignment_slug\b/g, 'assignment_slug');
+  c = c.replace(/\bticket_id\b/g, 'assignment_id');
+  c = c.replace(/\bticket_slug\b/g, 'assignment_slug');
   if (c !== orig) {
     writeFileSync(p, c);
     console.log('updated', rel);
@@ -123,8 +123,8 @@ for (const f of walk(join(ROOT, 'src', '__tests__'))) {
   const orig = c;
   c = applyReplacements(c, ROUTE_REPLACEMENTS);
   c = applyReplacements(c, CODE_REPLACEMENTS);
-  c = c.replace(/\/api\/assignments/g, '/api/tickets');
-  c = c.replace(/assignments\/:aslug/g, 'tickets/:id');
+  c = c.replace(/\/api\/tickets/g, '/api/tickets');
+  c = c.replace(/tickets\/:aslug/g, 'tickets/:id');
   if (c !== orig) {
     writeFileSync(f, c);
     console.log('updated', relative(ROOT, f));

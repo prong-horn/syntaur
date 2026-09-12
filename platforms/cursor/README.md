@@ -4,19 +4,19 @@ Cursor does not have a native plugin system like Claude Code or Codex. Syntaur i
 
 ## How it works
 
-Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter. Syntaur generates these files to teach Cursor the Syntaur protocol for a specific assignment.
+Cursor reads `.cursor/rules/*.mdc` files with YAML frontmatter. Syntaur generates these files to teach Cursor the Syntaur protocol for a specific ticket.
 
 ## Setup
 
-Generate adapter files for a specific assignment:
+Generate adapter files for a specific ticket:
 
 ```bash
-syntaur setup-adapter cursor --project <project-slug> --assignment <assignment-slug>
+syntaur setup-adapter cursor --project <project-slug> --ticket <ticket-slug>
 ```
 
 This creates:
 - `.cursor/rules/syntaur-protocol.mdc` — Protocol rules (always active)
-- `.cursor/rules/syntaur-assignment.mdc` — Assignment-specific context
+- `.cursor/rules/syntaur-ticket.mdc` — Ticket-specific context
 
 ## .mdc file format
 

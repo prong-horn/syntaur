@@ -283,7 +283,7 @@ async function computeStandaloneRecords(ticketsDir: string | undefined): Promise
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
     const ticketDir = resolve(ticketsDir, entry.name);
-    const assignmentMdPath = resolve(ticketDir, 'assignment.md');
+    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
     if (!(await fileExists(assignmentMdPath))) continue;
     try {
       const content = await readFile(assignmentMdPath, 'utf-8');
@@ -1071,7 +1071,7 @@ export async function getEditableDocumentById(
 
   const fileName =
     documentType === 'assignment'
-      ? 'assignment.md'
+      ? 'ticket.md'
       : documentType === 'plan'
         ? 'plan.md'
         : documentType === 'scratchpad'
@@ -1171,7 +1171,7 @@ export async function getProjectDetail(
 
 /**
  * Get full assignment detail with plan, scratchpad, handoff, and decision record.
- * GET /api/projects/:slug/assignments/:aslug
+ * GET /api/projects/:slug/tickets/:aslug
  */
 /**
  * Build the slim, camelCase engagement projection for an assignment's
@@ -1208,8 +1208,8 @@ export async function getTicketDetail(
   projectSlug: string,
   ticketSlug: string,
 ): Promise<TicketDetail | null> {
-  const ticketDir = resolve(projectsDir, projectSlug, 'assignments', ticketSlug);
-  const assignmentMdPath = resolve(ticketDir, 'assignment.md');
+  const ticketDir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
 
   if (!(await fileExists(assignmentMdPath))) {
     return null;
@@ -1453,7 +1453,7 @@ async function computeReferencedBy(
         slug: a.slug,
         title: a.title,
         projectSlug: rec.summary.slug,
-        ticketDir: resolve(rec.projectPath, 'assignments', a.slug),
+        ticketDir: resolve(rec.projectPath, 'tickets', a.slug),
       });
     }
   }
@@ -1519,12 +1519,12 @@ async function countMentionsInAssignment(
 function buildLinkPatternsForTarget(target: ReferenceTarget): RegExp[] {
   const patterns: RegExp[] = [];
   // Standalone absolute route
-  patterns.push(new RegExp(`/assignments/${escapeRegExpLocal(target.id)}(?:/|\\b)`, 'g'));
+  patterns.push(new RegExp(`/tickets/${escapeRegExpLocal(target.id)}(?:/|\\b)`, 'g'));
   if (target.projectSlug) {
     // Project-nested absolute route
     patterns.push(
       new RegExp(
-        `/projects/${escapeRegExpLocal(target.projectSlug)}/assignments/${escapeRegExpLocal(target.slug)}(?:/|\\b)`,
+        `/projects/${escapeRegExpLocal(target.projectSlug)}/tickets/${escapeRegExpLocal(target.slug)}(?:/|\\b)`,
         'g',
       ),
     );
@@ -1542,7 +1542,7 @@ function escapeRegExpLocal(value: string): string {
 
 /**
  * Resolve an assignment by UUID (standalone or project-nested) and return its full detail payload.
- * GET /api/assignments/:id
+ * GET /api/tickets/:id
  */
 export async function getTicketDetailById(
   projectsDir: string,
@@ -1580,7 +1580,7 @@ async function buildStandaloneTicketDetail(
   resolved: ResolvedAssignment,
 ): Promise<TicketDetail | null> {
   const ticketDir = resolved.ticketDir;
-  const assignmentMdPath = resolve(ticketDir, 'assignment.md');
+  const assignmentMdPath = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(assignmentMdPath))) return null;
 
   const assignmentContent = await readFile(assignmentMdPath, 'utf-8');
@@ -1777,7 +1777,7 @@ async function listAssignmentRecords(
   projectPath: string,
   traces?: OverviewTraces,
 ): Promise<AssignmentRecord[]> {
-  const ticketsDir = resolve(projectPath, 'assignments');
+  const ticketsDir = resolve(projectPath, 'tickets');
   if (!(await fileExists(ticketsDir))) {
     return [];
   }
@@ -1787,7 +1787,7 @@ async function listAssignmentRecords(
 
   const maybeRecords = await Promise.all(
     dirEntries.map(async (entry): Promise<AssignmentRecord | null> => {
-      const assignmentMd = resolve(ticketsDir, entry.name, 'assignment.md');
+      const assignmentMd = resolve(ticketsDir, entry.name, 'ticket.md');
       if (!(await fileExists(assignmentMd))) {
         return null;
       }
@@ -2117,7 +2117,7 @@ async function toTicketBoardItem(
   const config = await getStatusConfig(workflowId);
   const { terminalStatuses } = config;
 
-  const ticketDir = resolve(projectRecord.projectPath, 'assignments', assignment.slug);
+  const ticketDir = resolve(projectRecord.projectPath, 'tickets', assignment.slug);
   const projectDir = projectRecord.projectPath;
 
   let facts: TicketBoardItem['facts'];
@@ -2275,7 +2275,7 @@ async function getUnmetDependencies(
       // Fall through to disk read only if the map didn't know about this dependency.
     }
 
-    const dependencyPath = resolve(projectPath, 'assignments', dependency, 'assignment.md');
+    const dependencyPath = resolve(projectPath, 'tickets', dependency, 'ticket.md');
     if (!(await fileExists(dependencyPath))) {
       unmet.push(`${dependency} (missing)`);
       continue;
@@ -2416,7 +2416,7 @@ export async function collectStaleCandidates(
           ? true
           : (await getUnmetDependencies(projectPath, assignment.dependsOn, terminalStatuses, depMap)).length === 0;
       const lastActivityMs = await readProgressActivityMs(
-        resolve(projectPath, 'assignments', assignment.slug, 'progress.md'),
+        resolve(projectPath, 'tickets', assignment.slug, 'progress.md'),
         now,
       );
       const reasons = classifyAssignmentRecord(assignment, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
@@ -2502,7 +2502,7 @@ async function buildOverviewSegmentBuckets(
             : (await getUnmetDependencies(projectPath, assignment.dependsOn, ticketTerminal, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
-          resolve(projectPath, 'assignments', assignment.slug, 'progress.md'),
+          resolve(projectPath, 'tickets', assignment.slug, 'progress.md'),
           now,
         );
         return { assignment, availableTransitions, depsSatisfied, lastActivityMs, ticketTerminal };
@@ -2536,7 +2536,7 @@ async function buildOverviewSegmentBuckets(
         assignmentTitle: assignment.title,
         status: assignment.status,
         updated: assignment.updated,
-        href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
+        href: `/projects/${record.summary.slug}/tickets/${assignment.slug}`,
         blockedReason: assignment.blockedReason,
         stale,
         agingMs,
@@ -2623,7 +2623,7 @@ async function buildOverviewSegmentBuckets(
       assignmentTitle: assignment.title,
       status: assignment.status,
       updated: assignment.updated,
-      href: `/assignments/${sr.id}`,
+      href: `/tickets/${sr.id}`,
       blockedReason: assignment.blockedReason,
       stale,
       agingMs,
@@ -2758,7 +2758,7 @@ function buildRecentActivity(
         type: 'assignment',
         title: assignment.title,
         updated: assignment.updated,
-        href: `/projects/${record.summary.slug}/assignments/${assignment.slug}`,
+        href: `/projects/${record.summary.slug}/tickets/${assignment.slug}`,
         projectSlug: record.summary.slug,
         projectTitle: record.summary.title,
         ticketSlug: assignment.slug,
@@ -2774,7 +2774,7 @@ function buildRecentActivity(
       type: 'assignment',
       title: assignment.title,
       updated: assignment.updated,
-      href: `/assignments/${sr.id}`,
+      href: `/tickets/${sr.id}`,
       projectSlug: null,
       projectTitle: null,
       ticketSlug: assignment.slug || sr.id,
@@ -2806,7 +2806,7 @@ async function countOpenQuestions(
 ): Promise<number> {
   const commentsPath = resolve(
     projectPath,
-    'assignments',
+    'tickets',
     ticketSlug,
     'comments.md',
   );
@@ -2844,24 +2844,25 @@ function getDocumentPath(
     case 'project':
       return resolve(projectsDir, projectSlug, 'project.md');
     case 'assignment':
+    case 'ticket':
       return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'assignment.md')
+        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md')
         : null;
     case 'plan':
       return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'plan.md')
+        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'plan.md')
         : null;
     case 'scratchpad':
       return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'scratchpad.md')
+        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'scratchpad.md')
         : null;
     case 'handoff':
       return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'handoff.md')
+        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'handoff.md')
         : null;
     case 'decision-record':
       return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'decision-record.md')
+        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'decision-record.md')
         : null;
     default:
       return null;
@@ -2878,6 +2879,8 @@ function getEditableDocumentTitle(
       return `Edit Project: ${projectSlug}`;
     case 'assignment':
       return `Edit Assignment: ${ticketSlug || 'assignment'}`;
+    case 'ticket':
+      return `Edit Ticket: ${ticketSlug || 'ticket'}`;
     case 'plan':
       return `Edit Plan: ${ticketSlug || 'assignment'}`;
     case 'scratchpad':

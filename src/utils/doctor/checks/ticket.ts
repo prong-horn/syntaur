@@ -444,7 +444,7 @@ const readyToImplementMissingPlan: Check = {
         affected: [resolve(a.ticketDir, 'plan.md')],
         remediation: {
           kind: 'manual',
-          suggestion: `Write a plan with '/plan-assignment' (or 'syntaur plan'), then re-mark ready_to_implement`,
+          suggestion: `Write a plan with '/plan-ticket' (or 'syntaur plan'), then re-mark ready_to_implement`,
           command: null,
         },
         autoFixable: false,

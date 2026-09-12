@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   renderCursorProtocol,
-  renderCursorAssignment,
+  renderCursorTicket,
   renderCodexAgents,
   renderOpenCodeConfig,
   renderHermesSoul,
@@ -9,10 +9,10 @@ import {
 
 const TEST_PARAMS = {
   projectSlug: 'test-project',
-  ticketSlug: 'test-assignment',
+  ticketSlug: 'test-ticket',
   projectDir: '/home/user/.syntaur/projects/test-project',
   ticketDir:
-    '/home/user/.syntaur/projects/test-project/tickets/test-assignment',
+    '/home/user/.syntaur/projects/test-project/tickets/test-ticket',
 };
 
 describe('renderCursorProtocol', () => {
@@ -68,27 +68,27 @@ describe('renderCursorProtocol', () => {
   it('documents standalone tickets', () => {
     const out = renderCursorProtocol();
     expect(out).toContain('standalone');
-    expect(out).toMatch(/~\/\.syntaur\/assignments\//);
+    expect(out).toMatch(/~\/\.syntaur\/tickets\//);
   });
 });
 
-describe('renderCursorAssignment', () => {
+describe('renderCursorTicket', () => {
   it('starts with .mdc YAML frontmatter', () => {
-    const out = renderCursorAssignment(TEST_PARAMS);
+    const out = renderCursorTicket(TEST_PARAMS);
     expect(out).toMatch(/^---\n/);
     expect(out).toContain('alwaysApply: true');
   });
 
   it('contains project and ticket context', () => {
-    const out = renderCursorAssignment(TEST_PARAMS);
+    const out = renderCursorTicket(TEST_PARAMS);
     expect(out).toContain('test-project');
-    expect(out).toContain('test-assignment');
+    expect(out).toContain('test-ticket');
     expect(out).toContain(TEST_PARAMS.projectDir);
     expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 
   it('contains reading order', () => {
-    const out = renderCursorAssignment(TEST_PARAMS);
+    const out = renderCursorTicket(TEST_PARAMS);
     expect(out).toContain('project.md');
     expect(out).toContain('ticket.md');
     expect(out).toContain('plan*.md');
@@ -98,14 +98,14 @@ describe('renderCursorAssignment', () => {
   });
 
   it('lists writable files', () => {
-    const out = renderCursorAssignment(TEST_PARAMS);
+    const out = renderCursorTicket(TEST_PARAMS);
     expect(out).toContain('scratchpad.md');
     expect(out).toContain('decision-record.md');
     expect(out).toContain('progress.md');
   });
 
   it('flags comments.md as CLI-mediated', () => {
-    const out = renderCursorAssignment(TEST_PARAMS);
+    const out = renderCursorTicket(TEST_PARAMS);
     expect(out).toContain('syntaur comment');
   });
 });
@@ -124,7 +124,7 @@ describe('renderCodexAgents', () => {
   it('contains ticket context', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('test-project');
-    expect(out).toContain('test-assignment');
+    expect(out).toContain('test-ticket');
     expect(out).toContain(TEST_PARAMS.projectDir);
     expect(out).toContain(TEST_PARAMS.ticketDir);
   });
@@ -134,8 +134,8 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur-operator');
     expect(out).toContain('syntaur-protocol');
     expect(out).toContain('grab-ticket');
-    expect(out).toContain('plan-assignment');
-    expect(out).toContain('complete-assignment');
+    expect(out).toContain('plan-ticket');
+    expect(out).toContain('complete-ticket');
     expect(out).toContain('track-session');
   });
 
@@ -169,7 +169,7 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur comment');
   });
 
-  it('includes assignment-specific CLI commands', () => {
+  it('includes ticket-specific CLI commands', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain(
       `syntaur start ${TEST_PARAMS.ticketSlug} --project ${TEST_PARAMS.projectSlug}`,
@@ -193,7 +193,7 @@ describe('renderCodexAgents', () => {
   it('documents --one-off for standalone tickets', () => {
     const out = renderCodexAgents(TEST_PARAMS);
     expect(out).toContain('--one-off');
-    expect(out).toMatch(/~\/\.syntaur\/assignments\//);
+    expect(out).toMatch(/~\/\.syntaur\/tickets\//);
   });
 
   it('mentions --type flag for new', () => {
@@ -259,7 +259,7 @@ describe('renderHermesSoul', () => {
   it('contains ticket context', () => {
     const out = renderHermesSoul(TEST_PARAMS);
     expect(out).toContain('test-project');
-    expect(out).toContain('test-assignment');
+    expect(out).toContain('test-ticket');
     expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 

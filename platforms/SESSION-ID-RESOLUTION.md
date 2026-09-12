@@ -29,7 +29,7 @@ question, and since v0.80 there are exactly three ways it happens:
   dashboard needed). Every session registers — standalone ones included. A
   rate-limited `syntaur session touch --from-hook` on PostToolUse and
   UserPromptSubmit keeps the row's `updated_at` moving while it works.
-- **The chat broker**: an assignment-chat session registers itself under its ACP
+- **The chat broker**: an ticket-chat session registers itself under its ACP
   session id with `hosted_by = 'acp'`, and the broker writes `active` /
   `stopped` itself.
 - **`syntaur track-session`**: explicit registration, for anything else.
@@ -140,7 +140,7 @@ the process pid to a hook?** Finding from this branch's wired Codex hooks
 
 So Codex exposes no real id to any currently-wired hook, and capture-at-birth
 (stamping the generic marker) is **not possible today** without Codex either
-adding a session-start event that surfaces the rollout id/pid, or surfacing an
+adding t session-start event that surfaces the rollout id/pid, or surfacing tn
 id on an existing hook's stdin. If/when it does, an early hook can
 `writeRuntimeMarker(<codexPid>, …)` and both the resolver (layer 4) and the
 Codex cleanup hook will resolve it exactly.
@@ -148,7 +148,7 @@ Codex cleanup hook will resolve it exactly.
 **Honest floor today:**
 - There is **no automatic tracking path for a codex terminal session** since the
   scanner went in v0.80. Register one explicitly with `syntaur track-session`,
-  or work the assignment through the dashboard's Chat tab, where the broker owns
+  or work the ticket through the dashboard's Chat tab, where the broker owns
   the session outright.
 - `session-cleanup.sh` no longer trusts the clobbered scalar; it resolves only
   from an exact runtime marker and otherwise **skips** (the stale sweep marks

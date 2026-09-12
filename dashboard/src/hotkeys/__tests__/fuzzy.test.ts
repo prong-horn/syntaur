@@ -4,8 +4,8 @@ import { rankAll, scoreField } from '../fuzzy';
 const entry = (type: string, title: string) => ({ type, title });
 
 describe('fuzzy.rankAll (R5c)', () => {
-  it('"ass" prefers Tickets over Decision Record', () => {
-    const r = rankAll('ass', [entry('page', 'Tickets'), entry('page', 'Decision Record')]);
+  it('"tic" prefers Tickets over Decision Record', () => {
+    const r = rankAll('tic', [entry('page', 'Tickets'), entry('page', 'Decision Record')]);
     expect(r[0].title).toBe('Tickets');
   });
 

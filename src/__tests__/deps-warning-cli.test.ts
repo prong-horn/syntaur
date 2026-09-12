@@ -80,12 +80,12 @@ describe('deps warning on start/implement (non-blocking)', () => {
     // Dependency ticket, NOT terminal (status: draft).
     const depDir = join(home, 'projects', 'p1', 'tickets', 'dep-a');
     await mkdir(depDir, { recursive: true });
-    await writeFile(join(depDir, 'ticket.md'), assignmentMd('dep-a', []));
+    await writeFile(join(depDir, 'ticket.md'), ticketMd('dep-a', []));
     // Main ticket depends on dep-a.
     const mainDir = join(home, 'projects', 'p1', 'tickets', 'main');
     await mkdir(mainDir, { recursive: true });
     mainPath = join(mainDir, 'ticket.md');
-    await writeFile(mainPath, assignmentMd('main', ['dep-a']));
+    await writeFile(mainPath, ticketMd('main', ['dep-a']));
   });
 
   afterEach(async () => {

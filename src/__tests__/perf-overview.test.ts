@@ -122,7 +122,7 @@ async function seedSyntheticWorkspace(
       await mkdir(aDir, { recursive: true });
       await writeFile(
         resolve(aDir, 'ticket.md'),
-        assignmentMd(slug, status, dependsOn),
+        ticketMd(slug, status, dependsOn),
         'utf-8',
       );
       if (a % 4 === 0) {

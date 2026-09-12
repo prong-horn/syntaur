@@ -27,13 +27,13 @@ describe('ChatComposer command picker logic', () => {
   });
 
   it('filters commands by partial', () => {
-    const active = detectActiveCommand('/plan-a', 7, agents)!;
+    const active = detectActiveCommand('/plan-t', 7, agents)!;
     expect(rankCommands(active.partial, commands).map((c) => c.name)).toEqual(['plan-ticket']);
   });
 
   it('applies /plan-ticket with a trailing space', () => {
-    const active = detectActiveCommand('/plan-a', 7, agents)!;
-    expect(applyCommand('/plan-a', active, 'plan-ticket').text).toBe('/plan-ticket ');
+    const active = detectActiveCommand('/plan-t', 7, agents)!;
+    expect(applyCommand('/plan-t', active, 'plan-ticket').text).toBe('/plan-ticket ');
   });
 
   it('scopes commands to @codex when the draft starts with that mention', () => {

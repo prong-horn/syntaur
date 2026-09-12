@@ -1,9 +1,9 @@
 ---
 name: replan
-description: Bump the active Syntaur assignment to a new plan version (plan-vN.md) per the Plan Versioning playbook
+description: Bump the active Syntaur ticket to a new plan version (plan-vN.md) per the Plan Versioning playbook
 arguments:
   - name: args
-    description: "Optional --assignment <slug> --project <slug>. Defaults to active assignment."
+    description: "Optional --ticket <slug> --project <slug>. Defaults to active ticket."
     required: false
 ---
 

@@ -1,8 +1,8 @@
 ---
 name: "Keep Records Updated"
 slug: keep-records-updated
-description: "Agents must keep assignment.md criteria, progress.md, and related records current in real-time"
-when_to_use: "After every meaningful action, when completing acceptance criteria, when starting or stopping work"
+description: "Agents must keep ticket.md criteria, progress.md, and related records current in real-time"
+when_to_use: "After every meaningful action, when completing tcceptance criteria, when starting or stopping work"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-05-08T00:00:00Z"
 tags:
@@ -14,10 +14,10 @@ tags:
 
 ## After every meaningful action:
 - Append a new entry to `progress.md` with what you did
-- Progress entries live in `progress.md` (reverse-chronological order, newest first with a `## <ISO 8601 timestamp>` heading). Do NOT add a `## Progress` section to `assignment.md` — that section is removed as of protocol v2.0.
+- Progress entries live in `progress.md` (reverse-chronological order, newest first with a `## <ISO 8601 timestamp>` heading). Do NOT add a `## Progress` section to `ticket.md` — that section is removed as of protocol v2.0.
 - Bump `entryCount` and `updated` in `progress.md`'s frontmatter.
 ## When you complete an acceptance criterion:
-- Check it off in the `## Acceptance Criteria` section of `assignment.md` immediately
+- Check it off in the `## Acceptance Criteria` section of `ticket.md` immediately
 - Do not batch these up -- mark them as you go
 
 ## When you have a question, note, or piece of feedback:

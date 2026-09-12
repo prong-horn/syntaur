@@ -12,13 +12,13 @@ Agents must NEVER modify these files:
 
 Per-project `agent.md` / `claude.md` were removed in protocol v2.0. Agent-level conventions live at the repo root in `CLAUDE.md` / `AGENTS.md`, and user-defined behavioral rules live in `~/.syntaur/playbooks/`.
 
-## Agent-Writable (YOUR assignment folder ONLY)
+## Agent-Writable (YOUR ticket folder ONLY)
 
-You may only write to files inside your currently-claimed assignment folder:
+You may only write to files inside your currently-claimed ticket folder:
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record; source of truth for state. |
+| `ticket.md` | Ticket record; source of truth for state. |
 | `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). Prior plan files are kept on disk as immutable history. |
 | `progress.md` | Append-only, timestamped progress log (newest first). |
 | `scratchpad.md` | Working notes. |
@@ -26,8 +26,8 @@ You may only write to files inside your currently-claimed assignment folder:
 | `decision-record.md` | Append-only decision log (Status / Context / Decision / Consequences). |
 
 Path patterns:
-- Project-nested: `~/.syntaur/projects/<project>/assignments/<your-assignment-slug>/`
-- Standalone: `~/.syntaur/assignments/<your-assignment-uuid>/` (folder name is the UUID; `slug` is display-only)
+- Project-nested: `~/.syntaur/projects/<project>/tickets/<your-ticket-slug>/`
+- Standalone: `~/.syntaur/tickets/<your-ticket-uuid>/` (folder name is the UUID; `slug` is display-only)
 
 ## CLI-Mediated (any agent via the `syntaur` CLI)
 
@@ -35,7 +35,7 @@ These files are never edited directly — write to them only through the CLI so 
 
 | Target | Command |
 |--------|---------|
-| `comments.md` (any assignment) | `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>]` |
+| `comments.md` (any ticket) | `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>]` |
 
 ## Shared-Writable (any agent or human)
 
@@ -49,7 +49,7 @@ These files are never edited directly — write to them only through the CLI so 
 All files prefixed with `_` are derived and rebuilt by tooling:
 
 - `manifest.md`
-- `_index-assignments.md`
+- `_index-tickets.md`
 - `_index-plans.md`
 - `_index-decisions.md`
 - `_status.md`
@@ -57,8 +57,8 @@ All files prefixed with `_` are derived and rebuilt by tooling:
 
 ## Workspace Files
 
-When working on code (not protocol files), you may write to files within the workspace defined in your assignment frontmatter:
+When working on code (not protocol files), you may write to files within the workspace defined in your ticket frontmatter:
 
 - `workspace.worktreePath` or `workspace.repository` defines your code root.
 - You may create and edit source files within that workspace.
-- The `.syntaur/context.json` workspace-marker file in your working directory is also writable (merge, don't overwrite — the platform SessionStart hook may have populated `sessionId` and `transcriptPath`). It marks the workspace (repository/branch/worktree); it is not the active-assignment source of truth — the active assignment resolves from the session's open engagement.
+- The `.syntaur/context.json` workspace-marker file in your working directory is also writable (merge, don't overwrite — the platform SessionStart hook may have populated `sessionId` and `transcriptPath`). It marks the workspace (repository/branch/worktree); it is not the active-ticket source of truth — the active ticket resolves from the session's open engagement.

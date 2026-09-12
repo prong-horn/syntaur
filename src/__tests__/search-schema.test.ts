@@ -89,7 +89,7 @@ describe('search-schema', () => {
 
   describe('validateAliases', () => {
     it('accepts a valid map', () => {
-      expect(validateAliases({ a: 'ticket', pb: 'playbook' })).toEqual({ ok: true });
+      expect(validateAliases({ t: 'ticket', pb: 'playbook' })).toEqual({ ok: true });
     });
 
     it('accepts an empty map', () => {

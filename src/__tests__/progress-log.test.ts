@@ -89,7 +89,7 @@ describe('syntaur progress log', () => {
     expect(content).not.toContain('No progress yet.');
     expect(content).toContain('First entry');
     expect(content).toContain('entryCount: 1');
-    expect(content).toContain('assignment: a'); // preserved
+    expect(content).toContain('ticket: a'); // preserved
     expect(content).toContain('generated: "2026-01-01T00:00:00Z"'); // preserved
     expect(content).not.toContain('updated: "2026-01-01T00:00:00Z"'); // bumped
   });

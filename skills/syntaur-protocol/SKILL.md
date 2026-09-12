@@ -1,8 +1,8 @@
 ---
 name: syntaur-protocol
 description: >-
-  Use when the user mentions Syntaur, projects, assignments, files under
-  ~/.syntaur/, assignment.md, plan*.md, progress.md, comments.md, handoff.md,
+  Use when the user mentions Syntaur, projects, tickets, files under
+  ~/.syntaur/, ticket.md, plan*.md, progress.md, comments.md, handoff.md,
   .syntaur/context.json, lifecycle states, or write boundaries. Core protocol
   knowledge for any AI agent working within Syntaur (protocol v2.0).
 license: MIT
@@ -21,8 +21,8 @@ Respect file ownership boundaries. The Codex plugin enforces them with a PreTool
 
 ### Files you may write
 
-1. **Your assignment folder only** (project-nested OR standalone):
-   - `assignment.md`
+1. **Your ticket folder only** (project-nested OR standalone):
+   - `ticket.md`
    - `plan*.md` (versioned — `plan.md`, `plan-v2.md`, etc.)
    - `progress.md` (append-only, timestamped)
    - `scratchpad.md`
@@ -31,28 +31,28 @@ Respect file ownership boundaries. The Codex plugin enforces them with a PreTool
 2. **Project-level shared files:**
    - `~/.syntaur/projects/<project>/resources/<slug>.md`
    - `~/.syntaur/projects/<project>/memories/<slug>.md`
-3. **Workspace files** inside the assignment's configured `workspace.worktreePath` / `workspace.repository`.
-4. **Workspace marker:** `.syntaur/context.json` in the current working directory (repository/branch/worktree markers plus legacy session bookkeeping — not the active-assignment source of truth).
+3. **Workspace files** inside the ticket's configured `workspace.worktreePath` / `workspace.repository`.
+4. **Workspace marker:** `.syntaur/context.json` in the current working directory (repository/branch/worktree markers plus legacy session bookkeeping — not the active-ticket source of truth).
 
 ### Files written only via CLI (never edit directly)
 
-- `comments.md` (any assignment) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Questions carry a `resolved` flag toggled in the dashboard.
+- `comments.md` (any ticket) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Questions carry a `resolved` flag toggled in the dashboard.
 
 ### Files you must never write
 
 1. `project.md` — human-authored, read-only.
 2. `manifest.md` — derived, rebuilt by tooling.
 3. Any file prefixed with `_` (`_index-*.md`, `_status.md`) — derived.
-4. Other agents' assignment folders (except via the CLI-mediated channels above).
+4. Other agents' ticket folders (except via the CLI-mediated channels above).
 5. Anything outside the current workspace boundary.
 
 Per-project `agent.md` / `claude.md` do NOT exist in protocol v2.0. Agent-level conventions now live at the repo root (`CLAUDE.md` / `AGENTS.md`) and in `~/.syntaur/playbooks/`.
 
-## Current Assignment Context
+## Current Ticket Context
 
-The **active assignment** is resolved from the session's OPEN engagement — the assignment this session is currently bound to (established by `syntaur track-session`). It is NOT read from `.syntaur/context.json`. To learn the active assignment, run `syntaur session resume` (or `--json`); to bind a different one, `grab-assignment` (which calls `track-session`).
+The **active ticket** is resolved from the session's OPEN engagement — the ticket this session is currently bound to (established by `syntaur track-session`). It is NOT read from `.syntaur/context.json`. To learn the active ticket, run `syntaur session resume` (or `--json`); to bind a different one, `grab-ticket` (which calls `track-session`).
 
-`.syntaur/context.json` is a WORKSPACE MARKER file — it identifies the workspace directory and may carry legacy session bookkeeping. It is NOT authoritative for the active assignment. Read it for workspace markers; do NOT treat `projectSlug` / `assignmentSlug` / `assignmentDir` as the active-assignment source of truth (any such scalars are non-authoritative legacy hints). Fields you may see:
+`.syntaur/context.json` is a WORKSPACE MARKER file — it identifies the workspace directory and may carry legacy session bookkeeping. It is NOT authoritative for the active ticket. Read it for workspace markers; do NOT treat `projectSlug` / `ticketSlug` / `ticketDir` as the active-ticket source of truth (any such scalars are non-authoritative legacy hints). Fields you may see:
 
 - `repository` — workspace repository (path or remote URL)
 - `branch` — workspace branch, if known
@@ -63,15 +63,15 @@ The **active assignment** is resolved from the session's OPEN engagement — the
 
 ## Required Reading Order
 
-When starting work on an existing assignment, read these in order:
+When starting work on an existing tssignment, read these in order:
 
 1. `~/.syntaur/playbooks/*.md` — behavioral rules (take precedence over defaults)
 2. `<projectDir>/manifest.md` (skip for standalone)
 3. `<projectDir>/project.md` (skip for standalone)
-4. `<assignmentDir>/assignment.md`
-5. `<assignmentDir>/comments.md` if present — inherited questions / notes
-6. Latest `<assignmentDir>/plan*.md` (pick the newest)
-7. `<assignmentDir>/handoff.md` — history
+4. `<ticketDir>/ticket.md`
+5. `<ticketDir>/comments.md` if present — inherited questions / notes
+6. Latest `<ticketDir>/plan*.md` (pick the newest)
+7. `<ticketDir>/handoff.md` — history
 8. For each `dependsOn` entry: the dependency's `handoff.md` AND `decision-record.md` — upstream integration context and accepted decisions carry forward
 
 ## Lifecycle Commands
@@ -83,9 +83,9 @@ When starting work on an existing assignment, read these in order:
 - `syntaur block <slug> --project <project> --reason <text>` — block
 - `syntaur unblock <slug> --project <project>` — unblock
 - `syntaur fail <slug> --project <project>` — mark as failed
-- `syntaur create-assignment "<title>" [--type <type>] [--project <slug> | --one-off]` — create project-nested or standalone
+- `syntaur new "<title>" [--type <type>] [--project <slug> | --one-off]` — create project-nested or standalone
 - `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]` — append to `comments.md`
-- `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--assignment <a>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
+- `syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <p>] [--ticket <a>]` — register an agent session. The session-id must be the real one from the agent runtime — no synthesized UUIDs.
 
 ## Agent Sessions
 
@@ -93,7 +93,7 @@ Sessions are registered in `~/.syntaur/syntaur.db` keyed on the real agent sessi
 
 ## Playbooks
 
-Playbooks at `~/.syntaur/playbooks/` are user-defined behavioral rules. Read them before starting work on any assignment and follow their directives. They take precedence over default conventions when they conflict.
+Playbooks at `~/.syntaur/playbooks/` are user-defined behavioral rules. Read them before starting work on any ticket and follow their directives. They take precedence over default conventions when they conflict.
 
 ```bash
 ls ~/.syntaur/playbooks/*.md 2>/dev/null
@@ -101,13 +101,13 @@ ls ~/.syntaur/playbooks/*.md 2>/dev/null
 
 ## Conventions
 
-- Assignment frontmatter is the single source of truth for state. `project` is the containing project slug (`null` for standalone); `type` is a classification validated against `config.md` `types.definitions` when present.
-- Slugs are lowercase, hyphen-separated. For standalone assignments the folder is named by UUID; `slug` is display-only.
+- Ticket frontmatter is the single source of truth for state. `project` is the containing project slug (`null` for standalone); `type` is a classification validated against `config.md` `types.definitions` when present.
+- Slugs are lowercase, hyphen-separated. For standalone tickets the folder is named by UUID; `slug` is display-only.
 - Update acceptance criteria checkboxes as work lands, not only at the end.
-- Append milestones to `progress.md` — do NOT add a `## Progress` section to `assignment.md` (v2.0 moved progress to its own file).
+- Append milestones to `progress.md` — do NOT add a `## Progress` section to `ticket.md` (v2.0 moved progress to its own file).
 - Record questions / notes / feedback via `syntaur comment` — never edit `comments.md` directly. Do NOT set status to `blocked` just because there is an open question; block only for a real external dependency with a `--reason`.
 - Write handoffs with enough context for another agent or human to continue cleanly. Record decisions in `decision-record.md` with Status / Context / Decision / Consequences — downstream dependents auto-load these during grab.
-- Commit frequently with messages referencing the assignment slug.
+- Commit frequently with messages referencing the ticket slug.
 
 ## References
 

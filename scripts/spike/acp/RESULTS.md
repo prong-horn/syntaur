@@ -32,7 +32,7 @@ RSS is not affected.
 | 10 | Slash commands + config option switch | PASS (6.2 s) | PASS (11.5 s) |
 | 11 | Usage updates | PASS (7.0 s) | PASS (3.3 s) |
 | 12 | Cancel mid-turn + process hygiene | PASS (38.0 s) | PASS (9.2 s) |
-| 13 | Second prompt during a turn; steering | **FAIL** (157.7 s) | **FAIL** (275.9 s) |
+| 13 | Second prompt during t turn; steering | **FAIL** (157.7 s) | **FAIL** (275.9 s) |
 | 14 | `session/load` and `session/resume` after adapter restart | PASS (15.3 s) | PASS (11.9 s) |
 | 15 | `kill -9` mid-turn | PASS (6.5 s) | PASS (5.9 s) |
 | 16 | Embedded resource block + standing-context cost | PASS (6.5 s) | PASS (3.5 s) |
@@ -163,7 +163,7 @@ Each adapter loses exactly one `session/prompt` request, in a different place. B
 
 ### Embedded context (16)
 
-- A `resource` content block carrying `assignment.md` (5 410 chars) is read without tool calls on both; the acceptance-criterion count and slug come back correctly. Standing-context cost ≈ 1.6–1.7 k tokens per turn on top of the baseline, consistent with ~3.3 chars/token.
+- A `resource` content block carrying `ticket.md` (5 410 chars) is read without tool calls on both; the acceptance-criterion count and slug come back correctly. Standing-context cost ≈ 1.6–1.7 k tokens per turn on top of the baseline, consistent with ~3.3 chars/token.
 
 ### Sub-agents (17, claude)
 
@@ -184,7 +184,7 @@ spike curiosity.
   which the adapter boots as child processes — and it is re-sent every turn.
 - claude-agent-acp reports a per-session `cost`. The whole claude suite (24 adapter processes) came to
   **$11.68**; the cheapest non-trivial row, 02, whose entire prompt is one word, cost **$0.75**.
-- Consequence for phase 2: per-assignment chat sessions inherit this by default, so each user message
+- Consequence for phase 2: per-ticket chat sessions inherit this by default, so each user message
   costs roughly $0.50–1.00 in re-sent standing context, and every open chat forks a copy of the user's
   MCP servers. Syntaur must pin `settingSources` (claude) and the config/plugin set (codex) per session
   and decide which MCP servers a chat session gets — see the last follow-up.
@@ -208,7 +208,7 @@ spike curiosity.
 - Re-measuring 19's CPU percentages with one suite at a time, if the numbers ever matter.
 - `claude-agent-acp` inherits `settingSources` (user hooks, MCP servers, allow rules); codex-acp inherits `~/.codex/config.toml` (plugins, MCP servers, model, effort). Syntaur must pin both per session (phase 2).
 
-## Cursor addendum (2026-09-03, assignment-chat-cursor-harness Task 0)
+## Cursor addendum (2026-09-03, ticket-chat-cursor-harness Task 0)
 
 Measured against `cursor-agent` 2026.09.02-c22c1a3 with live probes (`scripts/spike/acp/cursor-probe.ts`). Fixtures: `src/__tests__/fixtures/acp/cursor/`.
 

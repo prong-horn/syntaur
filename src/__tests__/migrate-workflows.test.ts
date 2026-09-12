@@ -418,9 +418,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
       await writeFile(join(dir, 'ticket.md'), ticketMd(t), 'utf-8');
     }
     for (const t of standalone) {
-      const dir = join(home, 'tickets', t.slug);
+      const dir = join(home, 'assignments', t.slug);
       await mkdir(dir, { recursive: true });
-      await writeFile(join(dir, 'ticket.md'), ticketMd({ ...t }), 'utf-8');
+      await writeFile(join(dir, 'assignment.md'), ticketMd({ ...t }), 'utf-8');
     }
   }
 
@@ -489,9 +489,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   it('dry-run writes NOTHING — not under the root, and never under the copied defaultProjectDir trap', async () => {
     // Put a trap ticket where the copied config's absolute defaultProjectDir
     // points (the REAL root in the live scenario) — it must never be touched.
-    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const homeBefore = await snapshotTree(home);
@@ -503,9 +503,9 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
   });
 
   it('apply migrates ONLY under --root; the trap root is untouched', async () => {
-    const trapAsg = join(trap, 'projects', 'trapproj', 'tickets', 'trapped');
+    const trapAsg = join(trap, 'projects', 'trapproj', 'assignments', 'trapped');
     await mkdir(trapAsg, { recursive: true });
-    await writeFile(join(trapAsg, 'ticket.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
+    await writeFile(join(trapAsg, 'assignment.md'), ticketMd({ slug: 'trapped', status: 'blocked' }), 'utf-8');
     await seedHome(FIXTURES, STANDALONE);
 
     const trapBefore = await snapshotTree(trap);
@@ -747,7 +747,7 @@ describe('syntaur migrate-workflows — the command (T3–T6)', () => {
     expect(orphan.phase).toBe('review');
     // Fresh standalone (no phase, no history) → placeTicket() → draft.
     const fresh = parseTicketFrontmatter(
-      await readFile(join(home, 'tickets', 'fresh-standalone-0001', 'ticket.md'), 'utf-8'),
+      await readFile(join(home, 'assignments', 'fresh-standalone-0001', 'assignment.md'), 'utf-8'),
     );
     expect(fresh.status).toBe('draft');
   });

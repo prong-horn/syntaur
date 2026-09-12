@@ -46,7 +46,7 @@ describe('isReservedCombo', () => {
     expect(isReservedCombo('mod+shift+k')).toBe(true);
     expect(isReservedCombo('?')).toBe(true);
     expect(isReservedCombo('shift+t')).toBe(true);
-    expect(isReservedCombo('g a')).toBe(true);
+    expect(isReservedCombo('g t')).toBe(true);
     expect(isReservedCombo('  ['  )).toBe(true);
   });
 
@@ -65,7 +65,7 @@ describe('BindableActionKind', () => {
   it('exposes all canonical kinds', () => {
     expect(BINDABLE_ACTION_KINDS).toEqual([
       'new-project',
-      'new-assignment',
+      'new-ticket',
     ]);
   });
 
@@ -119,31 +119,31 @@ describe('effectiveBindings', () => {
 
   it('overlays custom bindings on top of defaults', () => {
     const custom: Partial<Record<BindableActionKind, string>> = {
-      'new-assignment': 'mod+x',
+      'new-ticket': 'mod+x',
     };
     const out = effectiveBindings(custom);
-    expect(out['new-assignment']).toBe('mod+x');
+    expect(out['new-ticket']).toBe('mod+x');
     expect(out['new-project']).toBe(DEFAULT_BINDABLE_HOTKEYS['new-project']);
   });
 
   it('isDefaultBinding reports custom vs default correctly', () => {
-    expect(isDefaultBinding({}, 'new-assignment')).toBe(true);
+    expect(isDefaultBinding({}, 'new-ticket')).toBe(true);
     expect(
-      isDefaultBinding({ 'new-assignment': 'mod+x' }, 'new-assignment'),
+      isDefaultBinding({ 'new-ticket': 'mod+x' }, 'new-ticket'),
     ).toBe(false);
-    expect(isDefaultBinding({ 'new-assignment': '' }, 'new-assignment')).toBe(true);
+    expect(isDefaultBinding({ 'new-ticket': '' }, 'new-ticket')).toBe(true);
   });
 });
 
 describe('BUILTIN_RESERVED_COMBOS catalog completeness', () => {
-  it('includes all assignment-detail page shortcuts', () => {
+  it('includes all ticket-detail page shortcuts', () => {
     for (const k of ['p', 'h', 'd', 's', '[', ']', 'e']) {
       expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
     }
   });
 
   it('includes all g-chord prefixes', () => {
-    for (const k of ['g', 'g o', 'g m', 'g a', 'g !', 'g ,']) {
+    for (const k of ['g', 'g o', 'g m', 'g t', 'g !', 'g ,']) {
       expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
     }
   });

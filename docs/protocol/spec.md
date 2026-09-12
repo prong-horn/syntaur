@@ -6,7 +6,7 @@
 
 ## 1. Introduction
 
-The Syntaur protocol is a markdown-based file structure and format that serves as the "API" for the Syntaur platform. It defines how projects (high-level objectives), assignments (units of work), and their associated metadata are organized on the filesystem.
+The Syntaur protocol is a markdown-based file structure and format that serves as the "API" for the Syntaur platform. It defines how projects (high-level objectives), tickets (units of work), and their associated metadata are organized on the filesystem.
 
 Any agent framework that can read and write files can participate in the Syntaur protocol. There is no proprietary wire format, no database to connect to, and no SDK to install. The protocol is the file system layout itself: a set of markdown files with YAML frontmatter arranged in a specific directory structure under `~/.syntaur/`.
 
@@ -36,15 +36,15 @@ YAML frontmatter provides structured fields with defined types and valid values.
 
 ### Workspace Grouping
 
-Projects can optionally declare a `workspace` string in their frontmatter to group related projects by codebase or project context. This is a flat organizational label -- not a directory hierarchy. The dashboard uses workspace values to scope navigation and filtering. Projects without a workspace are treated as "Ungrouped." Note: the project-level `workspace` (a string) is distinct from the assignment-level `workspace` (an object containing repository, branch, and worktree information).
+Projects can optionally declare a `workspace` string in their frontmatter to group related projects by codebase or project context. This is a flat organizational label -- not a directory hierarchy. The dashboard uses workspace values to scope navigation and filtering. Projects without a workspace are treated as "Ungrouped." Note: the project-level `workspace` (a string) is distinct from the ticket-level `workspace` (an object containing repository, branch, and worktree information).
 
 ### Minimal Nesting
 
-The directory structure is intentionally flat. Projects contain assignments, and that is the deepest nesting goes. Cross-references between assignments use slugs, not deeply nested paths. Index files at the project level provide navigation without requiring directory traversal.
+The directory structure is intentionally flat. Projects contain tickets, and that is the deepest nesting goes. Cross-references between tickets use slugs, not deeply nested paths. Index files at the project level provide navigation without requiring directory traversal.
 
 ### Derived Indexes
 
-Computed files (index tables, status rollups, dependency graphs) are rebuilt from canonical sources by tooling. They are never manually edited. This separation means the canonical data (assignment frontmatter) is always authoritative, and the derived views are always reconstructable.
+Computed files (index tables, status rollups, dependency graphs) are rebuilt from canonical sources by tooling. They are never manually edited. This separation means the canonical data (ticket frontmatter) is always authoritative, and the derived views are always reconstructable.
 
 ---
 
@@ -57,28 +57,28 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
   config.md                          # Global Syntaur configuration (optional)
   projects/
     <project-slug>/
-      manifest.md                    # Derived: root navigation file linking all indexes
+      manifest.md                    # Derived: root navigation file linking tll indexes
       project.md                     # Human-authored: project overview, goal, context, success criteria
-      _index-assignments.md          # Derived: assignment summary table with status counts
+      _index-tickets.md          # Derived: ticket summary table with status counts
       _index-plans.md                # Derived: plan status summary table
       _index-decisions.md            # Derived: decision record summary table
-      _status.md                     # Derived: computed project status, assignment rollup, dependency graph
-      assignments/
-        <assignment-slug>/
-          assignment.md              # Agent-writable: the assignment record (source of truth for state)
+      _status.md                     # Derived: computed project status, ticket rollup, dependency graph
+      tickets/
+        <ticket-slug>/
+          ticket.md              # Agent-writable: the ticket record (source of truth for state)
           plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md                # Agent-writable, append-only: timestamped progress log
           comments.md                # CLI-mediated shared-writable: threaded questions/notes/feedback
           scratchpad.md              # Agent-writable: unstructured working memory
-          handoff.md                 # Agent-writable: append-only **assignment-level cross-ticket outbound** at completion
+          handoff.md                 # Agent-writable: append-only **ticket-level cross-ticket outbound** at completion
           decision-record.md         # Agent-writable: append-only decision log
       resources/
         <resource-slug>.md           # Shared-writable: reference material for the project
       memories/
         <memory-slug>.md             # Shared-writable: learnings discovered during the project
-  assignments/
-    <assignment-id>/                 # Standalone assignments (folder named by UUID, not slug)
-      assignment.md                  # Same agent-writable schema; `project: null`, `slug` display-only
+  tickets/
+    <ticket-id>/                 # Standalone tickets (folder named by UUID, not slug)
+      ticket.md                  # Same agent-writable schema; `project: null`, `slug` display-only
       plan*.md                       # Same as project-nested
       progress.md                    # Same as project-nested
       comments.md                    # Same as project-nested
@@ -93,12 +93,12 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 
 ### Key structural observations
 
-- **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
-- **Project-nested assignments** live at `projects/<project-slug>/assignments/<assignment-slug>/`. The folder name equals the assignment's `slug`.
-- **Standalone assignments** live at `assignments/<assignment-id>/` under `~/.syntaur/`. The folder name equals the assignment's `id` (a UUID), because `slug` is not guaranteed unique across standalone assignments. In standalone assignments, `project: null` in frontmatter and `slug` is display-only. Resolve by id via `resolveAssignmentById`.
+- **One folder per project.** The folder name is the project slug tnd matches the `slug` field in `project.md` frontmatter.
+- **Project-nested tickets** live at `projects/<project-slug>/tickets/<ticket-slug>/`. The folder name equals the ticket's `slug`.
+- **Standalone tickets** live at `tickets/<ticket-id>/` under `~/.syntaur/`. The folder name equals the ticket's `id` (a UUID), because `slug` is not guaranteed unique across standalone tickets. In standalone tickets, `project: null` in frontmatter and `slug` is display-only. Resolve by id via `resolveTicketById`.
 - **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
-- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files. Standalone assignments have no manifest — the agent starts directly from `assignment.md`.
-- **Resources and memories live at the project level**, not inside assignments. They are shared context available to all assignments in the project. Standalone assignments carry no resources/memories.
+- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files. Standalone tickets have no manifest — the agent starts directly from `ticket.md`.
+- **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project. Standalone tickets carry no resources/memories.
 
 ---
 
@@ -116,11 +116,11 @@ Files written and maintained exclusively by humans. Agents read these but never 
 
 ### Agent-Writable
 
-Files inside assignment folders. Only the assigned agent writes to its own assignment folder. This single-writer guarantee prevents conflicts between concurrent agents. The single exception is `comments.md`, which is CLI-mediated so other agents and humans can append.
+Files inside ticket folders. Only the assigned agent writes to its own ticket folder. This single-writer guarantee prevents conflicts between concurrent agents. The single exception is `comments.md`, which is CLI-mediated so other agents and humans can append.
 
 | File | Purpose |
 |------|---------|
-| `assignment.md` | Assignment record and source of truth for state |
+| `ticket.md` | Ticket record and source of truth for state |
 | `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) |
 | `progress.md` | Append-only timestamped progress log (replaces the old `## Progress` body section) |
 | `scratchpad.md` | Unstructured working notes |
@@ -129,7 +129,7 @@ Files inside assignment folders. Only the assigned agent writes to its own assig
 
 ### CLI-Mediated Shared-Writable
 
-Inside an assignment folder but writable by anyone through the CLI/API — never via direct editing. This preserves safe concurrency without abandoning the single-writer guarantee at the filesystem level.
+Inside an ticket folder but writable by anyone through the CLI/API — never via direct editing. This preserves safe concurrency without abandoning the single-writer guarantee at the filesystem level.
 
 | File | Purpose | Mediator |
 |------|---------|----------|
@@ -144,7 +144,7 @@ Files in the `resources/` and `memories/` folders. Both humans and agents can cr
 | `resources/<resource-slug>.md` | Reference material (docs, API specs, architecture notes) |
 | `memories/<memory-slug>.md` | Learnings and patterns discovered during the project |
 
-The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing authorship provenance.
+The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing tuthorship provenance.
 
 ### Derived
 
@@ -153,7 +153,7 @@ Files generated by the rebuild script. Never edited manually. Always reconstruct
 | File | Purpose |
 |------|---------|
 | `manifest.md` | Root navigation file |
-| `_index-assignments.md` | Assignment summary table |
+| `_index-tickets.md` | Ticket summary table |
 | `_index-plans.md` | Plan status summary |
 | `_index-decisions.md` | Decision record summary |
 | `_status.md` | Computed project status, rollup, and dependency graph |
@@ -162,29 +162,29 @@ Files generated by the rebuild script. Never edited manually. Always reconstruct
 
 ## 5. Source of Truth
 
-**Assignment frontmatter is the single source of truth for all assignment state.**
+**Ticket frontmatter is the single source of truth for all ticket state.**
 
-This is the most important rule in the protocol. The `status`, `priority`, `assignee`, `dependsOn`, `workspace`, and all other structured fields in an assignment's YAML frontmatter are canonical. Every other representation of this data is a projection:
+This is the most important rule in the protocol. The `status`, `priority`, `assignee`, `dependsOn`, `workspace`, and all other structured fields in an ticket's YAML frontmatter are canonical. Every other representation of this data is a projection:
 
 - The checkbox list in `_status.md` is a projection.
-- The summary table in `_index-assignments.md` is a projection.
+- The summary table in `_index-tickets.md` is a projection.
 - The Mermaid dependency graph in `_status.md` is a projection.
-- The `by_status` counts in `_index-assignments.md` frontmatter are projections.
-- The project-level `status` in `_status.md` is a projection (computed from assignment states).
+- The `by_status` counts in `_index-tickets.md` frontmatter are projections.
+- The project-level `status` in `_status.md` is a projection (computed from ticket states).
 
-**When there is divergence between assignment frontmatter and any derived file, assignment frontmatter wins.** The correct response to a divergence is to re-run the rebuild script, which will regenerate all derived files from the canonical assignment data.
+**When there is divergence between ticket frontmatter and any derived file, ticket frontmatter wins.** The correct response to a divergence is to re-run the rebuild script, which will regenerate all derived files from the canonical ticket data.
 
-Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from assignment states and written to `_status.md` by the rebuild script.
+Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from ticket states and written to `_status.md` by the rebuild script.
 
-**Workspace naming note:** On `assignment.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`) — the git worktree where the assignment's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
+**Workspace naming note:** On `ticket.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`) — the git worktree where the ticket's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
 
 ---
 
 ## 6. Lifecycle Overview
 
-### Assignment Statuses
+### Ticket Statuses
 
-Every assignment has a `status` field in its frontmatter. The valid values are:
+Every ticket has a `status` field in its frontmatter. The valid values are:
 
 | Status | Meaning |
 |--------|---------|
@@ -199,9 +199,9 @@ Every assignment has a `status` field in its frontmatter. The valid values are:
 
 ### Dependency Semantics
 
-Assignments declare dependencies via the `dependsOn` field, which lists assignment slugs. Dependency enforcement follows two distinct rules:
+Tickets declare dependencies via the `dependsOn` field, which lists ticket slugs. Dependency enforcement follows two distinct rules:
 
-- **`pending` with unmet `dependsOn`** = the assignment is waiting for its dependencies to reach `completed` status. The lifecycle engine enforces this: it will not allow a transition from `pending` to `in_progress` while any dependency is not `completed`. No additional field is needed — the combination of `status: pending` and unmet `dependsOn` entries implies "waiting."
+- **`pending` with unmet `dependsOn`** = the ticket is waiting for its dependencies to reach `completed` status. The lifecycle engine enforces this: it will not allow a transition from `pending` to `in_progress` while any dependency is not `completed`. No additional field is needed — the combination of `status: pending` and unmet `dependsOn` entries implies "waiting."
 
 - **`blocked`** = a manual or runtime block unrelated to declared dependencies. An agent encounters an obstacle it cannot resolve (e.g., missing credentials, unclear requirements, external system down). The `blockedReason` field is **required** when status is `blocked` and must describe the obstacle.
 
@@ -209,35 +209,35 @@ This distinction matters: `pending` with unmet dependencies is a normal, expecte
 
 ### Project Status Rollup
 
-Project status is not stored in `project.md`. It is computed by the rebuild script from the collective state of all assignments and written to `_status.md`. The algorithm evaluates rules top-to-bottom; the first matching rule wins:
+Project status is not stored in `project.md`. It is computed by the rebuild script from the collective state of all tickets and written to `_status.md`. The algorithm evaluates rules top-to-bottom; the first matching rule wins:
 
 | Priority | Condition | Resulting Status |
 |----------|-----------|-----------------|
 | 1 | `project.md` has `archived: true` | `archived` |
-| 2 | ALL assignments are `completed` | `completed` |
-| 3 | ANY assignment is `in_progress` or `review` | `active` |
-| 4 | ANY assignment is `failed` | `failed` |
-| 5 | ANY assignment is `blocked` | `blocked` |
-| 6 | ALL assignments are `pending` | `pending` |
+| 2 | ALL tickets are `completed` | `completed` |
+| 3 | ANY ticket is `in_progress` or `review` | `active` |
+| 4 | ANY ticket is `failed` | `failed` |
+| 5 | ANY ticket is `blocked` | `blocked` |
+| 6 | ALL tickets are `pending` | `pending` |
 | 7 | Otherwise | `active` |
 
 **Valid project statuses:** `pending`, `active`, `blocked`, `completed`, `failed`, `archived`.
 
-Note that `archived` is a **human-authored override** stored in `project.md` frontmatter (the `archived`, `archivedAt`, and `archivedReason` fields). It is the only project status that is not computed from assignment states. It signals "this project is done, regardless of assignment completion state."
+Note that `archived` is a **human-authored override** stored in `project.md` frontmatter (the `archived`, `archivedAt`, and `archivedReason` fields). It is the only project status that is not computed from ticket states. It signals "this project is done, regardless of ticket completion state."
 
 ### Edge Case Examples
 
 These examples illustrate how the first-match-wins algorithm handles non-obvious situations:
 
-- **2 completed + 1 pending + 0 active** = `active` (rule 7). Work remains but nothing is running. This signals to the human that assignments need to be started.
+- **2 completed + 1 pending + 0 active** = `active` (rule 7). Work remains but nothing is running. This signals to the human that tickets need to be started.
 
-- **1 completed + 1 blocked + 1 pending** = `blocked` (rule 5). The blocked assignment takes precedence over pending ones.
+- **1 completed + 1 blocked + 1 pending** = `blocked` (rule 5). The blocked ticket takes precedence over pending ones.
 
 - **1 in_progress + 1 failed + 1 completed** = `active` (rule 3). Active work takes precedence over failures — the project is still being worked on.
 
 - **3 completed** = `completed` (rule 2). All work is done.
 
-- **Human sets `archived: true` on `project.md`** = `archived` (rule 1). Overrides everything, regardless of assignment states.
+- **Human sets `archived: true` on `project.md`** = `archived` (rule 1). Overrides everything, regardless of ticket states.
 
 ---
 
@@ -249,9 +249,9 @@ Lowercase, hyphen-separated. The slug is used as the project folder name and sto
 
 Examples: `build-auth-system`, `migrate-to-postgres`, `q1-performance-audit`
 
-### Assignment Slugs
+### Ticket Slugs
 
-Lowercase, hyphen-separated. The slug is used as the assignment folder name and stored in the `slug` field of `assignment.md` frontmatter.
+Lowercase, hyphen-separated. The slug is used as the ticket folder name and stored in the `slug` field of `ticket.md` frontmatter.
 
 Examples: `design-auth-schema`, `implement-jwt-middleware`, `write-auth-tests`
 
@@ -259,7 +259,7 @@ Examples: `design-auth-schema`, `implement-jwt-middleware`, `write-auth-tests`
 
 All derived files use an underscore prefix to distinguish them from human-authored and agent-writable files:
 
-- `_index-assignments.md`
+- `_index-tickets.md`
 - `_index-plans.md`
 - `_index-decisions.md`
 - `_status.md`
@@ -268,7 +268,7 @@ The underscore prefix serves two purposes: it sorts derived files to the top of 
 
 ### Resource and Memory Slugs
 
-Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike projects and assignments, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
+Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike projects and tickets, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
 
 Examples: `auth-requirements.md`, `postgres-connection-pooling.md`
 
@@ -304,7 +304,7 @@ workspace:
 
 ```markdown
 ## Links
-- [Assignment](./assignments/implement-jwt-middleware/assignment.md)
+- [Ticket](./tickets/implement-jwt-middleware/ticket.md)
 - [Status](./_status.md)
 ```
 
@@ -321,9 +321,9 @@ The current protocol version is **`"2.0"`**.
 
 ### Changes in 2.0
 
-- **`project` and `type` added to `assignment.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone) and `type: string | null` provides a free-form classification validated against `config.md` `types.definitions` when present.
-- **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `assignment.md`. See sections 3 and 4.
-- **Standalone assignments** at `~/.syntaur/assignments/<uuid>/` — assignments that don't belong to any project. Folder is named by UUID.
+- **`project` and `type` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone) and `type: string | null` provides a free-form classification validated against `config.md` `types.definitions` when present.
+- **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `ticket.md`. See sections 3 and 4.
+- **Standalone tickets** at `~/.syntaur/tickets/<uuid>/` — tickets that don't belong to any project. Folder is named by UUID.
 - **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, now computed from `comments.md` (question entries with `resolved !== true`).
 
 ### Forward Compatibility
@@ -332,23 +332,23 @@ The current protocol version is **`"2.0"`**.
 - **Breaking changes** (removed fields, changed semantics, restructured directories) will increment the major version. Tooling should check the version field and warn if it encounters a version it does not support.
 - **The `version` field is a string**, not a number, to support semver-style versioning (e.g., `"2.0"`, `"2.1"`, `"3.0"`).
 
-Tooling should always write the version it supports and should handle unknown versions gracefully — logging a warning rather than failing silently or crashing.
+Tooling should always write the version it supports and should handle unknown versions gracefully — logging t warning rather than failing silently or crashing.
 
 ---
 
-## 10. Cross-Assignment References
+## 10. Cross-Ticket References
 
-Assignments frequently need to reference each other — a newly-created assignment may depend on an older one, a question may cross a boundary, or a decision in one assignment may affect another.
+Tickets frequently need to reference each other — a newly-created ticket may depend on an older one, a question may cross a boundary, or a decision in one ticket may affect another.
 
 ### Declared Dependencies
 
-The `dependsOn` field in `assignment.md` frontmatter is the structural form of a cross-assignment reference. It holds an array of assignment slugs this one depends on. The lifecycle engine blocks transitions out of `pending` while any dependency is not `completed`. Dependencies are only valid between assignments within the **same project** — standalone assignments may not declare `dependsOn` entries (the dashboard write API validates this).
+The `dependsOn` field in `ticket.md` frontmatter is the structural form of a cross-ticket reference. It holds an array of ticket slugs this one depends on. The lifecycle engine blocks transitions out of `pending` while any dependency is not `completed`. Dependencies are only valid between tickets within the **same project** — standalone tickets may not declare `dependsOn` entries (the dashboard write API validates this).
 
 ### Markdown Links
 
-Any markdown body (assignment, progress, comments, handoff) may reference another assignment with a normal markdown link. Two link forms resolve to an assignment:
+Any markdown body (ticket, progress, comments, handoff) may reference another ticket with a normal markdown link. Two link forms resolve to an ticket:
 
-- **Relative path** — `[title](../other-slug/assignment.md)` for project-nested peers.
-- **Absolute route** — `[title](/projects/<slug>/assignments/<aslug>/assignment.md)` for project-nested cross-project links, or `[title](/assignments/<id>/assignment.md)` for standalone assignments.
+- **Relative path** — `[title](../other-slug/ticket.md)` for project-nested peers.
+- **Absolute route** — `[title](/projects/<slug>/tickets/<aslug>/ticket.md)` for project-nested cross-project links, or `[title](/tickets/<id>/ticket.md)` for standalone tickets.
 
-Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads an assignment detail — it scans other assignments' comments, progress, and handoff bodies for links that resolve to the current assignment. Results are capped at 50 mentions to bound work.
+Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads an ticket detail — it scans other tickets' comments, progress, and handoff bodies for links that resolve to the current ticket. Results are capped at 50 mentions to bound work.

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RequestHandler, Router } from 'express';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { join as joinPath } from 'node:path';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -17,9 +18,18 @@ import { useHermeticSyntaurHome } from './hermetic-root.js';
 useHermeticSyntaurHome();
 
 let testDir: string;
+let ticketsDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-write-test-'));
+  ticketsDir = resolve(testDir, 'tickets');
+  await mkdir(ticketsDir, { recursive: true });
+  if (process.env.SYNTAUR_HOME) {
+    await writeFile(
+      joinPath(process.env.SYNTAUR_HOME, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${testDir}\n---\n`,
+    );
+  }
 });
 
 afterEach(async () => {
@@ -178,7 +188,7 @@ Keep the current layout`, 'utf-8');
 describe('dashboard write router', () => {
   it('rejects project slug changes', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const response = await invokeRoute(
       router,
@@ -210,13 +220,13 @@ tags: []
 
   it('allows direct ticket status edits via PATCH', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const response = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id',
+      { id: 'assignment-1' },
       {
         content: `---
 id: assignment-1
@@ -287,12 +297,12 @@ tags: []
 
 Keep this paragraph.`, 'utf-8');
 
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const response = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug/acceptance-criteria/:index',
-      { slug: 'test-project', aslug: 'test-assignment', index: '0' },
+      '/api/tickets/:id/acceptance-criteria/:index',
+      { id: 'assignment-1', index: '0' },
       { checked: true },
     );
 
@@ -308,13 +318,13 @@ Keep this paragraph.`, 'utf-8');
 
   it('appends handoff entries without rewriting prior history', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/handoff/entries',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/handoff/entries',
+      { id: 'assignment-1' },
       {
         title: 'Handoff 2',
         body: 'Second handoff entry',
@@ -338,13 +348,13 @@ Keep this paragraph.`, 'utf-8');
 
   it('appends decision-record entries with heading, Recorded timestamp and bumped count', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/decision-record/entries',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/decision-record/entries',
+      { id: 'assignment-1' },
       {
         title: 'Use caching',
         body: 'We will cache harness options in syntaur.db.',
@@ -369,14 +379,14 @@ Keep this paragraph.`, 'utf-8');
 
   it('allows blocking without a reason and uses lifecycle transitions for status changes', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     // Block without reason succeeds (from pending, which allows block)
     const blockedWithoutReason = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/transitions/:command',
-      { slug: 'test-project', aslug: 'test-assignment', command: 'block' },
+      '/api/tickets/:id/transitions/:command',
+      { id: 'assignment-1', command: 'block' },
       {},
     );
 
@@ -391,8 +401,8 @@ Keep this paragraph.`, 'utf-8');
     const unblocked = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/transitions/:command',
-      { slug: 'test-project', aslug: 'test-assignment', command: 'unblock' },
+      '/api/tickets/:id/transitions/:command',
+      { id: 'assignment-1', command: 'unblock' },
       {},
     );
     expect(unblocked.statusCode).toBe(200);
@@ -403,8 +413,8 @@ Keep this paragraph.`, 'utf-8');
     const blocked = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/transitions/:command',
-      { slug: 'test-project', aslug: 'test-assignment', command: 'block' },
+      '/api/tickets/:id/transitions/:command',
+      { id: 'assignment-1', command: 'block' },
       { reason: 'Waiting on design review' },
     );
     expect(blocked.statusCode).toBe(200);
@@ -412,15 +422,15 @@ Keep this paragraph.`, 'utf-8');
     expect((blocked.payload as any).assignment.blockedReason).toBe('Waiting on design review');
   });
 
-  it('POST /api/projects/:slug/tickets/:aslug/comments appends a comment', async () => {
+  it('POST /api/tickets/:id/comments appends a comment', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'Is the migration reversible?', type: 'question', author: 'alice' },
     );
 
@@ -442,13 +452,13 @@ Keep this paragraph.`, 'utf-8');
 
   it('PATCH comments/:commentId/resolved toggles the resolved flag on a question', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const add = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'Q?', type: 'question', author: 'a' },
     );
     expect(add.statusCode).toBe(201);
@@ -457,8 +467,8 @@ Keep this paragraph.`, 'utf-8');
     const toggle = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug/comments/:commentId/resolved',
-      { slug: 'test-project', aslug: 'test-assignment', commentId },
+      '/api/tickets/:id/comments/:commentId/resolved',
+      { id: 'assignment-1', commentId },
       { resolved: true },
     );
     expect(toggle.statusCode).toBe(200);
@@ -660,7 +670,7 @@ updated: "2026-04-25T12:00:00Z"
   });
 
   it('GET /api/templates/assignment?standalone=1 returns project: null', async () => {
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const response = await invokeRoute(router, 'get', '/api/templates/ticket', {}, undefined, {
       standalone: '1',
     });
@@ -671,13 +681,13 @@ updated: "2026-04-25T12:00:00Z"
 
   it('rejects resolve toggle for a non-question comment', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const add = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'note body', type: 'note', author: 'a' },
     );
     const commentId = (add.payload as any).comment.id as string;
@@ -685,26 +695,26 @@ updated: "2026-04-25T12:00:00Z"
     const toggle = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug/comments/:commentId/resolved',
-      { slug: 'test-project', aslug: 'test-assignment', commentId },
+      '/api/tickets/:id/comments/:commentId/resolved',
+      { id: 'assignment-1', commentId },
       { resolved: true },
     );
     expect(toggle.statusCode).toBe(400);
     expect((toggle.payload as any).error).toContain('Only questions');
   });
 
-  describe('PATCH /api/projects/:slug/tickets/:aslug/assignee', () => {
+  describe('PATCH /api/tickets/:id/assignee', () => {
     it('updates assignee frontmatter without rewriting body', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
       const bodyBefore = (await readFile(ticketPath, 'utf-8')).split(/^---$/m)[2];
 
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/assignee',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/assignee',
+        { id: 'assignment-1' },
         { assignee: 'claude' },
       );
       expect(res.statusCode).toBe(200);
@@ -717,12 +727,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('accepts null to clear the assignee', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/assignee',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/assignee',
+        { id: 'assignment-1' },
         { assignee: null },
       );
       expect(res.statusCode).toBe(200);
@@ -735,12 +745,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects non-string non-null assignee', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/assignee',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/assignee',
+        { id: 'assignment-1' },
         { assignee: 42 },
       );
       expect(res.statusCode).toBe(400);
@@ -748,12 +758,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects assignee longer than 120 chars', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/assignee',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/assignee',
+        { id: 'assignment-1' },
         { assignee: 'a'.repeat(200) },
       );
       expect(res.statusCode).toBe(400);
@@ -761,32 +771,32 @@ updated: "2026-04-25T12:00:00Z"
 
     it('returns 404 for missing assignment', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/assignee',
-        { slug: 'test-project', aslug: 'ghost' },
+        '/api/tickets/:id/assignee',
+        { id: 'ghost-id' },
         { assignee: 'claude' },
       );
       expect(res.statusCode).toBe(404);
     });
   });
 
-  describe('PATCH /api/projects/:slug/tickets/:aslug/title', () => {
+  describe('PATCH /api/tickets/:id/title', () => {
     const ticketPath = (): string =>
       resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
 
     it('updates title frontmatter without rewriting body', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const bodyBefore = (await readFile(ticketPath(), 'utf-8')).split(/^---$/m)[2];
 
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'Renamed assignment' },
       );
       expect(res.statusCode).toBe(200);
@@ -798,13 +808,13 @@ updated: "2026-04-25T12:00:00Z"
 
     it('quotes titles containing YAML metacharacters (colon) so they round-trip', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
 
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'feat: do the thing' },
       );
       expect(res.statusCode).toBe(200);
@@ -816,14 +826,14 @@ updated: "2026-04-25T12:00:00Z"
 
     it('bumps updated when the title changes', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const before = await readFile(ticketPath(), 'utf-8');
 
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'Bumped' },
       );
       expect(res.statusCode).toBe(200);
@@ -838,12 +848,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects empty title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: '' },
       );
       expect(res.statusCode).toBe(400);
@@ -851,12 +861,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects whitespace-only title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: '   \t  ' },
       );
       expect(res.statusCode).toBe(400);
@@ -864,12 +874,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects title longer than 200 chars', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'a'.repeat(201) },
       );
       expect(res.statusCode).toBe(400);
@@ -877,12 +887,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects non-string title', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 42 },
       );
       expect(res.statusCode).toBe(400);
@@ -890,12 +900,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects title containing a double quote', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'has "quote"' },
       );
       expect(res.statusCode).toBe(400);
@@ -903,12 +913,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects title containing a newline', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'line one\nline two' },
       );
       expect(res.statusCode).toBe(400);
@@ -916,12 +926,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('rejects title containing a carriage return', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/title',
+        { id: 'assignment-1' },
         { title: 'line one\rline two' },
       );
       expect(res.statusCode).toBe(400);
@@ -929,12 +939,12 @@ updated: "2026-04-25T12:00:00Z"
 
     it('returns 404 for missing assignment', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(
         router,
         'patch',
-        '/api/projects/:slug/tickets/:aslug/title',
-        { slug: 'test-project', aslug: 'ghost' },
+        '/api/tickets/:id/title',
+        { id: 'ghost-id' },
         { title: 'whatever' },
       );
       expect(res.statusCode).toBe(404);
@@ -986,18 +996,18 @@ updated: "2026-04-25T12:00:00Z"
   describe('archive / restore endpoints', () => {
     it('archives + restores a project-scoped ticket, preserving status', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-assignment', 'ticket.md');
 
       const archived = await invokeRoute(
         router,
         'post',
-        '/api/projects/:slug/tickets/:aslug/archive',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/archive',
+        { id: 'assignment-1' },
         { reason: 'no longer needed' },
       );
       expect(archived.statusCode).toBe(200);
-      const archDetail = (archived.payload as any).assignment;
+      const archDetail = (archived.payload as any).ticket ?? (archived.payload as any).assignment;
       expect(archDetail.archived).toBe(true);
       expect(archDetail.archivedAt).toBeTruthy();
       expect(archDetail.archivedReason).toBe('no longer needed');
@@ -1009,12 +1019,12 @@ updated: "2026-04-25T12:00:00Z"
       const restored = await invokeRoute(
         router,
         'post',
-        '/api/projects/:slug/tickets/:aslug/unarchive',
-        { slug: 'test-project', aslug: 'test-assignment' },
+        '/api/tickets/:id/unarchive',
+        { id: 'assignment-1' },
         {},
       );
       expect(restored.statusCode).toBe(200);
-      const restDetail = (restored.payload as any).assignment;
+      const restDetail = (restored.payload as any).ticket ?? (restored.payload as any).assignment;
       expect(restDetail.archived).toBe(false);
       expect(restDetail.archivedAt).toBeNull();
       expect(restDetail.archivedReason).toBeNull();
@@ -1023,7 +1033,7 @@ updated: "2026-04-25T12:00:00Z"
 
     it('archives + restores a project via the real flag (not statusOverride)', async () => {
       await createTicketFixture();
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const projectPath = resolve(testDir, 'test-project', 'project.md');
 
       const archived = await invokeRoute(
@@ -1085,7 +1095,7 @@ updated: "2026-04-25T12:00:00Z"
     });
 
     it('returns 404 archiving a missing project', async () => {
-      const router = createWriteRouter(testDir);
+      const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(router, 'post', '/api/projects/:slug/archive', { slug: 'ghost' }, {});
       expect(res.statusCode).toBe(404);
     });
@@ -1192,7 +1202,7 @@ tags: []
           'utf-8',
         );
 
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1211,7 +1221,7 @@ tags: []
 
       it('returns [] for an empty project (no repositories, no siblings)', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1224,7 +1234,7 @@ tags: []
       });
 
       it('returns 404 for an unknown project', async () => {
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
@@ -1378,12 +1388,12 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         spawnSync('git', ['-C', repo, 'branch', 'develop'], { encoding: 'utf-8' });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/repository-branches',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/repository-branches',
+          { id: 'assignment-1' },
           undefined,
           { repo },
         );
@@ -1397,12 +1407,12 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         await mkdir(resolve(repo, 'sub'), { recursive: true });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/repository-branches',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/repository-branches',
+          { id: 'assignment-1' },
           undefined,
           { repo: resolve(repo, 'sub') },
         );
@@ -1412,12 +1422,12 @@ tags: []
 
       it('project: 400 when repo query is missing', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/repository-branches',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/repository-branches',
+          { id: 'assignment-1' },
           undefined,
           {},
         );
@@ -1427,12 +1437,12 @@ tags: []
       it('project: 404 when the ticket does not exist', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/repository-branches',
-          { slug: 'test-project', aslug: 'no-such-assignment' },
+          '/api/tickets/:id/repository-branches',
+          { id: 'no-such-id' },
           undefined,
           { repo },
         );
@@ -1502,12 +1512,12 @@ tags: []
           branch: 'sib-branch',
         });
         await writeProjectAssignment('sibling-bare', { id: 'sib-2' });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/source-tickets',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/source-tickets',
+          { id: 'cur-id' },
           undefined,
         );
         expect(res.statusCode).toBe(200);
@@ -1522,12 +1532,12 @@ tags: []
 
       it('project: 404 when the target ticket does not exist', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/source-tickets',
-          { slug: 'test-project', aslug: 'no-such-assignment' },
+          '/api/tickets/:id/source-tickets',
+          { id: 'no-such-id' },
           undefined,
         );
         expect(res.statusCode).toBe(404);
@@ -1563,12 +1573,12 @@ tags: []
       it('400 on invalid branch name, leaving no partial state', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo, branch: 'bad name' },
         );
         expect(res.statusCode).toBe(400);
@@ -1587,12 +1597,12 @@ tags: []
         spawnSync('git', ['-C', repo, 'branch', 'syntaur/test-project/test-assignment'], {
           encoding: 'utf-8',
         });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -1602,12 +1612,12 @@ tags: []
       it('trims whitespace around the repository path', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: `  ${repo}  ` },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1620,7 +1630,7 @@ tags: []
       it('in-flight lock: 409 while a create is in progress, then succeeds (different branch)', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const ticketPath = resolve(
           testDir,
           'test-project',
@@ -1633,8 +1643,8 @@ tags: []
           const blocked = await invokeRoute(
             router,
             'post',
-            '/api/projects/:slug/tickets/:aslug/worktree',
-            { slug: 'test-project', aslug: 'test-assignment' },
+            '/api/tickets/:id/worktree',
+            { id: 'assignment-1' },
             { repository: repo, branch: 'some-other-branch' },
           );
           expect(blocked.statusCode).toBe(409);
@@ -1647,8 +1657,8 @@ tags: []
         const ok = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo, branch: 'some-other-branch' },
         );
         expect(ok.statusCode, JSON.stringify(ok.payload)).toBe(200);
@@ -1664,13 +1674,13 @@ tags: []
           repository: repo,
           branch: 'feature/src',
         });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         // 1. The UI lists source tickets.
         const list = await invokeRoute(
           router,
           'get',
-          '/api/projects/:slug/tickets/:aslug/source-tickets',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/source-tickets',
+          { id: 'assignment-1' },
           undefined,
         );
         const sources = (list.payload as {
@@ -1682,8 +1692,8 @@ tags: []
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: src.repository, branch: 'syntaur/branched', parentBranch: src.branch },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1701,8 +1711,8 @@ tags: []
         const create = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         expect(create.statusCode, JSON.stringify(create.payload)).toBe(200);
@@ -1714,7 +1724,7 @@ tags: []
       it('rebuilds at the exact recorded path, bypassing the configured + branch-exists 409 guards', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const wtPath = await createWorktreeThenPath(router, repo);
 
         const fs = await import('node:fs/promises');
@@ -1726,8 +1736,8 @@ tags: []
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree/recreate',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree/recreate',
+          { id: 'assignment-1' },
           {},
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1741,7 +1751,7 @@ tags: []
       it('ignores a client-supplied path and rebuilds the persisted one (server-authoritative)', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const wtPath = await createWorktreeThenPath(router, repo);
         const fs = await import('node:fs/promises');
         await fs.rm(wtPath, { recursive: true, force: true });
@@ -1750,8 +1760,8 @@ tags: []
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree/recreate',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree/recreate',
+          { id: 'assignment-1' },
           { worktreePath: bogus, repository: '/etc' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1762,12 +1772,12 @@ tags: []
 
       it('returns 422 when there is no recorded worktree path to recreate', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree/recreate',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree/recreate',
+          { id: 'assignment-1' },
           {},
         );
         expect(res.statusCode).toBe(422);
@@ -1776,14 +1786,14 @@ tags: []
       it('is idempotent (200, alreadyExisted) when the worktree directory still exists', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         await createWorktreeThenPath(router, repo);
         // Do NOT delete — recreate should no-op since the dir is present.
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree/recreate',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree/recreate',
+          { id: 'assignment-1' },
           {},
         );
         expect(res.statusCode).toBe(200);
@@ -1791,16 +1801,16 @@ tags: []
       });
     });
 
-    describe('POST /api/projects/:slug/tickets/:aslug/worktree', () => {
+    describe('POST /api/tickets/:id/worktree', () => {
       it('happy path: creates worktree + updates frontmatter', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1827,12 +1837,12 @@ tags: []
         await createTicketFixture();
         const repo = await setupRepo();
         await mkdir(resolve(repo, 'sub'), { recursive: true });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: resolve(repo, 'sub') },
         );
         expect(res.statusCode).toBe(400);
@@ -1843,21 +1853,21 @@ tags: []
       it('returns 409 when workspace.worktreePath is already set', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         // First create.
         await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         // Second create.
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -1865,12 +1875,12 @@ tags: []
 
       it('returns 400 when repository is missing', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           {},
         );
         expect(res.statusCode).toBe(400);
@@ -1878,12 +1888,12 @@ tags: []
 
       it('returns 400 when repository is relative', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: './relative' },
         );
         expect(res.statusCode).toBe(400);
@@ -1891,12 +1901,12 @@ tags: []
 
       it('returns 400 when repository does not exist on disk', async () => {
         await createTicketFixture();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: '/nonexistent-path-' + Date.now() },
         );
         expect(res.statusCode).toBe(400);
@@ -1906,12 +1916,12 @@ tags: []
         await createTicketFixture();
         const notGit = resolve(testDir, 'not-git');
         await mkdir(notGit, { recursive: true });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: notGit },
         );
         expect(res.statusCode).toBe(400);
@@ -1924,12 +1934,12 @@ tags: []
         spawnSync('git', ['-C', repo, 'branch', 'syntaur/test-project/test-assignment'], {
           encoding: 'utf-8',
         });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         // Caught by the pre-flight in plain language (AC #6) — not raw git stderr.
@@ -1948,12 +1958,12 @@ tags: []
       it('accepts custom branch override', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo, branch: 'feature/foo' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1967,12 +1977,12 @@ tags: []
         const repo = await setupRepo();
         // Pre-create the target directory (no git involvement).
         await mkdir(resolve(repo, '.worktrees', 'syntaur/test-project/test-assignment'), { recursive: true });
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -1986,12 +1996,12 @@ tags: []
       it('returns 400 when parentBranch does not exist in the repo', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const router = createWriteRouter(testDir);
+        const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
-          '/api/projects/:slug/tickets/:aslug/worktree',
-          { slug: 'test-project', aslug: 'test-assignment' },
+          '/api/tickets/:id/worktree',
+          { id: 'assignment-1' },
           { repository: repo, parentBranch: 'nonexistent' },
         );
         expect(res.statusCode).toBe(400);
@@ -2273,12 +2283,12 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('project status-override applies PIN semantics (derived-status v3)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id/status-override',
+      { id: 'assignment-1' },
       { status: 'in_progress' },
     );
     expect(res.statusCode).toBe(200);
@@ -2296,8 +2306,8 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     const refused = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id/status-override',
+      { id: 'assignment-1' },
       { status: 'completed' },
     );
     expect(refused.statusCode).toBe(400);
@@ -2305,8 +2315,8 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     const cleared = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id/status-override',
+      { id: 'assignment-1' },
       { status: null },
     );
     expect(cleared.statusCode).toBe(200);
@@ -2317,13 +2327,13 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     // Move to in_progress (a real change → 1 entry).
     await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id/status-override',
+      { id: 'assignment-1' },
       { status: 'in_progress' },
     );
     expect((await readFm()).statusHistory).toHaveLength(1);
@@ -2331,8 +2341,8 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/status-override',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id/status-override',
+      { id: 'assignment-1' },
       { status: 'in_progress' },
     );
     expect(res.statusCode).toBe(200);
@@ -2343,15 +2353,15 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     const base = await readFile(ticketPath(), 'utf-8');
     const changed = base.replace('status: pending', 'status: review');
     const r1 = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id',
+      { id: 'assignment-1' },
       { content: changed },
     );
     expect(r1.statusCode).toBe(200);
@@ -2366,8 +2376,8 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     const r2 = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug',
-      { slug: PROJ, aslug: ASSIGN },
+      '/api/tickets/:id',
+      { id: 'assignment-1' },
       { content: titleOnly },
     );
     expect(r2.statusCode).toBe(200);
@@ -2378,7 +2388,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
 
   it('raw create seeds a command:create entry', async () => {
     await createTicketFixture(); // creates the project
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const content = `---
 id: placeholder
 slug: fresh-one
@@ -2417,15 +2427,15 @@ tags: []
 
   it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     // Terminal is reached only via the gated transition (v3) — the override
     // endpoint refuses terminal targets.
     const done = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/transitions/:command',
-      { slug: PROJ, aslug: ASSIGN, command: 'complete' },
+      '/api/tickets/:id/transitions/:command',
+      { id: 'assignment-1', command: 'complete' },
       {},
     );
     const detail1 = (done.payload as { ticket: { completedAt: string | null; statusAge: number | null } })
@@ -2439,11 +2449,11 @@ tags: []
     const reopen = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/transitions/:command',
-      { slug: PROJ, aslug: ASSIGN, command: 'reopen' },
+      '/api/tickets/:id/transitions/:command',
+      { id: 'assignment-1', command: 'reopen' },
       {},
     );
-    const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).assignment;
+    const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).ticket ?? (reopen.payload as any).assignment;
     expect(detail2.completedAt).toBeNull();
   });
 });
@@ -2484,12 +2494,12 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
 describe('comment write-boundary newline validation (AC1)', () => {
   it('rejects a project comment whose author contains a newline (400, nothing written)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'hi', type: 'note', author: 'alice\ninjected' },
     );
     expect(res.statusCode).toBe(400);
@@ -2501,12 +2511,12 @@ describe('comment write-boundary newline validation (AC1)', () => {
 
   it('rejects a project comment whose replyTo contains a newline (400)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'hi', type: 'note', replyTo: 'abcd\nefgh' },
     );
     expect(res.statusCode).toBe(400);
@@ -2514,12 +2524,12 @@ describe('comment write-boundary newline validation (AC1)', () => {
 
   it('still accepts a normal project comment (positive control)', async () => {
     await createTicketFixture();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/comments',
-      { slug: 'test-project', aslug: 'test-assignment' },
+      '/api/tickets/:id/comments',
+      { id: 'assignment-1' },
       { body: 'all good', type: 'note', author: 'alice' },
     );
     expect(res.statusCode).toBe(201);
@@ -2642,19 +2652,19 @@ project: plan-project
     }
   }
 
-  it('POST /api/projects/:slug/tickets/:aslug/plan/approve writes planApproval', async () => {
+  it('POST /api/tickets/:id/plan/approve writes planApproval', async () => {
     await seedProjectPlanAssignment();
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/plan/approve',
-      { slug: 'plan-project', aslug: 'plan-assignment' },
+      '/api/tickets/:id/plan/approve',
+      { id: 'plan-assignment-id' },
       {},
     );
     expect(response.statusCode).toBe(200);
-    const ticket = (response.payload as { ticket: { status: string } }).assignment;
-    expect(assignment.status).toBe('ready_to_implement');
+    const ticket = (response.payload as { ticket: { status: string } }).ticket ?? (response.payload as any).assignment;
+    expect(ticket.status).toBe('ready_to_implement');
 
     const content = await readFile(
       resolve(testDir, 'plan-project', 'tickets', 'plan-assignment', 'ticket.md'),
@@ -2665,27 +2675,27 @@ project: plan-project
     expect(fm.planApproval?.digest).toBe(planDigest('# Plan body\n'));
   });
 
-  it('POST /api/projects/:slug/tickets/:aslug/plan/approve returns 409 without a plan file', async () => {
+  it('POST /api/tickets/:id/plan/approve returns 409 without a plan file', async () => {
     await seedProjectPlanAssignment({ withPlan: false });
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/plan/approve',
-      { slug: 'plan-project', aslug: 'plan-assignment' },
+      '/api/tickets/:id/plan/approve',
+      { id: 'plan-assignment-id' },
       {},
     );
     expect(response.statusCode).toBe(409);
     expect((response.payload as { error: string }).error).toContain('No plan file');
   });
 
-  it('POST /api/projects/:slug/tickets/:aslug/plan/approve returns 404 for unknown assignment', async () => {
-    const router = createWriteRouter(testDir);
+  it('POST /api/tickets/:id/plan/approve returns 404 for unknown assignment', async () => {
+    const router = createWriteRouter(testDir, ticketsDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/projects/:slug/tickets/:aslug/plan/approve',
-      { slug: 'plan-project', aslug: 'missing' },
+      '/api/tickets/:id/plan/approve',
+      { id: 'missing-plan-id' },
       {},
     );
     expect(response.statusCode).toBe(404);
@@ -2722,8 +2732,8 @@ project: null
       {},
     );
     expect(response.statusCode).toBe(200);
-    const ticket = (response.payload as { ticket: { status: string } }).assignment;
-    expect(assignment.status).toBe('ready_to_implement');
+    const ticket = (response.payload as { ticket: { status: string } }).ticket ?? (response.payload as any).assignment;
+    expect(ticket.status).toBe('ready_to_implement');
 
     const content = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     const fm = parseTicketFrontmatter(content);

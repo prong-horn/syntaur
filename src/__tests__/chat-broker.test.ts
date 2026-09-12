@@ -130,7 +130,7 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'assignments'),
+    assignmentsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
     clientFactory,
@@ -167,12 +167,12 @@ async function writeAssignment(workspace: { worktreePath?: string; repository?: 
     '',
     '- [ ] It chats',
   ];
-  await writeFile(join(assignmentDir, 'assignment.md'), lines.join('\n'), 'utf-8');
+  await writeFile(join(assignmentDir, 'ticket.md'), lines.join('\n'), 'utf-8');
 }
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-'));
-  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'assignments', 'chat-demo');
+  assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
   worktree = join(sandbox, 'worktree');
   await mkdir(assignmentDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
@@ -890,7 +890,7 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     const failing = createFakeAgent({ resumeError: 'session not found', sessionIds: ['acp-session-2'] });
     const secondBroker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -1010,7 +1010,7 @@ describe('history and reindex', () => {
     makeBroker();
     const summary = await broker.getSession(assignment(), null);
     expect(summary).toMatchObject({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       harness: 'claude',
       state: 'none',
@@ -1029,7 +1029,7 @@ describe('WS frames (Decision 3)', () => {
     const itemFrames = frames.filter((f) => f.type === 'chat-item');
     expect(itemFrames.length).toBeGreaterThan(0);
     for (const frame of itemFrames) {
-      expect((frame.payload as { assignmentId: string }).assignmentId).toBe(ASSIGNMENT_ID);
+      expect((frame.payload as { ticketId: string }).ticketId).toBe(ASSIGNMENT_ID);
       expect((frame.payload as { patch: { op: string } }).patch.op).toMatch(/^(upsert|retract)$/);
     }
 
@@ -1179,7 +1179,7 @@ describe('startup repair after a crash (Decision 12)', () => {
     } = {},
   ): Promise<void> {
     const log = await openChatLog(assignmentDir);
-    const base = { assignmentId: ASSIGNMENT_ID, agentId: 'claude', sessionKey: SESSION_KEY };
+    const base = { ticketId: ASSIGNMENT_ID, agentId: 'claude', sessionKey: SESSION_KEY };
 
     await log.append({
       ...base,
@@ -1238,7 +1238,7 @@ describe('startup repair after a crash (Decision 12)', () => {
 
     upsertChatSession({
       sessionKey: SESSION_KEY,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       agentId: 'claude',
@@ -1256,7 +1256,7 @@ describe('startup repair after a crash (Decision 12)', () => {
     // The engagement the crashed turn opened and never closed.
     openEngagement({
       sessionId: 'acp-session-1',
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       stage: 'chat',
@@ -1265,7 +1265,7 @@ describe('startup repair after a crash (Decision 12)', () => {
     });
     upsertChatItem(SESSION_KEY, {
       itemId: 'turn-crashed:0',
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       turnId: 'turn-crashed',
       agentId: 'claude',
       type: 'turn.status',
@@ -1490,7 +1490,7 @@ describe('one event log per assignment (finding 4)', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -1756,7 +1756,7 @@ describe('chat image attachments', () => {
     const log = await openChatLog(assignmentDir);
     const sessionKey = `${ASSIGNMENT_ID}:claude`;
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey,
       turnId: null,
@@ -1764,7 +1764,7 @@ describe('chat image attachments', () => {
       payload: { acpSessionId: 'acp-session-1', harness: 'claude', adapterVersion: 'x@1', cwd: worktree },
     });
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey,
       turnId: null,
@@ -1778,7 +1778,7 @@ describe('chat image attachments', () => {
     });
     upsertChatSession({
       sessionKey,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       agentId: 'claude',
@@ -1872,7 +1872,7 @@ describe('slash commands', () => {
     ]);
     upsertChatSession({
       sessionKey: `${ASSIGNMENT_ID}:claude`,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       agentId: 'claude',
@@ -1922,7 +1922,7 @@ describe('slash commands', () => {
     const key = `${ASSIGNMENT_ID}:claude`;
     const log = await openChatLog(assignmentDir);
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1930,7 +1930,7 @@ describe('slash commands', () => {
       payload: { harness: 'claude', acpSessionId: 's1', adapterVersion: null, cwd: worktree },
     });
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1938,7 +1938,7 @@ describe('slash commands', () => {
       payload: { sessionUpdate: 'available_commands_update', availableCommands: sampleCommands },
     });
     await log.append({
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       agentId: 'claude',
       sessionKey: key,
       turnId: null,
@@ -1948,7 +1948,7 @@ describe('slash commands', () => {
 
     upsertChatSession({
       sessionKey: key,
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       agentId: 'claude',
@@ -2291,7 +2291,7 @@ describe('turn progress entries', () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2486,7 +2486,7 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {
@@ -2521,7 +2521,7 @@ describe('inbox questions (needs-me)', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
       clientFactory: (input) => {

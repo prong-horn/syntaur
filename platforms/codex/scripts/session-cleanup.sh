@@ -75,7 +75,7 @@ SESSION_ID=$(resolve_session_from_markers || true)
 # Keep derived status fresh on session end — keyed on the ending session's EXACT
 # id (the marker-resolved id, else the stdin id for runtimes that provide one).
 # Skip when NEITHER resolves, rather than fall back to ambiguous cwd own-session
-# resolution that could recompute the WRONG assignment in a shared worktree.
+# resolution that could recompute the WRONG ticket in a shared worktree.
 # Runs BEFORE the stop PATCH below, so the engagement is still open. CLI-direct
 # (no dashboard), migration-gated, bounded (~3s; no `timeout` on stock macOS).
 STDIN_SID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)

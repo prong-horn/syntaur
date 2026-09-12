@@ -248,7 +248,7 @@ export async function newCommand(
     console.log(`    progress.md`);
     console.log(`    comments.md`);
     console.log(
-      `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-assignment.`,
+      `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-ticket.`,
     );
   }
 

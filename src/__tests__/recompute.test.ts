@@ -78,11 +78,11 @@ Real objective text.
 `}`;
 }
 
-async function makeAssignment(opts: Parameters<typeof assignmentContent>[0] = {}): Promise<{ dir: string; path: string }> {
+async function makeAssignment(opts: Parameters<typeof ticketContent>[0] = {}): Promise<{ dir: string; path: string }> {
   const dir = await mkdtemp(join(tmpdir(), 'syntaur-recompute-'));
   tmpDirs.push(dir);
   const path = join(dir, 'ticket.md');
-  await writeFile(path, assignmentContent(opts));
+  await writeFile(path, ticketContent(opts));
   return { dir, path };
 }
 
@@ -210,11 +210,11 @@ describe('recomputeDependents + recomputeAll', () => {
     await mkdir(join(projectDir, 'tickets', 'dep-b'), { recursive: true });
     await writeFile(
       join(projectDir, 'tickets', 'dep-a', 'ticket.md'),
-      assignmentContent({ slug: 'dep-a', status: 'completed' }),
+      ticketContent({ slug: 'dep-a', status: 'completed' }),
     );
     await writeFile(
       join(projectDir, 'tickets', 'dep-b', 'ticket.md'),
-      assignmentContent({ slug: 'dep-b', status: 'draft', dependsOn: ['dep-a'] }),
+      ticketContent({ slug: 'dep-b', status: 'draft', dependsOn: ['dep-a'] }),
     );
     const results = await recomputeDependents(projectDir, 'dep-a', {
       cause: 'dep-terminal',
@@ -234,9 +234,9 @@ describe('recomputeDependents + recomputeAll', () => {
     await mkdir(join(standaloneDir, 'u1'), { recursive: true });
     await writeFile(
       join(projectsDir, 'p1', 'tickets', 'a1', 'ticket.md'),
-      assignmentContent({ slug: 'a1' }),
+      ticketContent({ slug: 'a1' }),
     );
-    await writeFile(join(standaloneDir, 'u1', 'ticket.md'), assignmentContent({ slug: 'u1', status: 'completed' }));
+    await writeFile(join(standaloneDir, 'u1', 'ticket.md'), ticketContent({ slug: 'u1', status: 'completed' }));
 
     const summary = await recomputeAll(projectsDir, standaloneDir, {
       cause: 'sweep',

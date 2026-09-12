@@ -121,7 +121,7 @@ beforeEach(async () => {
   await mkdir(aDir, { recursive: true });
   await writeFile(join(projectDir, 'project.md'), '---\nslug: p1\n---\n# P1\n');
   ticketPath = join(aDir, 'ticket.md');
-  await writeFile(ticketPath, assignmentMd());
+  await writeFile(ticketPath, ticketMd());
 });
 
 afterEach(async () => {

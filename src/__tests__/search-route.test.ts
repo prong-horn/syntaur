@@ -139,7 +139,7 @@ describe('routeForHit', () => {
   });
 
   it('maps each FileKind to an existing TicketDetail tab', () => {
-    expect(FILE_KIND_TO_TAB.assignment).toBe('summary');
+    expect(FILE_KIND_TO_TAB.ticket).toBe('summary');
     expect(FILE_KIND_TO_TAB.plan).toBe('plan');
     expect(FILE_KIND_TO_TAB['decision-record']).toBe('decisions');
   });

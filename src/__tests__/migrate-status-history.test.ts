@@ -68,10 +68,10 @@ async function seedProject(
   updated: string,
   opts: { withHistory?: boolean; malformed?: boolean } = {},
 ): Promise<string> {
-  const dir = resolve(projectsDir, project, 'tickets', slug);
+  const dir = resolve(projectsDir, project, 'assignments', slug);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'ticket.md');
-  await writeFile(path, assignmentMd(slug, status, created, updated, opts), 'utf-8');
+  const path = resolve(dir, 'assignment.md');
+  await writeFile(path, ticketMd(slug, status, created, updated, opts), 'utf-8');
   return path;
 }
 
@@ -84,8 +84,8 @@ async function seedStandalone(
 ): Promise<string> {
   const dir = resolve(standaloneDir, uuid);
   await mkdir(dir, { recursive: true });
-  const path = resolve(dir, 'ticket.md');
-  await writeFile(path, assignmentMd(uuid, status, created, updated, opts), 'utf-8');
+  const path = resolve(dir, 'assignment.md');
+  await writeFile(path, ticketMd(uuid, status, created, updated, opts), 'utf-8');
   return path;
 }
 

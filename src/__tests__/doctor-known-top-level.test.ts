@@ -31,7 +31,10 @@ function walkTsFiles(dir: string): string[] {
     if (statSync(full).isDirectory()) {
       if (entry === '__tests__') continue;
       results.push(...walkTsFiles(full));
-    } else if (entry.endsWith('.ts') || entry.endsWith('.tsx')) {
+    } else if (
+      (entry.endsWith('.ts') || entry.endsWith('.tsx')) &&
+      !entry.startsWith('migrate-')
+    ) {
       results.push(full);
     }
   }

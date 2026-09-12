@@ -156,7 +156,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const ticketDir = resolve(projectDir, 'tickets', 'a1');
     await mkdir(ticketDir, { recursive: true });
-    await writeFile(resolve(ticketDir, 'ticket.md'), assignmentMd('in_progress'));
+    await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('in_progress'));
     const report = await runChecks();
     const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);
@@ -171,8 +171,8 @@ describe('syntaur doctor', () => {
     const completedDir = resolve(projectDir, 'tickets', 'c');
     await mkdir(pendingDir, { recursive: true });
     await mkdir(completedDir, { recursive: true });
-    await writeFile(resolve(pendingDir, 'ticket.md'), assignmentMd('pending'));
-    await writeFile(resolve(completedDir, 'ticket.md'), assignmentMd('completed'));
+    await writeFile(resolve(pendingDir, 'ticket.md'), ticketMd('pending'));
+    await writeFile(resolve(completedDir, 'ticket.md'), ticketMd('completed'));
     const report = await runChecks();
     const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
@@ -184,7 +184,7 @@ describe('syntaur doctor', () => {
     for (const status of ['draft', 'ready_for_planning', 'ready_to_implement']) {
       const dir = resolve(projectDir, 'tickets', status);
       await mkdir(dir, { recursive: true });
-      await writeFile(resolve(dir, 'ticket.md'), assignmentMd(status));
+      await writeFile(resolve(dir, 'ticket.md'), ticketMd(status));
     }
     const report = await runChecks();
     const issues = byId(report, 'assignment.workspace-missing').filter((c) => c.status !== 'pass');
@@ -222,7 +222,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const dir = resolve(projectDir, 'tickets', 'no-plan');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), assignmentMd('ready_to_implement'));
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
     const report = await runChecks();
     const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status === 'warn');
     expect(issues.length).toBe(1);
@@ -234,7 +234,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const dir = resolve(projectDir, 'tickets', 'has-plan');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), assignmentMd('ready_to_implement'));
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
     await writeFile(resolve(dir, 'plan.md'), '# Plan\n\nSome plan content.\n');
     const report = await runChecks();
     const issues = byId(report, 'assignment.ready-to-implement-missing-plan').filter((c) => c.status !== 'pass');
@@ -246,7 +246,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const ticketDir = resolve(projectDir, 'tickets', 'bad');
     await mkdir(ticketDir, { recursive: true });
-    await writeFile(resolve(ticketDir, 'ticket.md'), assignmentMd('not_a_real_status'));
+    await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('not_a_real_status'));
     const report = await runChecks();
     const issues = byId(report, 'assignment.invalid-status').filter((c) => c.status === 'error');
     expect(issues.length).toBe(1);

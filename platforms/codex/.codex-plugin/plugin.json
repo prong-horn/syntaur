@@ -1,7 +1,7 @@
 {
   "name": "syntaur",
   "version": "0.79.0",
-  "description": "Run Syntaur project and assignment workflows from Codex, including claiming work, planning, completing handoffs, agent session tracking, and write-boundary enforcement.",
+  "description": "Run Syntaur project and ticket workflows from Codex, including claiming work, planning, completing handoffs, agent session tracking, and write-boundary enforcement.",
   "author": {
     "name": "Brennen"
   },
@@ -9,8 +9,8 @@
   "hooks": "./hooks.json",
   "interface": {
     "displayName": "Syntaur",
-    "shortDescription": "Project and assignment workflows for Codex",
-    "longDescription": "Use Syntaur to create projects and assignments, claim work, keep plan and handoff records current, track Codex sessions, and enforce Syntaur write boundaries.",
+    "shortDescription": "Project and ticket workflows for Codex",
+    "longDescription": "Use Syntaur to create projects and tickets, claim work, keep plan and handoff records current, track Codex sessions, and enforce Syntaur write boundaries.",
     "developerName": "Brennen",
     "category": "Coding",
     "capabilities": [
@@ -19,9 +19,9 @@
       "Write"
     ],
     "defaultPrompt": [
-      "Claim a Syntaur assignment and set up this workspace",
-      "Plan the current Syntaur assignment",
-      "Write a Syntaur handoff and transition the assignment"
+      "Claim a Syntaur ticket and set up this workspace",
+      "Plan the current Syntaur ticket",
+      "Write a Syntaur handoff and transition the ticket"
     ],
     "brandColor": "#0F766E"
   }

@@ -19,13 +19,13 @@ needsAttention:
 # Project Status: Build Authentication System
 
 **Status:** active
-**Progress:** 1/3 assignments complete
+**Progress:** 1/3 tickets complete
 
-## Assignments
+## Tickets
 
-- [x] [design-auth-schema](./assignments/design-auth-schema/assignment.md) — completed
-- [ ] [implement-jwt-middleware](./assignments/implement-jwt-middleware/assignment.md) — in_progress (claude-1)
-- [ ] [write-auth-tests](./assignments/write-auth-tests/assignment.md) — pending (waiting on: implement-jwt-middleware)
+- [x] [design-auth-schema](./tickets/design-auth-schema/ticket.md) — completed
+- [ ] [implement-jwt-middleware](./tickets/implement-jwt-middleware/ticket.md) — in_progress (claude-1)
+- [ ] [write-auth-tests](./tickets/write-auth-tests/ticket.md) — pending (waiting on: implement-jwt-middleware)
 
 ## Dependency Graph
 
@@ -42,6 +42,6 @@ graph TD
 
 ## Needs Attention
 
-- **0 blocked** assignments
-- **0 failed** assignments
-- **1 open** question in [implement-jwt-middleware/comments.md](./assignments/implement-jwt-middleware/comments.md)
+- **0 blocked** tickets
+- **0 failed** tickets
+- **1 open** question in [implement-jwt-middleware/comments.md](./tickets/implement-jwt-middleware/comments.md)

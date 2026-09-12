@@ -46,10 +46,10 @@ describe('suggestPalette — prefix / field category', () => {
     ]);
   });
 
-  it('a fragment matches both an alias prefix and a field', () => {
-    const s = suggestPalette('a', 1, ctx);
-    expect(s.some((x) => x.kind === 'prefix' && x.insert === 't:')).toBe(true);
-    expect(s.some((x) => x.kind === 'field' && x.insert === 'assignee:')).toBe(true);
+  it('p fragment matches both an alias prefix and a field', () => {
+    const s = suggestPalette('p', 1, ctx);
+    expect(s.some((x) => x.kind === 'prefix' && x.insert === 'p:')).toBe(true);
+    expect(s.some((x) => x.kind === 'field' && x.insert === 'project:')).toBe(true);
     expect(s.every((x) => x.replace[0] === 0 && x.replace[1] === 1)).toBe(true);
   });
 

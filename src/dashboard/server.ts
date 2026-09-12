@@ -84,7 +84,7 @@ export interface DashboardServerOptions {
   port: number;
   projectsDir: string;
   /**
-   * Absolute path to the standalone assignments directory (`~/.syntaur/assignments/`).
+   * Absolute path to the standalone assignments directory (`~/.syntaur/tickets/`).
    * Standalone assignments have `project: null` and live in folders named by UUID.
    */
   ticketsDir: string;
@@ -599,7 +599,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.get('/api/projects/:slug/assignments/:aslug', async (req, res) => {
+  app.get('/api/projects/:slug/tickets/:aslug', async (req, res) => {
     try {
       const detail = await getTicketDetail(
         projectsDir,
@@ -659,7 +659,7 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Static files (production only) ---
   // Only serve the built asset directory as static — never let express.static
-  // try to resolve arbitrary client-side route paths (e.g. /assignments/:id)
+  // try to resolve arbitrary client-side route paths (e.g. /tickets/:id)
   // as files, which makes `send` emit NotFoundError on every SPA refresh.
   if (serveStaticUi && dashboardDistPath) {
     // `dotfiles: 'allow'` is required because the resolved package path may
@@ -741,8 +741,8 @@ export function createDashboardServer(options: DashboardServerOptions) {
           const { context, workflowResolver } = await resolveRecomputeContext();
           const projectDir = projectSlug ? resolve(projectsDir, projectSlug) : null;
           const path = projectDir
-            ? resolve(projectDir, 'assignments', ticketSlug, 'assignment.md')
-            : resolve(ticketsDir, ticketSlug, 'assignment.md');
+            ? resolve(projectDir, 'tickets', ticketSlug, 'ticket.md')
+            : resolve(ticketsDir, ticketSlug, 'ticket.md');
           if (!(await fileExists(path))) return;
           const result = await recomputeAndWrite(path, {
             cause: 'derive',

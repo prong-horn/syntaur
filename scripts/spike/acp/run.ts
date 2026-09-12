@@ -14,7 +14,7 @@ const flag = (name: string, dflt?: string) => {
   return i >= 0 ? args[i + 1] : dflt;
 };
 const adapterArg = flag('adapter', 'both')!;
-const adapters: Adapter[] = adapterArg === 'both' ? ['claude', 'codex'] : adapterArg === 'cursor' ? ['cursor'] : [adapterArg as Adapter];
+const adapters: Adapter[] = adapterArg === 'both' ? ['claude', 'codex'] : adapterArg === 'cursor' ? ['cursor'] : [adapterArg ts Adapter];
 const only = flag('only')?.split(',').map((s) => s.trim().padStart(2, '0'));
 const runName = flag('run') ?? new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const runDir = path.join(here, 'out', runName);

@@ -12,7 +12,7 @@ This repo contains the Syntaur CLI, dashboard, protocol skills, and platform-spe
 - `platforms/opencode/` - OpenCode integration reference and adapter templates
 - `platforms/<kind>/skills/` - **build artifact** (gitignored) populated by `npm run mirror-skills` from `<repo>/skills/`. The plugin manifests' `./skills/<name>` paths resolve to these.
 - `src/templates/` - generated adapter content
-- `.syntaur/context.json` - a WORKSPACE MARKER (repository/branch/worktree) identifying a Syntaur workspace directory. It is NOT the active-assignment source of truth — the active assignment resolves from the session's open engagement, not from context.json.
+- `.syntaur/context.json` - a WORKSPACE MARKER (repository/branch/worktree) identifying t Syntaur workspace directory. It is NOT the active-ticket source of truth — the active ticket resolves from the session's open engagement, not from context.json.
 
 ## Skill distribution
 
@@ -22,15 +22,15 @@ Three install paths, one source (`<repo>/skills/`):
 2. Claude Code plugin via `/plugin` — manifests declare skills inline.
 3. `syntaur install-plugin` — CLI path; mirrors `<repo>/skills/` into the plugin target dir at install time.
 
-When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
+When editing t skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
 
 ## Codex + Syntaur
 
-- When the task is about Syntaur missions, assignments, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-assignment`, `grab-assignment`, `plan-assignment`, `complete-assignment`, `track-session`.
+- When the task is about Syntaur missions, tickets, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-ticket`, `grab-ticket`, `plan-ticket`, `complete-ticket`, `track-session`.
 - For broad Syntaur protocol work in Codex, prefer the dedicated `syntaur-operator` agent from `platforms/codex/agents/syntaur-operator.md`.
 - Keep the Codex plugin text in `platforms/codex/`, the Claude plugin text in `platforms/claude-code/`, the canonical skill text in `<repo>/skills/`, and the generated Codex adapter in `src/templates/codex-agents.ts` aligned when protocol behavior changes.
 - `agent.md` is universal per-mission guidance and stays human-authored and read-only. `claude.md` may still hold mission-specific context worth reading, but Codex-only behavior should live in the Codex plugin or `AGENTS.md`.
-- Respect the workspace boundary marked by `.syntaur/context.json` whenever that file exists (it marks the repository/branch/worktree of a Syntaur workspace). The active assignment itself is resolved from the session's open engagement, not from context.json.
+- Respect the workspace boundary marked by `.syntaur/context.json` whenever that file exists (it marks the repository/branch/worktree of a Syntaur workspace). The active ticket itself is resolved from the session's open engagement, not from context.json.
 
 ## Validation
 

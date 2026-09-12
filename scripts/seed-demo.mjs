@@ -111,7 +111,7 @@ generated: "${createdAt}"
 - [Project Overview](./project.md)
 
 ## Indexes
-- [Assignments](./_index-assignments.md)
+- [Tickets](./_index-tickets.md)
 - [Plans](./_index-plans.md)
 - [Decision Records](./_index-decisions.md)
 - [Status](./_status.md)
@@ -132,7 +132,7 @@ generated: "${iso(new Date())}"
 
 # Agent Instructions — ${title}
 
-Follow the Syntaur protocol. Read \`project.md\` before grabbing an assignment.
+Follow the Syntaur protocol. Read \`project.md\` before grabbing tn ticket.
 `;
 }
 
@@ -144,13 +144,13 @@ generated: "${iso(new Date())}"
 
 # Claude Code Instructions — ${title}
 
-Run \`/grab-assignment\` to claim pending work. Keep \`assignment.md\` records up to date as you work.
+Run \`/grab-ticket\` to claim pending work. Keep \`ticket.md\` records up to date as you work.
 `;
 }
 
-function renderStatus(project, assignments) {
+function renderStatus(project, tickets) {
   const by = Object.create(null);
-  for (const a of assignments) by[a.status] = (by[a.status] ?? 0) + 1;
+  for (const a of tickets) by[a.status] = (by[a.status] ?? 0) + 1;
   const completed = by.completed ?? 0;
   const blockedCount = by.blocked ?? 0;
   const failedCount = by.failed ?? 0;
@@ -159,7 +159,7 @@ project: ${project.slug}
 generated: "${iso(new Date())}"
 status: ${project.archived ? 'archived' : 'active'}
 progress:
-  total: ${assignments.length}
+  total: ${tickets.length}
   completed: ${completed}
   in_progress: ${by.in_progress ?? 0}
   blocked: ${blockedCount}
@@ -175,21 +175,21 @@ needsAttention:
 # Project Status: ${project.title}
 
 **Status:** ${project.archived ? 'archived' : 'active'}
-**Progress:** ${completed}/${assignments.length} assignments complete
+**Progress:** ${completed}/${tickets.length} tickets complete
 `;
 }
 
-function renderAssignmentsIndex(project, assignments) {
+function renderTicketsIndex(project, tickets) {
   const by = Object.create(null);
-  for (const a of assignments) by[a.status] = (by[a.status] ?? 0) + 1;
-  const rows = assignments.map((a) => {
+  for (const a of tickets) by[a.status] = (by[a.status] ?? 0) + 1;
+  const rows = tickets.map((a) => {
     const deps = a.dependsOn?.length ? a.dependsOn.join(', ') : '—';
     return `| ${a.slug} | ${a.title} | ${a.status} | ${a.priority} | ${a.assignee ?? '—'} | ${deps} | ${a.updated} |`;
   }).join('\n');
   return `---
 project: ${project.slug}
 generated: "${iso(new Date())}"
-total: ${assignments.length}
+total: ${tickets.length}
 by_status:
   pending: ${by.pending ?? 0}
   in_progress: ${by.in_progress ?? 0}
@@ -199,7 +199,7 @@ by_status:
   failed: ${by.failed ?? 0}
 ---
 
-# Assignments
+# Tickets
 
 | Slug | Title | Status | Priority | Assignee | Dependencies | Updated |
 |------|-------|--------|----------|----------|--------------|---------|
@@ -220,7 +220,7 @@ _None yet._
 `;
 }
 
-function renderAssignment(a) {
+function renderTicket(a) {
   const dependsOn = a.dependsOn?.length
     ? `dependsOn:\n  - ${a.dependsOn.join('\n  - ')}`
     : 'dependsOn: []';
@@ -288,7 +288,7 @@ ${progress}
 
 function renderPlan(a, body) {
   return `---
-assignment: ${a.slug}
+ticket: ${a.slug}
 project: ${a.projectSlug}
 generated: "${a.created}"
 ---
@@ -301,7 +301,7 @@ ${body}
 
 function renderScratchpad(a, body) {
   return `---
-assignment: ${a.slug}
+ticket: ${a.slug}
 generated: "${a.created}"
 ---
 
@@ -316,7 +316,7 @@ function renderHandoff(a, entries) {
     return `### ${e.date} — ${e.heading}\n\n${e.body}`;
   }).join('\n\n');
   return `---
-assignment: ${a.slug}
+ticket: ${a.slug}
 generated: "${a.created}"
 ---
 
@@ -331,7 +331,7 @@ function renderDecisionRecord(a, entries) {
     return `### ${e.date} — ${e.title}\n\n**Decision:** ${e.decision}\n\n**Context:** ${e.context}\n\n**Consequences:** ${e.consequences}`;
   }).join('\n\n');
   return `---
-assignment: ${a.slug}
+ticket: ${a.slug}
 generated: "${a.created}"
 ---
 
@@ -354,7 +354,7 @@ const projects = [
     updated: iso(hoursAgo(3)),
     tags: ['backend', 'payments', 'compliance'],
     externalIds: ['PAY-421'],
-    overview: `Migrate the billing service off Stripe webhook v1 endpoints (\`/v1/events\`) onto v2 (\`/v2/billing.events\`) before the deprecation window closes on **2026-06-30**. All event handlers, signature verification, retry queue, and reconciliation jobs must move over without dropping a single production event.`,
+    overview: `Migrate the billing service off Stripe webhook v1 endpoints (\`/v1/events\`) onto v2 (\`/v2/billing.events\`) before the deprecation window closes on **2026-06-30**. All event handlers, signature verification, retry queue, and reconciliation jobs must move over without dropping t single production event.`,
     notes: `Stripe has indicated the v1 endpoint will stop signing new events on 2026-06-01 and will be removed on 2026-06-30. We have six weeks of dual-write overlap budgeted.`,
   },
   {
@@ -406,7 +406,7 @@ const projects = [
   },
 ];
 
-// --- Data: Assignments ---
+// --- Data: Tickets ---
 
 function mk(project, overrides) {
   const created = overrides.created ?? iso(daysAgo(7));
@@ -430,7 +430,7 @@ function mk(project, overrides) {
   };
 }
 
-const assignmentsByMission = {
+const ticketsByMission = {
   'stripe-webhook-migration': [
     mk(projects[0], {
       slug: 'audit-v1-event-handlers',
@@ -536,7 +536,7 @@ const assignmentsByMission = {
         { text: 'Includes rollback procedure with explicit rollback criteria (error budget thresholds).', done: false },
         { text: 'Stored alongside other billing runbooks in `docs/runbooks/billing/`.', done: false },
       ],
-      context: `Follow the template in \`docs/runbooks/_template.md\`. Cross-reference the dual-write flag and reconciliation job.`,
+      context: `Follow the template in \`docs/runbooks/_template.md\`. Cross-reference the dual-write flag tnd reconciliation job.`,
     }),
   ],
 
@@ -694,7 +694,7 @@ const assignmentsByMission = {
         { text: 'Flag-gated (`search.reranker.v2`) and rolled out at 10% for the first week.', done: false },
       ],
       progressNotes: [
-        { date: '2026-04-18', heading: 'First eval pass', body: 'Top-1 precision up 6.4pp, but p95 blew past 260ms. Working on batching and ONNX quantization next.' },
+        { date: '2026-04-18', heading: 'First eval pass', body: 'Top-1 precision up 6.4pp, but p95 blew past 260ms. Working on batching tnd ONNX quantization next.' },
       ],
     }),
     mk(projects[2], {
@@ -749,7 +749,7 @@ const assignmentsByMission = {
         branch: 'perf/lazy-images',
         parentBranch: 'main',
       },
-      objective: `Defer decoding and network fetch of images that aren't in the first-screen viewport. iOS and Android parity.`,
+      objective: `Defer decoding tnd network fetch of images that aren't in the first-screen viewport. iOS and Android parity.`,
       criteria: [
         { text: 'iOS: uses `UIImageView` with async decoding flag + below-fold deferred fetch.', done: true },
         { text: 'Android: uses Coil with `placeholderMemoryCacheKey` + below-fold deferred fetch.', done: true },
@@ -859,7 +859,7 @@ const assignmentsByMission = {
       objective: `Write a retro covering what went well, what didn't, and what we'd do differently.`,
       criteria: [
         { text: 'Retro published to `docs/retros/2026-04-admin-redesign.md`.', done: true },
-        { text: 'Circulated to engineering and design leads.', done: true },
+        { text: 'Circulated to engineering tnd design leads.', done: true },
       ],
     }),
   ],
@@ -872,11 +872,11 @@ const playbooks = [
     slug: 'commit-discipline',
     name: 'Commit Discipline',
     description: 'Make small, logical commits with clear messages tied to plan tasks',
-    whenToUse: 'When making git commits during assignment work',
+    whenToUse: 'When making git commits during tssignment work',
     tags: ['quality', 'git'],
     body: `- Make commits at logical boundaries — one commit per plan task or meaningful unit of work.
 - Commit messages should reference what was done, not just "implement feature".
-- If the assignment has an external ID, include it in the commit message.
+- If the ticket has an external ID, include it in the commit message.
 - Never commit secrets, credentials, .env files, or API keys.
 - Run the linter/formatter before committing.
 - Do not amend previous commits unless explicitly asked.`,
@@ -884,12 +884,12 @@ const playbooks = [
   {
     slug: 'read-before-plan',
     name: 'Read Before You Plan',
-    description: 'Read all project context files before creating or modifying a plan',
+    description: 'Read all project context files before creating or modifying t plan',
     whenToUse: 'Before creating or modifying plan.md',
     tags: ['planning', 'quality'],
-    body: `Before writing or modifying any plan, read:
+    body: `Before writing or modifying tny plan, read:
 - \`project.md\` — the overall goal
-- Sibling assignment.md files in the same project
+- Sibling ticket.md files in the same project
 - Any referenced design docs in \`resources/\`
 - The most recent handoffs and decision records
 
@@ -898,34 +898,34 @@ Planning without context produces brittle, redundant work. Take the five minutes
   {
     slug: 'test-before-done',
     name: 'Test Before Done',
-    description: 'Run tests and verify acceptance criteria before marking assignments complete',
-    whenToUse: 'Before transitioning an assignment to review or completed',
+    description: 'Run tests and verify acceptance criteria before marking tssignments complete',
+    whenToUse: 'Before transitioning tn ticket to review or completed',
     tags: ['quality', 'testing'],
-    body: `Before calling an assignment done:
+    body: `Before calling tn ticket done:
 1. Run the project's full test suite and make sure it passes locally.
 2. Re-read each acceptance criterion and verify it against the actual behavior, not the intended behavior.
-3. For UI work, load the running app and exercise the golden path.
+3. For UI work, load the running tpp and exercise the golden path.
 4. If any criterion is partially met, leave it unchecked and note it in the Progress section.`,
   },
   {
     slug: 'workspace-before-code',
     name: 'Workspace Before Code',
-    description: 'Set workspace fields in assignment.md before writing any implementation code',
-    whenToUse: 'Before writing any implementation code for an assignment',
+    description: 'Set workspace fields in ticket.md before writing tny implementation code',
+    whenToUse: 'Before writing tny implementation code for an ticket',
     tags: ['workflow', 'quality'],
     body: `Before writing code:
-- Set \`workspace.repository\`, \`workspace.worktreePath\`, \`workspace.branch\`, and \`workspace.parentBranch\` in \`assignment.md\`.
+- Set \`workspace.repository\`, \`workspace.worktreePath\`, \`workspace.branch\`, and \`workspace.parentBranch\` in \`ticket.md\`.
 - If you're working in an isolated worktree, create it first.
 
-This tells the dashboard and other agents where your work lives, and the write-boundary hook uses it to prevent cross-assignment edits.`,
+This tells the dashboard and other agents where your work lives, and the write-boundary hook uses it to prevent cross-ticket edits.`,
   },
   {
     slug: 'keep-records-updated',
     name: 'Keep Records Updated',
-    description: 'Keep assignment.md progress, sessions, and criteria current in real-time',
+    description: 'Keep ticket.md progress, sessions, and criteria current in real-time',
     whenToUse: 'After every meaningful action, when completing criteria, when starting or stopping work',
     tags: ['workflow', 'protocol'],
-    body: `Assignment records are the source of truth for human stakeholders and downstream agents.
+    body: `Ticket records are the source of truth for human stakeholders and downstream agents.
 - Check off acceptance criteria as soon as they're met.
 - Add a progress entry after every meaningful action (new approach, blocker, decision).
 - Keep the Questions & Answers section current.
@@ -988,7 +988,7 @@ function seedAgentSessions(dbPath, projectMap) {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE INDEX IF NOT EXISTS idx_sessions_mission ON sessions(mission_slug);
-    CREATE INDEX IF NOT EXISTS idx_sessions_assignment ON sessions(mission_slug, assignment_slug);
+    CREATE INDEX IF NOT EXISTS idx_sessions_ticket ON sessions(mission_slug, assignment_slug);
     CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
     CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
     INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
@@ -1004,7 +1004,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'claude-sess-01e9b0',
       projectSlug: 'stripe-webhook-migration',
-      assignmentSlug: 'dual-write-signature-verifier',
+      ticketSlug: 'dual-write-signature-verifier',
       agent: 'claude',
       started: iso(hoursAgo(4)),
       ended: null,
@@ -1015,7 +1015,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'claude-sess-02a7c3',
       projectSlug: 'customer-onboarding-revamp',
-      assignmentSlug: 'invite-teammate-step',
+      ticketSlug: 'invite-teammate-step',
       agent: 'claude',
       started: iso(hoursAgo(14)),
       ended: null,
@@ -1026,18 +1026,18 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'codex-sess-033f11',
       projectSlug: 'search-relevance-v2',
-      assignmentSlug: 'cross-encoder-reranker',
+      ticketSlug: 'cross-encoder-reranker',
       agent: 'codex',
       started: iso(hoursAgo(18)),
       ended: null,
       status: 'active',
       path: '/Users/brennen/demo-search/.worktrees/reranker',
-      description: 'Batching and ONNX-quantizing the cross-encoder to cut p95.',
+      description: 'Batching tnd ONNX-quantizing the cross-encoder to cut p95.',
     },
     {
       sessionId: 'claude-sess-04d8e2',
       projectSlug: 'customer-onboarding-revamp',
-      assignmentSlug: 'empty-workspace-illustration',
+      ticketSlug: 'empty-workspace-illustration',
       agent: 'claude',
       started: iso(hoursAgo(30)),
       ended: iso(hoursAgo(9)),
@@ -1048,7 +1048,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'codex-sess-05b721',
       projectSlug: 'mobile-performance-sprint',
-      assignmentSlug: 'js-bundle-split',
+      ticketSlug: 'js-bundle-split',
       agent: 'codex',
       started: iso(daysAgo(3)),
       ended: iso(daysAgo(2)),
@@ -1059,7 +1059,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'claude-sess-06a440',
       projectSlug: 'stripe-webhook-migration',
-      assignmentSlug: 'audit-v1-event-handlers',
+      ticketSlug: 'audit-v1-event-handlers',
       agent: 'claude',
       started: iso(daysAgo(23)),
       ended: iso(daysAgo(22)),
@@ -1070,7 +1070,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'codex-sess-07f299',
       projectSlug: 'mobile-performance-sprint',
-      assignmentSlug: 'image-lazy-load',
+      ticketSlug: 'image-lazy-load',
       agent: 'codex',
       started: iso(hoursAgo(5)),
       ended: null,
@@ -1081,7 +1081,7 @@ function seedAgentSessions(dbPath, projectMap) {
     {
       sessionId: 'claude-sess-08c511',
       projectSlug: null,
-      assignmentSlug: null,
+      ticketSlug: null,
       agent: 'claude',
       started: iso(hoursAgo(2)),
       ended: null,
@@ -1095,7 +1095,7 @@ function seedAgentSessions(dbPath, projectMap) {
     insert.run(
       s.sessionId,
       s.projectSlug,
-      s.assignmentSlug,
+      s.ticketSlug,
       s.agent,
       s.started,
       s.ended,
@@ -1126,7 +1126,7 @@ async function main() {
   await ensureDir(TARGET);
   await ensureDir(projectsDir);
   await ensureDir(playbooksDir);
-  await ensureDir(resolve(TARGET, 'assignments'));
+  await ensureDir(resolve(TARGET, 'tickets'));
 
   await writeText(resolve(TARGET, 'config.md'), renderConfigMd(projectsDir));
 
@@ -1134,7 +1134,7 @@ async function main() {
   for (const m of projects) {
     const projectDir = resolve(projectsDir, m.slug);
     await ensureDir(projectDir);
-    await ensureDir(resolve(projectDir, 'assignments'));
+    await ensureDir(resolve(projectDir, 'tickets'));
     await ensureDir(resolve(projectDir, 'resources'));
     await ensureDir(resolve(projectDir, 'memories'));
 
@@ -1143,23 +1143,23 @@ async function main() {
     await writeText(resolve(projectDir, 'agent.md'), renderAgentMd(m.slug, m.title));
     await writeText(resolve(projectDir, 'claude.md'), renderClaudeMd(m.slug, m.title));
 
-    const projectAssignments = assignmentsByMission[m.slug] ?? [];
-    await writeText(resolve(projectDir, '_index-assignments.md'), renderAssignmentsIndex(m, projectAssignments));
+    const projectTickets = ticketsByMission[m.slug] ?? [];
+    await writeText(resolve(projectDir, '_index-tickets.md'), renderTicketsIndex(m, projectTickets));
     await writeText(resolve(projectDir, '_index-plans.md'), renderIndexStub('Plans', m));
     await writeText(resolve(projectDir, '_index-decisions.md'), renderIndexStub('Decision Records', m));
-    await writeText(resolve(projectDir, '_status.md'), renderStatus(m, projectAssignments));
+    await writeText(resolve(projectDir, '_status.md'), renderStatus(m, projectTickets));
     await writeText(resolve(projectDir, 'resources', '_index.md'), renderIndexStub('Resources', m));
     await writeText(resolve(projectDir, 'memories', '_index.md'), renderIndexStub('Memories', m));
 
-    for (const a of projectAssignments) {
-      const aDir = resolve(projectDir, 'assignments', a.slug);
+    for (const a of projectTickets) {
+      const aDir = resolve(projectDir, 'tickets', a.slug);
       await ensureDir(aDir);
-      await writeText(resolve(aDir, 'assignment.md'), renderAssignment(a));
+      await writeText(resolve(aDir, 'ticket.md'), renderTicket(a));
 
       // Plans — fuller for in-progress / completed
       const planBody = a.status === 'pending'
         ? '_Plan not drafted yet._'
-        : `## Approach\n\nBreak the work down per acceptance criterion. Ship behind a feature flag where the change is non-trivial.\n\n## Tasks\n\n${a.criteria.map((c, i) => `${i + 1}. ${c.done ? '~~' + c.text + '~~' : c.text}`).join('\n')}\n\n## Risks\n\n- **Regression risk.** Guard with the ${a.slug}.v1 flag and a canary.\n- **Observability gap.** Emit one counter and one histogram before cutover.`;
+        : `## Approach\n\nBreak the work down per acceptance criterion. Ship behind a feature flag where the change is non-trivial.\n\n## Tasks\n\n${a.criteria.map((c, i) => `${i + 1}. ${c.done ? '~~' + c.text + '~~' : c.text}`).join('\n')}\n\n## Risks\n\n- **Regression risk.** Guard with the ${a.slug}.v1 flag tnd a canary.\n- **Observability gap.** Emit one counter and one histogram before cutover.`;
       await writeText(resolve(aDir, 'plan.md'), renderPlan(a, planBody));
 
       // Scratchpad
@@ -1206,9 +1206,9 @@ async function main() {
   seedAgentSessions(dbPath, projects);
 
   // Summary
-  const totalAssignments = Object.values(assignmentsByMission).reduce((n, arr) => n + arr.length, 0);
+  const totalTickets = Object.values(ticketsByMission).reduce((n, arr) => n + arr.length, 0);
   console.log(`\n✓ Demo workspace seeded at: ${TARGET}`);
-  console.log(`  ${projects.length} projects, ${totalAssignments} assignments`);
+  console.log(`  ${projects.length} projects, ${totalTickets} tickets`);
   console.log(`  ${playbooks.length} playbooks`);
   console.log(`  agent sessions seeded into syntaur.db`);
   console.log(`\nLaunch the dashboard against it with:`);

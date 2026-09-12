@@ -57,7 +57,7 @@ function makeBroker(
   };
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'assignments'),
+    assignmentsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     broadcast: () => {},
     clientFactory,
@@ -141,7 +141,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
     });
     broker = createChatBroker({
       projectsDir: join(sandbox, 'projects'),
-      assignmentsDir: join(sandbox, 'assignments'),
+      assignmentsDir: join(sandbox, 'tickets'),
       syntaurHome: sandbox,
       broadcast: () => {},
       clientFactory: (input) => {
@@ -239,7 +239,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
 
   it('serves harness-cache from the record for a row-less agent', async () => {
     const assignId = 'probe-assign-1';
-    const assignDir = join(sandbox, 'assignments', 'probe');
+    const assignDir = join(sandbox, 'tickets', 'probe');
     await mkdir(assignDir, { recursive: true });
     const resolved: ResolvedAssignment = {
       ticketDir: assignDir,
@@ -375,7 +375,7 @@ const worksThenSays = (text: string, id = 'm1'): FakeTurn => ({
 
 async function writeAssignmentMd(): Promise<void> {
   await writeFile(
-    join(assignmentDir, 'assignment.md'),
+    join(assignmentDir, 'ticket.md'),
     [
       '---',
       `id: ${ASSIGNMENT_ID}`,
@@ -450,7 +450,7 @@ function makeAssignmentBroker(
   frames = [];
   broker = createChatBroker({
     projectsDir: join(sandbox, 'projects'),
-    assignmentsDir: join(sandbox, 'assignments'),
+    assignmentsDir: join(sandbox, 'tickets'),
     syntaurHome: sandbox,
     loadDefinitions: opts.loadDefinitions,
     broadcast: (message) =>
@@ -505,7 +505,7 @@ function staleSessionFrames(agentId: string): boolean[] {
 describe.sequential('live session bookkeeping (Task 5)', () => {
   beforeEach(async () => {
     sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-bookkeeping-'));
-    assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'assignments', 'chat-demo');
+    assignmentDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
     worktree = join(sandbox, 'worktree');
     clients = [];
     frames = [];
@@ -1794,7 +1794,7 @@ const plannerSlashCommands = [
 
     upsertChatSession({
       sessionKey: sessionKey('planner'),
-      assignmentId: ASSIGNMENT_ID,
+      ticketId: ASSIGNMENT_ID,
       projectSlug: 'syntaur-meta',
       assignmentSlug: 'chat-demo',
       agentId: 'planner',

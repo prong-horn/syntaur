@@ -11,7 +11,7 @@ Run `syntaur doctor` and help the user interpret the results, remediating issues
 
 - `/doctor-syntaur` — run all checks
 - `/doctor-syntaur --verbose` — include passing checks in the summary
-- `/doctor-syntaur --only <check-id>` — re-run one check after remediation (e.g. `--only assignment.workspace-missing`)
+- `/doctor-syntaur --only <check-id>` — re-run one check after remediation (e.g. `--only ticket.workspace-missing`)
 
 ## Instructions
 
@@ -58,17 +58,17 @@ Format each issue like:
   fix: remediation.suggestion
 ```
 
-### Step 5: Establish your write boundary (before offering any edit)
+### Step 5: Establish your write boundary (before offering tny edit)
 
-Doctor reports issues from anywhere under `~/.syntaur/`. You are NOT allowed to edit most of those files. Before offering any remediation edit, compute your current write boundary:
+Doctor reports issues from anywhere under `~/.syntaur/`. You are NOT allowed to edit most of those files. Before offering tny remediation edit, compute your current write boundary:
 
 1. Read `.syntaur/context.json` in the current working directory (the same `cwd` you ran the CLI from).
-2. If the file does not exist, or exists but has no assignment fields (`projectSlug`, `assignmentSlug`, `projectDir`, `assignmentDir`):
-   - You have NO assignment context.
+2. If the file does not exist, or exists but has no ticket fields (`projectSlug`, `ticketSlug`, `projectDir`, `ticketDir`):
+   - You have NO ticket context.
    - Your only permitted edit target is the literal file `<cwd>/.syntaur/context.json` itself.
    - For every other issue, show the `suggestion` text verbatim and do NOT offer to edit.
-3. If the file has assignment fields, record these paths:
-   - `assignmentDir` — your per-assignment write zone.
+3. If the file has ticket fields, record these paths:
+   - `ticketDir` — your per-ticket write zone.
    - `workspaceRoot` — your code write zone (may be absent).
    - `<cwd>/.syntaur/context.json` — always editable.
 
@@ -80,12 +80,12 @@ For each error or warning, determine what kind of offer is appropriate.
 
 - **`auto-safe`** — offer to run `syntaur doctor --fix --only <id>`. Ask the user to confirm before running. (v1 has no auto-safe remediations yet — this is a placeholder for future versions.)
 - **`auto-destructive`** — never auto-run. Describe the impact and wait for the user.
-- **`manual`** — apply the path check below before offering an edit.
+- **`manual`** — apply the path check below before offering tn edit.
 
 **For `manual` remediations, compare each path in `affected[]` against your boundary from Step 5:**
 
-1. Let `allowed = [assignmentDir, workspaceRoot, <cwd>/.syntaur/context.json]` (dropping any undefined entries).
-2. A path is within boundary if and only if it equals `<cwd>/.syntaur/context.json` OR it is a strict path-prefix descendant of `assignmentDir` or `workspaceRoot`. Use path-segment comparison, not substring matching.
+1. Let `allowed = [ticketDir, workspaceRoot, <cwd>/.syntaur/context.json]` (dropping tny undefined entries).
+2. A path is within boundary if and only if it equals `<cwd>/.syntaur/context.json` OR it is a strict path-prefix descendant of `ticketDir` or `workspaceRoot`. Use path-segment comparison, not substring matching.
 3. If **every** path in `affected[]` is within boundary, you may offer to make the edit. Show a diff first; wait for confirmation; then write.
 4. If **any** path in `affected[]` is outside your boundary, do NOT offer to edit. Show the `suggestion` text verbatim and tell the user they or another tool must apply it.
 
@@ -94,7 +94,7 @@ For each error or warning, determine what kind of offer is appropriate.
 - `project.md`, `agent.md`, `claude.md`, `manifest.md`, `_status.md`
 - Any file starting with `_index-` or ending in `_index.md`
 - Any file in a project's `resources/` or `memories/` directory
-- Any file inside a different assignment's folder (i.e. `projects/<m>/assignments/<other>/...` where `<other> !== assignmentSlug`)
+- Any file inside a different ticket's folder (i.e. `projects/<m>/tickets/<other>/...` where `<other> !== ticketSlug`)
 
 ### Step 7: Suggest a follow-up
 

@@ -56,6 +56,11 @@ export function getField(frontmatter: string, key: string): string | null {
   return parseSimpleValue(match[1]);
 }
 
+/** Sidecar files use `ticket:` (Phase A); accept legacy `assignment:` too. */
+function sidecarTicketSlug(frontmatter: string): string {
+  return getField(frontmatter, 'ticket') ?? getField(frontmatter, 'assignment') ?? '';
+}
+
 /**
  * Extract an indented scalar field (one level deep) from frontmatter text.
  */
@@ -657,7 +662,7 @@ export interface ParsedPlan {
 export function parsePlan(fileContent: string): ParsedPlan {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     status: getField(fm, 'status') ?? '',
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
@@ -676,7 +681,7 @@ export interface ParsedScratchpad {
 export function parseScratchpad(fileContent: string): ParsedScratchpad {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     updated: getField(fm, 'updated') ?? '',
     body,
   };
@@ -694,7 +699,7 @@ export interface ParsedHandoff {
 export function parseHandoff(fileContent: string): ParsedHandoff {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     handoffCount: parseInt(getField(fm, 'handoffCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     body,
@@ -713,7 +718,7 @@ export interface ParsedDecisionRecord {
 export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     decisionCount: parseInt(getField(fm, 'decisionCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     body,
@@ -775,7 +780,7 @@ export function parseComments(fileContent: string): ParsedComments {
     entries.push(entry);
   }
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     entries,
@@ -810,7 +815,7 @@ export function parseProgress(fileContent: string): ParsedProgress {
     entries.push({ timestamp, body: entryBody });
   }
   return {
-    assignment: getField(fm, 'assignment') ?? '',
+    assignment: sidecarTicketSlug(fm),
     entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
     updated: getField(fm, 'updated') ?? '',
     entries,
@@ -856,5 +861,6 @@ export function extractMermaidGraph(body: string): string | null {
   return match ? match[1].trim() : null;
 }
 
-/** Core rename alias — dashboard keeps `parseAssignmentFull` through Task 2. */
+/** Core rename aliases — dashboard keeps `parseAssignment*` through Phase A. */
 export const parseTicketFull = parseAssignmentFull;
+export const parseTicketSummary = parseAssignmentSummary;

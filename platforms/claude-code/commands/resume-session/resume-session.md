@@ -1,6 +1,6 @@
 ---
 name: resume-session
-description: Re-orient a fresh Claude Code session on the active Syntaur assignment without re-reading the full transcript
+description: Re-orient a fresh Claude Code session on the active Syntaur ticket without re-reading the full transcript
 arguments:
   - name: args
     description: "No arguments. Reads .syntaur/context.json and any open handoff.md."

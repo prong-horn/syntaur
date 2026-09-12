@@ -537,14 +537,14 @@ export function createWriteRouter(
       const title = fields.title;
       const timestamp = fields.created || nowTimestamp();
 
-      await ensureDir(resolve(projectDir, 'assignments'));
+      await ensureDir(resolve(projectDir, 'tickets'));
 
       await writeFileForce(resolve(projectDir, 'project.md'), content);
 
       try {
         const companions: Array<[string, string]> = [
           [resolve(projectDir, 'manifest.md'), renderManifest({ slug, timestamp })],
-          [resolve(projectDir, '_index-assignments.md'), renderIndexAssignments({ slug, title, timestamp })],
+          [resolve(projectDir, '_index-tickets.md'), renderIndexAssignments({ slug, title, timestamp })],
           [resolve(projectDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
           [resolve(projectDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
           [resolve(projectDir, '_status.md'), renderStatus({ slug, title, timestamp })],
@@ -610,7 +610,7 @@ export function createWriteRouter(
         return;
       }
 
-      const ticketDir = resolve(projectDir, 'assignments', ticketSlug);
+      const ticketDir = resolve(projectDir, 'tickets', ticketSlug);
       if (await fileExists(ticketDir)) {
         res.status(409).json({
           error: `Assignment "${ticketSlug}" already exists in project "${projectSlug}"`,
@@ -634,7 +634,7 @@ export function createWriteRouter(
             by: null,
           })
         : content;
-      await writeFileForce(resolve(ticketDir, 'assignment.md'), seededContent);
+      await writeFileForce(resolve(ticketDir, 'ticket.md'), seededContent);
 
       try {
         const companions: Array<[string, string]> = [
@@ -759,12 +759,66 @@ export function createWriteRouter(
     }
   });
 
-  // Set (or clear) a single assignment's `workflow:` override, then re-derive
+  // Set (or clear) a single ticket's `workflow:` override, then re-derive
   // against the newly-resolved workflow. Used by the TicketDetail workflow
   // dropdown (Task 13). The field is written BEFORE recompute so the derive runs
   // against the NEW workflow (recompute resolves the binding from disk).
+  router.put('/api/tickets/:id/workflow', async (req: Request, res: Response) => {
+    try {
+      if (!ticketsDir) {
+        res.status(501).json({ error: 'Standalone assignments not configured on this server' });
+        return;
+      }
+      const id = getParam(req.params.id);
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: `Ticket "${id}" not found` });
+        return;
+      }
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
+      if (!(await fileExists(ticketPath))) {
+        res.status(404).json({ error: 'Ticket not found' });
+        return;
+      }
+      const workflow = (req.body ?? {}).workflow;
+      const clearing = workflow === null || workflow === undefined || workflow === '';
+      if (!clearing) {
+        if (typeof workflow !== 'string') {
+          res.status(400).json({ error: 'workflow must be a string or null' });
+          return;
+        }
+        const { readConfig } = await import('../utils/config.js');
+        const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
+        const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
+        if (!known.has(workflow)) {
+          res.status(400).json({ error: `Unknown workflow "${workflow}"` });
+          return;
+        }
+      }
 
+      let content = await readFile(ticketPath, 'utf-8');
+      if (clearing) {
+        const closingIdx = content.indexOf('\n---', 4);
+        if (closingIdx !== -1) {
+          const fm = content.slice(0, closingIdx).replace(/^workflow:.*\n?/m, '');
+          content = fm + content.slice(closingIdx);
+        }
+      } else {
+        content = setTopLevelField(content, 'workflow', workflow as string);
+      }
+      content = setTopLevelField(content, 'updated', nowTimestamp());
+      await writeFileForce(ticketPath, content);
 
+      const { recomputeAssignmentDir } = await import('../lifecycle/recompute.js');
+      await recomputeAssignmentDir(resolve(ticketPath, '..'), 'workflow-change', 'human');
+
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket });
+    } catch (error) {
+      console.error('Error setting ticket workflow:', error);
+      res.status(500).json({ error: `Failed to set workflow: ${(error as Error).message}` });
+    }
+  });
 
 
 
@@ -854,9 +908,9 @@ export function createWriteRouter(
         const ticketPath = resolve(
           projectsDir,
           projectSlug,
-          'assignments',
+          'tickets',
           ticketSlug,
-          'assignment.md',
+          'ticket.md',
         );
         if (!(await fileExists(ticketPath))) {
           res.status(404).json({ error: 'Assignment not found' });
@@ -907,9 +961,9 @@ export function createWriteRouter(
         const ticketPath = resolve(
           projectsDir,
           projectSlug,
-          'assignments',
+          'tickets',
           ticketSlug,
-          'assignment.md',
+          'ticket.md',
         );
         if (!(await fileExists(ticketPath))) {
           res.status(404).json({ error: 'Assignment not found' });
@@ -972,9 +1026,9 @@ export function createWriteRouter(
         const ticketPath = resolve(
           projectsDir,
           projectSlug,
-          'assignments',
+          'tickets',
           ticketSlug,
-          'assignment.md',
+          'ticket.md',
         );
         await handleWorktreeCreate(req, res, {
           ticketPath,
@@ -1007,7 +1061,7 @@ export function createWriteRouter(
           res.status(404).json({ error: `Assignment "${id}" not found` });
           return;
         }
-        const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+        const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
         // Standalone: resolveTicketById returns the UUID as `ticketSlug`.
         // For branch naming we need the user-visible slug from frontmatter, so
         // parse it here and pass that down. parseAssignmentFull falls back to
@@ -1167,7 +1221,7 @@ export function createWriteRouter(
   ): Promise<void> {
     const projectSlug = getParam(req.params.slug);
     const ticketSlug = getParam(req.params.aslug);
-    const ticketPath = resolve(projectsDir, projectSlug, 'assignments', ticketSlug, 'assignment.md');
+    const ticketPath = resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md');
     if (!(await fileExists(ticketPath))) {
       res.status(404).json({ error: 'Assignment not found' });
       return;
@@ -1201,7 +1255,7 @@ export function createWriteRouter(
       res.status(404).json({ error: `Assignment "${id}" not found` });
       return;
     }
-    const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+    const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
     const content = await readFile(ticketPath, 'utf-8');
     const reason = archived ? archiveReason(req.body) : null;
     await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
@@ -1240,7 +1294,7 @@ export function createWriteRouter(
 
 
   // =========================================================================
-  // Standalone (by-id) routes — `~/.syntaur/assignments/<uuid>/`
+  // Standalone (by-id) routes — `~/.syntaur/tickets/<uuid>/`
   // Active only when the write router was constructed with an ticketsDir.
   // =========================================================================
 
@@ -1281,7 +1335,7 @@ export function createWriteRouter(
         // Standalone-specific guard: no project.
         if (fields.project && fields.project !== 'null') {
           res.status(400).json({
-            error: 'Standalone assignments cannot have a project; remove "project" or set it to null.',
+            error: 'Standalone tickets cannot have a project; remove "project" or set it to null.',
           });
           return;
         }
@@ -1310,7 +1364,7 @@ export function createWriteRouter(
             by: null,
           });
         }
-        await writeFileForce(resolve(ticketDir, 'assignment.md'), normalizedContent);
+        await writeFileForce(resolve(ticketDir, 'ticket.md'), normalizedContent);
 
         await writeFileForce(
           resolve(ticketDir, 'scratchpad.md'),
@@ -1356,7 +1410,7 @@ export function createWriteRouter(
       }
       const { dependsOn } = req.body || {};
       if (Array.isArray(dependsOn) && dependsOn.length > 0) {
-        res.status(400).json({ error: 'Standalone assignments cannot declare dependsOn.' });
+        res.status(400).json({ error: 'Standalone tickets cannot declare dependsOn.' });
         return;
       }
 
@@ -1385,7 +1439,7 @@ export function createWriteRouter(
         project: null,
         type: typeof type === 'string' ? type : undefined,
       });
-      await writeFileForce(resolve(ticketDir, 'assignment.md'), assignmentContent);
+      await writeFileForce(resolve(ticketDir, 'ticket.md'), assignmentContent);
       await writeFileForce(
         resolve(ticketDir, 'scratchpad.md'),
         renderScratchpad({ ticketSlug: id, timestamp }),
@@ -1555,7 +1609,7 @@ export function createWriteRouter(
         return;
       }
 
-      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Assignment not found' });
@@ -1810,7 +1864,7 @@ export function createWriteRouter(
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
@@ -1899,7 +1953,7 @@ export function createWriteRouter(
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
@@ -1943,7 +1997,7 @@ export function createWriteRouter(
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       if (!(await fileExists(ticketPath))) {
         res.status(404).json({ error: 'Assignment not found' });
         return;
@@ -1977,7 +2031,7 @@ export function createWriteRouter(
         res.status(404).json({ error: `Assignment "${id}" not found` });
         return;
       }
-      const ticketPath = resolve(resolved.ticketDir, 'assignment.md');
+      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
       const currentContent = await readCurrentDocument(ticketPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Assignment not found' });
@@ -2031,7 +2085,7 @@ export function createWriteRouter(
         '../lifecycle/recompute.js'
       );
       const { context, workflowResolver } = await resolveRecomputeContext();
-      const byIdPath = resolve(resolved.ticketDir, 'assignment.md');
+      const byIdPath = resolve(resolved.ticketDir, 'ticket.md');
       const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
 
       // Same derived-status routing as the project route (codex r2 finding 2):
@@ -2179,15 +2233,17 @@ export function createWriteRouter(
         return;
       }
       const id = getParam(req.params.id);
-      const ticketPath = resolve(ticketsDir, id, 'assignment.md');
-      if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Assignment not found' });
+      const resolved = await resolveTicketById(projectsDir, ticketsDir, id);
+      if (!resolved) {
+        res.status(404).json({ error: 'Ticket not found' });
         return;
       }
       const { planApproveCommand } = await import('../commands/derive-verbs.js');
-      await planApproveCommand(id, {});
-      const assignment = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.json({ assignment });
+      await planApproveCommand(resolved.ticketSlug, {
+        project: resolved.projectSlug ?? undefined,
+      });
+      const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
+      res.json({ ticket });
     } catch (error) {
       const message = (error as Error).message;
       res.status(409).json({ error: message });
@@ -2311,7 +2367,7 @@ async function appendCommentTo(
 
   // Audit event (best-effort): comment-added. Author + excerpt ONLY.
   try {
-    const assignmentMdPath = resolve(ticketDir, 'assignment.md');
+    const assignmentMdPath = resolve(ticketDir, 'ticket.md');
     if (await fileExists(assignmentMdPath)) {
       const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
       emitDashboardEvent(fm.id, fm.project, 'comment-added', {
@@ -2369,7 +2425,7 @@ async function toggleCommentResolvedAt(
   // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
   if (changed && previous === false && desired === true) {
     try {
-      const assignmentMdPath = resolve(ticketDir, 'assignment.md');
+      const assignmentMdPath = resolve(ticketDir, 'ticket.md');
       if (await fileExists(assignmentMdPath)) {
         const fm = parseAssignmentFull(await readFile(assignmentMdPath, 'utf-8'));
         emitDashboardEvent(fm.id, fm.project, 'comment-resolved', { commentId });

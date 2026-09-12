@@ -1,10 +1,10 @@
 ---
 name: resume-session
 description: >-
-  Re-orient a fresh Syntaur session on the active assignment without
-  re-reading the full transcript. Resolves the active assignment from the
+  Re-orient a fresh Syntaur session on the active ticket without
+  re-reading the full transcript. Resolves the active ticket from the
   session's open engagement and loads any open handoff. Use when the user says
-  "resume", "pick up where we left off", "continue this assignment", or after
+  "resume", "pick up where we left off", "continue this ticket", or after
   a compact / new session start.
 license: MIT
 metadata:
@@ -15,32 +15,32 @@ metadata:
 # Resume Session
 
 Print a compact orientation block so the agent (and the user) can pick up the
-active assignment cleanly. **Idempotent — does not mutate any state.** Re-run
+active ticket cleanly. **Idempotent — does not mutate any state.** Re-run
 freely; nothing on disk changes.
 
 ## When NOT to use this skill
 
-- Cross-ticket handoff to a downstream assignment — that's `complete-assignment`
+- Cross-ticket handoff to a downstream ticket — that's `complete-ticket`
   (writes `handoff.md`).
-- First-time grab of an assignment — use `/grab-assignment` instead; this skill
+- First-time grab of an ticket — use `/grab-ticket` instead; this skill
   assumes context already exists.
 
-## Step 1: Verify there is an active assignment
+## Step 1: Verify there is an active ticket
 
 Run `syntaur session resume`. The CLI:
 
-1. Resolves the active assignment from the session's OPEN engagement (the
-   assignment this session is currently bound to). `.syntaur/context.json` is
+1. Resolves the active ticket from the session's OPEN engagement (the
+   ticket this session is currently bound to). `.syntaur/context.json` is
    only a workspace marker — it identifies the repository/branch/worktree, not
-   the active assignment.
+   the active ticket.
 2. Aborts (exit 1) with a clear message when there is no open engagement —
-   "No active assignment for this session — grab one first" — telling the user
-   to run `grab-assignment`.
-3. Otherwise resolves the assignment dir from the engagement and reads
-   `<assignmentDir>/handoff.md` (the canonical single-file handoff per
-   assignment, managed by `complete-assignment`) and reports it if its body
+   "No active ticket for this session — grab one first" — telling the user
+   to run `grab-ticket`.
+3. Otherwise resolves the ticket dir from the engagement and reads
+   `<ticketDir>/handoff.md` (the canonical single-file handoff per
+   ticket, managed by `complete-ticket`) and reports it if its body
    has been written beyond the scaffolded placeholder.
-4. Prints a human-readable orientation block (project, assignment, branch,
+4. Prints a human-readable orientation block (project, ticket, branch,
    workspace root, open handoff).
 
 ## Step 2: Read the open handoff (when present)
@@ -48,9 +48,9 @@ Run `syntaur session resume`. The CLI:
 If the CLI reported an open handoff, read that file. It is the highest
 priority signal — there is an outstanding baton to consume.
 
-## Step 3: Read assignment.md and progress.md
+## Step 3: Read ticket.md and progress.md
 
-Always read the current assignment.md (objective, acceptance criteria)
+Always read the current ticket.md (objective, acceptance criteria)
 and the tail of progress.md so you know what has been logged since the last
 handoff.
 
@@ -64,6 +64,6 @@ given on-disk state.
 
 Summarize:
 
-- Active project / assignment / branch.
+- Active project / ticket / branch.
 - Whether there is an open handoff (and a one-line summary if so).
 - Suggested next concrete action.

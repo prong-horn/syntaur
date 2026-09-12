@@ -219,7 +219,7 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   const planFiles = await listPlanFiles(ticketDir);
   if (planFiles.length === 0) {
     throw new Error(
-      `No plan.md (or plan-v<N>.md) found in ${ticketDir}. Run /plan-assignment to create plan.md first.`,
+      `No plan.md (or plan-v<N>.md) found in ${ticketDir}. Run /plan-ticket to create plan.md first.`,
     );
   }
 

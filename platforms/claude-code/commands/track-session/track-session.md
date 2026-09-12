@@ -3,22 +3,22 @@ name: track-session
 description: Register this Claude Code session as an agent session in the Syntaur dashboard
 arguments:
   - name: args
-    description: "Optional flags: --description, --project, --assignment"
+    description: "Optional flags: --description, --project, --ticket"
     required: false
 ---
 
 # /track-session
 
-Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a project/assignment.
+Register the current Claude Code session as an agent session in the Syntaur dashboard. Works standalone or linked to a project/ticket.
 
 Only real Claude Code session IDs are accepted — no synthesis. The real id is written to `.syntaur/context.json` by the SessionStart hook, with `~/.claude/sessions/<pid>.json` as the fallback source.
 
 ## Usage
 
 - `/track-session` — register a standalone session
-- `/track-session --description "exploring auth patterns"` — with a description
-- `/track-session --project <slug> --assignment <slug>` — linked to a project
-- `/track-session --description "auth work" --project <slug> --assignment <slug>` — both
+- `/track-session --description "exploring tuth patterns"` — with a description
+- `/track-session --project <slug> --ticket <slug>` — linked to a project
+- `/track-session --description "auth work" --project <slug> --ticket <slug>` — both
 
 ## Instructions
 
@@ -29,7 +29,7 @@ When the user runs this command:
 Extract optional flags from the argument string:
 - `--description "<text>"` or `--description <text>` — session description
 - `--project <slug>` — project to link to
-- `--assignment <slug>` — assignment to link to
+- `--ticket <slug>` — ticket to link to
 
 ### Step 2: Source the real session id + transcript path
 
@@ -55,16 +55,16 @@ syntaur track-session \
   --pid "$(ps -o ppid= -p $$ | tr -d ' ')" \
   [--description "<text>"] \
   [--project <slug>] \
-  [--assignment <slug>]
+  [--ticket <slug>]
 ```
 
 Omit `--transcript-path` entirely (don't pass an empty string) if no transcript path could be resolved. The `--pid` value is the shell PID that owns the Claude process — the dashboard uses it to disable Resume while this session may still be writing the transcript, forcing users to Fork instead. If `ps` is unavailable, omit `--pid` too.
 
 The CLI prints one of:
 - `Registered standalone agent session <sessionId>.`
-- `Registered agent session <sessionId> for <assignment> in <project>.`
+- `Registered agent session <sessionId> for <ticket> in <project>.`
 
-Registration is idempotent — re-running the command with the same session id safely upserts project/assignment/description onto the existing row.
+Registration is idempotent — re-running the command with the same session id safely upserts project/ticket/description onto the existing row.
 
 ### Step 4: Merge context.json
 
@@ -89,4 +89,4 @@ fi
 Tell the user:
 - The session was registered (include the short session id).
 - It will be auto-stopped when this conversation ends via the SessionEnd hook.
-- If linked to a project, mention which project/assignment.
+- If linked to a project, mention which project/ticket.

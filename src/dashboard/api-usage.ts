@@ -21,7 +21,7 @@ import {
  * Endpoints — all accept `?since=YYYY-MM-DD&until=YYYY-MM-DD&tool=&groupBy=`:
  *   GET /                                            — top-level summary
  *   GET /projects/:projectSlug                       — per-assignment rollup for a project
- *   GET /projects/:projectSlug/assignments/:ticketSlug
+ *   GET /projects/:projectSlug/tickets/:ticketSlug
  *                                                    — event detail for one project-scoped assignment
  *   GET /standalone/:ticketId                    — UUID-keyed standalone variant
  */
@@ -78,7 +78,7 @@ export function createUsageRouter(
     }
   });
 
-  router.get('/projects/:projectSlug/assignments/:ticketSlug', (req, res) => {
+  router.get('/projects/:projectSlug/tickets/:ticketSlug', (req, res) => {
     try {
       initUsageDb();
       const { projectSlug, ticketSlug } = req.params;

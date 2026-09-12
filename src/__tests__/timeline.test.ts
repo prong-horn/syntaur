@@ -53,7 +53,7 @@ tags: []
 async function seedProject(project: string, slug: string, id: string): Promise<void> {
   const dir = resolve(projectsDir, project, 'tickets', slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(slug, id), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), ticketMd(slug, id), 'utf-8');
   // project.md is required by resolveTicketTarget's --project path.
   await writeFile(
     resolve(projectsDir, project, 'project.md'),
@@ -156,7 +156,7 @@ describe('runTimeline', () => {
     const uuid = '11111111-2222-3333-4444-555555555555';
     const dir = resolve(standaloneDir, uuid);
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), assignmentMd(uuid, uuid), 'utf-8');
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd(uuid, uuid), 'utf-8');
     recordEvent({ ticketId: uuid, type: 'status-change', actor: 'human', at: T1 });
 
     const events = await runTimeline(uuid, {});

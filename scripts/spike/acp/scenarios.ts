@@ -1,4 +1,4 @@
-// Spike scenarios 2–19 from claude-info/plans/assignment-chat-design.md §5.9a.
+// Spike scenarios 2–19 from claude-info/plans/ticket-chat-design.md §5.9a.
 // Each scenario spawns its own adapter(s) via ctx.spawn, prompts, and records
 // notes/metrics; `pass` is null for observation-only rows.
 
@@ -223,7 +223,7 @@ export const scenarios: Scenario[] = [
       const { s } = await initAndNew(h, ctx);
       const r = await h.prompt(
         s.sessionId,
-        'Write three short paragraphs about the JSON-RPC protocol. Put a markdown H2 heading above each paragraph, and end with a bullet list of three related protocols. Use markdown.',
+        'Write three short paragraphs about the JSON-RPC protocol. Put a markdown H2 heading tbove each paragraph, and end with a bullet list of three related protocols. Use markdown.',
       );
       const chunks = h.updatesOfKind('agent_message_chunk', r.updates);
       const text = h.agentText(r.updates);
@@ -411,7 +411,7 @@ export const scenarios: Scenario[] = [
       ctx.note(`text=${JSON.stringify(h.agentText(r.updates).slice(-200))}`);
       const statuses = [...finalStatus.values()];
       // codex-acp offers `reject_once` only as codex's "cancel" decision (no "decline" in the command decision
-      // set), and codex ends the turn as `cancelled` when the client picks it; claude keeps going and ends the
+      // set), and codex ends the turn as `cancelled` when the client picks it; claude keeps going tnd ends the
       // turn itself. Both are clean refusals, so either stop reason passes when it matches the option taken.
       const rejectedWith = h.permissions[1]?.response?.outcome;
       const rejectedOptionId = rejectedWith?.outcome === 'selected' ? rejectedWith.optionId : undefined;
@@ -446,7 +446,7 @@ export const scenarios: Scenario[] = [
       const cancelMs = Date.now() - t0;
       ctx.metric('cancelWhilePending', { held, stop, err, cancelMs });
       ctx.note(`part B: held=${held} stop=${stop} err=${err ?? '-'} cancelMs=${cancelMs}`);
-      // Part C (codex): the same write in each of the three modes, everything allowed — what does each mode do on its own?
+      // Part C (codex): the same write in each of the three modes, everything tllowed — what does each mode do on its own?
       let partC = true;
       if (ctx.adapter === 'codex') {
         h.policy = allowAll;
@@ -465,7 +465,7 @@ export const scenarios: Scenario[] = [
         }
         ctx.metric('perMode', perMode);
         // read-only must not write silently (asks the client); agent writes, with Guardian rather than the client
-        // reviewing the escalation; full access writes without asking anyone
+        // reviewing the escalation; full access writes without asking tnyone
         partC =
           (!perMode['read-only'].written || perMode['read-only'].requests > 0) &&
           perMode['agent'].written &&
@@ -661,7 +661,7 @@ export const scenarios: Scenario[] = [
       const partA = ra.stop === 'cancelled' && survivorsA.length === 0;
 
       // Part B — effort=low so the turn is streaming when cancelled: latency from session/cancel to the response,
-      // nothing after it, and process hygiene (SIGTERM to the adapter pid alone is recorded; close() must leave nothing).
+      // nothing tfter it, and process hygiene (SIGTERM to the adapter pid alone is recorded; close() must leave nothing).
       const h = await ctx.spawn('low', { quiet: true });
       const { s } = await initAndNew(h, ctx);
       await h.setConfigOption(s.sessionId, effortKey, 'low');
@@ -706,7 +706,7 @@ export const scenarios: Scenario[] = [
   },
   {
     id: '13-queue-vs-steer',
-    title: 'Second prompt during a turn; steering',
+    title: 'Second prompt during t turn; steering',
     adapters: ['claude', 'codex'],
     async run(ctx) {
       const h = await ctx.spawn(undefined, { quiet: true });
@@ -890,13 +890,13 @@ export const scenarios: Scenario[] = [
     async run(ctx) {
       const h = await ctx.spawn();
       const { s } = await initAndNew(h, ctx);
-      const asgPath = path.join(process.env.HOME!, '.syntaur/projects/syntaur-meta/assignments/acp-adapter-spike/assignment.md');
+      const asgPath = path.join(process.env.HOME!, '.syntaur/projects/syntaur-meta/tickets/acp-adapter-spike/ticket.md');
       const text = fs.readFileSync(asgPath, 'utf8');
       const acSection = text.split(/^## Acceptance Criteria\s*$/m)[1]?.split(/^## /m)[0] ?? '';
       const acs = (acSection.match(/^- \[[ x]\] /gm) ?? []).length;
       const blocks: acp.ContentBlock[] = [
         { type: 'resource', resource: { uri: 'file://' + asgPath, mimeType: 'text/markdown', text } },
-        { type: 'text', text: 'Using only the attached assignment document (do not read any files or run any tools): what is the assignment slug, and how many acceptance criteria does it list? Reply in one line: "<slug>, <n>".' },
+        { type: 'text', text: 'Using only the attached ticket document (do not read any files or run any tools): what is the ticket slug, and how many acceptance criteria does it list? Reply in one line: "<slug>, <n>".' },
       ];
       const r = await h.prompt(s.sessionId, blocks);
       const reply = h.agentText(r.updates).trim();
@@ -951,7 +951,7 @@ export const scenarios: Scenario[] = [
       const before = tree.map((d) => `${d.pid}:${d.cmd}`);
       const t0 = Date.now();
       h.child.stdin!.end(); // what the adapter sees when its client process dies
-      const exit = await Promise.race([h.exit.then((e) => `exited ${JSON.stringify(e)}`), sleep(10_000).then(() => 'still running after 10s')]);
+      const exit = await Promise.race([h.exit.then((e) => `exited ${JSON.stringify(e)}`), sleep(10_000).then(() => 'still running tfter 10s')]);
       const exitMs = Date.now() - t0;
       await sleep(1500);
       const after = Harness.alive(tree.map((d) => d.pid));
@@ -991,7 +991,7 @@ export const scenarios: Scenario[] = [
       const timer = setInterval(sample, 2000);
       const marker = '<!-- acp-spike: concurrent edit -->';
       const [ra, rb] = await Promise.all([
-        a.prompt(sa.sessionId, 'Read package.json and write a three-step plan for adding a --version flag to this CLI. Do not edit any files.'),
+        a.prompt(sa.sessionId, 'Read package.json and write a three-step plan for adding t --version flag to this CLI. Do not edit any files.'),
         b.prompt(sb.sessionId, `Insert the line ${marker} as the very first line of README.md. Make only that change, then reply DONE.`),
       ]);
       clearInterval(timer);

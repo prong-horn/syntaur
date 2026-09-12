@@ -16,8 +16,8 @@ import {
  * shape.
  *
  * Endpoints:
- *   GET /api/projects/:slug/assignments/:aslug/events  — project-nested assignment
- *   GET /api/standalone/assignments/:id/events          — standalone (UUID-keyed)
+ *   GET /api/projects/:slug/tickets/:aslug/events  — project-nested assignment
+ *   GET /api/standalone/tickets/:id/events          — standalone (UUID-keyed)
  *
  * Both resolve the assignment's frontmatter `id` (the key the events table is
  * indexed by), `initEventsDb()`, and return `{ events }` newest-first with each
@@ -33,16 +33,16 @@ export function createEventsRouter(
 ): Router {
   const router = Router();
 
-  // Project-nested: resolve <projectsDir>/<slug>/assignments/<aslug>/assignment.md → frontmatter id.
-  router.get('/projects/:slug/assignments/:aslug/events', async (req, res) => {
+  // Project-nested: resolve <projectsDir>/<slug>/tickets/<aslug>/assignment.md → frontmatter id.
+  router.get('/projects/:slug/tickets/:aslug/events', async (req, res) => {
     try {
       const { slug, aslug } = req.params;
       const assignmentMdPath = resolve(
         projectsDir,
         slug,
-        'assignments',
+        'tickets',
         aslug,
-        'assignment.md',
+        'ticket.md',
       );
       const id = await readAssignmentId(assignmentMdPath);
       if (!id) {
@@ -58,10 +58,10 @@ export function createEventsRouter(
 
   // Standalone: the `:id` param IS the UUID directory name. Re-read the
   // frontmatter `id` (which equals the directory) so the DB key is canonical.
-  router.get('/standalone/assignments/:id/events', async (req, res) => {
+  router.get('/standalone/tickets/:id/events', async (req, res) => {
     try {
       const { id: dirId } = req.params;
-      const assignmentMdPath = resolve(ticketsDir, dirId, 'assignment.md');
+      const assignmentMdPath = resolve(ticketsDir, dirId, 'ticket.md');
       const id = (await readAssignmentId(assignmentMdPath)) ?? dirId;
       res.json({ events: loadEvents(id, req.query) });
     } catch (error) {

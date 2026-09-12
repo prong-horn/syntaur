@@ -1,7 +1,7 @@
 import type { ProtocolContext, RendererKey } from './types.js';
 import {
   renderCursorProtocol,
-  renderCursorAssignment,
+  renderCursorTicket,
 } from '../templates/cursor-rules.js';
 import { renderCodexAgents } from '../templates/codex-agents.js';
 import { renderOpenCodeConfig } from '../templates/opencode-config.js';
@@ -14,19 +14,19 @@ import { renderHermesSoul } from '../templates/hermes-soul.js';
  * byte-identical to calling the underlying renderer directly — the existing
  * cursor/codex/opencode adapters keep producing the same files.
  */
-function toLegacyRendererParams(ctx: ProtocolContext) {
+function toRendererParams(ctx: ProtocolContext) {
   return {
     projectSlug: ctx.projectSlug,
-    assignmentSlug: ctx.ticketSlug,
+    ticketSlug: ctx.ticketSlug,
     projectDir: ctx.projectDir,
-    assignmentDir: ctx.ticketDir,
+    ticketDir: ctx.ticketDir,
   };
 }
 
 export const RENDERERS: Record<RendererKey, (ctx: ProtocolContext) => string> = {
-  codexAgents: (ctx) => renderCodexAgents(toLegacyRendererParams(ctx)),
+  codexAgents: (ctx) => renderCodexAgents(toRendererParams(ctx)),
   cursorProtocol: () => renderCursorProtocol(),
-  cursorAssignment: (ctx) => renderCursorAssignment(toLegacyRendererParams(ctx)),
+  cursorAssignment: (ctx) => renderCursorTicket(toRendererParams(ctx)),
   openCodeConfig: (ctx) => renderOpenCodeConfig({ projectDir: ctx.projectDir }),
-  hermesSoul: (ctx) => renderHermesSoul(toLegacyRendererParams(ctx)),
+  hermesSoul: (ctx) => renderHermesSoul(toRendererParams(ctx)),
 };

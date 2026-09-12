@@ -63,7 +63,7 @@ async function seedAssignment(opts: {
 }): Promise<void> {
   const dir = resolve(projectsDir, 'proj', 'tickets', opts.slug);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), assignmentMd(opts), 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), ticketMd(opts), 'utf-8');
 }
 
 beforeEach(async () => {

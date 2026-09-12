@@ -38,7 +38,7 @@ function findSightings(): Sighting[] {
   const sightings: Sighting[] = [];
   // Match patterns like:
   //   useHotkey({
-  //     keys: 'g a',
+  //     keys: 'g t',
   //   useHotkey({ keys: '?', ...
   // Catches both single-line and multi-line variants.
   const re = /useHotkey\s*\(\s*\{[^}]*?keys:\s*['"`]([^'"`]+)['"`]/g;

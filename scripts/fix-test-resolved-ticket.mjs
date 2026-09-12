@@ -19,15 +19,15 @@ function addCompatFields(c) {
   return c.replace(
     /ticketDir:\s*([^,\n}]+),\s*\n(\s*)projectSlug:\s*([^,\n}]+),\s*\n\s*ticketSlug:\s*([^,\n}]+),\s*\n\s*id:\s*([^,\n}]+),\s*\n\s*standalone:\s*(true|false)/g,
     (m, dir, indent, project, slug, id, standalone) => {
-      if (m.includes('assignmentDir:')) return m;
+      if (m.includes('ticketDir:')) return m;
       return `ticketDir: ${dir},
 ${indent}projectSlug: ${project},
 ${indent}ticketSlug: ${slug},
 ${indent}id: ${id},
 ${indent}standalone: ${standalone},
-${indent}assignmentDir: ${dir},
-${indent}assignmentSlug: ${slug},
-${indent}assignmentId: ${id}`;
+${indent}ticketDir: ${dir},
+${indent}ticketSlug: ${slug},
+${indent}ticketId: ${id}`;
     },
   );
 }
@@ -36,18 +36,18 @@ for (const f of walk(join(ROOT, 'src', '__tests__'))) {
   let c = readFileSync(f, 'utf8');
   const orig = c;
   c = addCompatFields(c);
-  // chat-broker tests: helper param often named ticket but body still says assignment
+  // chat-broker tests: helper param often named ticket but body still says ticket
   if (f.includes('chat-broker')) {
-    c = c.replace(/\bawait broker\.(send|withdraw|cancel|getParticipants|setParticipants|reindex|items)\(\{\s*assignment,/g, (m) =>
-      m.replace('assignment,', 'ticket,'),
+    c = c.replace(/\bawait broker\.(send|withdraw|cancel|getParticipants|setParticipants|reindex|items)\(\{\s*ticket,/g, (m) =>
+      m.replace('ticket,', 'ticket,'),
     );
-    c = c.replace(/\bbroker\.(send|withdraw|cancel|getParticipants|setParticipants|reindex|items)\(assignment/g, (m, _a, method) =>
+    c = c.replace(/\bbroker\.(send|withdraw|cancel|getParticipants|setParticipants|reindex|items)\(ticket/g, (m, _a, method) =>
       `broker.${method}(ticket`,
     );
-    c = c.replace(/\bensureSession\(assignment/g, 'ensureSession(ticket');
-    c = c.replace(/\bawait ensureTicketSessions\(assignment\)/g, 'await ensureTicketSessions(ticket)');
-    c = c.replace(/const assignment =/g, 'const ticket =');
-    c = c.replace(/function assignment\(/g, 'function ticket(');
+    c = c.replace(/\bensureSession\(ticket/g, 'ensureSession(ticket');
+    c = c.replace(/\bawait ensureTicketSessions\(ticket\)/g, 'await ensureTicketSessions(ticket)');
+    c = c.replace(/const ticket =/g, 'const ticket =');
+    c = c.replace(/function ticket\(/g, 'function ticket(');
   }
   if (c !== orig) {
     writeFileSync(f, c);

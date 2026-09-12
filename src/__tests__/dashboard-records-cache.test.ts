@@ -19,9 +19,12 @@ import { useHermeticSyntaurHome } from './hermetic-root.js';
 useHermeticSyntaurHome();
 
 let testDir: string;
+let ticketsDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-cache-test-'));
+  ticketsDir = resolve(testDir, 'tickets');
+  await mkdir(ticketsDir, { recursive: true });
   // Records cache is module-global; clear it so a prior test's snapshot for a
   // (now-deleted) tmp dir can never bleed into this one.
   invalidateRecordsCache();
@@ -77,7 +80,7 @@ async function seedProjectWithAssignment(status: string): Promise<string> {
   const ticketDir = resolve(projectDir, 'tickets', 'test-assignment');
   await mkdir(ticketDir, { recursive: true });
   await writeFile(resolve(projectDir, 'project.md'), projectMd('test-project', 'Test Project'), 'utf-8');
-  await writeFile(resolve(ticketDir, 'ticket.md'), assignmentMd('test-assignment', status), 'utf-8');
+  await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('test-assignment', status), 'utf-8');
   return resolve(ticketDir, 'ticket.md');
 }
 
@@ -123,7 +126,7 @@ describe('records cache', () => {
 
     // Mutate the file directly on disk, bypassing every router (so nothing
     // invalidates). A live (non-cached) read would see in_progress.
-    await writeFile(ticketPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, ticketMd('test-assignment', 'in_progress'), 'utf-8');
 
     // Cache is still serving the warm snapshot — proves it is not re-fanning out.
     const cached = await getOverview(testDir);
@@ -157,7 +160,7 @@ describe('records cache', () => {
 
   it('returns fresh data immediately after a dashboard write (no stale-read-after-write)', async () => {
     await seedProjectWithAssignment('pending');
-    const router = createWriteRouter(testDir);
+    const router = createWriteRouter(testDir, ticketsDir);
 
     // Warm the cache with the pending state.
     const before = await getOverview(testDir);
@@ -168,9 +171,9 @@ describe('records cache', () => {
     const status = await invokeRoute(
       router,
       'patch',
-      '/api/projects/:slug/tickets/:aslug',
-      { slug: 'test-project', aslug: 'test-assignment' },
-      { content: assignmentMd('test-assignment', 'in_progress') },
+      '/api/tickets/:id',
+      { id: 'test-assignment-id' },
+      { content: ticketMd('test-assignment', 'in_progress') },
     );
     expect(status).toBe(200);
 
@@ -189,7 +192,7 @@ describe('records cache', () => {
     expect(before.stats.inProgressAssignments).toBe(0);
 
     // Mutate on disk, bypassing every router.
-    await writeFile(ticketPath, assignmentMd('test-assignment', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, ticketMd('test-assignment', 'in_progress'), 'utf-8');
 
     // A malformed body short-circuits to 400 before any global status-config
     // read/write, but it must still run the invalidation wrapper's `finally` —
@@ -209,7 +212,7 @@ describe('records cache', () => {
     await writeFile(resolve(projectDir, 'project.md'), projectMd('wsp', 'WSP'), 'utf-8');
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      assignmentMd('has-worktree', 'in_progress').replace(
+      ticketMd('has-worktree', 'in_progress').replace(
         'worktreePath: null\n  branch: null',
         'worktreePath: /tmp/wt\n  branch: feature-x',
       ),

@@ -1,10 +1,10 @@
 ---
 name: log-progress
 description: >-
-  Append a timestamped entry to the active assignment's `progress.md`,
+  Append a timestamped entry to the active ticket's `progress.md`,
   bumping `entryCount` and `updated` in its frontmatter. Use after every
-  meaningful action — completing an acceptance criterion, finishing a plan
-  task, hitting a blocker, deciding on an approach — per the Keep Records
+  meaningful action — completing tn acceptance criterion, finishing t plan
+  task, hitting t blocker, deciding on an approach — per the Keep Records
   Updated playbook. Triggers on "log progress", "note progress", "record
   this in progress", or whenever the playbook says to update records.
 license: MIT
@@ -15,12 +15,12 @@ metadata:
 
 # Log Progress
 
-Append a structured timestamped entry to the active assignment's
-`<assignmentDir>/progress.md`, and update its frontmatter. CLI-mediated via
+Append a structured timestamped entry to the active ticket's
+`<ticketDir>/progress.md`, and update its frontmatter. CLI-mediated via
 `syntaur progress log "<text>"` — the command stamps the timestamp, inserts the
 entry reverse-chronologically (newest right after the `# Progress` H1), replaces
 the `No progress yet.` placeholder, bumps `entryCount` + `updated`, and preserves
-the `assignment`/`generated` frontmatter. Re-running with the same body produces a
+the `ticket`/`generated` frontmatter. Re-running with the same body produces a
 duplicate entry, which is intentional (timestamps differ).
 
 This skill implements the **Keep Records Updated** playbook: agents must keep
@@ -30,20 +30,20 @@ records current in real-time, especially after every meaningful action.
 
 - The action belongs in `decision-record.md` (architecturally significant
   decisions with rationale) — write to that file, not progress.md.
-- The information is for the next session of the SAME assignment — append to
+- The information is for the next session of the SAME ticket — append to
   `progress.md` (this skill) and read `handoff.md` on resume when present.
 - The information is a question for the user — write to `comments.md` via
   `syntaur comment` (CLI-mediated).
-- The information is a follow-up assignment idea — open a new assignment
-  via `/create-assignment`.
+- The information is a follow-up ticket idea — open a new ticket
+  via `/create-ticket`.
 
-## Step 1: Verify there is an active assignment
+## Step 1: Verify there is an active ticket
 
-The active assignment is resolved from the session's open engagement — `syntaur
+The active ticket is resolved from the session's open engagement — `syntaur
 progress log` (Step 3) targets it automatically. `.syntaur/context.json` is only
-a workspace marker; do not read the assignment from it. If there is no open
-engagement (no active assignment), the CLI aborts with "No active assignment for
-this session — grab one first." Run `grab-assignment` first.
+a workspace marker; do not read the ticket from it. If there is no open
+engagement (no active ticket), the CLI aborts with "No active ticket for
+this session — grab one first." Run `grab-ticket` first.
 
 ## Step 2: Compose the entry
 
@@ -71,14 +71,14 @@ Run:
 syntaur progress log "<your composed entry body>"
 ```
 
-The command resolves the active assignment from the session's open engagement
-(or pass `--assignment <slug> [--project <slug>]` to target one explicitly),
+The command resolves the active ticket from the session's open engagement
+(or pass `--ticket <slug> [--project <slug>]` to target one explicitly),
 then atomically:
 
 - Inserts the entry immediately after the `# Progress` H1 (newest first,
   reverse-chronological), replacing the `No progress yet.` placeholder on the
   first real entry.
-- Increments `entryCount` and bumps `updated`, preserving `assignment` and
+- Increments `entryCount` and bumps `updated`, preserving `ticket` and
   `generated`.
 
 Quote the body so the shell passes it as a single argument. Multi-line bodies
