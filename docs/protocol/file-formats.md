@@ -489,7 +489,7 @@ decisionCount: 1
 
 **Date:** 2026-03-17T16:30:00Z
 **Status:** accepted
-**Context:** Need to choose a JWT signing tlgorithm. Options are HS256 (symmetric)
+**Context:** Need to choose a JWT signing algorithm. Options are HS256 (symmetric)
 or RS256 (asymmetric). The auth-requirements resource specifies that tokens may
 be verified by multiple services.
 **Decision:** Use RS256 (asymmetric) so that services only need the public key to
@@ -887,7 +887,7 @@ The `archived` status is a **human-authored override** stored in `project.md` fr
 |---------|---------|------------|
 | Status summary | Status and progress fraction as text | Rebuild script |
 | Tickets | Checklist of tickets with links, status, and assignee/dependency info | Rebuild script |
-| Dependency Graph | Mermaid graph showing tssignment dependencies with color-coded statuses | Rebuild script |
+| Dependency Graph | Mermaid graph showing ticket dependencies with color-coded statuses | Rebuild script |
 | Needs Attention | Summary of blocked, failed, and unanswered items | Rebuild script |
 
 ### Example
@@ -1032,7 +1032,7 @@ Memory files live in the `memories/` folder and represent learnings, patterns, o
 | `source` | string | agent name or `"human"` | required | — | Who created this memory. Tracks provenance. |
 | `sourceTicket` | string or null | ticket slug | optional | `null` | The ticket where this learning originated. |
 | `relatedTickets` | array of strings | ticket slugs | optional | `[]` | Tickets that benefit from this memory. |
-| `scope` | string (enum) | `ticket`, `project`, `global` | required | — | How broadly this learning tpplies. |
+| `scope` | string (enum) | `ticket`, `project`, `global` | required | — | How broadly this learning applies. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was created. |
 | `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was last modified. |
 | `tags` | array of strings | any | optional | `[]` | Freeform tags for categorization and search. |
@@ -1120,7 +1120,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
 | `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets a ticket with no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
 | `terminal` | string (enum) or null | `terminal-app`, `iterm`, `ghostty`, `alacritty`, `warp`, `kitty`, `cmux` | optional | `null` (platform default) | Which terminal `syntaur open` opens at a worktree. |
-| `session.idleSweepHours` | number | > 0 | optional | `6` | How long tn `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
+| `session.idleSweepHours` | number | > 0 | optional | `6` | How long an `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
 | `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
 | `integrations.codexPluginDir` | string or null | absolute path | optional | `null` | Override location of the Codex plugin directory. |
 | `integrations.codexMarketplacePath` | string or null | absolute path | optional | `null` | Override path to a Codex marketplace manifest. |
@@ -1176,7 +1176,7 @@ Personal development machine. Projects stored in default location.
 **Ownership:** Human-authored (read-only to agents)
 **Purpose:** Define behavioral rules, workflows, and conventions that agents must follow.
 
-Playbooks are global — they apply across all projects and tickets. They are composable, short markdown files with imperative rules that get injected into agent context at decision points (grabbing tssignments, planning, completing work).
+Playbooks are global — they apply across all projects and tickets. They are composable, short markdown files with imperative rules that get injected into agent context at decision points (grabbing tickets, planning, completing work).
 
 ### Frontmatter Schema
 
@@ -1205,8 +1205,8 @@ The body contains imperative rules and workflows in markdown. Guidelines:
 ---
 name: "Test Before Done"
 slug: test-before-done
-description: "Agents must run tests and verify acceptance criteria before marking tssignments complete"
-when_to_use: "Before transitioning tn ticket to review or completed"
+description: "Agents must run tests and verify acceptance criteria before marking tickets complete"
+when_to_use: "Before transitioning a ticket to review or completed"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-04-02T00:00:00Z"
 tags:
@@ -1216,7 +1216,7 @@ tags:
 
 # Test Before Done
 
-Before transitioning tn ticket to `review` or `completed`:
+Before transitioning a ticket to `review` or `completed`:
 
 1. **Run the test suite.** If the project has tests, run them. All must pass.
 2. **Check every acceptance criterion.** Go through them one by one.

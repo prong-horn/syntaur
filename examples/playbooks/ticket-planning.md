@@ -15,7 +15,7 @@ tags:
 
 Rules for versioned plan files during planning.
 
-1. When planning tn ticket for the first time, write `plan.md` under the ticket directory (via `syntaur plan create` or the `plan-ticket` skill).
+1. When planning a ticket for the first time, write `plan.md` under the ticket directory (via `syntaur plan create` or the `plan-ticket` skill).
 
 2. If asked to create a new plan after a prior plan has been implemented, write the next versioned file (`plan-v2.md`, `plan-v3.md`, …) via `syntaur plan version` or the `replan` skill.
 

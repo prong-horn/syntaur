@@ -1171,7 +1171,7 @@ export async function getProjectDetail(
 
 /**
  * Get full ticket detail with plan, scratchpad, handoff, and decision record.
- * GET /api/projects/:slug/tickets/:aslug
+ * Served through GET /api/tickets/:id
  */
 /**
  * Build the slim, camelCase engagement projection for a ticket's

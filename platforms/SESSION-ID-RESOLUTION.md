@@ -140,7 +140,7 @@ the process pid to a hook?** Finding from this branch's wired Codex hooks
 
 So Codex exposes no real id to any currently-wired hook, and capture-at-birth
 (stamping the generic marker) is **not possible today** without Codex either
-adding t session-start event that surfaces the rollout id/pid, or surfacing tn
+adding t session-start event that surfaces the rollout id/pid, or surfacing an
 id on an existing hook's stdin. If/when it does, an early hook can
 `writeRuntimeMarker(<codexPid>, …)` and both the resolver (layer 4) and the
 Codex cleanup hook will resolve it exactly.

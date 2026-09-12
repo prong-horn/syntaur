@@ -239,7 +239,7 @@ Slash commands (`/grab-ticket` etc.) are thin wrappers that delegate to the inst
 | Skill | Trigger | Purpose |
 |-------|---------|---------|
 | `/syntaur-protocol` | Background — auto-loaded when working with Syntaur files | Core write boundary rules and protocol knowledge |
-| `/grab-ticket` | User says "grab ticket" or starts work on a project | Discover pending tssignments, claim one, create context.json |
+| `/grab-ticket` | User says "grab ticket" or starts work on a project | Discover pending tickets, claim one, create context.json |
 | `/create-project` | User wants to create a new project | Run CLI scaffolding, guide through editing project files |
 | `/create-ticket` | User wants to add a ticket to a project | Create ticket with all supporting files |
 | `/plan-ticket` | User wants to plan current ticket | Explore workspace, write the next `plan-v<N>.md` |
@@ -270,7 +270,7 @@ syntaur                    # Dashboard is the default command
 - **Overview page:** Project stats, quick actions, attention items
 - **Project detail:** Ticket listing and status
 - **Ticket detail:** Full ticket view with all fields, criteria checklist
-- **Kanban board:** Drag tssignments between status columns
+- **Kanban board:** Drag tickets between status columns
 - **Agent sessions:** Track active/completed/stopped agent sessions
 - **Real-time updates:** WebSocket pushes file changes to the browser
 - **Markdown editing:** Edit project.md, ticket.md, plan files, scratchpad.md in-browser
@@ -282,7 +282,7 @@ syntaur                    # Dashboard is the default command
 - `GET /api/projects/:slug` — Project detail with tickets
 - `GET /api/projects/:slug/tickets/:aslug` — Ticket detail
 - `GET /api/tickets` — All tickets across projects
-- `GET /api/attention` — Items needing tttention
+- `GET /api/attention` — Items needing attention
 - `GET /api/agent-sessions` — Agent session list
 - `POST /api/projects` — Create project
 - `POST /api/projects/:slug/tickets` — Create ticket
@@ -368,7 +368,7 @@ syntaur dashboard
 ### Agent Workflow
 ```bash
 # In Claude Code, use skills:
-/grab-ticket my-first-project       # Claim a pending tssignment
+/grab-ticket my-first-project       # Claim a pending ticket
 /plan-ticket                         # Write implementation plan
 # ... do the work ...
 /complete-ticket                     # Handoff and complete
@@ -401,7 +401,7 @@ Read by `/plan-ticket` and `/complete-ticket` to determine what the current agen
 ## Common Questions
 
 **Q: How do I see what tickets are available?**
-A: Use `/grab-ticket <project-slug>` — it lists pending tssignments. Or check the dashboard, or read `_index-tickets.md`.
+A: Use `/grab-ticket <project-slug>` — it lists pending tickets. Or check the dashboard, or read `_index-tickets.md`.
 
 **Q: Can two agents work on the same ticket?**
 A: No. Single-writer guarantee — one agent per ticket folder. Use separate tickets for parallel work.

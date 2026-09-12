@@ -47,7 +47,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur plan-ready',
-    description: 'Transition a ready_for_planning tssignment to ready_to_implement once a plan has been written and approved.',
+    description: 'Transition a ready_for_planning ticket to ready_to_implement once a plan has been written and approved.',
     example: 'syntaur plan-ready implement-overview --project ui-overhaul',
   },
   {
@@ -180,7 +180,7 @@ const WORKFLOW: HelpChecklistItem[] = [
   },
   {
     title: 'Assign the work',
-    detail: 'Setting tn assignee before starting is recommended for clarity, but not required.',
+    detail: 'Setting an assignee before starting is recommended for clarity, but not required.',
     command: CLI_COMMANDS[4],
   },
   {
@@ -207,7 +207,7 @@ const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }>
   },
   ready_for_planning: {
     meaning: 'The ticket is fully shaped; a plan needs to be written before implementation can begin.',
-    useWhen: 'Use ready_for_planning tfter the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
+    useWhen: 'Use ready_for_planning after the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
   },
   ready_to_implement: {
     meaning: 'The plan has been written and approved; the ticket is ready to start coding.',
@@ -339,7 +339,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
     navigation: [
       {
         label: 'Overview',
-        description: 'Triage hub showing tssignments that need action, recent activity, progress stats, and first-run setup guidance.',
+        description: 'Triage hub showing tickets that need action, recent activity, progress stats, and first-run setup guidance.',
         href: '/',
       },
       {

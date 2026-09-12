@@ -18,7 +18,7 @@ Drop the active ticket binding from the current session. The ticket itself is le
 
 This is the inverse of `grab-ticket`. Unlike `complete-ticket`, it does **not** transition lifecycle state, write a handoff, or close out the work. Use it when:
 
-- The user grabbed the wrong tssignment.
+- The user grabbed the wrong ticket.
 - The user wants to switch focus without finishing or formally reviewing the current one.
 - Session context was set up earlier and is now stale.
 

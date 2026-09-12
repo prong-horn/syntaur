@@ -32,7 +32,7 @@ tools.
 
 Common requests → flags:
 
-- "pending tssignments" → `--status pending`
+- "pending tickets" → `--status pending`
 - "in-progress" / "active" → `--status in_progress`
 - "stuff blocked" → `--status blocked`
 - "everything in <project>" → `--project <slug>`

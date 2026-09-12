@@ -2,7 +2,7 @@
 name: "Commit Discipline"
 slug: commit-discipline
 description: "Make small, logical commits with clear messages tied to plan tasks"
-when_to_use: "When making git commits during tssignment work"
+when_to_use: "When making git commits during ticket work"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-04-02T00:00:00Z"
 tags:

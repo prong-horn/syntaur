@@ -1,8 +1,8 @@
 ---
 name: "Test Before Done"
 slug: test-before-done
-description: "Agents must run tests and verify acceptance criteria before marking tssignments complete"
-when_to_use: "Before transitioning tn ticket to review or completed"
+description: "Agents must run tests and verify acceptance criteria before marking tickets complete"
+when_to_use: "Before transitioning a ticket to review or completed"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-04-02T00:00:00Z"
 tags:
@@ -12,7 +12,7 @@ tags:
 
 # Test Before Done
 
-Before transitioning tn ticket to `review` or `completed`:
+Before transitioning a ticket to `review` or `completed`:
 
 1. **Run the test suite.** If the project has tests, run them. All must pass.
 2. **Check every acceptance criterion.** Go through them one by one. Each must be demonstrably met -- not "should work" but actually verified.

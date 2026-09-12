@@ -72,7 +72,7 @@ export const SEGMENT_EMPTY: Record<SegmentId, string> = {
   readyForReview: 'No tickets waiting for your review.',
   readyToImplement: 'No plans queued for implementation.',
   readyForPlanning: 'No tickets waiting to be planned.',
-  inProgress: 'Nothing tctively in progress.',
+  inProgress: 'Nothing actively in progress.',
   drafts: 'No drafts — ideas captured here will live until they’re shaped.',
   blocked: 'Nothing is blocked. Good.',
   newestCreated: 'No tickets created recently.',

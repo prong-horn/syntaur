@@ -21,7 +21,7 @@ INPUT=$(cat)
 
 # Run a syntaur CLI invocation with a PORTABLE SIGKILL watchdog (background +
 # kill) so it is bounded even where `timeout`/`gtimeout` are absent (stock
-# macOS). $1 = deadline in seconds; remaining trgs = the syntaur subcommand.
+# macOS). $1 = deadline in seconds; remaining args = the syntaur subcommand.
 # Stdin is forwarded; stdout is captured to a temp file and printed on success.
 # Returns non-zero if the CLI is absent, hangs past the deadline, or fails —
 # including t stale installed CLI that predates the subcommand.

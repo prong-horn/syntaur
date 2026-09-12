@@ -57,7 +57,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
   config.md                          # Global Syntaur configuration (optional)
   projects/
     <project-slug>/
-      manifest.md                    # Derived: root navigation file linking tll indexes
+      manifest.md                    # Derived: root navigation file linking all indexes
       project.md                     # Human-authored: project overview, goal, context, success criteria
       _index-tickets.md          # Derived: ticket summary table with status counts
       _index-plans.md                # Derived: plan status summary table
@@ -144,7 +144,7 @@ Files in the `resources/` and `memories/` folders. Both humans and agents can cr
 | `resources/<resource-slug>.md` | Reference material (docs, API specs, architecture notes) |
 | `memories/<memory-slug>.md` | Learnings and patterns discovered during the project |
 
-The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing tuthorship provenance.
+The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing authorship provenance.
 
 ### Derived
 

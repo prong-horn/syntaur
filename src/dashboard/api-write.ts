@@ -1207,7 +1207,7 @@ export function createWriteRouter(
 
   // =========================================================================
   // Standalone (by-id) routes — `~/.syntaur/tickets/<uuid>/`
-  // Active only when the write router was constructed with an ticketsDir.
+  // Active only when the write router was constructed with a ticketsDir.
   // =========================================================================
 
   router.post('/api/tickets', async (req: Request, res: Response) => {

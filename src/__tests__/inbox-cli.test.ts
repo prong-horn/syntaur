@@ -304,8 +304,8 @@ describe('inbox human output (grouped, smoke)', () => {
       spy.mockRestore();
     }
     const out = logs.join('\n');
-    expect(out).toContain(
-      '→ http://localhost:4999/projects/p1/tickets/chat-row?tab=chat#turn-1:1',
+    expect(out).toMatch(
+      /→ http:\/\/localhost:4999\/t\/[^/?\s]+\?tab=chat#turn-1:1/,
     );
   });
 

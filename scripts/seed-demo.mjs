@@ -132,7 +132,7 @@ generated: "${iso(new Date())}"
 
 # Agent Instructions — ${title}
 
-Follow the Syntaur protocol. Read \`project.md\` before grabbing tn ticket.
+Follow the Syntaur protocol. Read \`project.md\` before grabbing a ticket.
 `;
 }
 
@@ -872,7 +872,7 @@ const playbooks = [
     slug: 'commit-discipline',
     name: 'Commit Discipline',
     description: 'Make small, logical commits with clear messages tied to plan tasks',
-    whenToUse: 'When making git commits during tssignment work',
+    whenToUse: 'When making git commits during ticket work',
     tags: ['quality', 'git'],
     body: `- Make commits at logical boundaries — one commit per plan task or meaningful unit of work.
 - Commit messages should reference what was done, not just "implement feature".
@@ -898,13 +898,13 @@ Planning without context produces brittle, redundant work. Take the five minutes
   {
     slug: 'test-before-done',
     name: 'Test Before Done',
-    description: 'Run tests and verify acceptance criteria before marking tssignments complete',
-    whenToUse: 'Before transitioning tn ticket to review or completed',
+    description: 'Run tests and verify acceptance criteria before marking tickets complete',
+    whenToUse: 'Before transitioning a ticket to review or completed',
     tags: ['quality', 'testing'],
-    body: `Before calling tn ticket done:
+    body: `Before calling a ticket done:
 1. Run the project's full test suite and make sure it passes locally.
 2. Re-read each acceptance criterion and verify it against the actual behavior, not the intended behavior.
-3. For UI work, load the running tpp and exercise the golden path.
+3. For UI work, load the running app and exercise the golden path.
 4. If any criterion is partially met, leave it unchecked and note it in the Progress section.`,
   },
   {

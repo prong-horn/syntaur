@@ -43,7 +43,7 @@ Review each acceptance criterion (checkbox item). For each:
 - If you believe it is met, note why (what was implemented, where).
 - If it is NOT met, flag it clearly.
 
-If any acceptance criteria are unmet, warn the user: "The following tre not yet done: [list]. Do you want to proceed with the handoff anyway?" — stop if the user says no.
+If any acceptance criteria are unmet, warn the user: "The following are not yet done: [list]. Do you want to proceed with the handoff anyway?" — stop if the user says no.
 
 ## Step 3.5: Append a Final Progress Entry
 

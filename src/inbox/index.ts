@@ -503,11 +503,8 @@ export function chatItemPath(item: {
   ticketId: string;
   chat: InboxChatRef;
 }): string {
-  const ticketPath =
-    item.project === null
-      ? `/tickets/${item.ticketId}`
-      : `/projects/${item.project}/tickets/${item.ticketSlug}`;
-  return `${ticketPath}?tab=chat#${item.chat.itemId}`;
+  // Every ticket, nested or standalone, is addressed at /t/<id> (decision 5).
+  return `/t/${item.ticketId}?tab=chat#${item.chat.itemId}`;
 }
 
 function resolveStandaloneTicketsDir(opts: ComputeInboxOptions): string | null {

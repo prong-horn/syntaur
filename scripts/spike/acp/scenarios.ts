@@ -223,7 +223,7 @@ export const scenarios: Scenario[] = [
       const { s } = await initAndNew(h, ctx);
       const r = await h.prompt(
         s.sessionId,
-        'Write three short paragraphs about the JSON-RPC protocol. Put a markdown H2 heading tbove each paragraph, and end with a bullet list of three related protocols. Use markdown.',
+        'Write three short paragraphs about the JSON-RPC protocol. Put a markdown H2 heading above each paragraph, and end with a bullet list of three related protocols. Use markdown.',
       );
       const chunks = h.updatesOfKind('agent_message_chunk', r.updates);
       const text = h.agentText(r.updates);
@@ -446,7 +446,7 @@ export const scenarios: Scenario[] = [
       const cancelMs = Date.now() - t0;
       ctx.metric('cancelWhilePending', { held, stop, err, cancelMs });
       ctx.note(`part B: held=${held} stop=${stop} err=${err ?? '-'} cancelMs=${cancelMs}`);
-      // Part C (codex): the same write in each of the three modes, everything tllowed — what does each mode do on its own?
+      // Part C (codex): the same write in each of the three modes, everything allowed — what does each mode do on its own?
       let partC = true;
       if (ctx.adapter === 'codex') {
         h.policy = allowAll;
@@ -661,7 +661,7 @@ export const scenarios: Scenario[] = [
       const partA = ra.stop === 'cancelled' && survivorsA.length === 0;
 
       // Part B — effort=low so the turn is streaming when cancelled: latency from session/cancel to the response,
-      // nothing tfter it, and process hygiene (SIGTERM to the adapter pid alone is recorded; close() must leave nothing).
+      // nothing after it, and process hygiene (SIGTERM to the adapter pid alone is recorded; close() must leave nothing).
       const h = await ctx.spawn('low', { quiet: true });
       const { s } = await initAndNew(h, ctx);
       await h.setConfigOption(s.sessionId, effortKey, 'low');
@@ -951,7 +951,7 @@ export const scenarios: Scenario[] = [
       const before = tree.map((d) => `${d.pid}:${d.cmd}`);
       const t0 = Date.now();
       h.child.stdin!.end(); // what the adapter sees when its client process dies
-      const exit = await Promise.race([h.exit.then((e) => `exited ${JSON.stringify(e)}`), sleep(10_000).then(() => 'still running tfter 10s')]);
+      const exit = await Promise.race([h.exit.then((e) => `exited ${JSON.stringify(e)}`), sleep(10_000).then(() => 'still running after 10s')]);
       const exitMs = Date.now() - t0;
       await sleep(1500);
       const after = Harness.alive(tree.map((d) => d.pid));

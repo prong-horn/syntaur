@@ -19,7 +19,7 @@ Claim a pending Syntaur ticket and set up the current workspace.
 Expects up to two arguments from the user:
 
 - First (required): the project slug (e.g., `build-auth-system`), OR `--id <uuid>` to claim a standalone ticket at `~/.syntaur/tickets/<uuid>/`.
-- Second (optional, project-nested only): a specific ticket slug to grab. If omitted, list available pending tssignments and pick one.
+- Second (optional, project-nested only): a specific ticket slug to grab. If omitted, list available pending tickets and pick one.
 
 ## Pre-flight Check
 

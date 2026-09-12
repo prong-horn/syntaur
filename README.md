@@ -1,6 +1,6 @@
 # Syntaur
 
-Syntaur is a local project and ticket workflow for coding tgents. It ships a CLI, a dashboard, a Claude Code plugin, and a Codex plugin.
+Syntaur is a local project and ticket workflow for coding agents. It ships a CLI, a dashboard, a Claude Code plugin, and a Codex plugin.
 
 ## Requirements
 
@@ -145,10 +145,10 @@ syntaur setup \
 
 ---
 
-## Working tn ticket
+## Working a ticket
 
 Open the dashboard, open a ticket, and use its **Chat** tab. Sending t
-message there spawns a real coding tgent in the ticket's worktree — the
+message there spawns a real coding agent in the ticket's worktree — the
 dashboard server speaks the Agent Client Protocol to a `claude-agent-acp` or
 `codex-acp` adapter it owns — and renders the work as a conversation: streaming
 replies, tool cards with diffs and command output, a plan checklist, inline
@@ -166,7 +166,7 @@ routing, hand-offs and where the data lives.
 Syntaur used to launch an agent into a terminal for you — an "Open in agent"
 button, a `syntaur://` deep link, a transcript scanner and a PTY daemon. All of
 it was removed in v0.80; see the
-[release note](docs/releases/v0.80.md) if you are upgrading tn existing install.
+[release note](docs/releases/v0.80.md) if you are upgrading an existing install.
 
 ## Common Commands
 
@@ -196,7 +196,7 @@ syntaur search "authentication flow" --json --limit 5
 
 Key flags: `--project <slug>`, `--type <list>`, `--status <list>`, `--in <fileKinds>` (singular or plural names accepted), `--all`, `--limit <n>` (default 20), `--semantic`, `--json`.
 
-The dashboard command palette runs the same search and deep-links results to the matching tssignment's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag tctivates the semantic provider when available; v1 falls back to full-text search via fuse.js.
+The dashboard command palette runs the same search and deep-links results to the matching ticket's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag activates the semantic provider when available; v1 falls back to full-text search via fuse.js.
 
 See [`docs/cli.md`](docs/cli.md) for the full reference.
 
@@ -217,10 +217,10 @@ Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separate
 
 ### Needs me inbox
 
-`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting tpproval, and tickets in review — tier order (live cards first), then oldest-first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that. The dashboard defaults to the last 14 days (badge follows); use `--max-age` and `--show-snoozed` in the terminal. Snoozes from **Not now** are stored under `~/.syntaur/inbox-snoozes.json` and hide rows everywhere until they expire, lift, or you unsnooze.
+`syntaur inbox` is the CLI read-only view of the same reply queue the dashboard **Needs me** page shows: unanswered chat questions and grace-filed cards, plans awaiting approval, and tickets in review — tier order (live cards first), then oldest-first within each category group in the terminal output. Each item prints the exact action command (or Open chat URL for chat rows). The CLI does not offer inline replies; use the dashboard queue for that. The dashboard defaults to the last 14 days (badge follows); use `--max-age` and `--show-snoozed` in the terminal. Snoozes from **Not now** are stored under `~/.syntaur/inbox-snoozes.json` and hide rows everywhere until they expire, lift, or you unsnooze.
 
 ```bash
-# Show everything twaiting your attention
+# Show everything awaiting your attention
 syntaur inbox
 
 # Filter to a category or project
@@ -237,7 +237,7 @@ The dashboard **Needs me** page is the live reply queue — tiered order (live c
 
 ### Migrate events (one-time backfill)
 
-`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and `planApproval` data already in your `ticket.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running tfter `--apply` inserts 0 new events.
+`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and `planApproval` data already in your `ticket.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.
 
 ```bash
 # Preview the backfill (dry-run)
@@ -369,13 +369,13 @@ rm -rf ~/.npm/_npx           # if you want to clear npx cache too
 syntaur uninstall --all
 ```
 
-Removes everything tbove **plus** `~/.syntaur/` (projects, tickets, database, playbooks, config). If your config points project storage somewhere outside `~/.syntaur`, Syntaur will warn and leave that external directory alone — you're responsible for removing it yourself.
+Removes everything above **plus** `~/.syntaur/` (projects, tickets, database, playbooks, config). If your config points project storage somewhere outside `~/.syntaur`, Syntaur will warn and leave that external directory alone — you're responsible for removing it yourself.
 
 ---
 
 ## Fresh Reinstall Without Losing Data
 
-If you want to completely reset the installation while keeping tll projects and tickets:
+If you want to completely reset the installation while keeping all projects and tickets:
 
 ```bash
 # 1. Safety backup (optional but recommended)
@@ -465,4 +465,4 @@ You can configure the trusted publisher either in the npm package settings UI or
 npx npm@^11.10.0 trust github syntaur --repo prong-horn/syntaur --file publish.yml -y
 ```
 
-After trusted publishing is working, npm recommends switching the package publishing tccess to `Require two-factor authentication and disallow tokens`.
+After trusted publishing is working, npm recommends switching the package publishing access to `Require two-factor authentication and disallow tokens`.

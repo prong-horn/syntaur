@@ -238,7 +238,7 @@ Each item in the `--json` array contains:
 }
 ```
 
-The `route` field is also used by the dashboard command palette: running t search from the palette deep-links directly to the matching tssignment's `?tab=<kind>` pane at the `#section` anchor.
+The `route` field is also used by the dashboard command palette: running t search from the palette deep-links directly to the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
 
 ### Examples
 
@@ -255,7 +255,7 @@ syntaur search "stripe webhook" --all --limit 5
 
 ## `syntaur inbox`
 
-One triage view of everything twaiting t human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
+One triage view of everything awaiting t human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
 ```
 syntaur inbox [options]
@@ -277,7 +277,7 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 | Category | What it means | Action command |
 |---|---|---|
 | `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
-| `review` | Ticket is in `review` status — awaiting tccept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
+| `review` | Ticket is in `review` status — awaiting accept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
 | `plan-approval` | Ticket is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
 
 For standalone tickets (no project), omit `--project` and use the ticket UUID as the target.
@@ -307,7 +307,7 @@ For standalone tickets (no project), omit `--project` and use the ticket UUID as
       "category": "review",
       "since": "2026-06-10T12:25:03Z",
       "ageMs": 575717277,
-      "summary": "Review requested — awaiting tccept or reopen.",
+      "summary": "Review requested — awaiting accept or reopen.",
       "action": {
         "verb": "Accept",
         "command": "syntaur complete add-oauth --project my-api"
@@ -326,7 +326,7 @@ For standalone tickets (no project), omit `--project` and use the ticket UUID as
 ### Examples
 
 ```bash
-# Show everything twaiting your attention
+# Show everything awaiting your attention
 syntaur inbox
 
 # Emit structured JSON
@@ -350,7 +350,7 @@ syntaur inbox --show-snoozed
 
 The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever a ticket changes.
 
-## Working tn ticket
+## Working a ticket
 
 Agents are worked in the dashboard's **Chat** tab, not in a terminal Syntaur
 opens for you. Open a ticket, send a message, and the dashboard server

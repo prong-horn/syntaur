@@ -63,7 +63,7 @@ The **active ticket** is resolved from the session's OPEN engagement — the tic
 
 ## Required Reading Order
 
-When starting work on an existing tssignment, read these in order:
+When starting work on an existing ticket, read these in order:
 
 1. `~/.syntaur/playbooks/*.md` — behavioral rules (take precedence over defaults)
 2. `<projectDir>/manifest.md` (skip for standalone)

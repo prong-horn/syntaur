@@ -9,7 +9,7 @@ arguments:
 
 # /grab-ticket
 
-Thin wrapper that invokes the `grab-ticket` skill. The skill lives in `~/.claude/skills/grab-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — discovering pending tssignments, merging `.syntaur/context.json`, registering the agent session, reading the ticket.
+Thin wrapper that invokes the `grab-ticket` skill. The skill lives in `~/.claude/skills/grab-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — discovering pending tickets, merging `.syntaur/context.json`, registering the agent session, reading the ticket.
 
 ## Instructions
 

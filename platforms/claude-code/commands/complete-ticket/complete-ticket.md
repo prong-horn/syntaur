@@ -9,7 +9,7 @@ arguments:
 
 # /complete-ticket
 
-Thin wrapper that invokes the `complete-ticket` skill. The skill lives in `~/.claude/skills/complete-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying tcceptance criteria, appending t progress.md entry, writing t handoff.md section, and calling `syntaur review` or `syntaur complete`.
+Thin wrapper that invokes the `complete-ticket` skill. The skill lives in `~/.claude/skills/complete-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying acceptance criteria, appending t progress.md entry, writing t handoff.md section, and calling `syntaur review` or `syntaur complete`.
 
 ## Instructions
 

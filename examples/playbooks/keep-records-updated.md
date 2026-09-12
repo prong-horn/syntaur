@@ -2,7 +2,7 @@
 name: "Keep Records Updated"
 slug: keep-records-updated
 description: "Agents must keep ticket.md criteria, progress.md, and related records current in real-time"
-when_to_use: "After every meaningful action, when completing tcceptance criteria, when starting or stopping work"
+when_to_use: "After every meaningful action, when completing acceptance criteria, when starting or stopping work"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-05-08T00:00:00Z"
 tags:

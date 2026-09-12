@@ -264,7 +264,7 @@ describe('GET /api/inbox', () => {
     });
     expect(item.action.verb).toBe('Open chat');
     expect(item.action.command).toBe(
-      `${baseUrl}/projects/p1/tickets/chat-row?tab=chat#turn-1:1`,
+      `${baseUrl}/t/${item.ticketId}?tab=chat#turn-1:1`,
     );
     expect(item.card).toBeUndefined();
   });

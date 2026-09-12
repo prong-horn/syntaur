@@ -16,7 +16,7 @@ Only real Claude Code session IDs are accepted — no synthesis. The real id is 
 ## Usage
 
 - `/track-session` — register a standalone session
-- `/track-session --description "exploring tuth patterns"` — with a description
+- `/track-session --description "exploring auth patterns"` — with a description
 - `/track-session --project <slug> --ticket <slug>` — linked to a project
 - `/track-session --description "auth work" --project <slug> --ticket <slug>` — both
 

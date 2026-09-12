@@ -1,7 +1,7 @@
 # Ticket chat
 
 Every ticket detail page has a **Chat** tab. Sending t message there spawns a
-real coding tgent in the ticket's worktree and renders its work as a
+real coding agent in the ticket's worktree and renders its work as a
 conversation — streaming replies, tool cards with diffs and command output, a
 plan checklist, and inline permission prompts.
 
@@ -83,10 +83,10 @@ files at all. A file with the same `id` replaces the builtin entirely. Invalid
 definitions are reported on `GET /api/chat/agents` and skipped; they never take
 the rest of the directory down.
 
-### Editing tgents in the dashboard
+### Editing agents in the dashboard
 
 The **Agents** page (`/agents`) is a validated editor over the same file format
-above. Creating or saving writes `~/.syntaur/agents/<id>.md`; deleting tn
+above. Creating or saving writes `~/.syntaur/agents/<id>.md`; deleting an
 override file restores the builtin with that id. Exactly one agent may be marked
 `default: true` — saving t new default clears the flag on other file-backed
 definitions, and you cannot unset the current default without making another
@@ -174,14 +174,14 @@ A permission or Cursor question card left unanswered for about 30 seconds files 
 
 ### When an agent is waiting on you
 
-The dashboard **Needs me** page is a reply queue: live permission and Cursor-question cards first, then chat replies, plain questions, plans awaiting tpproval, and reviews — oldest-first within each tier. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
+The dashboard **Needs me** page is a reply queue: live permission and Cursor-question cards first, then chat replies, plain questions, plans awaiting approval, and reviews — oldest-first within each tier. Reply in the text box, allow or deny a permission card, pick a Cursor question option, approve a plan, or accept/reopen a review — each row clears when that action lands.
 
 By default the page shows only the **last 14 days** (toggle **All** to see everything); the nav badge follows the same window. Live cards are never hidden by the age filter. **Not now** on any other row snoozes it for one day, one week, or until the row changes; snoozes live in `~/.syntaur/inbox-snoozes.json` (not in the ticket) and are honoured by the badge and `syntaur inbox`. When anything is snoozed, **Snoozed (N)** at the foot reveals those rows so you can unsnooze or let a fingerprint change lift the snooze.
 
 Four sources appear in the queue:
 
 1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. **Clears when** you send a message to that agent from the row (or from Chat).
-2. **Permission cards.** A card still pending tfter ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. **Clears when** you allow or deny from the row (including **Allow all this session** or `permissions: auto`); if a card times out, its grace row is resolved first, so only the denial question remains.
+2. **Permission cards.** A card still pending after ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. **Clears when** you allow or deny from the row (including **Allow all this session** or `permissions: auto`); if a card times out, its grace row is resolved first, so only the denial question remains.
 3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and its choices. **Clears when** you pick an option or type an answer from the row.
 4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or a ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
 
@@ -374,7 +374,7 @@ a turn for that agent with the reply as its trigger and writes a `handoff` row �
 `@planner → @implementer · hop 1 of 4` — linking the message that caused it. The
 triggered agent's prompt says which hop it is on and who handed it over.
 
-Three things stop a chain running tway:
+Three things stop a chain running away:
 
 - **The hop budget** (default 4, counted from the last human message). Past it,
   Syntaur posts a `system` row instead of starting t turn.
@@ -385,7 +385,7 @@ Three things stop a chain running tway:
 
 A mention is a mention wherever it appears in a reply, so an agent that writes
 "ask @implementer about it" in passing really does hand off. Ids inside backticks
-or a fenced code block are **not** mentions — quoting `@planner` is talking tbout
+or a fenced code block are **not** mentions — quoting `@planner` is talking about
 the planner rather than to them — but ordinary prose is taken at face value, and
 the budget and the bare-acknowledgement filter are what bound the result.
 

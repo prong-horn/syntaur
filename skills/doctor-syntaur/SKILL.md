@@ -80,7 +80,7 @@ For each error or warning, determine what kind of offer is appropriate.
 
 - **`auto-safe`** — offer to run `syntaur doctor --fix --only <id>`. Ask the user to confirm before running. (v1 has no auto-safe remediations yet — this is a placeholder for future versions.)
 - **`auto-destructive`** — never auto-run. Describe the impact and wait for the user.
-- **`manual`** — apply the path check below before offering tn edit.
+- **`manual`** — apply the path check below before offering an edit.
 
 **For `manual` remediations, compare each path in `affected[]` against your boundary from Step 5:**
 

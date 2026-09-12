@@ -56,9 +56,9 @@ export function getField(frontmatter: string, key: string): string | null {
   return parseSimpleValue(match[1]);
 }
 
-/** Sidecar files use `ticket:` (Phase A); accept legacy `ticket:` too. */
+/** Sidecar files name their ticket with the `ticket:` key. */
 function sidecarTicketSlug(frontmatter: string): string {
-  return getField(frontmatter, 'ticket') ?? getField(frontmatter, '__LEGACY_TICKET_KEY__') ?? '';
+  return getField(frontmatter, 'ticket') ?? '';
 }
 
 /**
