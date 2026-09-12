@@ -52,6 +52,88 @@ syntaur status transition remove --from <id> --command <cmd>
 
 Define or drop a custom transition.
 
+## `syntaur project new` / `syntaur project list`
+
+Create or list projects under `~/.syntaur/projects/`.
+
+```
+syntaur project new <title> [--slug <slug>] [--prefix <PFX>] [--dir <path>]
+syntaur project list [--dir <path>]
+```
+
+`project new` scaffolds `project.md` (with `prefix`, `nextTicket`, and `defaultTemplate`), derived indexes, and an empty `tickets/` folder. When `--prefix` is omitted, a unique 2–5 letter prefix is derived from the slug. Prefixes must be unique across projects.
+
+`project list` prints `slug`, `prefix`, and `title` (tab-separated).
+
+### Examples
+
+```bash
+syntaur project new "Build Auth System"
+syntaur project new "My App" --slug my-app --prefix MYA
+syntaur project list
+```
+
+## `syntaur new`
+
+Create a ticket and allocate the next `<PREFIX>-<n>` id from the target project's counter. Defaults to the **scratch** project (`projects/scratch/`, prefix `SCR`) when `--project` is omitted.
+
+```
+syntaur new <title> [--project <slug>] [--slug <slug>] [--type <type>] \
+  [--priority <level>] [--depends-on <ids>] [--links <ids>] [--dir <path>]
+```
+
+`--depends-on` and `--links` take comma-separated ticket ids (e.g. `SCR-1,BAS-2`). The ticket folder is created as `tickets/<ID>-<slug>/`.
+
+### Examples
+
+```bash
+syntaur new "Fix login redirect"                    # → projects/scratch/tickets/SCR-n-<slug>/
+syntaur new "Add OAuth" --project my-api
+syntaur new "Wire refresh token" --project my-api --depends-on MYA-1
+```
+
+## `syntaur rename <id> <new-slug>`
+
+Rename a ticket's display slug. Updates `slug` in `ticket.md` and renames the folder from `<ID>-<old-slug>` to `<ID>-<new-slug>`. The ticket id is unchanged.
+
+```
+syntaur rename <id> <new-slug> [--dir <path>]
+```
+
+### Examples
+
+```bash
+syntaur rename BAS-2 implement-jwt-auth
+```
+
+## `syntaur migrate v2`
+
+One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dry-run by default; pass `--apply` to write. Creates a `.bak-v2-*` backup before applying.
+
+```
+syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
+```
+
+What it does:
+
+- Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present
+- Assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`
+- Moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`
+- Rewrites `dependsOn` / `links` and re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`)
+- Writes a `v2-migrated` marker on success
+
+`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`).
+
+### Examples
+
+```bash
+# Preview changes
+syntaur migrate v2
+
+# Apply with a custom prefix for one project
+syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
+```
+
 ## `syntaur workspace set`
 
 Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
@@ -59,17 +141,17 @@ Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates 
 ```
 syntaur workspace set \
   --repository <path> --worktree-path <path> --branch <name> --parent-branch <name> \
-  [--ticket <slug> [--project <slug>]]
+  [--ticket <id> [--project <slug>]]
 ```
 
-Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given. Provide at least one field flag.
+Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given (`<PREFIX>-<n>`). Provide at least one field flag.
 
 ## `syntaur progress log <text>`
 
 Append a timestamped entry to the active ticket's `progress.md`: newest first (right after the `# Progress` H1), replacing the `No progress yet.` placeholder, incrementing `entryCount`, bumping `updated`, and preserving `ticket`/`generated`.
 
 ```
-syntaur progress log "<text>" [--ticket <slug> [--project <slug>]]
+syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
 ```
 
 ## `syntaur unassign <ticket>`
@@ -77,25 +159,25 @@ syntaur progress log "<text>" [--ticket <slug> [--project <slug>]]
 Clear the assignee on a ticket (the inverse of `syntaur assign`) and bump `updated`.
 
 ```
-syntaur unassign <ticket> [--project <slug>] [--dir <path>]
+syntaur unassign <id> [--project <slug>] [--dir <path>]
 ```
 
-For standalone tickets pass the UUID and omit `--project`.
+`<id>` is the ticket id (`<PREFIX>-<n>`).
 
 ## `syntaur worktree`
 
 Manage git worktrees bound to tickets.
 
-- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <slug> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
+- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <id> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
 - `syntaur worktree list [--repository <path>] [--json]` — list the repository's worktrees.
-- `syntaur worktree remove` (alias `prune`) `[--ticket <slug> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the ticket's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
+- `syntaur worktree remove` (alias `prune`) `[--ticket <id> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the ticket's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
 
 ## `syntaur plan`
 
 Manage plan files for a ticket.
 
-- `syntaur plan create [--ticket <slug> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
-- `syntaur plan version [--ticket <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
+- `syntaur plan create [--ticket <id> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
+- `syntaur plan version [--ticket <id> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
 
 ## `syntaur timeline <ticket>`
 
@@ -105,11 +187,11 @@ Show the chronological audit event log for one ticket — who changed what, when
 syntaur timeline <ticket> [options]
 ```
 
-`<ticket>` is a ticket slug (paired with `--project`) or a standalone UUID.
+`<ticket>` is a ticket id (`<PREFIX>-<n>`). `--project` is optional when the id is globally unique.
 
 ### Options
 
-- `--project <slug>` — Project the ticket belongs to (required for project-scoped tickets).
+- `--project <slug>` — Project the ticket belongs to (optional when id resolves unambiguously).
 - `--since <date>` — Only show events at or after this UTC ISO timestamp (inclusive: `at >= since`).
 - `--type <list>` — Comma-separated event-type filter (e.g. `status-change,plan-approval`).
 - `--limit <n>` — Maximum number of events to show (default: 50).
@@ -151,14 +233,14 @@ The same events are surfaced live in the dashboard's **Activity** tab for the ti
 
 ```bash
 # Show the full event log for a ticket
-syntaur timeline add-oauth --project my-api
+syntaur timeline API-3 --project my-api
 
 # Only status-change events since a specific date
-syntaur timeline add-oauth --project my-api \
+syntaur timeline API-3 --project my-api \
   --type status-change --since 2026-06-01T00:00:00Z
 
 # Emit JSON, capped at 10 events
-syntaur timeline add-oauth --project my-api --json --limit 10
+syntaur timeline API-3 --project my-api --json --limit 10
 ```
 
 ## `syntaur migrate-events`
@@ -255,7 +337,7 @@ syntaur search "stripe webhook" --all --limit 5
 
 ## `syntaur inbox`
 
-One triage view of everything awaiting a human across all projects and standalone tickets. Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
+One triage view of everything awaiting a human across all projects (including scratch). Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
 ```
 syntaur inbox [options]
@@ -276,11 +358,9 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 
 | Category | What it means | Action command |
 |---|---|---|
-| `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <slug> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
-| `review` | Ticket is in `review` status — awaiting accept or reopen | `syntaur complete <slug> --project <p>` (accept) or `syntaur reopen <slug> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
-| `plan-approval` | Ticket is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <slug> --project <p>` |
-
-For standalone tickets (no project), omit `--project` and use the ticket UUID as the target.
+| `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <id> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
+| `review` | Ticket is in `review` status — awaiting accept or reopen | `syntaur complete <id> --project <p>` (accept) or `syntaur reopen <id> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
+| `plan-approval` | Ticket is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <id> --project <p>` |
 
 ### What does NOT appear
 
@@ -302,7 +382,7 @@ For standalone tickets (no project), omit `--project` and use the ticket UUID as
     {
       "project": "my-api",
       "ticketSlug": "add-oauth",
-      "ticketId": "dc8c06c1-531a-457f-a8f8-79692294e83e",
+      "ticketId": "API-3",
       "title": "Add OAuth support",
       "category": "review",
       "since": "2026-06-10T12:25:03Z",
@@ -310,7 +390,7 @@ For standalone tickets (no project), omit `--project` and use the ticket UUID as
       "summary": "Review requested — awaiting accept or reopen.",
       "action": {
         "verb": "Accept",
-        "command": "syntaur complete add-oauth --project my-api"
+        "command": "syntaur complete API-3 --project my-api"
       }
     }
   ],

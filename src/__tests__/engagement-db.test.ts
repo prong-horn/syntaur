@@ -53,9 +53,7 @@ describe('engagement schema', () => {
       expect.arrayContaining([
         'id',
         'session_id',
-        'assignment_id',
-        'project_slug',
-        'assignment_slug',
+        'ticket_id',
         'stage',
         'started_at',
         'ended_at',
@@ -79,7 +77,7 @@ describe('engagement schema', () => {
     const row = db
       .prepare("SELECT value FROM meta WHERE key = 'engagement_schema_version'")
       .get() as { value: string } | undefined;
-    expect(row?.value).toBe('1');
+    expect(row?.value).toBe('2');
   });
 });
 
@@ -87,7 +85,7 @@ describe('engagement open / get / close', () => {
   it('opens an active engagement and reads it back as the open one', () => {
     const row = openEngagement({
       sessionId: 's1',
-      ticketId: 'a-uuid',
+      ticketId: 'ASGN-1',
       projectSlug: 'proj',
       ticketSlug: 'asg',
       stage: 'plan',
@@ -99,8 +97,7 @@ describe('engagement open / get / close', () => {
 
     const open = getOpenEngagement('s1');
     expect(open?.id).toBe(row.id);
-    expect(open?.assignment_id).toBe('a-uuid');
-    expect(open?.project_slug).toBe('proj');
+    expect(open?.ticket_id).toBe('ASGN-1');
   });
 
   it('rejects a second raw open for the same session (one-open invariant)', () => {
@@ -148,18 +145,18 @@ describe('ensureOpenEngagement (idempotent)', () => {
   it('opens when none exists, then no-ops when one already exists', () => {
     const a = ensureOpenEngagement({
       sessionId: 's1',
-      ticketId: 'a1',
+      ticketId: 'TP-1',
       startedAt: '2026-03-26T10:00:00.000Z',
     });
     expect(a).not.toBeNull();
     const b = ensureOpenEngagement({
       sessionId: 's1',
-      ticketId: 'a2',
+      ticketId: 'TP-2',
       startedAt: '2026-03-26T11:00:00.000Z',
     });
     // no switch — the original open engagement is preserved
     const open = getOpenEngagement('s1');
-    expect(open?.assignment_id).toBe('a1');
+    expect(open?.ticket_id).toBe('TP-1');
     expect(b).toBeNull();
     const count = (
       getSessionDb()

@@ -29,22 +29,28 @@ async function seedHome(root: string): Promise<void> {
     `---\nslug: acme\ntitle: Acme\nworkspace: acme-ws\n---\n# Acme\n`,
   );
 
-  const aDir = join(projectDir, 'tickets', 'build-widget');
+  const aDir = join(projectDir, 'tickets', 'WID-1-build-widget');
   await mkdir(aDir, { recursive: true });
   await writeFile(
     join(aDir, 'ticket.md'),
-    `---\nid: 11111111-1111-1111-1111-111111111111\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget ticket body.\n`,
+    `---\nid: WID-1\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget ticket body.\n`,
   );
   await writeFile(
     join(aDir, 'comments.md'),
     `---\nticket: build-widget\n---\n# Comments\n\nA comment mentioning the widget feature.\n`,
   );
 
-  const sDir = join(ticketsDir, '22222222-2222-2222-2222-222222222222');
-  await mkdir(sDir, { recursive: true });
+  const otherProject = join(projectsDir, 'other');
+  await mkdir(otherProject, { recursive: true });
   await writeFile(
-    join(sDir, 'ticket.md'),
-    `---\nid: 22222222-2222-2222-2222-222222222222\nslug: solo-widget\ntitle: Solo Widget\ntype: chore\nstatus: pending\n---\n# Solo Widget\n\nA standalone widget task.\n`,
+    join(otherProject, 'project.md'),
+    `---\nslug: other\ntitle: Other\nworkspace: other-ws\n---\n# Other\n`,
+  );
+  const oDir = join(otherProject, 'tickets', 'WID-2-other-widget');
+  await mkdir(oDir, { recursive: true });
+  await writeFile(
+    join(oDir, 'ticket.md'),
+    `---\nid: WID-2\nslug: other-widget\ntitle: Other Widget\ntype: chore\nstatus: pending\n---\n# Other Widget\n\nAnother widget mention.\n`,
   );
 }
 
@@ -66,7 +72,7 @@ describe('runSearch', () => {
     const hits = await runSearch('widget', {});
     expect(hits.length).toBeGreaterThan(0);
 
-    const nested = hits.find((h) => h.fileKind === 'ticket' && !h.standalone);
+    const nested = hits.find((h) => h.fileKind === 'ticket' && h.projectSlug === 'acme');
     expect(nested).toBeDefined();
     expect(nested!.projectSlug).toBe('acme');
     expect(nested!.ticketSlug).toBe('build-widget');
@@ -91,7 +97,7 @@ describe('runSearch', () => {
 
   it('--project filter narrows results to one project', async () => {
     const all = await runSearch('widget', { limit: '50' });
-    expect(all.some((h) => h.standalone)).toBe(true);
+    expect(all.some((h) => h.projectSlug === 'other')).toBe(true);
 
     const scoped = await runSearch('widget', { project: 'acme', limit: '50' });
     expect(scoped.length).toBeGreaterThan(0);
@@ -99,6 +105,7 @@ describe('runSearch', () => {
       expect(h.projectSlug).toBe('acme');
       expect(h.standalone).toBe(false);
     }
+    expect(scoped.some((h) => h.projectSlug === 'other')).toBe(false);
   });
 
   it('--in filter narrows by file kind (alias resolved)', async () => {

@@ -32,12 +32,13 @@ describe('syntaur open', () => {
   let repo: string;
 
   async function writeTicket(slug: string, worktreePath: string | null, branch: string | null): Promise<void> {
-    const dir = resolve(home, 'projects', 'p', 'tickets', slug);
+    const ticketId = 'PA-1';
+    const dir = resolve(home, 'projects', 'p', 'tickets', `${ticketId}-${slug}`);
     await mkdir(dir, { recursive: true });
     await writeFile(
       resolve(dir, 'ticket.md'),
       `---
-id: id-${slug}
+id: ${ticketId}
 slug: ${slug}
 title: "${slug}"
 project: p
@@ -93,8 +94,8 @@ workspace:
   it('resolves by --id and ignores --project', async () => {
     const wt = resolve(repo, '.worktrees', 'feat-x');
     git(repo, ['worktree', 'add', '-b', 'feat-x', wt, 'main']);
-    await writeTicket('a', wt, 'feat-x'); // frontmatter id: id-a
-    const r = await runCli(['open', '--id', 'id-a', '--project', 'nonexistent'], home);
+    await writeTicket('a', wt, 'feat-x'); // frontmatter id: PA-1
+    const r = await runCli(['open', '--id', 'PA-1', '--project', 'nonexistent'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(r.stdout).toContain(wt);
   });

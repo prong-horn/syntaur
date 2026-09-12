@@ -24,7 +24,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`syntaur-operator\` agent -- use for broad Syntaur protocol work or when a task spans multiple lifecycle steps
 - \`syntaur-protocol\` -- background protocol and write-boundary rules
 - \`create-project\` -- scaffold a project
-- \`create-ticket\` -- create a new ticket (use \`--type <bug|feature|chore|...>\` to classify; use \`--one-off\` to create a standalone ticket at \`~/.syntaur/tickets/<uuid>/\` with no parent project)
+- \`create-ticket\` -- create a new ticket (use \`--type <bug|feature|chore|...>\` to classify; defaults to the scratch project and allocates a \`<PREFIX>-<n>\` id)
 - \`grab-ticket\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-ticket\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
 - \`complete-ticket\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
@@ -43,7 +43,7 @@ If the plugin is unavailable, follow the same workflow manually with the \`synta
 Before starting work, read these files in order:
 1. \`${params.projectDir}/manifest.md\` -- root navigation entry point (project-nested tickets only)
 2. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested tickets only)
-3. \`${params.ticketDir}/ticket.md\` -- your ticket details, acceptance criteria, current status. Frontmatter now includes \`project: <slug> | null\` (null for standalone) and \`type: <classification> | null\`.
+3. \`${params.ticketDir}/ticket.md\` -- your ticket details, acceptance criteria, current status. Frontmatter includes \`id: <PREFIX>-<n>\`, \`project: <slug>\`, and \`type: <classification> | null\`.
 4. any \`${params.ticketDir}/plan*.md\` files (may be 0, 1, or many — pick the newest version)
 5. \`${params.ticketDir}/progress.md\` -- reverse-chron progress log (if present)
 6. \`${params.ticketDir}/comments.md\` -- threaded questions/notes/feedback (if present)
@@ -69,7 +69,7 @@ Before starting work, read these files in order:
       _index-decisions.md    # Derived (read-only)
       _status.md             # Derived (read-only)
       tickets/
-        <ticket-slug>/
+        <ID>-<slug>/         # Folder name; ID is <PREFIX>-<n> from project.md
           ticket.md      # Agent-writable: source of truth for state
           plan*.md           # Agent-writable: versioned implementation plans (optional)
           progress.md        # Agent-writable, append-only: timestamped progress log
@@ -81,16 +81,9 @@ Before starting work, read these files in order:
         <resource-slug>.md   # Shared-writable
       memories/
         <memory-slug>.md     # Shared-writable
-  tickets/
-    <ticket-id>/         # Standalone tickets — folder = UUID, \`project: null\`, slug display-only
-      ticket.md
-      plan*.md
-      progress.md
-      comments.md
-      scratchpad.md
-      handoff.md
-      decision-record.md
 \`\`\`
+
+One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created via \`syntaur new\` without \`--project\`. There is no standalone \`~/.syntaur/tickets/\` tree.
 
 ## Write Boundary Rules (CRITICAL)
 
@@ -106,7 +99,7 @@ Before starting work, read these files in order:
 > **Note:** Workspace boundaries are resolved by the agent at runtime by reading \`ticket.md\` frontmatter. If no \`workspace\` field is set, treat the current working directory as your workspace.
 
 ### Files written only via CLI (never edit directly):
-- \`comments.md\` (any ticket) -- use \`syntaur comment <slug-or-uuid> "body" [--type question|note|feedback] [--reply-to <id>]\`
+- \`comments.md\` (any ticket) -- use \`syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]\`
 
 ### Files you must NEVER write:
 1. \`project.md\` -- human-authored, read-only
@@ -169,8 +162,9 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 
 ## Conventions
 
-- Ticket frontmatter is the single source of truth for state. \`project\` is the containing project slug (\`null\` for standalone); \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
-- Slugs are lowercase, hyphen-separated. For standalone tickets, \`slug\` is display-only; the folder is named by the UUID.
+- Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
+- Ticket folders are \`<ID>-<slug>\`. Slugs are lowercase, hyphen-separated and may be renamed with \`syntaur rename\`.
+- \`dependsOn\` and \`links\` hold ticket ids, not slugs.
 - Always read \`project.md\` at the project level (when project-nested) before starting work.
 - Keep \`ticket.md\` acceptance criteria updated as work lands; append timestamped entries to \`progress.md\` (never to \`ticket.md\`).
 - Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-ticket\`) at the cross-ticket boundary.

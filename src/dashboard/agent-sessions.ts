@@ -212,10 +212,10 @@ function reopenEngagementIfMissing(
   tokensAtOpen?: TokenSnapshot | null,
 ): void {
   if (getOpenEngagement(sessionId)) return;
-  if (freshBinding && (freshBinding.projectSlug || freshBinding.ticketSlug)) {
+  if (freshBinding?.ticketId) {
     ensureOpenEngagement({
       sessionId,
-      ticketId: freshBinding.ticketId ?? null,
+      ticketId: freshBinding.ticketId,
       projectSlug: freshBinding.projectSlug,
       ticketSlug: freshBinding.ticketSlug,
       stage: 'implement',
@@ -379,7 +379,7 @@ export async function appendSession(
       );
     } else if (
       persisted &&
-      (freshBinding.projectSlug || freshBinding.ticketSlug) &&
+      freshBinding.ticketId &&
       !hasAnyEngagement(session.sessionId)
     ) {
       // First-seen terminal session (e.g. the scanner discovering a stale
@@ -1035,10 +1035,7 @@ export async function reconcileActiveSessions(
 
     const resolved = await resolveTicketById(projectsDir, ticketsDir, ticketId);
     if (!resolved) continue;
-    const status = await readTicketStatus(
-      resolve(projectsDir, resolved.projectSlug),
-      resolved.ticketSlug,
-    );
+    const status = await readTicketStatusFromPath(resolve(resolved.ticketDir, 'ticket.md'));
     if (status) ticketStatuses.set(ticketId, status);
   }
 

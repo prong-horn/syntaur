@@ -18,7 +18,7 @@ let prevHome: string | undefined;
 
 const PROJECT = 'p1';
 const SLUG = 'a1';
-const TICKET_ID = 'a1-id';
+const TICKET_ID = 'PJ-1';
 
 const T1 = '2026-01-01T00:00:00Z';
 const T2 = '2026-02-01T00:00:00Z';
@@ -51,7 +51,7 @@ tags: []
 }
 
 async function seedProject(project: string, slug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, project, 'tickets', slug);
+  const dir = resolve(projectsDir, project, 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
   await writeFile(resolve(dir, 'ticket.md'), ticketMd(slug, id), 'utf-8');
   // project.md is required by resolveTicketTarget's --project path.
@@ -111,7 +111,7 @@ describe('runTimeline', () => {
     const events = await runTimeline(SLUG, { project: PROJECT });
     expect(events).toHaveLength(1);
     const e = events[0];
-    expect(e.assignment_id).toBe(TICKET_ID);
+    expect(e.ticket_id).toBe(TICKET_ID);
     expect(e.actor).toBe('human');
     expect(e.type).toBe('status-change');
     expect(e.at).toBe(T1);
@@ -152,15 +152,12 @@ describe('runTimeline', () => {
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });
 
-  it('resolves a standalone ticket by UUID and returns its events', async () => {
-    const uuid = '11111111-2222-3333-4444-555555555555';
-    const dir = resolve(standaloneDir, uuid);
-    await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), ticketMd(uuid, uuid), 'utf-8');
-    recordEvent({ ticketId: uuid, type: 'status-change', actor: 'human', at: T1 });
+  it('resolves a ticket by id and returns its events', async () => {
+    await seedProject(PROJECT, 'solo', TICKET_ID);
+    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
 
-    const events = await runTimeline(uuid, {});
+    const events = await runTimeline(TICKET_ID, {});
     expect(events).toHaveLength(1);
-    expect(events[0].assignment_id).toBe(uuid);
+    expect(events[0].ticket_id).toBe(TICKET_ID);
   });
 });

@@ -43,6 +43,7 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
   return {
     projectSlug: 'test-project',
     ticketSlug: 'test-ticket',
+    ticketId: 'TP-1',
     agent: 'claude',
     sessionId: `session-${Math.random().toString(36).slice(2, 10)}`,
     started: '2026-03-26T10:00:00Z',
@@ -50,6 +51,21 @@ function makeSession(overrides: Partial<AgentSession> = {}): AgentSession {
     path: '/tmp/test',
     ...overrides,
   };
+}
+
+async function seedTicketOnDisk(
+  projectSlug: string,
+  ticketId: string,
+  ticketSlug: string,
+  status = 'in_progress',
+): Promise<void> {
+  const projectsDir = resolve(testDir, 'projects');
+  const ticketDir = resolve(projectsDir, projectSlug, 'tickets', `${ticketId}-${ticketSlug}`);
+  await mkdir(ticketDir, { recursive: true });
+  await writeFile(
+    resolve(ticketDir, 'ticket.md'),
+    `---\nid: ${ticketId}\nslug: ${ticketSlug}\nproject: ${projectSlug}\nstatus: ${status}\n---\n# ${ticketSlug}\n`,
+  );
 }
 
 beforeEach(async () => {
@@ -73,8 +89,9 @@ describe('appendSession + listAllSessions', () => {
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe(session.sessionId);
-    expect(all[0].projectSlug).toBe('test-project');
-    expect(all[0].ticketSlug).toBe('test-ticket');
+    expect(all[0].projectSlug).toBeNull();
+    expect(all[0].ticketSlug).toBeNull();
+    expect(all[0].ticketId).toBe('TP-1');
     expect(all[0].agent).toBe('claude');
     expect(all[0].status).toBe('active');
   });
@@ -181,28 +198,36 @@ describe('updateSessionStatus', () => {
 
 describe('listProjectSessions', () => {
   it('filters by project slug', async () => {
-    await appendSession('', makeSession({ projectSlug: 'project-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ projectSlug: 'project-b', sessionId: 's2' }));
+    const projectsDir = resolve(testDir, 'projects');
+    await seedTicketOnDisk('project-a', 'PA-1', 'task-a');
+    await seedTicketOnDisk('project-b', 'PB-1', 'task-b');
+    await appendSession('', makeSession({ projectSlug: 'project-a', ticketId: 'PA-1', ticketSlug: 'task-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ projectSlug: 'project-b', ticketId: 'PB-1', ticketSlug: 'task-b', sessionId: 's2' }));
 
-    const sessions = await listProjectSessions('', 'project-a');
+    const sessions = await listProjectSessions(projectsDir, 'project-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
 
   it('excludes standalone sessions when filtering by project', async () => {
-    await appendSession('', makeSession({ projectSlug: 'project-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ projectSlug: null, ticketSlug: null, sessionId: 's2' }));
+    const projectsDir = resolve(testDir, 'projects');
+    await seedTicketOnDisk('project-a', 'PA-1', 'task-a');
+    await appendSession('', makeSession({ projectSlug: 'project-a', ticketId: 'PA-1', ticketSlug: 'task-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ projectSlug: null, ticketSlug: null, ticketId: null, sessionId: 's2' }));
 
-    const sessions = await listProjectSessions('', 'project-a');
+    const sessions = await listProjectSessions(projectsDir, 'project-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
 
   it('filters by project and ticket slug', async () => {
-    await appendSession('', makeSession({ ticketSlug: 'task-a', sessionId: 's1' }));
-    await appendSession('', makeSession({ ticketSlug: 'task-b', sessionId: 's2' }));
+    const projectsDir = resolve(testDir, 'projects');
+    await seedTicketOnDisk('test-project', 'TP-1', 'task-a');
+    await seedTicketOnDisk('test-project', 'TP-2', 'task-b');
+    await appendSession('', makeSession({ ticketId: 'TP-1', ticketSlug: 'task-a', sessionId: 's1' }));
+    await appendSession('', makeSession({ ticketId: 'TP-2', ticketSlug: 'task-b', sessionId: 's2' }));
 
-    const sessions = await listProjectSessions('', 'test-project', 'task-a');
+    const sessions = await listProjectSessions(projectsDir, 'test-project', 'task-a');
     expect(sessions).toHaveLength(1);
     expect(sessions[0].sessionId).toBe('s1');
   });
@@ -211,13 +236,7 @@ describe('listProjectSessions', () => {
 describe('reconcileActiveSessions', () => {
   it('marks sessions as completed when ticket is completed', async () => {
     const projectsDir = resolve(testDir, 'projects');
-    const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      '---\nstatus: completed\n---\n# Test',
-    );
+    await seedTicketOnDisk('test-project', 'TP-1', 'test-ticket', 'completed');
 
     await appendSession('', makeSession());
 
@@ -230,13 +249,7 @@ describe('reconcileActiveSessions', () => {
 
   it('marks sessions as stopped when ticket is failed', async () => {
     const projectsDir = resolve(testDir, 'projects');
-    const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      '---\nstatus: failed\n---\n# Test',
-    );
+    await seedTicketOnDisk('test-project', 'TP-1', 'test-ticket', 'failed');
 
     await appendSession('', makeSession());
 
@@ -249,17 +262,11 @@ describe('reconcileActiveSessions', () => {
 
   it('skips standalone sessions (null project/ticket)', async () => {
     const projectsDir = resolve(testDir, 'projects');
-    const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      '---\nstatus: completed\n---\n# Test',
-    );
+    await seedTicketOnDisk('test-project', 'TP-1', 'test-ticket', 'completed');
 
     // One attached session (should be reconciled) and one standalone (should be skipped)
     await appendSession('', makeSession({ sessionId: 'attached-1' }));
-    await appendSession('', makeSession({ sessionId: 'standalone-1', projectSlug: null, ticketSlug: null }));
+    await appendSession('', makeSession({ sessionId: 'standalone-1', projectSlug: null, ticketSlug: null, ticketId: null }));
 
     const updated = await reconcileActiveSessions(projectsDir);
     expect(updated).toBe(1);
@@ -273,13 +280,7 @@ describe('reconcileActiveSessions', () => {
 
   it('does not update sessions for in-progress tickets', async () => {
     const projectsDir = resolve(testDir, 'projects');
-    const projectDir = resolve(projectsDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      '---\nstatus: in_progress\n---\n# Test',
-    );
+    await seedTicketOnDisk('test-project', 'TP-1', 'test-ticket', 'in_progress');
 
     await appendSession('', makeSession());
 
@@ -318,7 +319,7 @@ activeSessions: 1
 
     const all = await listAllSessions('');
     expect(all).toHaveLength(2);
-    expect(all.find((s) => s.sessionId === 'sess-abc')?.ticketSlug).toBe('task-1');
+    expect(all.find((s) => s.sessionId === 'sess-abc')?.ticketId).toBe('task-1');
     expect(all.find((s) => s.sessionId === 'sess-def')?.agent).toBe('codex');
 
     // The active import gets an OPEN engagement; the completed import must be
@@ -462,7 +463,8 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     expect(all).toHaveLength(2);
     const legacy1 = all.find((s) => s.sessionId === 'legacy-1');
     const legacy2 = all.find((s) => s.sessionId === 'legacy-2');
-    expect(legacy1?.projectSlug).toBe('p1');
+    expect(legacy1?.projectSlug).toBeNull();
+    expect(legacy1?.ticketId).toBeNull();
     expect(legacy1?.description).toBe('first legacy');
     expect(legacy1?.transcriptPath).toBeNull();
     expect(legacy2?.agent).toBe('codex');
@@ -517,8 +519,10 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const all = await listAllSessions('');
     const newRow = all.find((s) => s.sessionId === 'new-row');
     const oldRow = all.find((s) => s.sessionId === 'old-row');
-    expect(newRow?.projectSlug).toBe('new-proj');
-    expect(oldRow?.projectSlug).toBe('legacy-proj'); // COALESCE fallback pulled from mission_slug
+    expect(newRow?.projectSlug).toBeNull();
+    expect(oldRow?.projectSlug).toBeNull();
+    expect(newRow?.ticketId).toBeNull();
+    expect(oldRow?.ticketId).toBeNull();
   });
 
   it('maps legacy v2 mission_slug column into project_slug during v2→v3', async () => {
@@ -559,9 +563,9 @@ describe('v2 -> v3 schema migration (adds transcript_path)', () => {
     const all = await listAllSessions('');
     expect(all).toHaveLength(1);
     expect(all[0].sessionId).toBe('legacy-mission');
-    // The mission_slug value survives the rename AND the v6 move onto the
-    // engagement edge — surfaced here via the chosen-engagement projection.
-    expect(all[0].projectSlug).toBe('legacy-proj');
+    // Slug columns are gone from sessions; binding lives on engagement only.
+    expect(all[0].projectSlug).toBeNull();
+    expect(all[0].ticketId).toBeNull();
     expect(all[0].transcriptPath).toBeNull();
 
     const { getSessionDb } = await import('../dashboard/session-db.js');
@@ -621,11 +625,11 @@ describe('v3 -> v4 schema migration (adds pid + pid_started_at, later dropped by
     expect(all).toHaveLength(2);
     const row1 = all.find((s) => s.sessionId === 'v3-row-1');
     const row2 = all.find((s) => s.sessionId === 'v3-row-2');
-    expect(row1?.projectSlug).toBe('p1');
+    expect(row1?.projectSlug).toBeNull();
+    expect(row1?.ticketId).toBeNull();
     expect(row1?.transcriptPath).toBe('/tmp/t1.jsonl');
 
     expect(row2?.agent).toBe('codex');
-
 
     const { getSessionDb } = await import('../dashboard/session-db.js');
     const db = getSessionDb();
@@ -688,7 +692,8 @@ describe('v4 -> v5 schema migration (adds original_head_sha)', () => {
     expect(all).toHaveLength(2);
     const row1 = all.find((s) => s.sessionId === 'v4-row-1');
     const row2 = all.find((s) => s.sessionId === 'v4-row-2');
-    expect(row1?.projectSlug).toBe('p1');
+    expect(row1?.projectSlug).toBeNull();
+    expect(row1?.ticketId).toBeNull();
     // `pid` was seeded on the v4-shape row; v11 drops the column entirely, so
     // it never reaches the mapped `AgentSession`.
     expect('pid' in (row1 as object)).toBe(false);
@@ -738,6 +743,7 @@ describe('appendSession upsert semantics', () => {
       sessionId: 'real-session-123',
       projectSlug: null,
       ticketSlug: null,
+      ticketId: null,
       description: null,
       transcriptPath: null,
       started: '2026-03-26T10:00:00Z',
@@ -748,6 +754,7 @@ describe('appendSession upsert semantics', () => {
       sessionId: 'real-session-123',
       projectSlug: 'p1',
       ticketSlug: 'a1',
+      ticketId: 'P1-1',
       description: 'attached later',
       transcriptPath: '/tmp/t.jsonl',
       started: '2099-12-31T23:59:59Z', // should be ignored by upsert
@@ -758,8 +765,9 @@ describe('appendSession upsert semantics', () => {
     expect(all).toHaveLength(1);
     const row = all[0];
     expect(row.sessionId).toBe('real-session-123');
-    expect(row.projectSlug).toBe('p1');
-    expect(row.ticketSlug).toBe('a1');
+    expect(row.projectSlug).toBeNull();
+    expect(row.ticketSlug).toBeNull();
+    expect(row.ticketId).toBe('P1-1');
     expect(row.description).toBe('attached later');
     expect(row.transcriptPath).toBe('/tmp/t.jsonl');
     expect(row.started).toBe('2026-03-26T10:00:00Z'); // preserved from first insert
@@ -1006,10 +1014,10 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
     expect(getOpenEngagement('s-hist')).toBeNull(); // not open
     const row = getSessionDb()
       .prepare(
-        'SELECT project_slug, ended_at, close_reason FROM engagement WHERE session_id = ?',
+        'SELECT ticket_id, ended_at, close_reason FROM engagement WHERE session_id = ?',
       )
-      .get('s-hist') as { project_slug: string; ended_at: string | null; close_reason: string } | undefined;
-    expect(row?.project_slug).toBe('test-project'); // binding preserved as a closed interval
+      .get('s-hist') as { ticket_id: string; ended_at: string | null; close_reason: string } | undefined;
+    expect(row?.ticket_id).toBe('TP-1'); // binding preserved as a closed interval
     expect(row?.ended_at).not.toBeNull();
     expect(row?.close_reason).toBe('abandoned');
   });
@@ -1026,7 +1034,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
       { reviveStopped: true },
     );
     const open = getOpenEngagement('s-rb');
-    expect(open?.project_slug).toBe('test-project'); // recovered from the prior engagement
+    expect(open?.ticket_id).toBe('TP-1'); // recovered from the prior engagement
   });
 
   it('updateSessionStatus to active reopens an engagement from history (stopped revive, clears ended)', async () => {
@@ -1035,7 +1043,7 @@ describe('appendSession engagement binding (persisted-status guard)', () => {
     expect(getOpenEngagement('s-ua')).toBeNull();
 
     await updateSessionStatus('', 's-ua', 'active');
-    expect(getOpenEngagement('s-ua')?.project_slug).toBe('test-project');
+    expect(getOpenEngagement('s-ua')?.ticket_id).toBe('TP-1');
     // The stale `ended` from the stop is cleared in the same revive transaction.
     const row = getSessionDb()
       .prepare('SELECT status, ended FROM sessions WHERE session_id = ?')
@@ -1182,7 +1190,7 @@ describe('H2: open-baseline token snapshot on every runtime open', () => {
 
     const open = getOpenEngagement('h2-rec');
     expect(open).not.toBeNull();
-    expect(open!.assignment_slug).toBe('test-ticket'); // binding recovered
+    expect(open!.ticket_id).toBe('TP-1'); // binding recovered
     expect(parseSnapshot(open!.tokens_at_open)).toEqual(SAMPLE);
   });
 
@@ -1275,38 +1283,40 @@ describe('archived exclusion on the UNPAGED reads (Overview rail, TUI, ticket de
   });
 
   it('listProjectSessions excludes archived in BOTH branches', async () => {
-    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'keep' }));
-    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'gone' }));
+    const projectsDir = resolve(testDir, 'projects');
+    await seedTicketOnDisk('p', 'PA-1', 'a');
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', ticketId: 'PA-1', sessionId: 'keep' }));
+    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', ticketId: 'PA-1', sessionId: 'gone' }));
     setSessionArchived('gone', true);
 
-    expect((await listProjectSessions('', 'p')).map((s) => s.sessionId)).toEqual(['keep']);
-    expect((await listProjectSessions('', 'p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listProjectSessions(projectsDir, 'p')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listProjectSessions(projectsDir, 'p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
     expect(
-      (await listProjectSessions('', 'p', undefined, { includeArchived: true }))
+      (await listProjectSessions(projectsDir, 'p', undefined, { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['gone', 'keep']);
     expect(
-      (await listProjectSessions('', 'p', 'a', { includeArchived: true }))
+      (await listProjectSessions(projectsDir, 'p', 'a', { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['gone', 'keep']);
   });
 
   it('listSessionsByTicket excludes archived in BOTH branches', async () => {
-    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'keep' }));
-    await appendSession('', makeSession({ projectSlug: 'p', ticketSlug: 'a', sessionId: 'gone' }));
-    await appendSession('', makeSession({ projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-keep' }));
-    await appendSession('', makeSession({ projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-gone' }));
+    await appendSession('', makeSession({ ticketId: 'P-1', projectSlug: 'p', ticketSlug: 'a', sessionId: 'keep' }));
+    await appendSession('', makeSession({ ticketId: 'P-1', projectSlug: 'p', ticketSlug: 'a', sessionId: 'gone' }));
+    await appendSession('', makeSession({ ticketId: 'SCR-1', projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-keep' }));
+    await appendSession('', makeSession({ ticketId: 'SCR-1', projectSlug: null, ticketSlug: 'solo', sessionId: 'lone-gone' }));
     setSessionArchived('gone', true);
     setSessionArchived('lone-gone', true);
 
-    expect((await listSessionsByTicket('p', 'a')).map((s) => s.sessionId)).toEqual(['keep']);
-    expect((await listSessionsByTicket(null, 'solo')).map((s) => s.sessionId)).toEqual(['lone-keep']);
+    expect((await listSessionsByTicket('P-1')).map((s) => s.sessionId)).toEqual(['keep']);
+    expect((await listSessionsByTicket('SCR-1')).map((s) => s.sessionId)).toEqual(['lone-keep']);
     expect(
-      (await listSessionsByTicket('p', 'a', { includeArchived: true }))
+      (await listSessionsByTicket('P-1', { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['gone', 'keep']);
     expect(
-      (await listSessionsByTicket(null, 'solo', { includeArchived: true }))
+      (await listSessionsByTicket('SCR-1', { includeArchived: true }))
         .map((s) => s.sessionId).sort(),
     ).toEqual(['lone-gone', 'lone-keep']);
   });
@@ -1483,7 +1493,7 @@ describe('paged listing stays index-driven (performance regression guard)', () =
     const rows = db
       .prepare(
         `EXPLAIN QUERY PLAN
-         SELECT s.*, e.project_slug AS project_slug
+         SELECT s.*, e.ticket_id AS ticket_id
            FROM sessions s
            LEFT JOIN engagement e ON e.id = (
              SELECT e2.id FROM engagement e2

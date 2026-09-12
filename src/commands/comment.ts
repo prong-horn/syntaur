@@ -4,7 +4,7 @@ import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketById, resolveTicketSlugInProject } from '../utils/ticket-resolver.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 import { appendComment } from '../lifecycle/comment-append.js';
@@ -45,8 +45,12 @@ export async function commentCommand(
     if (!isValidSlug(target)) {
       throw new Error(`Invalid ticket slug "${target}".`);
     }
-    ticketDir = resolve(baseDir, options.project, 'tickets', target);
-    ticketRef = target;
+    const resolved = await resolveTicketSlugInProject(baseDir, options.project, target);
+    if (!resolved) {
+      throw new Error(`Ticket "${target}" not found in project "${options.project}".`);
+    }
+    ticketDir = resolved.ticketDir;
+    ticketRef = resolved.ticketSlug;
     projectSlug = options.project;
   } else {
     const resolved = await resolveTicketById(baseDir, ticketsDirFn(), target);

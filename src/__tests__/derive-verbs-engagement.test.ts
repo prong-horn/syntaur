@@ -16,11 +16,11 @@ let home: string;
 let prevHome: string | undefined;
 let prevSid: string | undefined;
 const SESSION = 'sess-int';
-const ID_A = 'aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa';
-const ID_B = 'bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb';
+const ID_A = 'TA-1';
+const ID_B = 'TB-1';
 
 async function writeTicket(slug: string, id: string, extra: Record<string, string> = {}): Promise<string> {
-  const dir = resolve(home, 'projects', 'p', 'tickets', slug);
+  const dir = resolve(home, 'projects', 'p', 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
   const fm = {
     id, slug, title: '"T"', project: 'p', status: 'in_progress', phase: 'in_progress',
@@ -60,7 +60,7 @@ describe('implement/review verbs drive engagement stage + facts (session-backed)
     expect((await fmOf(pathB)).implementationStarted).toBe(true);
     const open = getOpenEngagement(SESSION);
     expect(open?.stage).toBe('implement');
-    expect(open?.assignment_id).toBe(ID_B);
+    expect(open?.ticket_id).toBe(ID_B);
   });
 
   it('does NOT mark ticket B as rework when the session was reviewing a DIFFERENT ticket A', async () => {

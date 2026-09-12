@@ -106,6 +106,7 @@ describe('backfillZeroCostEvents', () => {
 describe('reattributeOrphanEvents', () => {
   it('attributes an orphaned row once its session is registered', async () => {
     await appendSession('', {
+      ticketId: 'ASSN-1',
       projectSlug: 'proj-x',
       ticketSlug: 'assn-y',
       agent: 'pi',
@@ -119,8 +120,8 @@ describe('reattributeOrphanEvents', () => {
     const updated = reattributeOrphanEvents();
     expect(updated).toBe(1);
     const row = rowFor('pi-sess-1', PI_MODEL);
-    expect(row.project_slug).toBe('proj-x');
-    expect(row.assignment_slug).toBe('assn-y');
+    expect(row.project_slug).toBe('');
+    expect(row.ticket_id).toBe('ASSN-1');
   });
 
   it('leaves a row whose session is still unknown untouched', () => {
@@ -128,7 +129,7 @@ describe('reattributeOrphanEvents', () => {
     expect(reattributeOrphanEvents()).toBe(0);
     const row = rowFor('never-registered', PI_MODEL);
     expect(row.project_slug).toBe('');
-    expect(row.assignment_slug).toBe('');
+    expect(row.ticket_id).toBe('');
   });
 
   it('never re-touches an already-attributed row (guard: only empty-attribution rows)', async () => {
@@ -136,6 +137,7 @@ describe('reattributeOrphanEvents', () => {
     // an attribution must not be overwritten — the SELECT filter and the UPDATE
     // guard both require empty project AND empty ticket.
     await appendSession('', {
+      ticketId: 'ASSN-2',
       projectSlug: 'proj-x',
       ticketSlug: 'assn-y',
       agent: 'pi',
@@ -144,11 +146,11 @@ describe('reattributeOrphanEvents', () => {
       status: 'active',
       path: '/Users/dev/proj',
     });
-    upsertEvent(makeEvent({ projectSlug: 'proj-z', ticketSlug: 'assn-z' }));
+    upsertEvent(makeEvent({ projectSlug: 'proj-z', ticketSlug: 'ASSN-3' }));
 
     expect(reattributeOrphanEvents()).toBe(0);
     const row = rowFor('pi-sess-1', PI_MODEL);
     expect(row.project_slug).toBe('proj-z');
-    expect(row.assignment_slug).toBe('assn-z');
+    expect(row.ticket_id).toBe('ASSN-3');
   });
 });

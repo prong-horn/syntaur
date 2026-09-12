@@ -60,7 +60,7 @@ describe('diffChatRows', () => {
   it('seeds seen on first paint and returns no fresh rows', () => {
     const { seen, fresh } = diffChatRows(null, [perm, plan]);
     expect(fresh).toEqual([]);
-    expect(seen).toEqual(new Set(['c-perm']));
+    expect(seen).toEqual(new Set(['perm-1']));
   });
 
   it('returns only new chat rows on subsequent calls', () => {
@@ -104,8 +104,8 @@ describe('notificationFor', () => {
     });
     const n = notificationFor(item, agents);
     expect(n.body).toBe('My Task — context line');
-    expect(n.tag).toBe('c-ask');
-    expect(n.href).toBe('/inbox#c-ask');
+    expect(n.tag).toBe('ask-1');
+    expect(n.href).toBe('/inbox#ask-1');
   });
 });
 
@@ -159,7 +159,7 @@ describe('notifyFreshRows', () => {
     expect(FakeNotification.records).toHaveLength(1);
     expect(lastInstance).not.toBeNull();
     lastInstance!.onclick?.(null);
-    expect(opened).toEqual(['/inbox#c-new']);
+    expect(opened).toEqual(['/inbox#p-new']);
     expect(closeMock).toHaveBeenCalledOnce();
   });
 

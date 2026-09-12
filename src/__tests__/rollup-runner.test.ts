@@ -86,7 +86,7 @@ describe('runRollup', () => {
     getUsageDb()
       .prepare(
         `INSERT INTO usage_daily
-           (day, tool, model, project_slug, assignment_slug,
+           (day, tool, model, project_slug, ticket_id,
             input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens,
             total_tokens, total_cost, frozen, computed_at)
          VALUES ('2026-05-10', 'claude', 'claude-opus-4-7', '', '', 100, 200, 0, 0, 300, 0.1, 1, '2026-05-11T00:00:00Z')`,
@@ -141,9 +141,9 @@ describe('runRollup', () => {
     runRollup();
     const daily = listDaily();
     expect(daily).toHaveLength(3);
-    const p1a1 = daily.find((d) => d.project_slug === 'p1' && d.assignment_slug === 'a1');
-    const p1a2 = daily.find((d) => d.project_slug === 'p1' && d.assignment_slug === 'a2');
-    const p2a1 = daily.find((d) => d.project_slug === 'p2' && d.assignment_slug === 'a1');
+    const p1a1 = daily.find((d) => d.project_slug === 'p1' && d.ticket_id === 'a1');
+    const p1a2 = daily.find((d) => d.project_slug === 'p1' && d.ticket_id === 'a2');
+    const p2a1 = daily.find((d) => d.project_slug === 'p2' && d.ticket_id === 'a1');
     expect(p1a1?.total_tokens).toBe(100);
     expect(p1a2?.total_tokens).toBe(200);
     expect(p2a1?.total_tokens).toBe(300);

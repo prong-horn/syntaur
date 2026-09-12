@@ -39,15 +39,15 @@ async function runCli(
   });
 }
 
+const TICKET_ID = 'DEM-1';
+
 function seedOpenEngagement(home: string, sessionId: string): void {
   resetSessionDb();
   initSessionDb(resolve(home, 'syntaur.db'));
   try {
     openEngagement({
       sessionId,
-      ticketId: 'x',
-      projectSlug: 'p',
-      ticketSlug: 'demo',
+      ticketId: TICKET_ID,
       startedAt: '2026-01-01T00:00:00Z',
     });
   } finally {
@@ -68,11 +68,11 @@ describe('syntaur session resume (handoff-only)', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-resume-handoff-wkspc-'));
-    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', `${TICKET_ID}-demo`);
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      '---\nid: x\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n',
+      `---\nid: ${TICKET_ID}\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n`,
     );
   });
 

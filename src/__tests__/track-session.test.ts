@@ -54,10 +54,10 @@ describe('trackSessionCommand session-id self-resolution', () => {
   });
 
 
-  it('resolves and stores assignment_id on the opened engagement (M1)', async () => {
+  it('resolves and stores ticket_id on the opened engagement (M1)', async () => {
     // A project ticket with a frontmatter id under the projects dir.
     const projectsDir = resolve(testDir, 'projects');
-    const asgnDir = resolve(projectsDir, 'proj', 'tickets', 'asgn');
+    const asgnDir = resolve(projectsDir, 'proj', 'tickets', 'ASGN-1-asgn');
     await mkdir(asgnDir, { recursive: true });
     await writeFile(
       resolve(projectsDir, 'proj', 'project.md'),
@@ -65,7 +65,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
     );
     await writeFile(
       resolve(asgnDir, 'ticket.md'),
-      `---\nid: asgn-uuid-1\nslug: asgn\ntitle: asgn\nstatus: in_progress\n---\n# asgn\n`,
+      `---\nid: ASGN-1\nslug: asgn\ntitle: asgn\nstatus: in_progress\n---\n# asgn\n`,
     );
 
     await trackSessionCommand(
@@ -75,9 +75,7 @@ describe('trackSessionCommand session-id self-resolution', () => {
 
     const open = getOpenEngagement('track-id-1');
     expect(open).not.toBeNull();
-    expect(open!.assignment_id).toBe('asgn-uuid-1');
-    expect(open!.project_slug).toBe('proj');
-    expect(open!.assignment_slug).toBe('asgn');
+    expect(open!.ticket_id).toBe('ASGN-1');
   });
 
   it('rejects a WEAK session id with no --ticket (gate)', async () => {

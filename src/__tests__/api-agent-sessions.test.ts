@@ -23,7 +23,7 @@ let server: Server;
 let baseUrl: string;
 
 async function writeTicket(projectSlug: string, ticketSlug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  const dir = resolve(projectsDir, projectSlug, 'tickets', `${id}-${ticketSlug}`);
   await mkdir(dir, { recursive: true });
   await writeFile(
     resolve(projectsDir, projectSlug, 'project.md'),
@@ -83,7 +83,7 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
   });
 
   it('(b) returns 404 for a binding to a non-existent ticket and opens no engagement', async () => {
-    await writeTicket('proj', 'real', 'id-real');
+    await writeTicket('proj', 'real', 'REAL-1');
     const res = await post({
       agent: 'claude',
       sessionId: 'sess-ghost',
@@ -94,8 +94,8 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
     expect(hasAnyEngagement('sess-ghost')).toBe(false);
   });
 
-  it('(c) registers a valid ticket binding (201) and stores the resolved assignment_id (M1)', async () => {
-    await writeTicket('proj', 'real', 'id-real');
+  it('(c) registers a valid ticket binding (201) and stores the resolved ticket_id (M1)', async () => {
+    await writeTicket('proj', 'real', 'REAL-1');
     const res = await post({
       agent: 'claude',
       sessionId: 'sess-ok',
@@ -105,9 +105,7 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
     expect(res.status).toBe(201);
     const open = getOpenEngagement('sess-ok');
     expect(open).not.toBeNull();
-    expect(open!.assignment_id).toBe('id-real'); // M1: id resolved at registration
-    expect(open!.project_slug).toBe('proj');
-    expect(open!.assignment_slug).toBe('real');
+    expect(open!.ticket_id).toBe('REAL-1'); // M1: id resolved at registration
   });
 
   it('(d) allows a registration-only POST (no ticketSlug) with a valid sessionId', async () => {
@@ -116,7 +114,7 @@ describe('POST /api/agent-sessions — engagement-opening gate (L)', () => {
   });
 
   it('(e) a project-only POST (no ticketSlug) registers UNBOUND — opens no project-bound engagement', async () => {
-    await writeTicket('proj', 'real', 'id-real'); // project exists
+    await writeTicket('proj', 'real', 'REAL-1'); // project exists
     const res = await post({ agent: 'claude', sessionId: 'sess-proj-only', projectSlug: 'proj' });
     expect(res.status).toBe(201);
     // Binding requires a ticket selector — a bare/project-only POST is

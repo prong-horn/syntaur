@@ -6,10 +6,16 @@ import { getDashboardHelp, getHelpCommandNames } from '../dashboard/help.js';
 describe('dashboard help contract', () => {
   it('only documents commands that exist in src/index.ts', async () => {
     const indexSource = await readFile(resolve(process.cwd(), 'src/index.ts'), 'utf-8');
+    const projectSource = await readFile(resolve(process.cwd(), 'src/commands/project.ts'), 'utf-8');
     const commands = getHelpCommandNames();
 
     for (const command of commands) {
-      expect(indexSource).toContain(`.command('${command}')`);
+      if (command.startsWith('project ')) {
+        const sub = command.slice('project '.length);
+        expect(projectSource).toContain(`.command('${sub}')`);
+      } else {
+        expect(indexSource).toContain(`.command('${command}')`);
+      }
     }
   });
 

@@ -38,7 +38,7 @@ async function writeProjectTicket(opts: {
   branch: string;
 }): Promise<void> {
   const projectDir = resolve(projectsDir, opts.projectSlug);
-  const ticketDir = resolve(projectDir, 'tickets', opts.ticketSlug);
+  const ticketDir = resolve(projectDir, 'tickets', `${opts.id}-${opts.ticketSlug}`);
   await mkdir(ticketDir, { recursive: true });
   await writeFile(
     resolve(projectDir, 'project.md'),
@@ -124,15 +124,17 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     const wtPath = resolve(tmpHome, 'session-wt');
     git(repo, ['worktree', 'add', '-b', 'feat/sess', wtPath, 'main']);
 
+    const ticketId = 'REC-1';
     await writeProjectTicket({
       projectSlug: 'demo',
       ticketSlug: 'task-recreate',
-      id: 'aaaa1111-bbbb-2222-cccc-333344445555',
+      id: ticketId,
       repository: repo,
       worktreePath: wtPath,
       branch: 'feat/sess',
     });
     await appendSession('', {
+      ticketId,
       projectSlug: 'demo',
       ticketSlug: 'task-recreate',
       agent: 'claude',
@@ -160,7 +162,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     await expect(stat(wtPath)).resolves.toBeTruthy();
   });
 
-  it('rebuilds for a standalone-linked session (project_slug NULL, assignment_slug = UUID)', async () => {
+  it('rebuilds for a session bound by ticket_id only (no hydrated slugs)', async () => {
     const repo = resolve(tmpHome, 'repo-standalone');
     await mkdir(repo, { recursive: true });
     git(repo, ['init', '-q', '-b', 'main']);
@@ -172,44 +174,20 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
     const wtPath = resolve(tmpHome, 'standalone-session-wt');
     git(repo, ['worktree', 'add', '-b', 'feat/solo', wtPath, 'main']);
 
-    // Standalone ticket lives under ticketsDir/<uuid>/ticket.md and
-    // is resolved by id (the session's assignment_slug holds that UUID).
-    const id = 'bbbb2222-cccc-3333-dddd-444455556666';
-    const soloDir = resolve(ticketsDir, id);
-    await mkdir(soloDir, { recursive: true });
-    await writeFile(
-      resolve(soloDir, 'ticket.md'),
-      [
-        '---',
-        `id: ${id}`,
-        'slug: solo-task',
-        'title: "Solo Task"',
-        'project: null',
-        'type: feature',
-        'status: in_progress',
-        'priority: medium',
-        'created: "2026-06-01T00:00:00Z"',
-        'updated: "2026-06-01T00:00:00Z"',
-        'assignee: null',
-        'externalIds: []',
-        'dependsOn: []',
-        'links: []',
-        'blockedReason: null',
-        'workspace:',
-        `  repository: ${repo}`,
-        `  worktreePath: ${wtPath}`,
-        '  branch: feat/solo',
-        '  parentBranch: main',
-        'tags: []',
-        '---',
-        '',
-        '# Solo Task',
-      ].join('\n'),
-    );
+    const ticketId = 'SOL-1';
+    await writeProjectTicket({
+      projectSlug: 'solo',
+      ticketSlug: 'solo-task',
+      id: ticketId,
+      repository: repo,
+      worktreePath: wtPath,
+      branch: 'feat/solo',
+    });
 
     await appendSession('', {
+      ticketId,
       projectSlug: null,
-      ticketSlug: id, // standalone: assignment_slug holds the UUID
+      ticketSlug: null,
       agent: 'claude',
       sessionId: 'sess-standalone-1',
       started: '2026-06-01T00:00:00Z',

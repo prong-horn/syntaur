@@ -91,7 +91,7 @@ describe('sweepStaleSessions', () => {
 
   it('closes the swept row’s open engagement with reason `stale-sweep`', async () => {
     const stale = await seed(
-      { projectSlug: 'syntaur-meta', ticketSlug: 'demo' },
+      { projectSlug: 'syntaur-meta', ticketSlug: 'demo', ticketId: 'DEM-1' },
       7 * HOUR,
     );
     expect(getOpenEngagement(stale)).not.toBeNull();

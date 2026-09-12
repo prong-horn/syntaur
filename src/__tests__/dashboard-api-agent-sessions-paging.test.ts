@@ -216,10 +216,20 @@ describe('paged filtering spans the whole set, not the page', () => {
     // The client joined every searchable field with spaces and ran one
     // includes(), so "alpha task" matched project 'alpha' + ticket 'task'.
     // Per-column ORs would match neither.
-    await seedSession('cross-field', { projectSlug: 'alpha', ticketSlug: 'task' });
-    await seedSession('unrelated', { projectSlug: 'beta', ticketSlug: 'other' });
+    await seedSession('cross-field', {
+      status: 'active',
+      ticketId: 'ALPHA-TASK',
+      projectSlug: 'alpha',
+      ticketSlug: 'task',
+    });
+    await seedSession('unrelated', {
+      status: 'active',
+      ticketId: 'BETA-OTHER',
+      projectSlug: 'beta',
+      ticketSlug: 'other',
+    });
 
-    const body = await get(`?pageSize=10&search=${encodeURIComponent('alpha task')}`);
+    const body = await get(`?pageSize=10&search=${encodeURIComponent('alpha-task')}`);
     expect(body.sessions.map((s) => s.sessionId)).toEqual(['cross-field']);
   });
 
@@ -280,7 +290,12 @@ describe('usage-only rows in the paged union', () => {
 
 describe('attribution filtering', () => {
   async function seedMixed(): Promise<void> {
-    await seedSession('with-ticket', { projectSlug: 'alpha', ticketSlug: 'task' });
+    await seedSession('with-ticket', {
+      status: 'active',
+      ticketId: 'ALP-1',
+      projectSlug: 'alpha',
+      ticketSlug: 'task',
+    });
     await seedSession('adhoc-1');
     await seedSession('adhoc-2');
     seedUsage('spend-orphan-1', { cost: 1 });
@@ -367,7 +382,12 @@ describe('attribution filtering', () => {
 
   it('composes with paging, search, and sort', async () => {
     await seedMany(12, 'adhoc');
-    await seedSession('bound', { projectSlug: 'alpha', ticketSlug: 'task' });
+    await seedSession('bound', {
+      status: 'active',
+      ticketId: 'ALP-1',
+      projectSlug: 'alpha',
+      ticketSlug: 'task',
+    });
     seedUsage('orphan-x', { cost: 5 });
 
     const p0 = await get('?pageSize=5&page=0&attribution=unassigned&sort=started_desc');

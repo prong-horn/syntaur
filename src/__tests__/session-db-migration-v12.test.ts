@@ -83,9 +83,7 @@ function buildV11Db(path: string): void {
     CREATE TABLE engagement (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id TEXT NOT NULL,
-      assignment_id TEXT,
-      project_slug TEXT,
-      assignment_slug TEXT,
+      ticket_id TEXT,
       stage TEXT NOT NULL DEFAULT 'implement',
       started_at TEXT NOT NULL,
       ended_at TEXT,
@@ -156,9 +154,9 @@ function buildV11Db(path: string): void {
   ).run('sess-1', 'claude', '2026-08-01T10:00:00.000Z', 'active', '/w/test');
 
   db.prepare(
-    `INSERT INTO engagement (session_id, project_slug, assignment_slug, stage, started_at)
-     VALUES (?, ?, ?, ?, ?)`,
-  ).run('sess-1', 'proj', 'asgn', 'implement', '2026-08-01T10:00:00.000Z');
+    `INSERT INTO engagement (session_id, ticket_id, stage, started_at)
+     VALUES (?, ?, ?, ?)`,
+  ).run('sess-1', 'PRJ-1', 'implement', '2026-08-01T10:00:00.000Z');
 
   db.prepare(
     `INSERT INTO inventories (slug, kind, default_ttl_s, created_at)

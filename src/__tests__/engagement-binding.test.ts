@@ -35,23 +35,19 @@ afterEach(async () => {
   await rm(testDir, { recursive: true, force: true });
 });
 
-describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
-  it('does NOT split a slug-only interval when the first resolved-id assertion has the same (project, ticket, stage)', async () => {
-    // A freshly grabbed/tracked ticket: open with slugs, assignment_id NULL.
+describe('switchSessionStage same-target skip (ticket_id only)', () => {
+  it('does NOT split when the open engagement already has the same ticket_id and stage', async () => {
     openEngagement({
       sessionId: 's1',
-      ticketId: null,
-      projectSlug: 'proj',
-      ticketSlug: 'a',
+      ticketId: 'RES-1',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
     const before = getOpenEngagement('s1')!;
 
-    // The first `implement` stage assertion arrives WITH a resolved id.
     const result = await switchSessionStage({
       sessionId: 's1',
-      ticketId: 'resolved-id',
+      ticketId: 'RES-1',
       projectSlug: 'proj',
       ticketSlug: 'a',
       stage: 'implement',
@@ -62,12 +58,10 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
     expect(after.id).toBe(before.id); // same interval — not split
   });
 
-  it('DOES switch when the target ticket slug differs', async () => {
+  it('DOES switch when the target ticket_id differs', async () => {
     openEngagement({
       sessionId: 's2',
-      ticketId: null,
-      projectSlug: 'proj',
-      ticketSlug: 'a',
+      ticketId: 'IDA-1',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
@@ -75,31 +69,29 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
 
     const result = await switchSessionStage({
       sessionId: 's2',
-      ticketId: null,
+      ticketId: 'IDB-1',
       projectSlug: 'proj',
-      ticketSlug: 'b', // different ticket
+      ticketSlug: 'b',
       stage: 'implement',
     });
 
     expect(result.switched).toBe(true);
     const after = getOpenEngagement('s2')!;
     expect(after.id).not.toBe(before.id);
-    expect(after.assignment_slug).toBe('b');
+    expect(after.ticket_id).toBe('IDB-1');
   });
 
   it('DOES switch when both ids are present and differ', async () => {
     openEngagement({
       sessionId: 's3',
-      ticketId: 'id-A',
-      projectSlug: 'proj',
-      ticketSlug: 'a',
+      ticketId: 'IDA-1',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's3',
-      ticketId: 'id-B', // same slugs, different id
+      ticketId: 'IDB-1',
       projectSlug: 'proj',
       ticketSlug: 'a',
       stage: 'implement',
@@ -111,16 +103,14 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
   it('skips when both ids are present and equal (no churn on repeat)', async () => {
     openEngagement({
       sessionId: 's4',
-      ticketId: 'id-A',
-      projectSlug: 'proj',
-      ticketSlug: 'a',
+      ticketId: 'IDA-1',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's4',
-      ticketId: 'id-A',
+      ticketId: 'IDA-1',
       projectSlug: 'proj',
       ticketSlug: 'a',
       stage: 'implement',
@@ -132,16 +122,14 @@ describe('switchSessionStage same-target skip (M1: id-else-slugs)', () => {
   it('DOES switch when the stage differs (real stage transition)', async () => {
     openEngagement({
       sessionId: 's5',
-      ticketId: 'id-A',
-      projectSlug: 'proj',
-      ticketSlug: 'a',
+      ticketId: 'IDA-1',
       stage: 'implement',
       startedAt: '2026-06-01T01:00:00.000Z',
     });
 
     const result = await switchSessionStage({
       sessionId: 's5',
-      ticketId: 'id-A',
+      ticketId: 'IDA-1',
       projectSlug: 'proj',
       ticketSlug: 'a',
       stage: 'review', // stage change

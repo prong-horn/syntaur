@@ -385,21 +385,30 @@ First entry.
 
 });
 
-describe('listTicketsBoard standalone support', () => {
-  it('includes standalone tickets with projectSlug: null', async () => {
+describe('listTicketsBoard id-slug folder support', () => {
+  it('includes project tickets resolved by id from id-slug folders', async () => {
     const { getTicketDetailById, listTicketsBoard } = await import('../dashboard/api.js');
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const uuid = 'aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb';
-    const dir = resolve(ticketsDir, uuid);
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      resolve(dir, 'ticket.md'),
+    const ticketId = 'BRD-1';
+    await createProjectFiles(
+      testDir,
+      'p1',
       `---
-id: ${uuid}
-slug: my-standalone
-title: My Standalone
-project: null
+id: p1-id
+slug: p1
+title: P1
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+prefix: BRD
+nextTicket: 2
+---`,
+      [
+        {
+          slug: `${ticketId}-my-board`,
+          ticketMd: `---
+id: ${ticketId}
+slug: my-board
+title: My Board Ticket
+project: p1
 type: feature
 status: pending
 priority: medium
@@ -417,21 +426,21 @@ workspace:
 tags: []
 ---
 
-# My Standalone`,
-      'utf-8',
+# My Board Ticket`,
+        },
+      ],
     );
 
-    const board = await listTicketsBoard(testDir, ticketsDir);
-    const item = board.tickets.find((a) => a.id === uuid);
+    const board = await listTicketsBoard(testDir);
+    const item = board.tickets.find((a) => a.id === ticketId);
     expect(item).toBeTruthy();
-    expect(item!.projectSlug).toBeNull();
-    expect(item!.projectTitle).toBeNull();
-    expect(item!.slug).toBe('my-standalone');
+    expect(item!.projectSlug).toBe('p1');
+    expect(item!.slug).toBe('my-board');
     expect(item!.type).toBe('feature');
 
-    const detail = await getTicketDetailById(testDir, ticketsDir, uuid);
+    const detail = await getTicketDetailById(testDir, undefined, ticketId);
     expect(detail).not.toBeNull();
-    expect(detail!.projectSlug).toBeNull();
+    expect(detail!.projectSlug).toBe('p1');
     expect(detail!.dependsOn).toEqual([]);
     expect(detail!.type).toBe('feature');
   });
@@ -1527,8 +1536,8 @@ describe('GET /api/tickets/:id/events', () => {
   });
 
   it('returns recorded events for a project-nested ticket resolved by id', async () => {
-    const ticketId = 'events-ticket-id';
-    const projectDir = resolve(projectsDir, 'p1', 'tickets', 'a1');
+    const ticketId = 'EVT-1';
+    const projectDir = resolve(projectsDir, 'p1', 'tickets', `${ticketId}-a1`);
     await mkdir(projectDir, { recursive: true });
     await writeFile(
       resolve(projectDir, 'ticket.md'),

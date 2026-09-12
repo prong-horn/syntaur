@@ -24,8 +24,8 @@ let origSessionId: string | undefined;
 const PROJECT = 'shared-proj';
 const A_SLUG = 'ticket-a';
 const B_SLUG = 'ticket-b';
-const A_ID = 'aaaaaaaa-0000-1111-2222-333333333333';
-const B_ID = 'bbbbbbbb-0000-1111-2222-333333333333';
+const A_ID = 'TA-1';
+const B_ID = 'TB-1';
 const SESSION_A = 'session-alpha';
 const SESSION_B = 'session-beta';
 
@@ -39,7 +39,7 @@ async function writeProject(slug: string): Promise<void> {
 }
 
 async function writeTicket(slug: string, id: string): Promise<void> {
-  const dir = resolve(projectsDir, PROJECT, 'tickets', slug);
+  const dir = resolve(projectsDir, PROJECT, 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
   await writeFile(
     resolve(dir, 'ticket.md'),
@@ -96,7 +96,8 @@ beforeEach(async () => {
     JSON.stringify({
       projectSlug: PROJECT,
       ticketSlug: B_SLUG,
-      ticketDir: resolve(projectsDir, PROJECT, 'tickets', B_SLUG),
+      ticketId: B_ID,
+      ticketDir: resolve(projectsDir, PROJECT, 'tickets', `${B_ID}-${B_SLUG}`),
       repository: '/repo',
       workspaceRoot: sharedWorktree,
     }),
@@ -163,7 +164,7 @@ describe('two sessions, one worktree: engagement-keyed attribution', () => {
     // Ambient is session A (engagement on ticket A).
     process.env.CLAUDE_CODE_SESSION_ID = SESSION_A;
     const before = getOpenEngagement(SESSION_A);
-    expect(before?.assignment_slug).toBe(A_SLUG);
+    expect(before?.ticket_id).toBe(A_ID);
 
     // Explicitly target B — Cases 1/2 win, the engagement seam is not consulted.
     const targeted = await resolveTicketTarget(B_SLUG, {
@@ -176,7 +177,7 @@ describe('two sessions, one worktree: engagement-keyed attribution', () => {
 
     // Session A's open engagement is untouched — still on A (no silent switch).
     const after = getOpenEngagement(SESSION_A);
-    expect(after?.assignment_slug).toBe(A_SLUG);
+    expect(after?.ticket_id).toBe(A_ID);
     expect(after?.id).toBe(before?.id);
   });
 });

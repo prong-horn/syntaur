@@ -29,9 +29,10 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
 describe('derived-status CLI verbs (end-to-end)', () => {
   let home: string;
   let ticketPath: string;
+  let ticketFolder: string;
 
   const TICKET = `---
-id: verb-test-id
+id: VRB-1
 slug: verb-test
 title: "Verb Test"
 project: p1
@@ -70,10 +71,10 @@ A real objective.
       join(home, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
     );
-    const aDir = join(home, 'projects', 'p1', 'tickets', 'verb-test');
-    await mkdir(aDir, { recursive: true });
+    ticketFolder = join(home, 'projects', 'p1', 'tickets', 'VRB-1-verb-test');
+    await mkdir(ticketFolder, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
-    ticketPath = join(aDir, 'ticket.md');
+    ticketPath = join(ticketFolder, 'ticket.md');
     await writeFile(ticketPath, TICKET);
   });
 
@@ -96,7 +97,7 @@ A real objective.
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('No plan file');
 
-    await writeFile(join(home, 'projects', 'p1', 'tickets', 'verb-test', 'plan.md'), '# Plan');
+    await writeFile(join(ticketFolder, 'plan.md'), '# Plan');
     r = await runCli(['plan', 'approve', 'verb-test', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     let f = await fm();
@@ -188,7 +189,7 @@ A real objective.
     let content = await readFile(ticketPath, 'utf-8');
     content = content.replace('status: draft', 'status: in_progress');
     await writeFile(ticketPath, content);
-    await writeFile(join(home, 'projects', 'p1', 'tickets', 'verb-test', 'plan.md'), '# Plan');
+    await writeFile(join(ticketFolder, 'plan.md'), '# Plan');
 
     const dry = await runCli(['migrate-derive', '--dry-run'], home);
     expect(dry.code).toBe(0);

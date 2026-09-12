@@ -16,10 +16,13 @@ describe('setup-adapter command', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'syntaur-test-'));
     projectDir = join(tempDir, 'projects', 'test-project');
-    ticketDir = join(projectDir, 'tickets', 'test-ticket');
+    ticketDir = join(projectDir, 'tickets', 'TEST-1-test-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(join(projectDir, 'project.md'), '---\ntitle: Test\n---\n');
-    await writeFile(join(ticketDir, 'ticket.md'), '---\nstatus: pending\n---\n');
+    await writeFile(
+      join(ticketDir, 'ticket.md'),
+      '---\nid: TEST-1\nslug: test-ticket\nstatus: pending\n---\n',
+    );
 
     cwdDir = join(tempDir, 'workspace');
     await mkdir(cwdDir, { recursive: true });

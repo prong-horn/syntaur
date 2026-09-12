@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { createProjectCommand } from '../commands/create-project.js';
@@ -30,10 +30,11 @@ async function readTicketContent(
   projectSlug: string,
   ticketSlug: string,
 ): Promise<string> {
-  return readFile(
-    resolve(testDir, projectSlug, 'tickets', ticketSlug, 'ticket.md'),
-    'utf-8',
-  );
+  const ticketsDir = resolve(testDir, projectSlug, 'tickets');
+  const entries = await readdir(ticketsDir);
+  const folder = entries.find((e) => e.endsWith(`-${ticketSlug}`) || e === ticketSlug);
+  if (!folder) throw new Error(`ticket folder for ${ticketSlug} not found under ${ticketsDir}`);
+  return readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
 }
 
 describe('lifecycle integration', () => {
@@ -45,10 +46,11 @@ describe('lifecycle integration', () => {
       project: projectSlug,
       dir: testDir,
     });
+    const taskBId = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b')).id;
     await newCommand('Task A', {
       project: projectSlug,
       dir: testDir,
-      dependsOn: 'task-b',
+      dependsOn: taskBId,
     });
   });
 
@@ -327,7 +329,11 @@ describe('lifecycle integration', () => {
     });
 
     it('executeTransitionByDir appends an entry', async () => {
-      const ticketDir = resolve(testDir, projectSlug, 'tickets', 'task-b');
+      const ticketsDir = resolve(testDir, projectSlug, 'tickets');
+      const entries = await readdir(ticketsDir);
+      const folder = entries.find((e) => e.endsWith('-task-b'));
+      if (!folder) throw new Error('task-b folder not found');
+      const ticketDir = resolve(ticketsDir, folder);
       await executeTransitionByDir(ticketDir, 'shape');
       const fm = parseTicketFrontmatter(await readTicketContent(projectSlug, 'task-b'));
       expect(fm.statusHistory).toHaveLength(2);
@@ -371,17 +377,17 @@ describe('ticket links', () => {
     await createProjectCommand('Test Project', { dir: testDir });
   });
 
-  it('creates ticket with links in projectSlug/ticketSlug format', async () => {
+  it('creates ticket with links as ticket ids', async () => {
     await newCommand('Task With Links', {
       project: projectSlug,
       dir: testDir,
-      links: 'other-project/task-one,another-project/task-two',
+      links: 'SCR-1,SCR-2',
     });
 
     const content = await readTicketContent(projectSlug, 'task-with-links');
     expect(content).toContain('links:');
-    expect(content).toContain('  - other-project/task-one');
-    expect(content).toContain('  - another-project/task-two');
+    expect(content).toContain('  - SCR-1');
+    expect(content).toContain('  - SCR-2');
   });
 
   it('creates ticket with empty links', async () => {
@@ -394,22 +400,12 @@ describe('ticket links', () => {
     expect(content).toContain('links: []');
   });
 
-  it('rejects invalid link format (missing slash)', async () => {
+  it('rejects invalid link format (not a ticket id)', async () => {
     await expect(
       newCommand('Bad Links', {
         project: projectSlug,
         dir: testDir,
-        links: 'no-slash-here',
-      }),
-    ).rejects.toThrow('Invalid link');
-  });
-
-  it('rejects invalid link format (too many slashes)', async () => {
-    await expect(
-      newCommand('Bad Links', {
-        project: projectSlug,
-        dir: testDir,
-        links: 'too/many/slashes',
+        links: 'not-a-ticket-id',
       }),
     ).rejects.toThrow('Invalid link');
   });
@@ -480,10 +476,11 @@ describe('runTransition per-workflow context (Fix 1)', () => {
   });
 
   async function readWf(ticketSlug: string): Promise<string> {
-    return readFile(
-      resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md'),
-      'utf-8',
-    );
+    const ticketsDir = resolve(projectsDir, projectSlug, 'tickets');
+    const entries = await readdir(ticketsDir);
+    const folder = entries.find((e) => e.endsWith(`-${ticketSlug}`) || e === ticketSlug);
+    if (!folder) throw new Error(`ticket folder for ${ticketSlug} not found`);
+    return readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
   }
 
   it('(a) complete lands on the workflow-renamed terminal status with disposition terminal', async () => {

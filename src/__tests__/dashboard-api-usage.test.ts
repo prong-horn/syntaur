@@ -46,7 +46,7 @@ async function writeProjectTicket(
   ticketId: string,
 ): Promise<void> {
   await writeProject(projectSlug);
-  const dir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  const dir = resolve(projectsDir, projectSlug, 'tickets', `${ticketId}-${ticketSlug}`);
   await mkdir(dir, { recursive: true });
   await writeFile(
     resolve(dir, 'ticket.md'),
@@ -105,9 +105,15 @@ afterEach(async () => {
  * per-ticket cost. open cost 0 → close cost `costDelta`, so the window cost
  * equals `costDelta`. Standalone (`projectSlug === ''`) stores `project_slug NULL`.
  */
+function ticketIdForSlug(slug: string): string {
+  const num = slug.match(/(\d+)$/)?.[1] ?? '1';
+  const letters = slug.replace(/[^a-z]/gi, '').toUpperCase().padEnd(2, 'X').slice(0, 3);
+  return `${letters}-${num}`;
+}
+
 function seedWindow(
   projectSlug: string,
-  ticketSlug: string,
+  ticketId: string,
   costDelta: number,
   model = 'claude-opus-4-7',
   endedAt = '2026-05-21T12:30:00.000Z',
@@ -119,9 +125,8 @@ function seedWindow(
     capturedAt: '2026-05-21T12:00:00.000Z',
   });
   const row = openEngagement({
-    sessionId: `win-${projectSlug}-${ticketSlug}-${model}-${endedAt}`,
-    projectSlug: projectSlug === '' ? null : projectSlug,
-    ticketSlug,
+    sessionId: `win-${projectSlug}-${ticketId}-${model}-${endedAt}`,
+    ticketId,
     stage: 'implement',
     startedAt,
     tokensAtOpen: snap(0),
@@ -142,9 +147,11 @@ function seed(
   totalCost: number,
   eventTs = '2026-05-21T12:00:00.000Z',
   model = 'claude-opus-4-7',
+  ticketId?: string,
 ) {
+  const id = ticketId ?? ticketIdForSlug(ticketSlug);
   upsertEvent({
-    sessionId: `${projectSlug}-${ticketSlug}-${model}-${eventTs}`,
+    sessionId: `${projectSlug}-${id}-${model}-${eventTs}`,
     model,
     tool: 'claude',
     eventTs,
@@ -156,7 +163,7 @@ function seed(
     totalCost,
     cwd: null,
     projectSlug,
-    ticketSlug,
+    ticketSlug: id,
     rawJson: null,
   });
 }
@@ -207,13 +214,14 @@ describe('GET /api/usage/projects/:projectSlug', () => {
   });
 
   it('includes a ticket that has only a snapshot window (A-then-B cumulative row)', async () => {
-    // The TRUE failure shape: one session worked A then B on the same model, but
-    // the cumulative usage_events row attributes only to B (the latest). A has a
-    // real closed engagement window yet NO usage_daily row — it must still appear.
-    seed('p1', 'B', 400, 4.0); // single cumulative row, attributed to B only
+    const idA = 'USA-1';
+    const idB = 'USB-1';
+    await writeProjectTicket('p1', 'A', idA);
+    await writeProjectTicket('p1', 'B', idB);
+    seed('p1', 'B', 400, 4.0, undefined, undefined, idB);
     runRollup();
-    seedWindow('p1', 'A', 1.5);
-    seedWindow('p1', 'B', 2.5);
+    seedWindow('p1', idA, 1.5);
+    seedWindow('p1', idB, 2.5);
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
     expect(res.status).toBe(200);
@@ -221,22 +229,22 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     const cost = Object.fromEntries(
       body.summary.map((s: { ticketSlug: string; totalCost: number }) => [s.ticketSlug, s.totalCost]),
     );
-    // A is present (snapshot window) despite having no usage_daily row.
-    expect(body.summary.some((s: { ticketSlug: string }) => s.ticketSlug === 'A')).toBe(true);
-    expect(cost.A).toBeCloseTo(1.5, 6);
-    // B's cost is its WINDOW delta (2.5), NOT the whole cumulative row (4.0).
-    expect(cost.B).toBeCloseTo(2.5, 6);
+    expect(body.summary.some((s: { ticketSlug: string }) => s.ticketSlug === idA)).toBe(true);
+    expect(cost[idA]).toBeCloseTo(1.5, 6);
+    expect(cost[idB]).toBeCloseTo(2.5, 6);
   });
 
   it('surfaces zeroed confidence counts for a project-rollup ticket with no closed window', async () => {
     // a1 has usage_daily but NO engagement window — it must still carry the
     // window-confidence count fields (all 0), not omit them.
-    seed('p1', 'a1', 100, 0.5);
+    const ticketId = ticketIdForSlug('a1');
+    await writeProjectTicket('p1', 'a1', ticketId);
+    seed('p1', 'a1', 100, 0.5, undefined, undefined, ticketId);
     runRollup();
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
     const body = await res.json();
-    const a1 = body.summary.find((s: { ticketSlug: string }) => s.ticketSlug === 'a1');
+    const a1 = body.summary.find((s: { ticketSlug: string }) => s.ticketSlug === ticketId);
     expect(a1).toBeDefined();
     expect(a1.totalCost).toBe(0); // snapshot-derived: no closed window yet
     expect(a1.pricedWindowCount).toBe(0);
@@ -245,11 +253,11 @@ describe('GET /api/usage/projects/:projectSlug', () => {
   });
 
   it('surfaces snapshot-window confidence counts on the per-ticket summary', async () => {
-    const ticketId = 'a1-usage-id';
+    const ticketId = 'USG-1';
     await writeProjectTicket('p1', 'a1', ticketId);
-    seed('p1', 'a1', 100, 0.5);
+    seed('p1', 'a1', 100, 0.5, undefined, undefined, ticketId);
     runRollup();
-    seedWindow('p1', 'a1', 0.5);
+    seedWindow('p1', ticketId, 0.5);
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     const body = await res.json();
@@ -261,9 +269,9 @@ describe('GET /api/usage/projects/:projectSlug', () => {
 
 describe('GET /api/tickets/:id/usage', () => {
   it('returns daily + events for a specific ticket', async () => {
-    const ticketId = 'a1-usage-id';
+    const ticketId = 'USG-1';
     await writeProjectTicket('p1', 'a1', ticketId);
-    seed('p1', 'a1', 100, 0.5);
+    seed('p1', 'a1', 100, 0.5, undefined, undefined, ticketId);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
 
@@ -278,13 +286,13 @@ describe('GET /api/tickets/:id/usage', () => {
   });
 
   it('includes a pre-aggregated summary for the ticket', async () => {
-    const ticketId = 'a1-usage-id';
+    const ticketId = 'USG-1';
     await writeProjectTicket('p1', 'a1', ticketId);
-    seed('p1', 'a1', 100, 0.5);
+    seed('p1', 'a1', 100, 0.5, undefined, undefined, ticketId);
     seed('p1', 'a2', 200, 1.0);
     runRollup();
     // M2: per-ticket cost is the snapshot-window delta, not the cumulative row.
-    seedWindow('p1', 'a1', 0.5);
+    seedWindow('p1', ticketId, 0.5);
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
@@ -298,16 +306,16 @@ describe('GET /api/tickets/:id/usage', () => {
   });
 
   it('merges byModel across multiple days and models, ordered by tokens desc', async () => {
-    const ticketId = 'merge-usage-id';
+    const ticketId = 'USG-2';
     await writeProjectTicket('p1', 'merge', ticketId);
     // One ticket, two models, spread across two days.
-    seed('p1', 'merge', 100, 0.5, '2026-05-20T12:00:00.000Z', 'claude-opus-4-7');
-    seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
-    seed('p1', 'merge', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
+    seed('p1', 'merge', 100, 0.5, '2026-05-20T12:00:00.000Z', 'claude-opus-4-7', ticketId);
+    seed('p1', 'merge', 30, 0.25, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7', ticketId);
+    seed('p1', 'merge', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6', ticketId);
     runRollup();
     // M2: headline cost is the snapshot-window total (here matching the cumulative);
     // byModel keeps the usage_daily per-model breakdown.
-    seedWindow('p1', 'merge', 0.875);
+    seedWindow('p1', ticketId, 0.875);
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
@@ -323,15 +331,15 @@ describe('GET /api/tickets/:id/usage', () => {
   });
 
   it('reconciles the header total with the by-model breakdown when there is NO engagement window', async () => {
-    const ticketId = 'nowin-usage-id';
+    const ticketId = 'USG-3';
     await writeProjectTicket('p1', 'nowin', ticketId);
     // The photographed bug: a ticket accrues usage_daily cost (attributed by
     // slug) yet never had a registered agent session, so there are ZERO closed
     // engagement windows. The window-derived header must NOT show $0 over a
     // non-zero per-model breakdown — with no window to attribute, it falls back to
     // the cumulative daily cost, which is exactly what `byModel` sums to.
-    seed('p1', 'nowin', 100, 0.5, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7');
-    seed('p1', 'nowin', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6');
+    seed('p1', 'nowin', 100, 0.5, '2026-05-21T12:00:00.000Z', 'claude-opus-4-7', ticketId);
+    seed('p1', 'nowin', 50, 0.125, '2026-05-21T12:00:00.000Z', 'claude-sonnet-4-6', ticketId);
     runRollup();
     // NOTE: no seedWindow() — this ticket has no engagement window at all.
 
@@ -350,7 +358,7 @@ describe('GET /api/tickets/:id/usage', () => {
   });
 
   it('returns a calm zero summary when the ticket has no usage', async () => {
-    const ticketId = 'none-usage-id';
+    const ticketId = 'USG-4';
     await writeProjectTicket('p1', 'none', ticketId);
     seed('p1', 'a1', 100, 0.5);
     runRollup();
@@ -365,18 +373,17 @@ describe('GET /api/tickets/:id/usage', () => {
     expect(body.summary.lastEventDay).toBeNull();
     expect(body.summary.byModel).toEqual([]);
   });
-  it('treats project_slug as empty for standalone tickets', async () => {
-    const ticketId = 'standalone-asgn';
-    await writeStandalone(ticketId);
-    seed('', ticketId, 500, 0.7);
+  it('returns usage for a project-nested ticket resolved by id', async () => {
+    const ticketId = 'STL-1';
+    await writeProjectTicket('p1', 'standalone-asgn', ticketId);
+    seed('p1', 'standalone-asgn', 500, 0.7, undefined, undefined, ticketId);
     runRollup();
-    // Standalone window stored with project_slug NULL; reader maps ''→NULL.
-    seedWindow('', ticketId, 0.7);
+    seedWindow('p1', ticketId, 0.7);
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.ticketId).toBe('standalone-asgn');
+    expect(body.ticketId).toBe(ticketId);
     expect(body.daily.length).toBe(1);
     expect(body.events.length).toBe(1);
     expect(body.summary.totalTokens).toBe(500);
@@ -386,10 +393,10 @@ describe('GET /api/tickets/:id/usage', () => {
     ]);
   });
 
-  it('returns a calm zero summary for a standalone ticket with no usage', async () => {
-    const ticketId = 'standalone-none-id';
-    await writeStandalone(ticketId);
-    seed('', 'standalone-asgn', 500, 0.7);
+  it('returns a calm zero summary for a ticket with no usage', async () => {
+    const ticketId = 'STL-2';
+    await writeProjectTicket('p1', 'standalone-none', ticketId);
+    seed('p1', 'standalone-asgn', 500, 0.7);
     runRollup();
 
     const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);

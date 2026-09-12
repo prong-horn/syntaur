@@ -27,17 +27,19 @@ async function seedProject(slug: string): Promise<void> {
   );
 }
 
-function ticketId(slug: string): string {
-  return `55555555-5555-5555-5555-${slug.padEnd(12, '0').slice(0, 12)}`;
+function ticketIdForSlug(slug: string): string {
+  const num = slug.match(/(\d+)$/)?.[1] ?? '1';
+  return `WF-${num}`;
 }
 
 async function seedTicket(project: string, slug: string): Promise<string> {
-  const dir = join(projectsDir, project, 'tickets', slug);
+  const id = ticketIdForSlug(slug);
+  const dir = join(projectsDir, project, 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
   const path = join(dir, 'ticket.md');
   await writeFile(
     path,
-    `---\nid: ${ticketId(slug)}\nslug: ${slug}\ntitle: ${slug}\nproject: ${project}\ntype: feature\nstatus: in_progress\npriority: medium\n---\n# ${slug}\n`,
+    `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nproject: ${project}\ntype: feature\nstatus: in_progress\npriority: medium\n---\n# ${slug}\n`,
   );
   return path;
 }
@@ -117,9 +119,10 @@ describe('ticket workflow route', () => {
   it('sets the workflow override and re-derives', async () => {
     await seedProject('p');
     await seedTicket('p', 'a1');
-    const res = await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'bug' });
+    const id = ticketIdForSlug('a1');
+    const res = await put(`/api/tickets/${id}/workflow`, { workflow: 'bug' });
     expect(res.status).toBe(200);
-    const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');
+    const md = await readFile(join(projectsDir, 'p', 'tickets', `${id}-a1`, 'ticket.md'), 'utf-8');
     expect(md).toMatch(/^workflow: bug$/m);
   });
 
@@ -127,16 +130,17 @@ describe('ticket workflow route', () => {
     await seedProject('p');
     await seedTicket('p', 'a1');
     expect(
-      (await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'ghost' })).status,
+      (await put(`/api/tickets/${ticketIdForSlug('a1')}/workflow`, { workflow: 'ghost' })).status,
     ).toBe(400);
   });
 
   it('clears the workflow override when given null', async () => {
     await seedProject('p');
     await seedTicket('p', 'a1');
-    await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: 'bug' });
-    await put(`/api/tickets/${ticketId('a1')}/workflow`, { workflow: null });
-    const md = await readFile(join(projectsDir, 'p', 'tickets', 'a1', 'ticket.md'), 'utf-8');
+    const id = ticketIdForSlug('a1');
+    await put(`/api/tickets/${id}/workflow`, { workflow: 'bug' });
+    await put(`/api/tickets/${id}/workflow`, { workflow: null });
+    const md = await readFile(join(projectsDir, 'p', 'tickets', `${id}-a1`, 'ticket.md'), 'utf-8');
     expect(md).not.toMatch(/^workflow:/m);
   });
 });

@@ -200,7 +200,7 @@ describe('chat_items index', () => {
     expect(chat?.value).toBe(CHAT_SCHEMA_VERSION);
     // Three independent keys — the sessions table's own version is not this one.
     expect(rows.find((r) => r.key === 'schema_version')?.value).not.toBe(undefined);
-    expect(rows.find((r) => r.key === 'engagement_schema_version')?.value).toBe('1');
+    expect(rows.find((r) => r.key === 'engagement_schema_version')?.value).toBe('2');
   });
 
   it('upsert is idempotent by item_id', () => {
@@ -503,6 +503,19 @@ describe('chat schema v1 → v2 (Task 3)', () => {
       INSERT INTO meta (key, value) VALUES ('chat_schema_version', '1');
       INSERT INTO chat_sessions (session_key, assignment_id, agent_id, harness, state, created_at)
         VALUES ('a1~claude', 'a1', 'claude', 'claude', 'idle', '2026-09-02T12:00:00.000Z');
+      CREATE TABLE chat_items (
+        item_id TEXT PRIMARY KEY,
+        assignment_id TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        turn_id TEXT,
+        agent_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        seq_first INTEGER NOT NULL,
+        seq_last INTEGER NOT NULL,
+        sealed INTEGER NOT NULL DEFAULT 0,
+        json TEXT NOT NULL
+      );
     `);
     raw.close();
 
@@ -515,7 +528,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
     expect(
       (db.prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'").get() as { value: string })
         .value,
-    ).toBe('4');
+    ).toBe('5');
     // The existing row survives and defaults to the start of the log.
     expect(
       db.prepare("SELECT last_delivered_seq FROM chat_sessions WHERE session_key = 'a1~claude'").get(),
@@ -559,6 +572,19 @@ describe('chat schema v1 → v2 (Task 3)', () => {
         last_delivered_seq  INTEGER NOT NULL DEFAULT 0
       );
       INSERT INTO meta (key, value) VALUES ('chat_schema_version', '1');
+      CREATE TABLE chat_items (
+        item_id TEXT PRIMARY KEY,
+        assignment_id TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        turn_id TEXT,
+        agent_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        seq_first INTEGER NOT NULL,
+        seq_last INTEGER NOT NULL,
+        sealed INTEGER NOT NULL DEFAULT 0,
+        json TEXT NOT NULL
+      );
     `);
     raw.close();
 
@@ -569,7 +595,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
           .prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'")
           .get() as { value: string }
       ).value,
-    ).toBe('4');
+    ).toBe('5');
     closeSessionDb();
     await rm(dir, { recursive: true, force: true });
   });
@@ -609,6 +635,19 @@ describe('chat schema v1 → v2 (Task 3)', () => {
         last_delivered_seq  INTEGER NOT NULL DEFAULT 0
       );
       INSERT INTO meta (key, value) VALUES ('chat_schema_version', '2');
+      CREATE TABLE chat_items (
+        item_id TEXT PRIMARY KEY,
+        assignment_id TEXT NOT NULL,
+        session_key TEXT NOT NULL,
+        turn_id TEXT,
+        agent_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        ts TEXT NOT NULL,
+        seq_first INTEGER NOT NULL,
+        seq_last INTEGER NOT NULL,
+        sealed INTEGER NOT NULL DEFAULT 0,
+        json TEXT NOT NULL
+      );
     `);
     raw.close();
 
@@ -620,7 +659,7 @@ describe('chat schema v1 → v2 (Task 3)', () => {
     expect(
       (db.prepare("SELECT value FROM meta WHERE key = 'chat_schema_version'").get() as { value: string })
         .value,
-    ).toBe('4');
+    ).toBe('5');
     closeSessionDb();
     await rm(dir, { recursive: true, force: true });
   });

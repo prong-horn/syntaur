@@ -52,16 +52,25 @@ interface SeedOpts {
   comments?: Comment[];
 }
 
+function toTicketId(id: string, slug: string): string {
+  if (/^[A-Z]{2,5}-\d+$/.test(id)) return id;
+  const letters = id.replace(/[^A-Za-z]/g, '').toUpperCase().padEnd(2, 'X').slice(0, 3);
+  const num = (id.match(/\d+/) ?? slug.match(/\d+/) ?? ['1'])[0];
+  return `${letters}-${num}`;
+}
+
 /** Create a real on-disk ticket fixture (ticket.md + optional plan/comments). */
 async function seed(o: SeedOpts): Promise<string> {
   const standalone = o.project === undefined || o.project === null;
+  const ticketId = toTicketId(o.id, o.slug);
+  const folder = `${ticketId}-${o.slug}`;
   const dir = standalone
-    ? join(standaloneDir, o.slug)
-    : join(projectsDir, o.project as string, 'tickets', o.slug);
+    ? join(standaloneDir, folder)
+    : join(projectsDir, o.project as string, 'tickets', folder);
   await mkdir(dir, { recursive: true });
 
   const fm: string[] = [
-    `id: ${o.id}`,
+    `id: ${ticketId}`,
     `slug: ${o.slug}`,
     `title: ${o.title ?? o.slug}`,
     `status: ${o.status}`,
@@ -146,7 +155,7 @@ describe('computeInbox — shape', () => {
     expect(item).toMatchObject({
       project: 'p1',
       ticketSlug: 'rev',
-      ticketId: 'u1',
+      ticketId: toTicketId('u1', 'rev'),
       title: 'rev',
       category: 'review',
       since: expect.any(String),
@@ -244,11 +253,11 @@ describe('computeInbox — positive categories', () => {
     expect(r.items[0].action.command).toBe('syntaur plan approve plan-it --project p1');
   });
 
-  it('standalone item: omits --project and targets the UUID', async () => {
-    await seed({ id: 'uuid-xyz', slug: 'uuid-xyz', status: 'review' });
-    const r = await run();
-    expect(r.items[0].project).toBeNull();
-    expect(r.items[0].action.command).toBe('syntaur complete uuid-xyz');
+  it('project item: targets ticket by id with --project', async () => {
+    await seed({ id: 'IBX-1', slug: 'ibx', status: 'review', project: 'p1' });
+    const r = await run({ project: 'p1' });
+    expect(r.items[0].project).toBe('p1');
+    expect(r.items[0].action.command).toBe('syntaur complete ibx --project p1');
   });
 });
 
@@ -806,12 +815,12 @@ describe('computeInbox — filters', () => {
       ],
     });
     await seed({ id: 'r2', slug: 'r2', status: 'review', project: 'p2' });
-    await seed({ id: 's1', slug: 's1', status: 'review' }); // standalone
+    await seed({ id: 'R3-1', slug: 'r3', status: 'review', project: 'p1' });
   });
 
   it('project filter restricts to one project slug', async () => {
     const r = await run({ project: 'p1' });
-    expect(r.total).toBe(2);
+    expect(r.total).toBe(3);
     expect(r.items.every((i) => i.project === 'p1')).toBe(true);
   });
 
@@ -832,8 +841,8 @@ describe('computeInbox — filters', () => {
 
   it('combined project + types filter', async () => {
     const r = await run({ project: 'p1', types: ['review'] as InboxCategory[] });
-    expect(r.total).toBe(1);
-    expect(r.items[0].ticketSlug).toBe('r1');
+    expect(r.total).toBe(2);
+    expect(r.items.map((i) => i.ticketSlug).sort()).toEqual(['r1', 'r3']);
   });
 });
 
@@ -888,7 +897,7 @@ describe('computeInbox — chat questions', () => {
     expect(q.body).toBe('Which name?');
     expect(q.action).toEqual({
       verb: 'Open chat',
-      command: 'http://localhost:4888/t/a-chat?tab=chat#item-9',
+      command: 'http://localhost:4888/t/ACH-1?tab=chat#item-9',
     });
   });
 
@@ -915,12 +924,12 @@ describe('computeInbox — chat questions', () => {
     expect(q.action.verb).toBe('Answer');
   });
 
-  it('builds standalone chat URLs from ticket id', async () => {
+  it('builds chat URLs from ticket id', async () => {
     await seed({
-      id: 'uuid-standalone',
-      slug: 'uuid-standalone',
+      id: 'STD-1',
+      slug: 'solo-chat',
       status: 'in_progress',
-      project: null,
+      project: 'demo',
       comments: [
         {
           id: 'sq1',
@@ -935,7 +944,7 @@ describe('computeInbox — chat questions', () => {
     const r = await run({ dashboardUrl: 'http://test.local:4800' });
     const q = r.items.find((i) => i.category === 'question')!;
     expect(q.action.command).toBe(
-      'http://test.local:4800/t/uuid-standalone?tab=chat#perm-1',
+      'http://test.local:4800/t/STD-1?tab=chat#perm-1',
     );
   });
 
@@ -1176,7 +1185,7 @@ describe('inboxRowKey and rowFingerprint', () => {
       ],
     });
     const plain = (await run()).items[0];
-    expect(inboxRowKey(plain)).toBe('q-id~20260615T000000Z');
+    expect(inboxRowKey(plain)).toBe('QID-1~20260615T000000Z');
 
     const permId = 'perm~chat~item';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permId });
@@ -1205,7 +1214,7 @@ describe('inboxRowKey and rowFingerprint', () => {
 
     await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });
     const review = (await run()).items.find((i) => i.ticketSlug === 'rev-slug')!;
-    expect(inboxRowKey(review)).toBe('rev-id~review');
+    expect(inboxRowKey(review)).toBe('REV-1~review');
     expect(rowFingerprint(review)).toBe(`${review.since}|${review.ticketUpdated}|`);
   });
 });

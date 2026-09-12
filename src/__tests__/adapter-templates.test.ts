@@ -65,10 +65,11 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('comments.md');
   });
 
-  it('documents standalone tickets', () => {
+  it('documents scratch project and id-prefixed folders', () => {
     const out = renderCursorProtocol();
-    expect(out).toContain('standalone');
-    expect(out).toMatch(/~\/\.syntaur\/tickets\//);
+    expect(out).toContain('projects/scratch/');
+    expect(out).toContain('<ID>-<slug>');
+    expect(out).toContain('no standalone');
   });
 });
 
@@ -190,10 +191,11 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('comments.md');
   });
 
-  it('documents --one-off for standalone tickets', () => {
+  it('documents scratch project and id-prefixed folders', () => {
     const out = renderCodexAgents(TEST_PARAMS);
-    expect(out).toContain('--one-off');
-    expect(out).toMatch(/~\/\.syntaur\/tickets\//);
+    expect(out).toContain('projects/scratch/');
+    expect(out).toContain('<ID>-<slug>');
+    expect(out).toContain('no standalone');
   });
 
   it('mentions --type flag for new', () => {

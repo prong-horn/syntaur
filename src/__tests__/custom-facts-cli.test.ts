@@ -109,7 +109,7 @@ statuses:
 }
 
 const TICKET = (repoPath: string) => `---
-id: feat-x-id
+id: FTX-1
 slug: feat-x
 title: "Feat X"
 project: p1
@@ -150,7 +150,7 @@ describe('custom facts + attestations CLI (end-to-end)', () => {
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-cf-'));
     await writeFile(join(home, 'config.md'), configMd(resolve(home, 'projects')));
-    aDir = join(home, 'projects', 'p1', 'tickets', 'feat-x');
+    aDir = join(home, 'projects', 'p1', 'tickets', 'FTX-1-feat-x');
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     ticketPath = join(aDir, 'ticket.md');

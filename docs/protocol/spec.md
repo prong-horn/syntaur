@@ -64,7 +64,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
       _index-decisions.md            # Derived: decision record summary table
       _status.md                     # Derived: computed project status, ticket rollup, dependency graph
       tickets/
-        <ticket-slug>/
+        <ID>-<slug>/                 # Agent-writable ticket folder; ID is <PREFIX>-<n> from project.md
           ticket.md              # Agent-writable: the ticket record (source of truth for state)
           plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
           progress.md                # Agent-writable, append-only: timestamped progress log
@@ -76,15 +76,6 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
         <resource-slug>.md           # Shared-writable: reference material for the project
       memories/
         <memory-slug>.md             # Shared-writable: learnings discovered during the project
-  tickets/
-    <ticket-id>/                 # Standalone tickets (folder named by UUID, not slug)
-      ticket.md                  # Same agent-writable schema; `project: null`, `slug` display-only
-      plan*.md                       # Same as project-nested
-      progress.md                    # Same as project-nested
-      comments.md                    # Same as project-nested
-      scratchpad.md                  # Same as project-nested
-      handoff.md                     # Same as project-nested
-      decision-record.md             # Same as project-nested
   playbooks/
     manifest.md                      # Derived: playbook listing with descriptions and when_to_use
     <slug>.md                        # User-authored: behavioral rules and workflows for agents
@@ -94,11 +85,11 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 ### Key structural observations
 
 - **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
-- **Project-nested tickets** live at `projects/<project-slug>/tickets/<ticket-slug>/`. The folder name equals the ticket's `slug`.
-- **Standalone tickets** live at `tickets/<ticket-id>/` under `~/.syntaur/`. The folder name equals the ticket's `id` (a UUID), because `slug` is not guaranteed unique across standalone tickets. In standalone tickets, `project: null` in frontmatter and `slug` is display-only. Resolve by id via `resolveTicketById`.
+- **All tickets live under a project.** Ticket folders are at `projects/<project-slug>/tickets/<ID>-<slug>/`, where `ID` is `<PREFIX>-<n>` (e.g. `FIT-3-implement-jwt-middleware`). The `prefix` and `nextTicket` counter live in `project.md`; ids are allocated by `syntaur new` and never reused. The `slug` is the human-readable suffix and may be renamed with `syntaur rename`.
+- **Scratch project** (`projects/scratch/`, prefix `SCR`) holds one-off tickets. `syntaur new` defaults here when `--project` is omitted. There is no standalone `~/.syntaur/tickets/` tree.
 - **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
-- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files. Standalone tickets have no manifest — the agent starts directly from `ticket.md`.
-- **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project. Standalone tickets carry no resources/memories.
+- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files.
+- **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project.
 
 ---
 

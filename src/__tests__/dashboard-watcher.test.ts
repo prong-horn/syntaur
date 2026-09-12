@@ -71,8 +71,7 @@ describe('watcher derive hooks', () => {
     const projectsDir = join(root, 'projects');
     const ticketsDir = join(root, 'tickets');
     const configPath = join(root, 'config.md');
-    await mkdir(join(projectsDir, 'p1', 'tickets', 'a1'), { recursive: true });
-    await mkdir(join(ticketsDir, 'u1'), { recursive: true });
+    await mkdir(join(projectsDir, 'p1', 'tickets', 'TP-1-a1'), { recursive: true });
     await writeFile(configPath, '---\nversion: "2.0"\n---\n');
 
     const ticketEvents: Array<[string | null, string]> = [];
@@ -90,15 +89,13 @@ describe('watcher derive hooks', () => {
 
     // let chokidar settle before generating events
     await new Promise((r) => setTimeout(r, 300));
-    await writeFile(join(projectsDir, 'p1', 'tickets', 'a1', 'ticket.md'), '---\nslug: a1\n---\n');
-    await writeFile(join(ticketsDir, 'u1', 'ticket.md'), '---\nslug: u1\n---\n');
+    await writeFile(join(projectsDir, 'p1', 'tickets', 'TP-1-a1', 'ticket.md'), '---\nid: TP-1\nslug: a1\n---\n');
     await writeFile(configPath, '---\nversion: "2.0"\nupdated: true\n---\n');
     await new Promise((r) => setTimeout(r, 700));
 
     await watcher.close();
 
-    expect(ticketEvents).toContainEqual(['p1', 'a1']);
-    expect(ticketEvents).toContainEqual([null, 'u1']);
+    expect(ticketEvents).toContainEqual(['p1', 'TP-1']);
     expect(configEvents).toBeGreaterThanOrEqual(1);
   });
 });

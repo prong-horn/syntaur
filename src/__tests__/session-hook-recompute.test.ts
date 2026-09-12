@@ -13,7 +13,7 @@ const CLAUDE_HOOK = resolve(REPO_ROOT, 'platforms/claude-code/hooks/session-clea
 const CODEX_HOOK = resolve(REPO_ROOT, 'platforms/codex/scripts/session-cleanup.sh');
 
 const TICKET = `---
-id: hook-test-id
+id: HOK-1
 slug: hook-test
 title: "Hook Recompute Test"
 project: p1
@@ -58,7 +58,7 @@ async function setup(withMarker: boolean): Promise<Ctx> {
     join(home, 'config.md'),
     `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
   );
-  const aDir = join(home, 'projects', 'p1', 'tickets', 'hook-test');
+  const aDir = join(home, 'projects', 'p1', 'tickets', 'HOK-1-hook-test');
   await mkdir(aDir, { recursive: true });
   await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
   const aPath = join(aDir, 'ticket.md');
@@ -76,7 +76,7 @@ async function setup(withMarker: boolean): Promise<Ctx> {
   const db = initSessionDb(dbPath);
   openEngagement({
     sessionId: 'abc',
-    ticketId: 'hook-test-id',
+    ticketId: 'HOK-1',
     projectSlug: 'p1',
     ticketSlug: 'hook-test',
     stage: 'implement',

@@ -71,20 +71,20 @@ describe('ticketWindowCost', () => {
     //   A: 0.00 -> 1.50  (delta 1.50)
     //   B: 1.50 -> 4.00  (delta 2.50)
     window({
-      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ [m]: model({ total: 100, cost: 0 }) }),
       close: snap({ [m]: model({ total: 200, cost: 1.5 }) }),
     });
     window({
-      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B', ticketId: 'PRB-1',
       startedAt: '2026-06-01T02:00:00.000Z', endedAt: '2026-06-01T03:00:00.000Z',
       open: snap({ [m]: model({ total: 200, cost: 1.5 }) }),
       close: snap({ [m]: model({ total: 400, cost: 4.0 }) }),
     });
 
-    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
-    const b = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'B' });
+    const a = ticketWindowCost({ ticketId: 'PRA-1' });
+    const b = ticketWindowCost({ ticketId: 'PRB-1' });
     expect(a.cost).toBeCloseTo(1.5, 6);
     expect(a.pricedWindowCount).toBe(1);
     expect(b.cost).toBeCloseTo(2.5, 6);
@@ -95,12 +95,12 @@ describe('ticketWindowCost', () => {
 
   it('(b) flags a null-open window as uncomputable, not silently zeroed', () => {
     window({
-      sessionId: 's2', projectSlug: 'proj', ticketSlug: 'A',
+      sessionId: 's2', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: null,
       close: snap({ 'claude-opus-4-7': model({ total: 200, cost: 3.0 }) }),
     });
-    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ ticketId: 'PRA-1' });
     expect(a.cost).toBe(0);
     expect(a.uncomputableWindowCount).toBe(1);
     expect(a.pricedWindowCount).toBe(0);
@@ -110,7 +110,7 @@ describe('ticketWindowCost', () => {
     const known = 'moonshotai/kimi-k2.6'; // in MODEL_PRICING (input 0.95 / 1e6)
     const unknown = 'claude-opus-4-7'; // priceForModel returns null
     window({
-      sessionId: 's3', projectSlug: 'proj', ticketSlug: 'A',
+      sessionId: 's3', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       // cost delta 0 for both, but input tokens grew by 1,000,000 each.
       open: snap({
@@ -122,7 +122,7 @@ describe('ticketWindowCost', () => {
         [unknown]: model({ input: 1_000_000, total: 1_000_000, cost: 0 }),
       }),
     });
-    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ ticketId: 'PRA-1' });
     // known model: 1e6 * 0.95 / 1e6 = 0.95; unknown: 0 (not priced) but window still computable.
     expect(a.cost).toBeCloseTo(0.95, 6);
     expect(a.pricedWindowCount).toBe(1);
@@ -131,39 +131,36 @@ describe('ticketWindowCost', () => {
 
   it('(d) clamps a negative cost delta to 0 and counts it as anomalous', () => {
     window({
-      sessionId: 's4', projectSlug: 'proj', ticketSlug: 'A',
+      sessionId: 's4', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ total: 200, cost: 5.0 }) }),
       close: snap({ 'claude-opus-4-7': model({ total: 100, cost: 2.0 }) }), // went DOWN
     });
-    const a = ticketWindowCost({ projectSlug: 'proj', ticketSlug: 'A' });
+    const a = ticketWindowCost({ ticketId: 'PRA-1' });
     expect(a.cost).toBe(0);
     expect(a.negativeDeltaCount).toBe(1);
     expect(a.pricedWindowCount).toBe(1);
   });
 
-  it('(e) matches a standalone ticket via project_slug IS NULL', () => {
+  it('(e) matches a ticket by ticket_id', () => {
     window({
-      sessionId: 's5', projectSlug: null, ticketSlug: 'solo',
+      sessionId: 's5', projectSlug: null, ticketSlug: 'solo', ticketId: 'SOLO-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ total: 0, cost: 0 }) }),
       close: snap({ 'claude-opus-4-7': model({ total: 50, cost: 0.7 }) }),
     });
-    // Empty-string projectSlug (the standalone endpoint shape) maps to the NULL match.
-    const viaEmpty = ticketWindowCost({ projectSlug: '', ticketSlug: 'solo' });
-    const viaNull = ticketWindowCost({ projectSlug: null, ticketSlug: 'solo' });
-    expect(viaEmpty.cost).toBeCloseTo(0.7, 6);
-    expect(viaNull.cost).toBeCloseTo(0.7, 6);
+    const a = ticketWindowCost({ ticketId: 'SOLO-1' });
+    expect(a.cost).toBeCloseTo(0.7, 6);
   });
 
-  it('matches by assignment_id when provided', () => {
+  it('matches by ticket_id when provided', () => {
     window({
-      sessionId: 's6', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'id-A',
+      sessionId: 's6', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ 'claude-opus-4-7': model({ cost: 0 }) }),
       close: snap({ 'claude-opus-4-7': model({ cost: 1.25 }) }),
     });
-    const a = ticketWindowCost({ ticketId: 'id-A' });
+    const a = ticketWindowCost({ ticketId: 'PRA-1' });
     expect(a.cost).toBeCloseTo(1.25, 6);
   });
 });
@@ -172,21 +169,21 @@ describe('projectWindowCosts', () => {
   it('(f) enumerates every ticket with a closed window in the project', () => {
     const m = 'claude-opus-4-7';
     window({
-      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'A', ticketId: 'PRA-1',
       startedAt: '2026-06-01T01:00:00.000Z', endedAt: '2026-06-01T02:00:00.000Z',
       open: snap({ [m]: model({ cost: 0 }) }),
       close: snap({ [m]: model({ cost: 1.5 }) }),
     });
     window({
-      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B',
+      sessionId: 's1', projectSlug: 'proj', ticketSlug: 'B', ticketId: 'PRB-1',
       startedAt: '2026-06-01T02:00:00.000Z', endedAt: '2026-06-01T03:00:00.000Z',
       open: snap({ [m]: model({ cost: 1.5 }) }),
       close: snap({ [m]: model({ cost: 4.0 }) }),
     });
 
-    const costs = projectWindowCosts({ projectSlug: 'proj' });
-    expect([...costs.keys()].sort()).toEqual(['A', 'B']);
-    expect(costs.get('A')!.cost).toBeCloseTo(1.5, 6);
-    expect(costs.get('B')!.cost).toBeCloseTo(2.5, 6);
+    const costs = projectWindowCosts({ ticketIds: ['PRA-1', 'PRB-1'] });
+    expect([...costs.keys()].sort()).toEqual(['PRA-1', 'PRB-1']);
+    expect(costs.get('PRA-1')!.cost).toBeCloseTo(1.5, 6);
+    expect(costs.get('PRB-1')!.cost).toBeCloseTo(2.5, 6);
   });
 });

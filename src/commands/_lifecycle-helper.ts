@@ -19,7 +19,7 @@ import {
 } from '../lifecycle/index.js';
 import { resolveTicketWorkflowContext } from '../lifecycle/workflow-context.js';
 import { runEngineTransition } from '../lifecycle/engine-transition.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketById, resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
 
 type WorkflowTransitionOptions = Pick<
   TransitionOptions,
@@ -92,7 +92,10 @@ export async function runTransition(
     if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
       throw new Error(`Project "${options.project}" not found at ${projectDir}.`);
     }
-    const ticketPath = resolve(projectDir, 'tickets', ticket, 'ticket.md');
+    const ticketPath = await resolveTicketMdPathInProject(projectDir, ticket);
+    if (!ticketPath) {
+      throw new Error(`Ticket file not found for "${ticket}" in project "${options.project}".`);
+    }
     // WS-2 (Decision 1): on the MIGRATED path a terminal command is realized as
     // an ENGINE move through the locked recompute. `null` ⇒ not migrated / no
     // per-file workflow / not an engine command → fall through to the ladder.

@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileExists } from './fs.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
@@ -84,6 +84,36 @@ export async function resolveTicketById(
     );
   }
   return matches[0];
+}
+
+/** Resolve `ticket.md` within a project dir by slug or ticket id. */
+export async function resolveTicketMdPathInProject(
+  projectDir: string,
+  slugOrId: string,
+): Promise<string | null> {
+  const ticketsDir = resolve(projectDir, 'tickets');
+  const direct = resolve(ticketsDir, slugOrId, 'ticket.md');
+  if (await fileExists(direct)) return direct;
+
+  if (isTicketId(slugOrId)) {
+    try {
+      const entries = await readdir(ticketsDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (!folderNameForTicketId(entry.name, slugOrId)) continue;
+        const path = resolve(ticketsDir, entry.name, 'ticket.md');
+        if (await fileExists(path)) return path;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+
+  const projectsDir = dirname(projectDir);
+  const projectSlug = basename(projectDir);
+  const resolved = await resolveTicketSlugInProject(projectsDir, projectSlug, slugOrId);
+  return resolved ? resolve(resolved.ticketDir, 'ticket.md') : null;
 }
 
 /** Resolve a ticket slug within one project by scanning `tickets/` folder names. */

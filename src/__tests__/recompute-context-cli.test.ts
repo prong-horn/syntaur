@@ -60,7 +60,7 @@ function seedOpenEngagement(
 }
 
 const TICKET = `---
-id: ctx-test-id
+id: CTX-1
 slug: ctx-test
 title: "Context Recompute Test"
 project: p1
@@ -103,7 +103,7 @@ describe("syntaur recompute resolves the ticket from the session's open engageme
       join(home, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
     );
-    const aDir = join(home, 'projects', 'p1', 'tickets', 'ctx-test');
+    const aDir = join(home, 'projects', 'p1', 'tickets', 'CTX-1-ctx-test');
     await mkdir(aDir, { recursive: true });
     await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n# P1\n');
     aPath = join(aDir, 'ticket.md');
@@ -116,13 +116,13 @@ describe("syntaur recompute resolves the ticket from the session's open engageme
     await mkdir(join(workspace, '.syntaur'), { recursive: true });
     await writeFile(
       join(workspace, '.syntaur', 'context.json'),
-      JSON.stringify({ projectSlug: 'p1', ticketSlug: 'ctx-test', ticketDir: aDir }),
+      JSON.stringify({ ticketId: 'CTX-1', ticketDir: aDir }),
     );
 
     seedOpenEngagement(home, {
       projectSlug: 'p1',
       ticketSlug: 'ctx-test',
-      ticketId: 'ctx-test-id',
+      ticketId: 'CTX-1',
     });
   });
 

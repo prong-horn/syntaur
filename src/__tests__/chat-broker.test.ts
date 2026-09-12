@@ -51,7 +51,7 @@ let clients: AcpClient[];
 let spawns: Array<{ cwd: string; env: Record<string, string> | undefined }> = [];
 let frames: Array<{ type: string; payload: unknown }>;
 
-const TICKET_ID = 'f71fedf9-e696-4149-ab99-c6e60cdca77b';
+const TICKET_ID = 'CHAT-1';
 
 const ticket = (): ResolvedTicket => ({
   ticketDir: ticketDir,
@@ -169,7 +169,7 @@ async function writeTicket(workspace: { worktreePath?: string; repository?: stri
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-broker-'));
-  ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'chat-demo');
+  ticketDir = join(sandbox, 'projects', 'syntaur-meta', 'tickets', 'CHAT-1-chat-demo');
   worktree = join(sandbox, 'worktree');
   await mkdir(ticketDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
@@ -1597,7 +1597,7 @@ describe('codex usage_events write (finding 7)', () => {
       tool: 'acp-codex',
       cwd: worktree,
       project_slug: 'syntaur-meta',
-      assignment_slug: 'chat-demo',
+      ticket_id: TICKET_ID,
       total_tokens: 120,
     });
 
@@ -1898,7 +1898,7 @@ describe('slash commands', () => {
     await idle();
 
     getSessionDb()
-      .prepare('UPDATE chat_sessions SET commands_json = NULL WHERE assignment_id = ? AND agent_id = ?')
+      .prepare('UPDATE chat_sessions SET commands_json = NULL WHERE ticket_id = ? AND agent_id = ?')
       .run(TICKET_ID, 'claude');
 
     await broker.stopAll();

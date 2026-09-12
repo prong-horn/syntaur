@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { renderTicket } from '../templates/index.js';
@@ -64,10 +64,9 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const ticketMd = await readFile(
-      resolve(testDir, 'p', 'tickets', 'fix-a-bug', 'ticket.md'),
-      'utf-8',
-    );
+    const ticketsDir = resolve(testDir, 'p', 'tickets');
+    const [folder] = await readdir(ticketsDir);
+    const ticketMd = await readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
     expect(ticketMd).toContain('type: bug');
 
     const [fm] = extractFrontmatter(ticketMd);
@@ -81,10 +80,9 @@ describe('new CLI --type', () => {
       dir: testDir,
     });
 
-    const ticketMd = await readFile(
-      resolve(testDir, 'p', 'tickets', 'do-thing', 'ticket.md'),
-      'utf-8',
-    );
+    const ticketsDir = resolve(testDir, 'p', 'tickets');
+    const [folder] = await readdir(ticketsDir);
+    const ticketMd = await readFile(resolve(ticketsDir, folder, 'ticket.md'), 'utf-8');
     const [fm] = extractFrontmatter(ticketMd);
     expect(getField(fm, 'type')).toBe('feature');
   });

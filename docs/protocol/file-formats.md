@@ -81,6 +81,9 @@ The project overview containing the goal, context, and success criteria. This fi
 | `archivedReason` | string or null | any | optional | `null` | Human explanation for why the project was archived. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the project was created. |
 | `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the project was last modified. |
+| `prefix` | string | 2–5 uppercase letters | required | — | Ticket id prefix for this project (e.g. `FIT`, `SCR`). Combined with a counter to form ticket ids. |
+| `nextTicket` | number (integer) | >= 1 | required | `1` | Next ticket counter value. Ids are `<prefix>-<n>`; incremented on each `syntaur new`; never reused. |
+| `defaultTemplate` | string | any | optional | `feature` | Default ticket type/template for `syntaur new` in this project. |
 | `externalIds` | array of objects | `{system, id, url}` | optional | `[]` | Links to external tracking systems. Generic format — new integrations don't require protocol changes. |
 | `externalIds[].system` | string | any (e.g., `jira`, `linear`, `github`) | required (per entry) | — | Name of the external system. |
 | `externalIds[].id` | string | any | required (per entry) | — | Identifier in the external system. |
@@ -101,6 +104,9 @@ The project overview containing the goal, context, and success criteria. This fi
 id: 7a1b3c4d-5e6f-7890-abcd-ef1234567890
 slug: build-auth-system
 title: Build Authentication System
+prefix: BAS
+nextTicket: 4
+defaultTemplate: feature
 archived: false
 archivedAt: null
 archivedReason: null
@@ -146,10 +152,10 @@ The core unit of work and the **single source of truth** for ticket state. This 
 
 | Field | Type | Valid Values | Required | Default | Description |
 |-------|------|-------------|----------|---------|-------------|
-| `id` | string (UUID) | UUID v4 | required | — | Unique identifier for the ticket. |
-| `slug` | string | lowercase, hyphen-separated | required | — | Human-readable identifier. For project-nested tickets, matches the folder name. For standalone tickets, the folder is named by `id` and `slug` is display-only. |
+| `id` | string | `<PREFIX>-<n>` | required | — | Unique ticket identifier (e.g. `BAS-2`). Allocated from the project's `prefix` and `nextTicket` counter. |
+| `slug` | string | lowercase, hyphen-separated | required | — | Human-readable identifier. Forms the suffix of the folder name (`<ID>-<slug>`). Rename with `syntaur rename`. |
 | `title` | string | any | required | — | Display title for the ticket. |
-| `project` | string or null | project slug or null | required | — | The containing project's slug. `null` for standalone tickets at `~/.syntaur/tickets/<uuid>/`. |
+| `project` | string | project slug | required | — | The containing project's slug (e.g. `build-auth-system` or `scratch`). |
 | `type` | string or null | see `config.md` `types.definitions` | optional | `null` | Free-form classification (e.g., `feature`, `bug`, `chore`). Validated against `config.md` when `types.definitions` is present. |
 | `status` | string (enum) | `pending`, `in_progress`, `blocked`, `review`, `completed`, `failed` | required | — | Current state of the ticket. See dependency semantics below. |
 | `priority` | string (enum) | `low`, `medium`, `high`, `critical` | required | — | Priority level. |
@@ -160,7 +166,8 @@ The core unit of work and the **single source of truth** for ticket state. This 
 | `externalIds[].system` | string | any | required (per entry) | — | Name of the external system. |
 | `externalIds[].id` | string | any | required (per entry) | — | Identifier in the external system. |
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item. |
-| `dependsOn` | array of strings | ticket slugs | optional | `[]` | Ticket slugs this depends on. |
+| `dependsOn` | array of strings | ticket ids | optional | `[]` | Ticket ids (`<PREFIX>-<n>`) this depends on. |
+| `links` | array of strings | ticket ids | optional | `[]` | Related ticket ids (non-blocking cross-references). |
 | `blockedReason` | string or null | any | conditional | `null` | **Required** when `status` is `blocked`. Explains the manual/runtime block. |
 | `workspace` | object | see sub-fields | optional | `null` | Code workspace information. |
 | `workspace.repository` | string or null | repo path or URL | optional | `null` | The repository this ticket works in. |
@@ -190,15 +197,13 @@ The core unit of work and the **single source of truth** for ticket state. This 
 
 **Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
 
-**Standalone tickets:** A ticket may live outside any project at `~/.syntaur/tickets/<uuid>/` (created via `syntaur new --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone tickets. Resolve standalone tickets by `id` via `resolveTicketById`.
-
 **Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the ticket file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
 ### Example
 
 ```markdown
 ---
-id: a2b3c4d5-e6f7-8901-abcd-ef2345678901
+id: BAS-2
 slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
 project: build-auth-system
@@ -213,7 +218,8 @@ externalIds:
     id: AUTH-44
     url: https://mycompany.atlassian.net/browse/AUTH-44
 dependsOn:
-  - design-auth-schema
+  - BAS-1
+links: []
 blockedReason: null
 workspace:
   repository: /Users/brennen/projects/myapp
@@ -243,7 +249,7 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 
 ## Context
 
-- Depends on [design-auth-schema](../design-auth-schema/ticket.md) for the
+- Depends on [BAS-1 design-auth-schema](../BAS-1-design-auth-schema/ticket.md) for the
   user table schema and key storage approach
 - See [auth-requirements](../../resources/auth-requirements.md) for product specs
 - JWT library: `jose` (chosen in Decision 1)

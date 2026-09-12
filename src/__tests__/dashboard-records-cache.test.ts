@@ -51,9 +51,11 @@ tags: []
 # ${title}`;
 }
 
+const TEST_TICKET_ID = 'TST-1';
+
 function ticketMd(slug: string, status: string): string {
   return `---
-id: ${slug}-id
+id: ${TEST_TICKET_ID}
 slug: ${slug}
 title: ${slug}
 status: ${status}
@@ -77,7 +79,7 @@ tags: []
 
 async function seedProjectWithTicket(status: string): Promise<string> {
   const projectDir = resolve(testDir, 'test-project');
-  const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
+  const ticketDir = resolve(projectDir, 'tickets', `${TEST_TICKET_ID}-test-ticket`);
   await mkdir(ticketDir, { recursive: true });
   await writeFile(resolve(projectDir, 'project.md'), projectMd('test-project', 'Test Project'), 'utf-8');
   await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('test-ticket', status), 'utf-8');
@@ -118,7 +120,7 @@ async function invokeRoute(
 describe('records cache', () => {
   it('serves a cached snapshot until explicitly invalidated', async () => {
     await seedProjectWithTicket('pending');
-    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`, 'ticket.md');
 
     // Warm the cache.
     const first = await getOverview(testDir);
@@ -172,7 +174,7 @@ describe('records cache', () => {
       router,
       'patch',
       '/api/tickets/:id',
-      { id: 'test-ticket-id' },
+      { id: TEST_TICKET_ID },
       { content: ticketMd('test-ticket', 'in_progress') },
     );
     expect(status).toBe(200);
@@ -184,7 +186,7 @@ describe('records cache', () => {
 
   it('invalidates the records cache after a status-config mutation', async () => {
     await seedProjectWithTicket('pending');
-    const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
+    const ticketPath = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`, 'ticket.md');
     const router = createStatusConfigRouter(testDir, null);
 
     // Warm the cache with the pending state.
@@ -207,15 +209,17 @@ describe('records cache', () => {
 
   it('derives workspace records from the cache without a second fan-out', async () => {
     const projectDir = resolve(testDir, 'wsp');
-    const ticketDir = resolve(projectDir, 'tickets', 'has-worktree');
+    const ticketDir = resolve(projectDir, 'tickets', 'WSP-1-has-worktree');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(resolve(projectDir, 'project.md'), projectMd('wsp', 'WSP'), 'utf-8');
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      ticketMd('has-worktree', 'in_progress').replace(
-        'worktreePath: null\n  branch: null',
-        'worktreePath: /tmp/wt\n  branch: feature-x',
-      ),
+      ticketMd('has-worktree', 'in_progress')
+        .replace(`id: ${TEST_TICKET_ID}`, 'id: WSP-1')
+        .replace(
+          'worktreePath: null\n  branch: null',
+          'worktreePath: /tmp/wt\n  branch: feature-x',
+        ),
       'utf-8',
     );
 

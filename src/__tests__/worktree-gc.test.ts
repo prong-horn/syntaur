@@ -35,9 +35,11 @@ function ticketMd(opts: {
   worktreePath: string;
   branch: string;
   archived?: boolean;
+  ticketId?: string;
 }): string {
+  const id = opts.ticketId ?? 'PA-1';
   return `---
-id: id-${opts.slug}
+id: ${id}
 slug: ${opts.slug}
 title: "${opts.slug}"
 project: p
@@ -60,9 +62,10 @@ describe('syntaur worktree gc', () => {
   let repo: string;
 
   async function writeTicket(opts: { slug: string; status: string; worktreePath: string; branch: string; archived?: boolean }): Promise<void> {
-    const dir = resolve(home, 'projects', 'p', 'tickets', opts.slug);
+    const ticketId = 'PA-1';
+    const dir = resolve(home, 'projects', 'p', 'tickets', `${ticketId}-${opts.slug}`);
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), ticketMd({ ...opts, repo }), 'utf-8');
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd({ ...opts, repo, ticketId }), 'utf-8');
   }
 
   function addWorktree(branch: string, extraCommit: boolean): string {
@@ -116,7 +119,7 @@ describe('syntaur worktree gc', () => {
 
   it('--apply removes a removable worktree but PRESERVES workspace.* (recoverable)', async () => {
     const wt = addWorktree('feat-done', false);
-    const slugDir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    const slugDir = resolve(home, 'projects', 'p', 'tickets', 'PA-1-a');
     await writeTicket({ slug: 'a', status: 'completed', worktreePath: wt, branch: 'feat-done' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply'], home);

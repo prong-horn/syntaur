@@ -52,7 +52,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   try {
     openEngagement({
       sessionId,
-      ticketId: 'x',
+      ticketId: 'TP-1',
       projectSlug: 'p',
       ticketSlug: 'demo',
       startedAt: '2026-01-01T00:00:00Z',
@@ -92,11 +92,11 @@ describe('syntaur session boundary', () => {
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-boundary-wkspc-'));
-    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'demo');
+    ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'TP-1-demo');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      '---\nid: x\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n',
+      '---\nid: TP-1\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n',
     );
   });
 
@@ -167,21 +167,21 @@ describe('syntaur session boundary', () => {
     expect(data.workspaceRoot).toBeNull();
   });
 
-  it('returns null projectDir for a STANDALONE engagement (no project nesting)', async () => {
-    const standaloneId = '22222222-2222-2222-2222-222222222222';
-    const standaloneDir = resolve(syntaurHome, 'tickets', standaloneId);
-    await mkdir(standaloneDir, { recursive: true });
+  it('resolves ticketDir from ticket_id when engagement carries only an id', async () => {
+    const soloId = 'STO-1';
+    const soloDir = resolve(syntaurHome, 'projects', 'p', 'tickets', `${soloId}-solo`);
+    await mkdir(soloDir, { recursive: true });
     await writeFile(
-      resolve(standaloneDir, 'ticket.md'),
-      `---\nid: ${standaloneId}\ntitle: Solo\nstatus: in_progress\n---\n# Solo\n`,
+      resolve(soloDir, 'ticket.md'),
+      `---\nid: ${soloId}\nslug: solo\ntitle: Solo\nstatus: in_progress\n---\n# Solo\n`,
     );
-    seedStandaloneEngagement(syntaurHome, SID, standaloneId);
+    seedStandaloneEngagement(syntaurHome, SID, soloId);
     const result = await runCli(['session', 'boundary', '--json'], workspaceRoot, syntaurHome, {
       CLAUDE_CODE_SESSION_ID: SID,
     });
     expect(result.code, result.stderr).toBe(0);
     const data = JSON.parse(result.stdout);
-    expect(data.ticketDir).toBe(standaloneDir);
-    expect(data.projectDir).toBeNull(); // standalone → no project resources dir
+    expect(data.ticketDir).toBe(soloDir);
+    expect(data.projectDir).toBe(resolve(syntaurHome, 'projects', 'p'));
   });
 });

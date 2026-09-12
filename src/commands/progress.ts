@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { ticketsDir } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
+import { resolveTicketSlugInProject } from '../utils/ticket-resolver.js';
 import { appendProgressLog } from '../lifecycle/progress-append.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
@@ -16,10 +17,13 @@ async function resolveTicketDir(opts: {
   if (opts.ticket) {
     if (opts.project) {
       const projectsDir = (await readConfig()).defaultProjectDir;
-      return {
-        dir: resolve(projectsDir, opts.project, 'tickets', opts.ticket),
-        slug: opts.ticket,
-      };
+      const resolved = await resolveTicketSlugInProject(projectsDir, opts.project, opts.ticket);
+      if (!resolved) {
+        throw new Error(
+          `Ticket "${opts.ticket}" not found in project "${opts.project}".`,
+        );
+      }
+      return { dir: resolved.ticketDir, slug: resolved.ticketSlug };
     }
     return { dir: resolve(ticketsDir(), opts.ticket), slug: opts.ticket };
   }

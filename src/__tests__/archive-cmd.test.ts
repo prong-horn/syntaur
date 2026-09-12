@@ -21,14 +21,13 @@ beforeEach(async () => {
 
   // Project 'p' with a project-scoped ticket 'a1'.
   const pDir = resolve(projectsDir, 'p');
-  await mkdir(resolve(pDir, 'tickets', 'a1'), { recursive: true });
+  await mkdir(resolve(pDir, 'tickets', 'PA-1-a1'), { recursive: true });
   await writeFile(resolve(pDir, 'project.md'), '---\nid: pid\nslug: p\ntitle: "P"\narchived: false\narchivedAt: null\narchivedReason: null\n---\n');
-  await writeFile(resolve(pDir, 'tickets', 'a1', 'ticket.md'), ticketMd('a1id', 'a1', 'in_progress'));
+  await writeFile(resolve(pDir, 'tickets', 'PA-1-a1', 'ticket.md'), ticketMd('PA-1', 'a1', 'in_progress'));
 
-  // Standalone ticket resolvable by UUID.
-  const sDir = resolve(home, 'tickets', 'standalone-uuid');
-  await mkdir(sDir, { recursive: true });
-  await writeFile(resolve(sDir, 'ticket.md'), ticketMd('standalone-uuid', 'solo', 'review').replace('project: p\n', ''));
+  // Second project ticket resolvable by id.
+  await mkdir(resolve(pDir, 'tickets', 'SOLO-1-solo'), { recursive: true });
+  await writeFile(resolve(pDir, 'tickets', 'SOLO-1-solo', 'ticket.md'), ticketMd('SOLO-1', 'solo', 'review'));
 });
 
 afterEach(async () => {
@@ -39,7 +38,7 @@ afterEach(async () => {
 
 describe('runArchive / runRestore', () => {
   it('archives + restores a project-scoped ticket, preserving status', async () => {
-    const path = resolve(projectsDir, 'p', 'tickets', 'a1', 'ticket.md');
+    const path = resolve(projectsDir, 'p', 'tickets', 'PA-1-a1', 'ticket.md');
 
     const archived = await runArchive('a1', { project: 'p', dir: projectsDir, reason: 'stale' });
     expect(archived.success).toBe(true);
@@ -56,9 +55,9 @@ describe('runArchive / runRestore', () => {
     expect(fm.status).toBe('in_progress'); // prior status preserved
   });
 
-  it('archives a standalone ticket resolved by UUID', async () => {
-    const path = resolve(home, 'tickets', 'standalone-uuid', 'ticket.md');
-    const res = await runArchive('standalone-uuid', { dir: projectsDir });
+  it('archives a ticket resolved by id', async () => {
+    const path = resolve(projectsDir, 'p', 'tickets', 'SOLO-1-solo', 'ticket.md');
+    const res = await runArchive('SOLO-1', { dir: projectsDir });
     expect(res.success).toBe(true);
     const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(true);

@@ -34,7 +34,7 @@ let fake: FakeAgent;
 let clients: AcpClient[];
 let wss: WebSocketServer | null;
 
-const TICKET_ID = 'a1b2c3d4-0000-4000-8000-000000000001';
+const TICKET_ID = 'CHAT-1';
 
 /** Minimal 1×1 PNG (68 bytes). */
 const PNG_1X1 = Buffer.from(
@@ -124,7 +124,7 @@ beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-chat-'));
   projectsDir = join(sandbox, 'projects');
   ticketsDir = join(sandbox, 'tickets');
-  ticketDir = join(projectsDir, 'syntaur-meta', 'tickets', 'chat-demo');
+  ticketDir = join(projectsDir, 'syntaur-meta', 'tickets', `${TICKET_ID}-chat-demo`);
   worktree = join(sandbox, 'worktree');
   await mkdir(ticketDir, { recursive: true });
   await mkdir(ticketsDir, { recursive: true });
@@ -988,18 +988,18 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     expect((await fileItem(status.itemId, { kind: 'progress', body: 'x' })).status).toBe(400);
   });
 
-  it('files a decision on a standalone ticket', async () => {
-    const standaloneId = '00000000-0000-4000-8000-0000000000ab';
-    const standaloneDir = join(ticketsDir, standaloneId);
-    await mkdir(standaloneDir, { recursive: true });
+  it('files a decision on a second project ticket', async () => {
+    const extraId = 'CHAT-2';
+    const extraDir = join(projectsDir, 'syntaur-meta', 'tickets', `${extraId}-standalone-demo`);
+    await mkdir(extraDir, { recursive: true });
     await writeFile(
-      join(standaloneDir, 'ticket.md'),
+      join(extraDir, 'ticket.md'),
       [
         '---',
-        `id: ${standaloneId}`,
+        `id: ${extraId}`,
         'slug: standalone-demo',
         'title: Standalone',
-        'project: null',
+        'project: syntaur-meta',
         'workspace:',
         `  repository: ${worktree}`,
         `  worktreePath: ${worktree}`,
@@ -1011,7 +1011,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
 
     await boot([{ steps: [{ kind: 'update', update: textChunk('standalone ok', 'm1') }] }]);
 
-    await fetch(url(`/tickets/${standaloneId}/chat/messages`), {
+    await fetch(url(`/tickets/${extraId}/chat/messages`), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ text: 'standalone first' }),
@@ -1020,16 +1020,16 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     await waitUntil(
       () =>
         broker
-          .items({ id: standaloneId } as never, { limit: 50 })
+          .items({ id: extraId } as never, { limit: 50 })
           .some((i) => i.type === 'agent.message' && i.sealed),
       'standalone reply',
     );
     const standaloneReply = broker
-      .items({ id: standaloneId } as never, { limit: 50 })
+      .items({ id: extraId } as never, { limit: 50 })
       .find((i) => i.type === 'agent.message' && i.sealed)!;
 
     const res = await fetch(
-      url(`/tickets/${standaloneId}/chat/items/${encodeURIComponent(standaloneReply.itemId)}/file`),
+      url(`/tickets/${extraId}/chat/items/${encodeURIComponent(standaloneReply.itemId)}/file`),
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1037,7 +1037,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
       },
     );
     expect(res.status).toBe(201);
-    const decisionMd = await readFile(join(standaloneDir, 'decision-record.md'), 'utf-8');
+    const decisionMd = await readFile(join(extraDir, 'decision-record.md'), 'utf-8');
     expect(decisionMd).toContain('## Standalone');
   });
 });

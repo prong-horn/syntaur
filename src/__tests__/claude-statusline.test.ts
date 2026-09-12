@@ -73,18 +73,17 @@ describe('claude-code statusline.sh', () => {
 
   it('renders project/ticket label with title for a project-nested context.json', async () => {
     gitInit(sandbox);
-    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo-assn');
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'DEMO-1-demo-assn');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      '---\nid: 00000000-0000-0000-0000-000000000000\nslug: demo-assn\ntitle: "Demo Ticket"\nstatus: in_progress\n---\n',
+      '---\nid: DEMO-1\nslug: demo-assn\ntitle: "Demo Ticket"\nstatus: in_progress\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
-        projectSlug: 'my-proj',
-        ticketSlug: 'demo-assn',
+        ticketId: 'DEMO-1',
         ticketDir,
       }),
     );
@@ -97,25 +96,23 @@ describe('claude-code statusline.sh', () => {
     );
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('feat/demo');
-    expect(res.stdout).toContain('my-proj/demo-assn — Demo Ticket');
+    expect(res.stdout).toContain('DEMO-1 — Demo Ticket');
     expect(res.stdout).toContain('yyyyyyyyyyyyyyyyyyyyyyyy0a0b0c0d');
   });
 
-  it('renders a standalone UUID label with title when projectSlug is absent', async () => {
+  it('renders a ticket id label with title from context.json', async () => {
     gitInit(sandbox);
-    const uuid = '12345678-9abc-def0-1234-56789abcdef0';
-    const ticketDir = resolve(sandbox, 'standalone-dir');
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'SOLO-1-solo');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      `---\nid: ${uuid}\nslug: ${uuid}\ntitle: "Solo Standalone"\nstatus: in_progress\nproject: null\n---\n`,
+      '---\nid: SOLO-1\nslug: solo\ntitle: "Solo Standalone"\nstatus: in_progress\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
-        projectSlug: null,
-        ticketSlug: uuid,
+        ticketId: 'SOLO-1',
         ticketDir,
       }),
     );
@@ -127,7 +124,7 @@ describe('claude-code statusline.sh', () => {
       }),
     );
     expect(res.status).toBe(0);
-    expect(res.stdout).toContain(`standalone/${uuid.slice(0, 8)} — Solo Standalone`);
+    expect(res.stdout).toContain('SOLO-1 — Solo Standalone');
     expect(res.stdout).toContain('ssssssssssssssssssssssss11223344');
   });
 

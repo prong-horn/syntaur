@@ -104,25 +104,27 @@ export function getTicketUsageHandler(
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
-      const projectSlug = resolved.standalone ? '' : resolved.projectSlug!;
-      const ticketSlug = resolved.standalone ? resolved.id : resolved.ticketSlug;
+      const projectSlug = resolved.projectSlug ?? '';
+      const ticketId = resolved.id;
+      const ticketSlug = resolved.ticketSlug;
       const common = extractCommonFilter(req.query);
       const dailyRows = listDaily({
         ...common,
         projectSlug,
-        ticketSlug,
+        ticketSlug: ticketId,
       });
       const eventRows = listEvents(
-        eventsFilterFromDaily({ ...common, projectSlug, ticketSlug }),
+        eventsFilterFromDaily({ ...common, projectSlug, ticketSlug: ticketId }),
       );
       res.json({
-        ticketId: resolved.id,
-        projectSlug: resolved.standalone ? null : resolved.projectSlug,
+        ticketId,
+        projectSlug: resolved.projectSlug,
         ticketSlug,
         daily: dailyRows,
         events: eventRows,
         summary: buildTicketSummary(dailyRows, {
-          projectSlug: resolved.standalone ? null : resolved.projectSlug,
+          ticketId,
+          projectSlug: resolved.projectSlug,
           ticketSlug,
           since: common.since,
           until: common.until,

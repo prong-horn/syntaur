@@ -514,13 +514,13 @@ export async function recomputeAndWrite(
 }
 
 /**
- * Reverse-dependency recompute: when `changedSlug` transitions (notably to a
+ * Reverse-dependency recompute: when `changedTicketId` transitions (notably to a
  * terminal status), every sibling that `dependsOn` it gets its `depsSatisfied`
  * fact refreshed.
  */
 export async function recomputeDependents(
   projectDir: string,
-  changedSlug: string,
+  changedTicketId: string,
   opts: Omit<RecomputeOptions, 'projectDir'>,
 ): Promise<RecomputeResult[]> {
   const ticketsDir = resolve(projectDir, 'tickets');
@@ -535,12 +535,12 @@ export async function recomputeDependents(
   const workflowResolver = opts.workflowResolver ?? makeWorkflowContextResolver(await readConfig());
   const results: RecomputeResult[] = [];
   for (const slug of entries) {
-    if (slug === changedSlug) continue;
     const path = resolve(ticketsDir, slug, 'ticket.md');
     if (!(await fileExists(path))) continue;
     try {
       const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
-      if (!fm.dependsOn.includes(changedSlug)) continue;
+      if (fm.id === changedTicketId) continue;
+      if (!fm.dependsOn.includes(changedTicketId)) continue;
       results.push(await recomputeAndWrite(path, { ...opts, projectDir, workflowResolver }));
     } catch {
       // unparseable sibling — doctor's territory, not ours

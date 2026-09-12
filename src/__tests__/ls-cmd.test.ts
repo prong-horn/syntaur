@@ -76,11 +76,11 @@ describe('syntaur ls', () => {
     const today = new Date(Date.now() - 3 * DAY_MS).toISOString(); // recent: within any --age window
     const old = new Date(Date.now() - 400 * DAY_MS).toISOString(); // stale: outside 30d
     for (const a of [
-      { id: 'a1', slug: 'a-pending', status: 'pending', tags: ['x', 'y'], updated: today },
-      { id: 'a2', slug: 'a-progress', status: 'in_progress', tags: ['x'], updated: today },
-      { id: 'a3', slug: 'a-old', status: 'pending', tags: ['z'], updated: old },
+      { id: 'PA-1', slug: 'a-pending', status: 'pending', tags: ['x', 'y'], updated: today },
+      { id: 'PA-2', slug: 'a-progress', status: 'in_progress', tags: ['x'], updated: today },
+      { id: 'PA-3', slug: 'a-old', status: 'pending', tags: ['z'], updated: old },
     ]) {
-      const adir = resolve(projDir, 'tickets', a.slug);
+      const adir = resolve(projDir, 'tickets', `${a.id}-${a.slug}`);
       await mkdir(adir, { recursive: true });
       await writeFile(
         resolve(adir, 'ticket.md'),

@@ -32,6 +32,7 @@ afterAll(async () => {
 });
 
 function ticketContent(opts: {
+  id?: string;
   slug?: string;
   status?: string;
   body?: string;
@@ -44,7 +45,7 @@ function ticketContent(opts: {
       ? `dependsOn:\n${opts.dependsOn.map((d) => `  - ${d}`).join('\n')}`
       : 'dependsOn: []';
   return `---
-id: ${opts.slug ?? 'test'}-id
+id: ${opts.id ?? `T${(opts.slug ?? 'test').replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase() || 'ST'}-1`}
 slug: ${opts.slug ?? 'test'}
 title: "Test"
 status: ${opts.status ?? 'draft'}
@@ -206,17 +207,19 @@ describe('recomputeDependents + recomputeAll', () => {
   it('reverse-dependency: dependent re-derives when its dep goes terminal', async () => {
     const projectDir = await mkdtemp(join(tmpdir(), 'syntaur-proj-'));
     tmpDirs.push(projectDir);
-    await mkdir(join(projectDir, 'tickets', 'dep-a'), { recursive: true });
-    await mkdir(join(projectDir, 'tickets', 'dep-b'), { recursive: true });
+    const depAId = 'DEP-1';
+    const depBId = 'DEP-2';
+    await mkdir(join(projectDir, 'tickets', `${depAId}-dep-a`), { recursive: true });
+    await mkdir(join(projectDir, 'tickets', `${depBId}-dep-b`), { recursive: true });
     await writeFile(
-      join(projectDir, 'tickets', 'dep-a', 'ticket.md'),
-      ticketContent({ slug: 'dep-a', status: 'completed' }),
+      join(projectDir, 'tickets', `${depAId}-dep-a`, 'ticket.md'),
+      ticketContent({ id: depAId, slug: 'dep-a', status: 'completed' }),
     );
     await writeFile(
-      join(projectDir, 'tickets', 'dep-b', 'ticket.md'),
-      ticketContent({ slug: 'dep-b', status: 'draft', dependsOn: ['dep-a'] }),
+      join(projectDir, 'tickets', `${depBId}-dep-b`, 'ticket.md'),
+      ticketContent({ id: depBId, slug: 'dep-b', status: 'draft', dependsOn: [depAId] }),
     );
-    const results = await recomputeDependents(projectDir, 'dep-a', {
+    const results = await recomputeDependents(projectDir, depAId, {
       cause: 'dep-terminal',
       by: 'system',
       context: CONTEXT,

@@ -1,14 +1,16 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
+import { resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { getTargetStatus } from './state-machine.js';
 import { appendStatusHistoryEntry, parseTicketFrontmatter, updateTicketFile } from './frontmatter.js';
 import { recordStatusEvent, resolveActor, emitEvent } from './event-emit.js';
 import type { TransitionCommand, TransitionResult, TicketFrontmatter } from './types.js';
 
-function resolveTicketPath(projectDir: string, ticketSlug: string): string {
-  return resolve(projectDir, 'tickets', ticketSlug, 'ticket.md');
+async function resolveTicketPath(projectDir: string, ticketSlug: string): Promise<string> {
+  const path = await resolveTicketMdPathInProject(projectDir, ticketSlug);
+  return path ?? resolve(projectDir, 'tickets', ticketSlug, 'ticket.md');
 }
 
 async function readTicket(
@@ -34,16 +36,16 @@ export async function checkDependencies(
 ): Promise<{ satisfied: boolean; unmet: string[] }> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
-  for (const depSlug of dependsOn) {
-    const depPath = resolveTicketPath(projectDir, depSlug);
+  for (const depId of dependsOn) {
+    const depPath = await resolveTicketPath(projectDir, depId);
     if (!(await fileExists(depPath))) {
-      unmet.push(`${depSlug} (file not found)`);
+      unmet.push(`${depId} (file not found)`);
       continue;
     }
     const depContent = await readFile(depPath, 'utf-8');
     const depFrontmatter = parseTicketFrontmatter(depContent);
     if (!terminals.has(depFrontmatter.status)) {
-      unmet.push(`${depSlug} (status: ${depFrontmatter.status})`);
+      unmet.push(`${depId} (status: ${depFrontmatter.status})`);
     }
   }
   return { satisfied: unmet.length === 0, unmet };
@@ -76,7 +78,7 @@ export async function executeTransition(
   command: Exclude<TransitionCommand, 'assign'>,
   options: TransitionOptions = {},
 ): Promise<TransitionResult> {
-  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const filePath = await resolveTicketPath(projectDir, ticketSlug);
   const { content, frontmatter } = await readTicket(filePath);
 
   // Resolution order: a from-specific custom mapping wins; the guard-free
@@ -191,7 +193,7 @@ export async function executeAssign(
   ticketSlug: string,
   agent: string,
 ): Promise<TransitionResult> {
-  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const filePath = await resolveTicketPath(projectDir, ticketSlug);
   const { content, frontmatter } = await readTicket(filePath);
 
   const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {
@@ -371,7 +373,7 @@ export async function executeUnassign(
   projectDir: string,
   ticketSlug: string,
 ): Promise<TransitionResult> {
-  const filePath = resolveTicketPath(projectDir, ticketSlug);
+  const filePath = await resolveTicketPath(projectDir, ticketSlug);
   const { content, frontmatter } = await readTicket(filePath);
 
   const updates: Partial<Pick<TicketFrontmatter, 'status' | 'assignee' | 'blockedReason' | 'updated'>> = {

@@ -214,7 +214,7 @@ describe('InboxRow', () => {
         />
       </MemoryRouter>,
     );
-    expect(html).toContain('id="comment-42"');
+    expect(html).toContain('id="uuid-1~20260616T000000Z"');
   });
 
   it('highlighted adds the ring class', () => {

@@ -6,7 +6,7 @@ import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { updateTicketFile, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketById, resolveTicketSlugInProject } from '../utils/ticket-resolver.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 
 export interface ArchiveOptions {
@@ -48,10 +48,11 @@ async function resolveTarget(target: string, options: ArchiveOptions): Promise<R
     if (!isValidSlug(target)) {
       throw new Error(`Invalid ticket slug "${target}".`);
     }
-    const ticketMd = resolve(baseDir, options.project, 'tickets', target, 'ticket.md');
-    if (!(await fileExists(ticketMd))) {
+    const resolved = await resolveTicketSlugInProject(baseDir, options.project, target);
+    if (!resolved) {
       throw new Error(`Ticket "${target}" not found in project "${options.project}".`);
     }
+    const ticketMd = resolve(resolved.ticketDir, 'ticket.md');
     return { kind: 'ticket', filePath: ticketMd, label: `ticket "${options.project}/${target}"` };
   }
 

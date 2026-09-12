@@ -41,7 +41,7 @@ function seedEngagement(
   },
 ) {
   db.prepare(
-    `INSERT INTO engagement (session_id, assignment_id, stage, started_at, ended_at)
+    `INSERT INTO engagement (session_id, ticket_id, stage, started_at, ended_at)
      VALUES (@sessionId, @ticketId, @stage, @started, @ended)`,
   ).run({
     sessionId: e.sessionId,
@@ -58,27 +58,27 @@ describe('getEngagementsByTicketId', () => {
     // Insert out of chronological order to prove sorting is by started_at, not id.
     seedEngagement(db, {
       sessionId: 'sess-2',
-      ticketId: 'asgn-A',
+      ticketId: 'ASN-1',
       stage: 'implement',
       started: '2026-06-26T11:00:00.000Z',
       ended: '2026-06-26T12:00:00.000Z',
     }); // id 1
     seedEngagement(db, {
       sessionId: 'sess-1',
-      ticketId: 'asgn-A',
+      ticketId: 'ASN-1',
       stage: 'plan',
       started: '2026-06-26T10:00:00.000Z',
       ended: '2026-06-26T10:30:00.000Z',
     }); // id 2
     seedEngagement(db, {
       sessionId: 'sess-2',
-      ticketId: 'asgn-A',
+      ticketId: 'ASN-1',
       stage: 'review',
       started: '2026-06-26T12:00:00.000Z',
       ended: null,
     }); // id 3 — open (sess-2's only open row)
 
-    const rows = getEngagementsByTicketId('asgn-A');
+    const rows = getEngagementsByTicketId('ASN-1');
 
     expect(rows.map((r) => r.stage)).toEqual(['plan', 'implement', 'review']);
     expect(rows.map((r) => r.session_id)).toEqual(['sess-1', 'sess-2', 'sess-2']);
@@ -89,20 +89,20 @@ describe('getEngagementsByTicketId', () => {
     const sameStart = '2026-06-26T09:00:00.000Z';
     seedEngagement(db, {
       sessionId: 'sess-a',
-      ticketId: 'asgn-tie',
+      ticketId: 'ASN-2',
       stage: 'plan',
       started: sameStart,
       ended: sameStart,
     }); // id 1
     seedEngagement(db, {
       sessionId: 'sess-b',
-      ticketId: 'asgn-tie',
+      ticketId: 'ASN-2',
       stage: 'implement',
       started: sameStart,
       ended: sameStart,
     }); // id 2
 
-    const rows = getEngagementsByTicketId('asgn-tie');
+    const rows = getEngagementsByTicketId('ASN-2');
 
     // Equal started_at → rows come back in id (insertion) order, not reversed.
     expect(rows.map((r) => r.session_id)).toEqual(['sess-a', 'sess-b']);
@@ -113,13 +113,13 @@ describe('getEngagementsByTicketId', () => {
     const db = initSessionDb(dbPath);
     seedEngagement(db, {
       sessionId: 'sess-open',
-      ticketId: 'asgn-open',
+      ticketId: 'ASN-3',
       stage: 'implement',
       started: '2026-06-26T08:00:00.000Z',
       ended: null,
     });
 
-    const rows = getEngagementsByTicketId('asgn-open');
+    const rows = getEngagementsByTicketId('ASN-3');
 
     expect(rows).toHaveLength(1);
     expect(rows[0].ended_at).toBeNull();
@@ -129,23 +129,23 @@ describe('getEngagementsByTicketId', () => {
     const db = initSessionDb(dbPath);
     seedEngagement(db, {
       sessionId: 'sess-1',
-      ticketId: 'asgn-A',
+      ticketId: 'ASN-1',
       stage: 'plan',
       started: '2026-06-26T10:00:00.000Z',
       ended: '2026-06-26T10:30:00.000Z',
     });
     seedEngagement(db, {
       sessionId: 'sess-3',
-      ticketId: 'asgn-OTHER',
+      ticketId: 'OTH-1',
       stage: 'implement',
       started: '2026-06-26T10:15:00.000Z',
       ended: null,
     });
 
-    const rows = getEngagementsByTicketId('asgn-A');
+    const rows = getEngagementsByTicketId('ASN-1');
 
     expect(rows).toHaveLength(1);
-    expect(rows.every((r) => r.assignment_id === 'asgn-A')).toBe(true);
+    expect(rows.every((r) => r.ticket_id === 'ASN-1')).toBe(true);
   });
 
   it('returns an empty array for an unknown ticket id', () => {

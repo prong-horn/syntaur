@@ -25,21 +25,30 @@ let projectsDir: string;
 let prevHome: string | undefined;
 const HOUR = 60 * 60 * 1000;
 
+const TICKET_IDS: Record<string, string> = {
+  'done-task': 'DT-1',
+  'fail-task': 'FT-1',
+  'active-task': 'AT-1',
+};
+
 async function writeTicket(slug: string, status: string): Promise<void> {
-  const d = resolve(projectsDir, 'proj', 'tickets', slug);
+  const id = TICKET_IDS[slug] ?? `TK-${slug}`;
+  const d = resolve(projectsDir, 'proj', 'tickets', `${id}-${slug}`);
   await mkdir(d, { recursive: true });
   await writeFile(
     join(d, 'ticket.md'),
-    ['---', `slug: ${slug}`, `status: ${status}`, 'project: proj', '---', '', `# ${slug}`].join('\n'),
+    ['---', `id: ${id}`, `slug: ${slug}`, `status: ${status}`, 'project: proj', '---', '', `# ${slug}`].join('\n'),
     'utf-8',
   );
 }
 
 /** Register a session bound to a ticket, then age its heartbeat. */
 async function seed(sessionId: string, slug: string, ageMs: number): Promise<void> {
+  const ticketId = TICKET_IDS[slug] ?? `TK-${slug}`;
   await appendSession('', {
     projectSlug: 'proj',
     ticketSlug: slug,
+    ticketId,
     agent: 'claude',
     sessionId,
     started: new Date(Date.now() - ageMs).toISOString(),

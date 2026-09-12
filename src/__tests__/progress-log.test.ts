@@ -43,7 +43,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   try {
     openEngagement({
       sessionId,
-      ticketId: 'x',
+      ticketId: 'PX-1',
       projectSlug: 'p',
       ticketSlug: 'a',
       startedAt: '2026-01-01T00:00:00Z',
@@ -71,9 +71,18 @@ describe('syntaur progress log', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-prog-'));
-    const dir = resolve(home, 'projects', 'p', 'tickets', 'a');
+    await writeFile(
+      join(home, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`,
+    );
+    const dir = resolve(home, 'projects', 'p', 'tickets', 'PX-1-a');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), '---\nid: x\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
+    await mkdir(resolve(home, 'projects', 'p'), { recursive: true });
+    await writeFile(
+      resolve(home, 'projects', 'p', 'project.md'),
+      '---\nslug: p\ntitle: P\nprefix: PX\nnextTicket: 2\n---\n',
+    );
+    await writeFile(resolve(dir, 'ticket.md'), '---\nid: PX-1\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
     progressPath = resolve(dir, 'progress.md');
     await writeFile(progressPath, PROGRESS, 'utf-8');
   });

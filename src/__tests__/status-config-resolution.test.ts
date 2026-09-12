@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile, readFile, access } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   scanTicketsByStatus,
@@ -28,15 +28,24 @@ let root: string;
 let projectsDir: string;
 let standaloneDir: string;
 
+function ticketIdForSlug(slug: string): string {
+  const num = slug.match(/(\d+)$/)?.[1] ?? '1';
+  if (slug.startsWith('r')) return `TR-${num}`;
+  if (slug.startsWith('d')) return `TD-${num}`;
+  return `TA-${num}`;
+}
+
 async function seed(
   dir: string,
   slug: string,
   status: string,
   extras: { updated?: string } = {},
 ): Promise<string> {
-  await mkdir(dir, { recursive: true });
+  const id = ticketIdForSlug(slug);
+  const ticketDir = join(dirname(dir), `${id}-${slug}`);
+  await mkdir(ticketDir, { recursive: true });
   const md = `---
-id: 11111111-1111-1111-1111-${slug.padEnd(12, '0').slice(0, 12)}
+id: ${id}
 slug: ${slug}
 title: ${slug}
 status: ${status}
@@ -58,7 +67,7 @@ tags: []
 
 # ${slug}
 `;
-  const p = join(dir, 'ticket.md');
+  const p = join(ticketDir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -93,18 +102,17 @@ afterEach(async () => {
 });
 
 describe('scanTicketsByStatus', () => {
-  it('groups by status across project + standalone trees', async () => {
+  it('groups by status across project tickets', async () => {
     await seed(join(projectsDir, 'p1', 'tickets', 'a1'), 'a1', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a2'), 'a2', 'pending');
     await seed(join(projectsDir, 'p1', 'tickets', 'a3'), 'a3', 'in_progress');
-    await seed(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending');
 
     const result = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending', 'in_progress']);
 
-    expect(result.get('pending')).toHaveLength(3);
+    expect(result.get('pending')).toHaveLength(2);
     expect(result.get('in_progress')).toHaveLength(1);
     const pendingDisplays = result.get('pending')!.map((a) => a.display).sort();
-    expect(pendingDisplays).toEqual(['(standalone) uuid-1', 'p1/a1', 'p1/a2']);
+    expect(pendingDisplays).toEqual(['p1/a1', 'p1/a2']);
   });
 
   it('returns an empty array for queried ids that have zero matches', async () => {
@@ -410,10 +418,12 @@ async function seedWf(
   status: string,
   workflow: string | null,
 ): Promise<string> {
-  await mkdir(dir, { recursive: true });
+  const id = ticketIdForSlug(slug);
+  const ticketDir = join(dirname(dir), `${id}-${slug}`);
+  await mkdir(ticketDir, { recursive: true });
   const wfLine = workflow ? `\nworkflow: ${workflow}` : '';
   const md = `---
-id: 11111111-1111-1111-1111-${slug.padEnd(12, '0').slice(0, 12)}
+id: ${id}
 slug: ${slug}
 title: ${slug}
 status: ${status}
@@ -422,7 +432,7 @@ priority: medium${wfLine}
 
 # ${slug}
 `;
-  const p = join(dir, 'ticket.md');
+  const p = join(ticketDir, 'ticket.md');
   await writeFile(p, md);
   return p;
 }
@@ -470,14 +480,14 @@ describe('scanTicketsByStatus — per-workflow scoping (Task 8)', () => {
     expect(unscoped.get('pending')!.length).toBe(2);
   });
 
-  it('handles a standalone ticket with a workflow override', async () => {
-    await seedWf(join(standaloneDir, 'uuid-1'), 'uuid-1', 'pending', 'alpha');
+  it('handles a project ticket with a workflow override', async () => {
+    await seedWf(join(projectsDir, 'p1', 'tickets', 'solo'), 'solo', 'pending', 'alpha');
     const resolver = wfResolver(['default', 'alpha']);
     const scoped = await scanTicketsByStatus(projectsDir, standaloneDir, ['pending'], {
       resolver,
       workflowId: 'alpha',
     });
-    expect(scoped.get('pending')!.map((a) => a.display)).toEqual(['(standalone) uuid-1']);
+    expect(scoped.get('pending')!.map((a) => a.display)).toEqual(['p1/solo']);
   });
 
   it('re-bind remap: a scoped status change leaves other workflows’ tickets untouched', async () => {

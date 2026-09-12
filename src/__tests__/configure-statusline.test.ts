@@ -272,18 +272,17 @@ describe('configure-statusline', () => {
       'utf-8',
     );
 
-    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'demo');
+    const ticketDir = resolve(sandbox, 'proj', 'tickets', 'DEM-1-demo');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      '---\ntitle: "My Demo"\n---\n',
+      '---\nid: DEM-1\nslug: demo\ntitle: "My Demo"\n---\n',
     );
     await mkdir(resolve(sandbox, '.syntaur'), { recursive: true });
     await writeFile(
       resolve(sandbox, '.syntaur', 'context.json'),
       JSON.stringify({
-        projectSlug: 'p',
-        ticketSlug: 'demo',
+        ticketId: 'DEM-1',
         ticketDir,
       }),
     );
@@ -305,7 +304,7 @@ describe('configure-statusline', () => {
     const out = res.stdout;
     // Check each segment is present and in order.
     expect(out).toContain('feat/xyz');
-    expect(out).toContain('p/demo — My Demo');
+    expect(out).toContain('DEM-1 — My Demo');
     expect(out).toContain('Opus 4.7');
     expect(out).toContain('ctx:[');
     expect(out).toContain('] 75%');

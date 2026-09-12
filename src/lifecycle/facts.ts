@@ -12,6 +12,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import { resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import { type TicketFacts, factFieldNames } from './derive.js';
 import { parseTicketFrontmatter } from './frontmatter.js';
@@ -137,9 +138,9 @@ export async function areDependenciesSatisfied(
   depTerminalFor?: (depFrontmatter: TicketFrontmatter) => Promise<ReadonlySet<string> | null>,
 ): Promise<boolean> {
   if (dependsOn.length === 0 || projectDir === null) return true;
-  for (const depSlug of dependsOn) {
-    const depPath = resolve(projectDir, 'tickets', depSlug, 'ticket.md');
-    if (!(await fileExists(depPath))) return false;
+  for (const depId of dependsOn) {
+    const depPath = await resolveTicketMdPathInProject(projectDir, depId);
+    if (!depPath || !(await fileExists(depPath))) return false;
     try {
       const content = await readFile(depPath, 'utf-8');
       // Use the canonical parser (not a hand-rolled regex) so a QUOTED

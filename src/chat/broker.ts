@@ -3483,7 +3483,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         totalCost: totals.cost,
         cwd: session.cwd,
         projectSlug: session.ticket.projectSlug ?? '',
-        ticketSlug: session.ticket.ticketSlug,
+        ticketSlug: session.ticket.id,
         rawJson: null,
       });
     } catch {

@@ -1,8 +1,10 @@
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { runTransition, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
 import { readConfig } from '../utils/config.js';
 import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketById, resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } from '../lifecycle/recompute.js';
 import { isEngineActiveForTicket } from '../lifecycle/engine-transition.js';
 
@@ -24,19 +26,20 @@ export async function reopenCommand(
   const { context, workflowResolver } = await resolveRecomputeContext();
   let ticketPath: string;
   let projectDir: string | null;
-  // The dir slug recomputeDependents matches `dependsOn` against — NOT the raw
-  // arg, which is a UUID when reopened by id (that would silently match nothing).
-  let changedSlug: string;
+  // recomputeDependents matches `dependsOn` against ticket ids — NOT slugs.
+  let changedTicketId: string;
   if (options.project) {
     projectDir = resolve(baseDir, options.project);
-    ticketPath = resolve(projectDir, 'tickets', ticket, 'ticket.md');
-    changedSlug = ticket;
+    const resolvedPath = await resolveTicketMdPathInProject(projectDir, ticket);
+    if (!resolvedPath) return;
+    ticketPath = resolvedPath;
+    changedTicketId = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8')).id;
   } else {
     const resolved = await resolveTicketById(baseDir, ticketsDirFn(), ticket);
     if (!resolved) return;
     ticketPath = resolve(resolved.ticketDir, 'ticket.md');
     projectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
-    changedSlug = resolved.ticketSlug;
+    changedTicketId = resolved.id;
   }
   // The post-reopen re-derive lands the LADDER ticket where its facts are (not
   // the imperative in_progress target). On the ENGINE path the reopen already
@@ -58,7 +61,7 @@ export async function reopenCommand(
 
   // Leaving terminal flips dependents' depsSatisfied back to false.
   if (projectDir) {
-    const results = await recomputeDependents(projectDir, changedSlug, {
+    const results = await recomputeDependents(projectDir, changedTicketId, {
       cause: 'dep-reopened',
       by: 'system',
       context,

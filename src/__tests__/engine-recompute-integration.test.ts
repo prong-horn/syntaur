@@ -428,15 +428,16 @@ stages:
     await writeFile(join(home, 'workflows', 'feature.md'), wf, 'utf-8');
     invalidateWorkflowLibraryCache();
 
-    // A standalone ticket (folder = its id) at status `done`, ACs all checked.
-    const id = 'reopen-guard-0000';
-    const dir = join(home, 'tickets', id);
+    const id = 'ROP-1';
+    await mkdir(join(home, 'projects', 'p1'), { recursive: true });
+    await writeFile(join(home, 'projects', 'p1', 'project.md'), '---\nslug: p1\n---\n');
+    const dir = join(home, 'projects', 'p1', 'tickets', `${id}-t`);
     await mkdir(dir, { recursive: true });
     const content = `---
 id: ${id}
 slug: t
 title: "T"
-project: null
+project: p1
 status: done
 priority: medium
 created: "2026-06-09T10:00:00Z"
@@ -458,7 +459,7 @@ frozenChecks:
 ${ACS_CHECKED}`;
     await writeFile(join(dir, 'ticket.md'), content, 'utf-8');
 
-    await reopenCommand(id, {});
+    await reopenCommand('t', { project: 'p1', dir: join(home, 'projects') });
 
     const fm = parseTicketFrontmatter(await readFile(join(dir, 'ticket.md'), 'utf-8'));
     // Guard held: the engine reopen re-placed it at `building` and the legacy

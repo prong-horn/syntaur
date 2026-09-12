@@ -72,9 +72,11 @@ async function invokeRoute(
   return response;
 }
 
+const TICKET_ID = 'TST-1';
+
 async function createTicketFixture(): Promise<void> {
   const projectDir = resolve(testDir, 'test-project');
-  const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
+  const ticketDir = resolve(projectDir, 'tickets', `${TICKET_ID}-test-ticket`);
   await mkdir(ticketDir, { recursive: true });
 
   await writeFile(resolve(projectDir, 'project.md'), `---
@@ -90,7 +92,7 @@ tags: []
 # Test Project`, 'utf-8');
 
   await writeFile(resolve(ticketDir, 'ticket.md'), `---
-id: ticket-1
+id: ${TICKET_ID}
 slug: test-ticket
 title: Test Ticket
 status: pending
@@ -121,7 +123,7 @@ describe('B5 — comment write produces a single YAML-quoted updated timestamp',
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: TICKET_ID },
       { body: 'first comment', author: 'human', type: 'note' },
     );
     expect(res.statusCode).toBe(201);
@@ -130,7 +132,7 @@ describe('B5 — comment write produces a single YAML-quoted updated timestamp',
       testDir,
       'test-project',
       'tickets',
-      'test-ticket',
+      `${TICKET_ID}-test-ticket`,
       'comments.md',
     );
     const content = await readFile(commentsPath, 'utf-8');

@@ -88,7 +88,18 @@ export async function resolveRecreateTarget(
   let repository: string | null = null;
   let branch: string | null = null;
   let ticketWorktreePath = '';
-  if (session.projectSlug && session.ticketSlug) {
+  if (session.ticketId) {
+    const detail = await getTicketDetailById(
+      projectsDir,
+      ticketsDir,
+      session.ticketId,
+    );
+    if (detail) {
+      repository = detail.workspace.repository ?? null;
+      branch = detail.workspace.branch ?? null;
+      ticketWorktreePath = detail.workspace.worktreePath ?? '';
+    }
+  } else if (session.projectSlug && session.ticketSlug) {
     const detail = await getTicketDetail(
       projectsDir,
       session.projectSlug,
@@ -100,8 +111,6 @@ export async function resolveRecreateTarget(
       ticketWorktreePath = detail.workspace.worktreePath ?? '';
     }
   } else if (session.ticketSlug) {
-    // Standalone session: `project_slug IS NULL` and `assignment_slug` holds the
-    // ticket UUID (see listSessionsByTicket), so resolve it by id.
     const detail = await getTicketDetailById(
       projectsDir,
       ticketsDir,

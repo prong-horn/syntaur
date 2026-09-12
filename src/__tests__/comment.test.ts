@@ -1,18 +1,36 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { createProjectCommand } from '../commands/create-project.js';
-import { newCommand } from '../commands/new.js';
 import { commentCommand } from '../commands/comment.js';
+import { renderComments } from '../templates/index.js';
 
 let testDir: string;
+let ticketDir: string;
 let origSyntaurHome: string | undefined;
+
+async function seedTicket(): Promise<void> {
+  ticketDir = resolve(testDir, 'p', 'tickets', 'CMT-1-a');
+  await mkdir(ticketDir, { recursive: true });
+  await writeFile(
+    resolve(testDir, 'p', 'project.md'),
+    '---\nslug: p\ntitle: P\nprefix: CMT\nnextTicket: 2\n---\n',
+  );
+  await writeFile(
+    resolve(ticketDir, 'ticket.md'),
+    '---\nid: CMT-1\nslug: a\ntitle: A\nstatus: draft\n---\n# A\n',
+  );
+  await writeFile(
+    resolve(ticketDir, 'comments.md'),
+    renderComments({ ticket: 'a', timestamp: '2026-01-01T00:00:00Z' }),
+  );
+}
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-comment-test-'));
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = testDir;
+  await seedTicket();
 });
 
 afterEach(async () => {
@@ -23,16 +41,7 @@ afterEach(async () => {
 
 describe('commentCommand', () => {
   it('appends a question, bumps entryCount, replaces the "No comments yet." sentinel', async () => {
-    await createProjectCommand('P', { dir: testDir });
-    await newCommand('A', { project: 'p', dir: testDir });
-
-    const commentsPath = resolve(
-      testDir,
-      'p',
-      'tickets',
-      'a',
-      'comments.md',
-    );
+    const commentsPath = resolve(ticketDir, 'comments.md');
     const before = await readFile(commentsPath, 'utf-8');
     expect(before).toContain('entryCount: 0');
     expect(before).toContain('No comments yet.');
@@ -54,18 +63,12 @@ describe('commentCommand', () => {
   });
 
   it('rejects empty text', async () => {
-    await createProjectCommand('P', { dir: testDir });
-    await newCommand('A', { project: 'p', dir: testDir });
-
     await expect(
       commentCommand('a', '   ', { project: 'p', dir: testDir }),
     ).rejects.toThrow('empty');
   });
 
   it('rejects an invalid type', async () => {
-    await createProjectCommand('P', { dir: testDir });
-    await newCommand('A', { project: 'p', dir: testDir });
-
     await expect(
       commentCommand('a', 'body', {
         project: 'p',
@@ -77,16 +80,10 @@ describe('commentCommand', () => {
   });
 
   it('records the reply-to pointer when set', async () => {
-    await createProjectCommand('P', { dir: testDir });
-    await newCommand('A', { project: 'p', dir: testDir });
-
     await commentCommand('a', 'parent', { project: 'p', type: 'question', author: 'a', dir: testDir });
     await commentCommand('a', 'child', { project: 'p', type: 'note', replyTo: 'abc12345', author: 'b', dir: testDir });
 
-    const content = await readFile(
-      resolve(testDir, 'p', 'tickets', 'a', 'comments.md'),
-      'utf-8',
-    );
+    const content = await readFile(resolve(ticketDir, 'comments.md'), 'utf-8');
     expect(content).toContain('**Reply to:** abc12345');
   });
 });
