@@ -128,5 +128,5 @@ After writing the plan:
 **Recordkeeping reminders for implementation:**
 - Check off acceptance criteria in `ticket.md` as each one is completed — not in a batch at the end.
 - Append timestamped milestones to `progress.md` (a separate append-only file). Do NOT add a `## Progress` section to `ticket.md` — protocol v2.0 moved progress to its own file.
-- Record questions, notes, or feedback via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback` — never edit `comments.md` directly.
+- Record questions, notes, or feedback via `syntaur comment <ticket-id> "body" --type question|note|feedback` — never edit `comments.md` directly.
 - Keep `ticket.md` status and acceptance checkboxes reflecting current state at all times.

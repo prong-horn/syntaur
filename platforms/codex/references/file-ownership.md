@@ -30,7 +30,7 @@ Do not edit these files directly. Use the listed CLI commands:
 
 | File | Mediator |
 |------|----------|
-| `comments.md` (any ticket) | `syntaur comment <slug-or-uuid> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
+| `comments.md` (any ticket) | `syntaur comment <ticket-id> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
 
 These are bounded exceptions to the single-writer rule.
 

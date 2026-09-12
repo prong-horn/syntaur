@@ -90,7 +90,7 @@ Use these commands directly when needed:
 - `syntaur block <ticket-id> --project <project-slug> --reason <text>`
 - `syntaur unblock <ticket-id> --project <project-slug>`
 - `syntaur fail <ticket-id> --project <project-slug>`
-- `syntaur comment <ticket-slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
+- `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]` — append to `comments.md`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]` (both `--session-id` and `--transcript-path` must come from the matching Codex rollout file — never synthesize. Pass `--pid "$$"` so the dashboard can detect liveness and gate Resume off while this session is still running.)
 - `syntaur setup-adapter codex --project <project-slug> --ticket <ticket-id>`

@@ -96,7 +96,7 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 Only the assigned agent may write to its own ticket folder.
 
 ### CLI-Mediated Shared-Writable
-- `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
+- `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
 
 ### Shared-Writable (any agent or human)
 - `resources/<slug>.md` — reference material
@@ -173,7 +173,7 @@ Only the assigned agent may write to its own ticket folder.
 ### Coordination (CLI-mediated writes)
 | Command | Description |
 |---------|-------------|
-| `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
+| `syntaur comment <ticket-id> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
 
 ### State Transitions
 | Command | Description |

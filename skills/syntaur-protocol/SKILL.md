@@ -36,7 +36,7 @@ Respect file ownership boundaries. The Codex plugin enforces them with a PreTool
 
 ### Files written only via CLI (never edit directly)
 
-- `comments.md` (any ticket) — use `syntaur comment <slug-or-uuid> "body" --type question|note|feedback [--reply-to <id>]`. Questions carry a `resolved` flag toggled in the dashboard.
+- `comments.md` (any ticket) — use `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`. Questions carry a `resolved` flag toggled in the dashboard.
 
 ### Files you must never write
 

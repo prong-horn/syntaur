@@ -26,7 +26,7 @@ You may only write to files inside your currently-claimed ticket folder:
 | `decision-record.md` | Append-only decision log (Status / Context / Decision / Consequences). |
 
 Path patterns:
-- Project-nested: `~/.syntaur/projects/<project>/tickets/<your-ticket-slug>/`
+- Project-nested: `~/.syntaur/projects/<project>/tickets/<ID>-<slug>/`
 - Standalone: `~/.syntaur/tickets/<your-ticket-uuid>/` (folder name is the UUID; `slug` is display-only)
 
 ## CLI-Mediated (any agent via the `syntaur` CLI)
@@ -35,7 +35,7 @@ These files are never edited directly — write to them only through the CLI so 
 
 | Target | Command |
 |--------|---------|
-| `comments.md` (any ticket) | `syntaur comment <slug-or-uuid> "body" --type question\|note\|feedback [--reply-to <id>]` |
+| `comments.md` (any ticket) | `syntaur comment <ticket-id> "body" --type question\|note\|feedback [--reply-to <id>]` |
 
 ## Shared-Writable (any agent or human)
 

@@ -30,7 +30,7 @@ Do NOT edit these files directly. Use the listed CLI commands:
 
 | File | Mediator |
 |------|----------|
-| `comments.md` (any ticket) | `syntaur comment <slug-or-uuid> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
+| `comments.md` (any ticket) | `syntaur comment <ticket-id> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
 | Question resolution | `PATCH /api/.../comments/:id/resolved` (dashboard) or toggle in dashboard UI |
 
 These are bounded exceptions to the single-writer rule for ticket folders — the CLI serializes writes to avoid conflicts.
