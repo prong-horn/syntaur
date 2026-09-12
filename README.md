@@ -147,7 +147,7 @@ syntaur setup \
 
 ## Working a ticket
 
-Open the dashboard, open a ticket, and use its **Chat** tab. Sending t
+Open the dashboard, open a ticket, and use its **Chat** tab. Sending a
 message there spawns a real coding agent in the ticket's worktree — the
 dashboard server speaks the Agent Client Protocol to a `claude-agent-acp` or
 `codex-acp` adapter it owns — and renders the work as a conversation: streaming
