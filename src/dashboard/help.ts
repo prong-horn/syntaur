@@ -78,17 +78,17 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur unblock',
     description: 'Move a blocked ticket back to in_progress after the blocker is cleared.',
-    example: 'syntaur unblock implement-overview --project ui-overhaul',
+    example: 'syntaur unblock UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur fail',
     description: 'Mark a ticket failed when it cannot be completed as planned.',
-    example: 'syntaur fail implement-overview --project ui-overhaul',
+    example: 'syntaur fail UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur reopen',
     description: 'Reopen a completed or failed ticket back to in_progress.',
-    example: 'syntaur reopen implement-overview --project ui-overhaul',
+    example: 'syntaur reopen UI-1 --project ui-overhaul',
   },
 
   // --- Dashboard (index 12) ---
@@ -117,7 +117,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur setup-adapter',
     description: 'Generate adapter instruction files for cursor, codex, or opencode in the current directory.',
-    example: 'syntaur setup-adapter cursor --project ui-overhaul --ticket implement-overview',
+    example: 'syntaur setup-adapter cursor --project ui-overhaul --ticket UI-1',
   },
 
   // --- Session & server tracking (index 17) ---
@@ -126,7 +126,7 @@ const CLI_COMMANDS: HelpCommand[] = [
     description:
       'Register an agent session. Requires --session-id from the agent runtime (real, not generated). Pass --transcript-path for the rollout/transcript file. --project and --ticket are optional.',
     example:
-      'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --ticket implement-overview',
+      'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --ticket UI-1',
   },
 
   // --- Playbooks (indices 18-20) ---

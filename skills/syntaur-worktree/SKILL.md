@@ -41,7 +41,7 @@ operations:
 Required arguments from the user (or interactive prompts):
 
 - `--project <slug>` (omit for standalone tickets — pass `--id <uuid>`)
-- `--ticket <slug-or-uuid>`
+- `--ticket <ticket-id>`
 - `--branch <name>` — the new branch name (also the worktree dir name)
 - `--repository <path>` — defaults to current working directory; usually the
   repo root the ticket lives in
@@ -66,7 +66,7 @@ syntaur worktree create \
   --repository <repository> \
   --branch <branch> \
   --parent-branch <parent-branch> \
-  --ticket <slug-or-uuid> \
+  --ticket <ticket-id> \
   --project <project-slug>
 ```
 
