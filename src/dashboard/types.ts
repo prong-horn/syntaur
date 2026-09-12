@@ -587,6 +587,9 @@ export type WsMessageType =
 export interface WsMessage {
   type: WsMessageType;
   projectSlug?: string | null;
+  /** Ticket id from the `<ID>-<slug>` folder name (preferred for refetch). */
+  ticketId?: string;
+  /** Display slug parsed from the folder name when available. */
   ticketSlug?: string;
   timestamp: string;
   /**

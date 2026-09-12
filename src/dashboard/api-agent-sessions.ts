@@ -22,7 +22,11 @@ import {
 } from './agent-sessions.js';
 import { fileExists } from '../utils/fs.js';
 import { isSafeSessionId } from '../utils/session-id.js';
-import { resolveTicketBySlug } from '../utils/ticket-resolver.js';
+import {
+  resolveTicketById,
+  resolveTicketSlugInProject,
+} from '../utils/ticket-resolver.js';
+import { isTicketId } from '../utils/ticket-ids.js';
 import { ticketsDir as ticketsDirFn } from '../utils/paths.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
@@ -646,15 +650,14 @@ export function createAgentSessionsRouter(
     try {
       const {
         projectSlug,
+        ticketId: bodyTicketId,
         ticketSlug: bodyTicketSlug,
-        ticketSlug: legacyTicketSlug,
         agent,
         sessionId,
         path,
         description,
         transcriptPath,
       } = req.body;
-      const ticketSlug = bodyTicketSlug ?? legacyTicketSlug;
 
       if (!agent) {
         res.status(400).json({ error: 'agent is required' });
@@ -695,15 +698,20 @@ export function createAgentSessionsRouter(
       // the interval to repair the id. A registration-only POST (no
       // `ticketSlug`) is NOT gated — it registers the bare session.
       let ticketId: string | null = null;
-      if (ticketSlug) {
-        const resolvedTicket = await resolveTicketBySlug(
-          projectsDir,
-          ticketsDir ?? ticketsDirFn(),
-          projectSlug || null,
-          ticketSlug,
-        );
-        if (!resolvedTicket.exists) {
-          res.status(404).json({ error: `Ticket "${ticketSlug}" not found` });
+      let resolvedTicket: Awaited<ReturnType<typeof resolveTicketById>> | null = null;
+      const ticketRef = bodyTicketId ?? bodyTicketSlug;
+      if (ticketRef) {
+        resolvedTicket = isTicketId(ticketRef)
+          ? await resolveTicketById(
+              projectsDir,
+              ticketsDir ?? ticketsDirFn(),
+              ticketRef,
+            )
+          : projectSlug
+            ? await resolveTicketSlugInProject(projectsDir, projectSlug, ticketRef)
+            : null;
+        if (!resolvedTicket) {
+          res.status(404).json({ error: `Ticket "${ticketRef}" not found` });
           return;
         }
         ticketId = resolvedTicket.id;
@@ -726,8 +734,8 @@ export function createAgentSessionsRouter(
         // L: a POST with no ticketSlug is registration-only (unbound) — do
         // NOT open a project-bound engagement for an arbitrary session. Binding
         // requires a validated ticket selector (existence-checked above).
-        projectSlug: ticketSlug ? projectSlug || null : null,
-        ticketSlug: ticketSlug || null,
+        projectSlug: ticketRef ? projectSlug || null : null,
+        ticketSlug: resolvedTicket?.ticketSlug ?? bodyTicketSlug ?? null,
         ticketId: ticketId,
         agent,
         sessionId,

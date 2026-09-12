@@ -11,7 +11,6 @@ import { TicketDetail } from './pages/TicketDetail';
 import { TicketsPage } from './pages/TicketsPage';
 import { CreateProject } from './pages/CreateProject';
 import { CreateTicket } from './pages/CreateTicket';
-import { CreateStandaloneTicket } from './pages/CreateStandaloneTicket';
 import { EditProject } from './pages/EditProject';
 import { EditTicket } from './pages/EditTicket';
 import { EditTicketPlan } from './pages/EditTicketPlan';
@@ -50,7 +49,6 @@ export function App() {
             <Route path="/projects" element={<ProjectList />} />
             <Route path="/archive" element={<Archive />} />
             <Route path="/tickets" element={<TicketsPage />} />
-            <Route path="/tickets/new" element={<CreateStandaloneTicket />} />
             <Route path="/t/:id" element={<TicketDetail />} />
             <Route path="/t/:id/edit" element={<EditTicket />} />
             <Route path="/t/:id/plan/edit" element={<EditTicketPlan />} />

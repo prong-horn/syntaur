@@ -2,130 +2,138 @@ import { resolve } from 'node:path';
 import { readdir, readFile } from 'node:fs/promises';
 import { fileExists } from './fs.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
+import { isTicketId } from './ticket-ids.js';
+import {
+  folderNameForTicketId,
+  parseTicketFolderName,
+} from './ticket-folder.js';
 
 export interface ResolvedTicket {
   ticketDir: string;
-  projectSlug: string | null;
+  projectSlug: string;
   ticketSlug: string;
   id: string;
-  standalone: boolean;
+  /** @deprecated Standalone tickets were removed; always false. */
+  standalone: false;
   /**
    * The engagement stage this target was resolved at, when resolution came from
-   * the session's open engagement (Case 3). Undefined for explicit `--project`
-   * / bare-id resolution, which carries no engagement.
+   * the session's open engagement (Case 3). Undefined for explicit id resolution.
    */
   stage?: string;
 }
 
+export class TicketResolverError extends Error {}
+
 export async function resolveTicketById(
   projectsDir: string,
-  ticketsDir: string,
+  _ticketsDir: string | undefined,
   id: string,
 ): Promise<ResolvedTicket | null> {
-  let standaloneMatch: ResolvedTicket | null = null;
-  let projectMatch: ResolvedTicket | null = null;
+  if (!isTicketId(id)) return null;
+  if (!(await fileExists(projectsDir))) return null;
 
-  // 1) Standalone: <ticketsDir>/<id>/ticket.md
-  const standaloneDir = resolve(ticketsDir, id);
-  const standalonePath = resolve(standaloneDir, 'ticket.md');
-  if (await fileExists(standalonePath)) {
-    standaloneMatch = {
-      ticketDir: standaloneDir,
-      projectSlug: null,
-      ticketSlug: id,
-      id,
-      standalone: true,
-    };
+  const matches: ResolvedTicket[] = [];
+  try {
+    const projects = await readdir(projectsDir, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      if (project.name.startsWith('.') || project.name.startsWith('_')) continue;
+      const ticketsPath = resolve(projectsDir, project.name, 'tickets');
+      if (!(await fileExists(ticketsPath))) continue;
+
+      const entries = await readdir(ticketsPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (!folderNameForTicketId(entry.name, id)) continue;
+
+        const ticketDir = resolve(ticketsPath, entry.name);
+        const ticketMdPath = resolve(ticketDir, 'ticket.md');
+        if (!(await fileExists(ticketMdPath))) continue;
+
+        const parsedFolder = parseTicketFolderName(entry.name);
+        let ticketSlug = parsedFolder?.slug ?? entry.name;
+        let fileId = id;
+        try {
+          const content = await readFile(ticketMdPath, 'utf-8');
+          const [fm] = extractFrontmatter(content);
+          fileId = getField(fm, 'id') ?? id;
+          ticketSlug = getField(fm, 'slug') ?? ticketSlug;
+        } catch {
+          // keep folder-derived slug
+        }
+
+        if (fileId !== id) continue;
+
+        matches.push({
+          ticketDir,
+          projectSlug: project.name,
+          ticketSlug,
+          id,
+          standalone: false,
+        });
+      }
+    }
+  } catch {
+    return null;
   }
 
-  // 2) Project-nested: scan <projectsDir>/*/tickets/*/ticket.md and match by frontmatter id
-  if (await fileExists(projectsDir)) {
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new TicketResolverError(
+      `Multiple tickets match id "${id}"; expected exactly one folder matching ^${id}-`,
+    );
+  }
+  return matches[0];
+}
+
+/** Resolve a ticket slug within one project by scanning `tickets/` folder names. */
+export async function resolveTicketSlugInProject(
+  projectsDir: string,
+  projectSlug: string,
+  ticketSlug: string,
+): Promise<ResolvedTicket | null> {
+  const ticketsPath = resolve(projectsDir, projectSlug, 'tickets');
+  if (!(await fileExists(ticketsPath))) return null;
+
+  const suffix = `-${ticketSlug}`;
+  const entries = await readdir(ticketsPath, { withFileTypes: true });
+  const matches: ResolvedTicket[] = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const parsed = parseTicketFolderName(entry.name);
+    const slugMatches =
+      parsed?.slug === ticketSlug || entry.name === ticketSlug || entry.name.endsWith(suffix);
+    if (!slugMatches) continue;
+
+    const ticketDir = resolve(ticketsPath, entry.name);
+    const ticketMdPath = resolve(ticketDir, 'ticket.md');
+    if (!(await fileExists(ticketMdPath))) continue;
+
     try {
-      const projects = await readdir(projectsDir, { withFileTypes: true });
-      for (const p of projects) {
-        if (!p.isDirectory()) continue;
-        if (p.name.startsWith('.') || p.name.startsWith('_')) continue;
-        const ticketsPath = resolve(projectsDir, p.name, 'tickets');
-        if (!(await fileExists(ticketsPath))) continue;
-
-        const entries = await readdir(ticketsPath, { withFileTypes: true });
-        for (const a of entries) {
-          if (!a.isDirectory()) continue;
-          const aPath = resolve(ticketsPath, a.name, 'ticket.md');
-          if (!(await fileExists(aPath))) continue;
-
-          try {
-            const content = await readFile(aPath, 'utf-8');
-            const [fm] = extractFrontmatter(content);
-            const fileId = getField(fm, 'id');
-            if (fileId === id) {
-              projectMatch = {
-                ticketDir: resolve(ticketsPath, a.name),
-                projectSlug: p.name,
-                ticketSlug: a.name,
-                id,
-                standalone: false,
-              };
-              break;
-            }
-          } catch {
-            // skip unreadable
-          }
-        }
-        if (projectMatch) break;
-      }
+      const content = await readFile(ticketMdPath, 'utf-8');
+      const [fm] = extractFrontmatter(content);
+      const id = getField(fm, 'id');
+      const slug = getField(fm, 'slug') ?? parsed?.slug ?? ticketSlug;
+      if (!id || !isTicketId(id)) continue;
+      if (slug !== ticketSlug) continue;
+      matches.push({
+        ticketDir,
+        projectSlug,
+        ticketSlug: slug,
+        id,
+        standalone: false,
+      });
     } catch {
-      // projectsDir not readable
+      // skip unreadable
     }
   }
 
-  if (standaloneMatch && projectMatch) {
-    console.warn(
-      `Duplicate ticket ID ${id} found in both standalone and project-nested locations; using standalone`,
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new TicketResolverError(
+      `Multiple tickets match slug "${ticketSlug}" in project "${projectSlug}".`,
     );
-    return standaloneMatch;
   }
-
-  return standaloneMatch ?? projectMatch ?? null;
-}
-
-export interface ResolvedTicketBySlug {
-  /** True iff the ticket.md exists and is readable at the deterministic path. */
-  exists: boolean;
-  /** The frontmatter `id`, or null when the file is missing/unreadable/idless. */
-  id: string | null;
-}
-
-/**
- * Resolve a ticket's frontmatter `id` (and existence) from its SLUGS via the
- * deterministic on-disk path — no directory scan. Project-nested:
- * `<projectsDir>/<projectSlug>/tickets/<ticketSlug>/ticket.md`;
- * standalone (`projectSlug == null`): `<ticketsDir>/<ticketSlug>/ticket.md`.
- *
- * Returns `{exists:false, id:null}` when the file is absent/unreadable,
- * `{exists:true, id:null}` when it exists but has no frontmatter `id`, and
- * `{exists:true, id}` otherwise. Never throws — registration/binding callers use it
- * best-effort: M1 (track/grab/API) takes `.id` to store `assignment_id`; the L
- * dashboard-POST gate gates on `.exists`. Distinguishing missing-vs-idless is why
- * this returns a struct rather than `string | null`.
- */
-export async function resolveTicketBySlug(
-  projectsDir: string,
-  ticketsDir: string,
-  projectSlug: string | null,
-  ticketSlug: string,
-): Promise<ResolvedTicketBySlug> {
-  const path = projectSlug
-    ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'ticket.md')
-    : resolve(ticketsDir, ticketSlug, 'ticket.md');
-  if (!(await fileExists(path))) return { exists: false, id: null };
-  try {
-    const content = await readFile(path, 'utf-8');
-    const [fm] = extractFrontmatter(content);
-    const id = getField(fm, 'id');
-    return { exists: true, id: id ?? null };
-  } catch {
-    // exists on disk but unreadable — treat as not-resolvable (best-effort)
-    return { exists: false, id: null };
-  }
+  return matches[0];
 }

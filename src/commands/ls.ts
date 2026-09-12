@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { listTicketsBoard } from '../dashboard/api.js';
-import { defaultProjectDir, ticketsDir as standaloneTicketsDir } from '../utils/paths.js';
+import { defaultProjectDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { computeFacts } from '../lifecycle/facts.js';
@@ -12,6 +12,7 @@ import { isStagesMigrated } from '../utils/stages-marker.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
 import type { FactDeclaration } from '../utils/config.js';
 import type { TicketBoardItem } from '../dashboard/types.js';
+import { formatTicketFolderName } from '../utils/ticket-folder.js';
 
 interface LsOptions {
   status?: string;
@@ -46,16 +47,17 @@ function parseAgeToCutoff(age: string): Date {
 }
 
 function ticketMdPath(item: TicketBoardItem): string {
-  if (item.projectSlug) {
-    return resolve(
-      defaultProjectDir(),
-      item.projectSlug,
-      'tickets',
-      item.slug,
-      'ticket.md',
-    );
+  if (!item.projectSlug) {
+    throw new Error(`Ticket "${item.id}" has no project; expected a project-nested ticket.`);
   }
-  return resolve(standaloneTicketsDir(), item.id, 'ticket.md');
+  const folderName = formatTicketFolderName(item.id, item.slug);
+  return resolve(
+    defaultProjectDir(),
+    item.projectSlug,
+    'tickets',
+    folderName,
+    'ticket.md',
+  );
 }
 
 async function loadTags(item: TicketBoardItem): Promise<string[]> {
@@ -74,7 +76,7 @@ export async function runLs(
 ): Promise<{ items: TicketBoardItem[] }> {
   const board = await listTicketsBoard(
     defaultProjectDir(),
-    standaloneTicketsDir(),
+    undefined,
     { archived: options.archived ? 'only' : 'exclude' },
   );
   let items = board.tickets;
@@ -200,7 +202,7 @@ async function loadQueryItem(
       // Mirror the dashboard haystack (queryFilter.ts boardItemToQueryItem) so
       // `search:` behaves identically on the CLI and the dashboard. The shared
       // `search` field reads `searchText ?? title`; `title:` stays title-only.
-      searchText: `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`,
+      searchText: `${item.title ?? ''} ${item.slug ?? ''} ${item.id ?? ''} ${item.projectTitle ?? ''} ${item.projectSlug ?? ''}`,
     };
   } catch {
     return null;
@@ -215,7 +217,8 @@ function pad(value: string, width: number): string {
 function renderTable(items: TicketBoardItem[]): string {
   if (items.length === 0) return 'No tickets matched.';
   const rows: string[][] = items.map((a) => [
-    a.projectSlug ?? '(standalone)',
+    a.projectSlug ?? '—',
+    a.id,
     a.slug,
     a.status,
     a.priority,
@@ -223,7 +226,7 @@ function renderTable(items: TicketBoardItem[]): string {
     a.updated.slice(0, 10),
     a.title,
   ]);
-  const header = ['PROJECT', 'SLUG', 'STATUS', 'PRIORITY', 'ASSIGNEE', 'UPDATED', 'TITLE'];
+  const header = ['PROJECT', 'ID', 'SLUG', 'STATUS', 'PRIORITY', 'ASSIGNEE', 'UPDATED', 'TITLE'];
   const all = [header, ...rows];
   const widths = header.map((_, c) =>
     Math.min(60, Math.max(...all.map((row) => row[c]?.length ?? 0))),

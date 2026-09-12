@@ -190,7 +190,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
   out.push({
     id: 'new-ticket',
     title: 'New Ticket',
-    subtitle: 'Pick standalone or a project',
+    subtitle: 'Pick a project',
     group: 'Create',
     keywords: ['new', 'create', 'ticket'],
     bindableKind: 'new-ticket',
@@ -202,16 +202,10 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
           label: 'Project',
           loadOptions: async () => {
             const projects = await fetchProjects();
-            const options: FlowOption[] = [
-              { value: '_standalone', label: 'Standalone', hint: 'one-off / not in a project' },
-            ];
-            for (const p of projects) {
-              options.push({
-                value: p.slug,
-                label: p.title,
-              });
-            }
-            return options;
+            return projects.map((p) => ({
+              value: p.slug,
+              label: p.title,
+            }));
           },
         },
         {
@@ -223,34 +217,12 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         },
       ],
       submit: async (values, helpers) => {
-        const projectChoice = (values.project ?? '_standalone').trim() || '_standalone';
+        const projectChoice = (values.project ?? '').trim();
+        if (!projectChoice) throw new Error('Project is required');
         const title = (values.title ?? '').trim();
         if (!title) throw new Error('Title is required');
         const slug = slugify(title);
         if (!slug) throw new Error('Title must contain at least one alphanumeric character');
-
-        if (projectChoice === '_standalone') {
-          let template = await fetchTemplate('/api/templates/ticket?standalone=1');
-          template = setFrontmatterField(template, 'slug', slug);
-          template = setFrontmatterField(template, 'title', title);
-
-          const res = await fetch('/api/tickets', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: template }),
-          });
-          const payload = await res.json().catch(() => ({}));
-          if (!res.ok) {
-            throw new Error(payload.error || `Failed to create ticket (HTTP ${res.status})`);
-          }
-          const id = payload?.ticket?.id ?? payload?.id;
-          if (id) {
-            helpers.navigate(`/t/${id}`);
-          } else {
-            helpers.navigate('/tickets');
-          }
-          return;
-        }
 
         let template = await fetchTemplate('/api/templates/ticket');
         template = setFrontmatterField(template, 'slug', slug);
@@ -287,15 +259,6 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
     group: 'Create',
     keywords: ['new', 'create', 'project', 'advanced', 'editor'],
     run: () => navigate('/create/project'),
-  });
-
-  out.push({
-    id: 'create-standalone-ticket',
-    title: 'New Standalone Ticket (editor)',
-    subtitle: 'Open the markdown editor',
-    group: 'Create',
-    keywords: ['new', 'create', 'ticket', 'standalone', 'one-off', 'editor'],
-    run: () => navigate('/tickets/new'),
   });
 
   if (projectSlug) {

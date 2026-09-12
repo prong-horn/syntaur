@@ -2,6 +2,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { parseProject, parseTicketFull } from './parser.js';
+import { parseTicketFolderName } from '../utils/ticket-folder.js';
 
 export interface RepositoryCandidate {
   path: string;
@@ -147,7 +148,9 @@ export async function getProjectSourceTickets(
   const entries = await readdir(ticketsDir, { withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    if (entry.name === excludeSlug) continue;
+    const parsedFolder = parseTicketFolderName(entry.name);
+    const entrySlug = parsedFolder?.slug ?? entry.name;
+    if (entry.name === excludeSlug || entrySlug === excludeSlug) continue;
     const ticketMd = resolve(ticketsDir, entry.name, 'ticket.md');
     if (!(await fileExists(ticketMd))) continue;
     const parsed = parseTicketFull(await readFile(ticketMd, 'utf-8'));

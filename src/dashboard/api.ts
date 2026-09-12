@@ -23,7 +23,11 @@ import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from 
 import { TICKET_FIELDS, type FieldRegistry } from '../utils/query/index.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
-import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
+import {
+  resolveTicketById,
+  resolveTicketSlugInProject,
+  type ResolvedTicket,
+} from '../utils/ticket-resolver.js';
 import { latestPlanFile } from '../lifecycle/facts.js';
 import { invalidateIndex } from '../search/index.js';
 
@@ -1029,7 +1033,19 @@ export async function getEditableDocument(
   projectSlug: string,
   ticketSlug?: string,
 ): Promise<EditableDocumentResponse | null> {
-  const filePath = getDocumentPath(projectsDir, documentType, projectSlug, ticketSlug);
+  let filePath = getDocumentPath(projectsDir, documentType, projectSlug, ticketSlug);
+  if (ticketSlug && documentType !== 'project' && documentType !== 'playbook') {
+    const resolved = await resolveTicketSlugInProject(projectsDir, projectSlug, ticketSlug);
+    if (resolved) {
+      const resolvedPath = getDocumentPath(
+        projectsDir,
+        documentType,
+        projectSlug,
+        basename(resolved.ticketDir),
+      );
+      if (resolvedPath) filePath = resolvedPath;
+    }
+  }
   if (!filePath || !(await fileExists(filePath))) {
     return null;
   }
@@ -1208,7 +1224,10 @@ export async function getTicketDetail(
   projectSlug: string,
   ticketSlug: string,
 ): Promise<TicketDetail | null> {
-  const ticketDir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  const resolved = await resolveTicketSlugInProject(projectsDir, projectSlug, ticketSlug);
+  const ticketDir = resolved
+    ? resolved.ticketDir
+    : resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
   const ticketMdPath = resolve(ticketDir, 'ticket.md');
 
   if (!(await fileExists(ticketMdPath))) {

@@ -105,13 +105,16 @@ async function invokeRoute(
 
 async function createTicketFixture(): Promise<void> {
   const projectDir = resolve(testDir, 'test-project');
-  const ticketDir = resolve(projectDir, 'tickets', 'test-ticket');
+  const ticketDir = resolve(projectDir, 'tickets', 'TP-1-test-ticket');
   await mkdir(ticketDir, { recursive: true });
 
   await writeFile(resolve(projectDir, 'project.md'), `---
 id: project-1
 slug: test-project
 title: Test Project
+prefix: TP
+nextTicket: 2
+defaultTemplate: feature
 archived: false
 archivedAt: null
 archivedReason: null
@@ -123,7 +126,7 @@ tags: []
 # Test Project`, 'utf-8');
 
   await writeFile(resolve(ticketDir, 'ticket.md'), `---
-id: ticket-1
+id: TP-1
 slug: test-ticket
 title: Test Ticket
 status: pending
@@ -226,10 +229,10 @@ tags: []
       router,
       'patch',
       '/api/tickets/:id',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       {
         content: `---
-id: ticket-1
+id: TP-1
 slug: test-ticket
 title: Test Ticket
 status: completed
@@ -262,12 +265,12 @@ tags: []
       testDir,
       'test-project',
       'tickets',
-      'test-ticket',
+      'TP-1-test-ticket',
       'ticket.md',
     );
 
     await writeFile(ticketPath, `---
-id: ticket-1
+id: TP-1
 slug: test-ticket
 title: Test Ticket
 status: pending
@@ -302,7 +305,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'patch',
       '/api/tickets/:id/acceptance-criteria/:index',
-      { id: 'ticket-1', index: '0' },
+      { id: 'TP-1', index: '0' },
       { checked: true },
     );
 
@@ -324,7 +327,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/handoff/entries',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       {
         title: 'Handoff 2',
         body: 'Second handoff entry',
@@ -337,7 +340,7 @@ Keep this paragraph.`, 'utf-8');
     expect((response.payload as any).content).toContain('Second handoff entry');
 
     const fileContent = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'handoff.md'),
+      resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'handoff.md'),
       'utf-8',
     );
     expect(fileContent).toContain('Initial handoff');
@@ -354,7 +357,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/decision-record/entries',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       {
         title: 'Use caching',
         body: 'We will cache harness options in syntaur.db.',
@@ -368,7 +371,7 @@ Keep this paragraph.`, 'utf-8');
     expect((response.payload as any).content).toContain('Keep the current layout');
 
     const fileContent = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'decision-record.md'),
+      resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'decision-record.md'),
       'utf-8',
     );
     expect(fileContent).toContain('## Use caching');
@@ -386,7 +389,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/transitions/:command',
-      { id: 'ticket-1', command: 'block' },
+      { id: 'TP-1', command: 'block' },
       {},
     );
 
@@ -402,7 +405,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/transitions/:command',
-      { id: 'ticket-1', command: 'unblock' },
+      { id: 'TP-1', command: 'unblock' },
       {},
     );
     expect(unblocked.statusCode).toBe(200);
@@ -414,7 +417,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/transitions/:command',
-      { id: 'ticket-1', command: 'block' },
+      { id: 'TP-1', command: 'block' },
       { reason: 'Waiting on design review' },
     );
     expect(blocked.statusCode).toBe(200);
@@ -430,7 +433,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'Is the migration reversible?', type: 'question', author: 'alice' },
     );
 
@@ -439,7 +442,7 @@ Keep this paragraph.`, 'utf-8');
       testDir,
       'test-project',
       'tickets',
-      'test-ticket',
+      'TP-1-test-ticket',
       'comments.md',
     );
     const content = await readFile(commentsPath, 'utf-8');
@@ -458,7 +461,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'Q?', type: 'question', author: 'a' },
     );
     expect(add.statusCode).toBe(201);
@@ -468,7 +471,7 @@ Keep this paragraph.`, 'utf-8');
       router,
       'patch',
       '/api/tickets/:id/comments/:commentId/resolved',
-      { id: 'ticket-1', commentId },
+      { id: 'TP-1', commentId },
       { resolved: true },
     );
     expect(toggle.statusCode).toBe(200);
@@ -477,206 +480,16 @@ Keep this paragraph.`, 'utf-8');
       testDir,
       'test-project',
       'tickets',
-      'test-ticket',
+      'TP-1-test-ticket',
       'comments.md',
     );
     const content = await readFile(commentsPath, 'utf-8');
     expect(content).toMatch(/^## [a-z0-9]+\n\n[\s\S]*\*\*Resolved:\*\* true/m);
   });
 
-  it('POST /api/tickets creates a standalone ticket at <ticketsDir>/<uuid>/', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
+  it('does not register POST /api/tickets standalone create', () => {
     const router = createWriteRouter(testDir, ticketsDir);
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'Standalone one-off', priority: 'high' },
-    );
-
-    expect(response.statusCode).toBe(201);
-    const payload = response.payload as any;
-    expect(payload.ticket.projectSlug).toBeNull();
-    expect(payload.ticket.title).toBe('Standalone one-off');
-    expect(payload.ticket.slug).toBe('standalone-one-off');
-    expect(payload.ticket.priority).toBe('high');
-    expect(payload.ticket.id).toMatch(/^[0-9a-f-]{36}$/);
-  });
-
-  it('rejects standalone create with dependsOn', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'nope', dependsOn: ['something'] },
-    );
-    expect(response.statusCode).toBe(400);
-    expect((response.payload as any).error).toContain('dependsOn');
-  });
-
-  it('POST /api/tickets/:id/comments appends for a standalone ticket', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const create = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'Task' },
-    );
-    const id = (create.payload as any).ticket.id as string;
-
-    const comment = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/comments',
-      { id },
-      { body: 'Why?', type: 'question', author: 'alice' },
-    );
-    expect(comment.statusCode).toBe(201);
-
-    const content = await readFile(
-      resolve(ticketsDir, id, 'comments.md'),
-      'utf-8',
-    );
-    expect(content).toContain('**Type:** question');
-    expect(content).toContain('**Author:** alice');
-    expect(content).toContain('Why?');
-  });
-
-  it('POST /api/tickets/:id/transitions/start settles to derived status', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const create = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'Task' },
-    );
-    const id = (create.payload as any).ticket.id as string;
-
-    const start = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/transitions/:command',
-      { id, command: 'start' },
-      {},
-    );
-    expect(start.statusCode).toBe(200);
-    // Derived-status v3: the imperative target settles to derived reality —
-    // a bare standalone ticket (placeholder content) derives to draft.
-    expect((start.payload as any).ticket.status).toBe('draft');
-  });
-
-  it('GET /api/tickets is routable only when router constructed with ticketsDir', async () => {
-    // Without ticketsDir the POST /api/tickets route returns 501.
-    const router = createWriteRouter(testDir);
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'Task' },
-    );
-    expect(response.statusCode).toBe(501);
-  });
-
-  it('POST /api/tickets accepts {content} markdown form for standalone tickets', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const content = `---
-id: placeholder-id
-slug: ui-created
-title: UI Created Standalone
-project: null
-status: pending
-priority: medium
-created: "2026-04-25T12:00:00Z"
-updated: "2026-04-25T12:00:00Z"
----
-
-# UI Created Standalone
-`;
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { content },
-    );
-
-    expect(response.statusCode).toBe(201);
-    const id = (response.payload as any).ticket.id as string;
-    const onDisk = await readFile(resolve(ticketsDir, id, 'ticket.md'), 'utf-8');
-    expect(onDisk).toContain('project: null');
-    expect(onDisk).toContain(`id: ${id}`);
-    expect(onDisk).not.toContain('id: placeholder-id');
-  });
-
-  it('POST /api/tickets {content} rejects when project is set on a standalone', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const content = `---
-id: placeholder
-slug: bad-combo
-title: Bad
-project: some-project
-status: pending
-priority: medium
-created: "2026-04-25T12:00:00Z"
-updated: "2026-04-25T12:00:00Z"
----
-
-# Bad
-`;
-
-    const response = await invokeRoute(router, 'post', '/api/tickets', {}, { content });
-    expect(response.statusCode).toBe(400);
-    expect((response.payload as any).error).toContain('Standalone tickets cannot have a project');
-  });
-
-  it('POST /api/tickets structured form still works (back-compat)', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets',
-      {},
-      { title: 'Programmatic create' },
-    );
-    expect(response.statusCode).toBe(201);
-    expect((response.payload as any).ticket.title).toBe('Programmatic create');
-  });
-
-  it('GET /api/templates/ticket?standalone=1 returns project: null', async () => {
-    const router = createWriteRouter(testDir, ticketsDir);
-    const response = await invokeRoute(router, 'get', '/api/templates/ticket', {}, undefined, {
-      standalone: '1',
-    });
-    expect(response.statusCode).toBe(200);
-    const content = (response.payload as any).content as string;
-    expect(content).toContain('project: null');
+    expect(() => getRouteHandler(router, 'post', '/api/tickets')).toThrow(/Route not found/);
   });
 
   it('rejects resolve toggle for a non-question comment', async () => {
@@ -687,7 +500,7 @@ updated: "2026-04-25T12:00:00Z"
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'note body', type: 'note', author: 'a' },
     );
     const commentId = (add.payload as any).comment.id as string;
@@ -696,7 +509,7 @@ updated: "2026-04-25T12:00:00Z"
       router,
       'patch',
       '/api/tickets/:id/comments/:commentId/resolved',
-      { id: 'ticket-1', commentId },
+      { id: 'TP-1', commentId },
       { resolved: true },
     );
     expect(toggle.statusCode).toBe(400);
@@ -707,14 +520,14 @@ updated: "2026-04-25T12:00:00Z"
     it('updates assignee frontmatter without rewriting body', async () => {
       await createTicketFixture();
       const router = createWriteRouter(testDir, ticketsDir);
-      const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
+      const ticketPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
       const bodyBefore = (await readFile(ticketPath, 'utf-8')).split(/^---$/m)[2];
 
       const res = await invokeRoute(
         router,
         'patch',
         '/api/tickets/:id/assignee',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { assignee: 'claude' },
       );
       expect(res.statusCode).toBe(200);
@@ -732,12 +545,12 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/assignee',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { assignee: null },
       );
       expect(res.statusCode).toBe(200);
       const content = await readFile(
-        resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md'),
+        resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
         'utf-8',
       );
       expect(content).toMatch(/^assignee: null$/m);
@@ -750,7 +563,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/assignee',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { assignee: 42 },
       );
       expect(res.statusCode).toBe(400);
@@ -763,7 +576,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/assignee',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { assignee: 'a'.repeat(200) },
       );
       expect(res.statusCode).toBe(400);
@@ -776,7 +589,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/assignee',
-        { id: 'ghost-id' },
+        { id: 'TP-99' },
         { assignee: 'claude' },
       );
       expect(res.statusCode).toBe(404);
@@ -785,7 +598,7 @@ updated: "2026-04-25T12:00:00Z"
 
   describe('PATCH /api/tickets/:id/title', () => {
     const ticketPath = (): string =>
-      resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
+      resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
 
     it('updates title frontmatter without rewriting body', async () => {
       await createTicketFixture();
@@ -796,7 +609,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'Renamed ticket' },
       );
       expect(res.statusCode).toBe(200);
@@ -814,7 +627,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'feat: do the thing' },
       );
       expect(res.statusCode).toBe(200);
@@ -833,7 +646,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'Bumped' },
       );
       expect(res.statusCode).toBe(200);
@@ -853,7 +666,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: '' },
       );
       expect(res.statusCode).toBe(400);
@@ -866,7 +679,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: '   \t  ' },
       );
       expect(res.statusCode).toBe(400);
@@ -879,7 +692,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'a'.repeat(201) },
       );
       expect(res.statusCode).toBe(400);
@@ -892,7 +705,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 42 },
       );
       expect(res.statusCode).toBe(400);
@@ -905,7 +718,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'has "quote"' },
       );
       expect(res.statusCode).toBe(400);
@@ -918,7 +731,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'line one\nline two' },
       );
       expect(res.statusCode).toBe(400);
@@ -931,7 +744,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { title: 'line one\rline two' },
       );
       expect(res.statusCode).toBe(400);
@@ -944,49 +757,21 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: 'ghost-id' },
+        { id: 'TP-99' },
         { title: 'whatever' },
       );
       expect(res.statusCode).toBe(404);
     });
 
-    it('PATCH /api/tickets/:id/title updates a standalone ticket', async () => {
-      const ticketsDir = resolve(testDir, 'standalone');
-      await mkdir(ticketsDir, { recursive: true });
-      const router = createWriteRouter(testDir, ticketsDir);
-
-      const create = await invokeRoute(
-        router,
-        'post',
-        '/api/tickets',
-        {},
-        { title: 'Original' },
-      );
-      const id = (create.payload as any).ticket.id as string;
-
-      const res = await invokeRoute(
-        router,
-        'patch',
-        '/api/tickets/:id/title',
-        { id },
-        { title: 'Renamed standalone' },
-      );
-      expect(res.statusCode).toBe(200);
-
-      const content = await readFile(resolve(ticketsDir, id, 'ticket.md'), 'utf-8');
-      expect(content).toMatch(/^title: Renamed standalone$/m);
-    });
-
     it('PATCH /api/tickets/:id/title returns 404 for missing id', async () => {
-      const ticketsDir = resolve(testDir, 'standalone');
-      await mkdir(ticketsDir, { recursive: true });
+      await createTicketFixture();
       const router = createWriteRouter(testDir, ticketsDir);
 
       const res = await invokeRoute(
         router,
         'patch',
         '/api/tickets/:id/title',
-        { id: '00000000-0000-0000-0000-000000000000' },
+        { id: 'TP-99' },
         { title: 'whatever' },
       );
       expect(res.statusCode).toBe(404);
@@ -997,13 +782,13 @@ updated: "2026-04-25T12:00:00Z"
     it('archives + restores a project-scoped ticket, preserving status', async () => {
       await createTicketFixture();
       const router = createWriteRouter(testDir, ticketsDir);
-      const ticketPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md');
+      const ticketPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
 
       const archived = await invokeRoute(
         router,
         'post',
         '/api/tickets/:id/archive',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         { reason: 'no longer needed' },
       );
       expect(archived.statusCode).toBe(200);
@@ -1020,7 +805,7 @@ updated: "2026-04-25T12:00:00Z"
         router,
         'post',
         '/api/tickets/:id/unarchive',
-        { id: 'ticket-1' },
+        { id: 'TP-1' },
         {},
       );
       expect(restored.statusCode).toBe(200);
@@ -1060,40 +845,6 @@ updated: "2026-04-25T12:00:00Z"
       expect((restored.payload as any).project.archived).toBe(false);
     });
 
-    it('archives + restores a standalone ticket', async () => {
-      const ticketsDir = resolve(testDir, 'standalone');
-      const sdir = resolve(ticketsDir, 'sa-uuid-1');
-      await mkdir(sdir, { recursive: true });
-      await writeFile(
-        resolve(sdir, 'ticket.md'),
-        `---\nid: sa-uuid-1\nslug: solo-task\ntitle: Solo\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "2026-03-20T10:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Solo`,
-        'utf-8',
-      );
-      const router = createWriteRouter(testDir, ticketsDir);
-
-      const archived = await invokeRoute(
-        router,
-        'post',
-        '/api/tickets/:id/archive',
-        { id: 'sa-uuid-1' },
-        {},
-      );
-      expect(archived.statusCode).toBe(200);
-      expect((archived.payload as any).ticket.archived).toBe(true);
-      expect((archived.payload as any).ticket.status).toBe('in_progress');
-
-      const restored = await invokeRoute(
-        router,
-        'post',
-        '/api/tickets/:id/unarchive',
-        { id: 'sa-uuid-1' },
-        {},
-      );
-      expect(restored.statusCode).toBe(200);
-      expect((restored.payload as any).ticket.archived).toBe(false);
-      expect((restored.payload as any).ticket.status).toBe('in_progress');
-    });
-
     it('returns 404 archiving a missing project', async () => {
       const router = createWriteRouter(testDir, ticketsDir);
       const res = await invokeRoute(router, 'post', '/api/projects/:slug/archive', { slug: 'ghost' }, {});
@@ -1104,13 +855,13 @@ updated: "2026-04-25T12:00:00Z"
   it('DELETE /api/tickets/:id removes a project-nested ticket directory', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir, ticketsDir);
-    const ticketDir = resolve(testDir, 'test-project', 'tickets', 'test-ticket');
+    const ticketDir = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket');
 
     const res = await invokeRoute(
       router,
       'delete',
       '/api/tickets/:id',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       {},
     );
     expect(res.statusCode).toBe(200);
@@ -1165,12 +916,12 @@ repositories:
 # Test Project`,
           'utf-8',
         );
-        const siblingDir = resolve(testDir, 'test-project', 'tickets', 'sibling-with-repo');
+        const siblingDir = resolve(testDir, 'test-project', 'tickets', 'TP-2-sibling-with-repo');
         await mkdir(siblingDir, { recursive: true });
         await writeFile(
           resolve(siblingDir, 'ticket.md'),
           `---
-id: sibling-1
+id: TP-2
 slug: sibling-with-repo
 title: Sibling
 status: in_progress
@@ -1192,12 +943,12 @@ tags: []
           'utf-8',
         );
         // Sibling with a duplicate of /repo/a — must be deduped.
-        const dupDir = resolve(testDir, 'test-project', 'tickets', 'sibling-dup');
+        const dupDir = resolve(testDir, 'test-project', 'tickets', 'TP-3-sibling-dup');
         await mkdir(dupDir, { recursive: true });
         await writeFile(
           resolve(dupDir, 'ticket.md'),
           `---
-id: sibling-2
+id: TP-3
 slug: sibling-dup
 title: Sibling Dup
 status: in_progress
@@ -1276,63 +1027,15 @@ tags: []
         expect(res.statusCode).toBe(501);
       });
 
-      it('harvests sibling standalone tickets, excluding the requesting id', async () => {
-        const ticketsDir = resolve(testDir, 'standalone');
-        await mkdir(ticketsDir, { recursive: true });
-        const writeStandalone = async (id: string, slug: string, repo: string | null) => {
-          const dir = resolve(ticketsDir, id);
-          await mkdir(dir, { recursive: true });
-          await writeFile(
-            resolve(dir, 'ticket.md'),
-            `---
-id: ${id}
-slug: ${slug}
-title: ${slug}
-status: in_progress
-priority: medium
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
-externalIds: []
-dependsOn: []
-blockedReason: null
-workspace:
-  repository: ${repo ?? 'null'}
-  worktreePath: ${repo ? `${repo}/.worktrees/foo` : 'null'}
-  branch: ${repo ? 'foo' : 'null'}
-  parentBranch: ${repo ? 'main' : 'null'}
-tags: []
----
-
-# ${slug}`,
-            'utf-8',
-          );
-        };
-        await writeStandalone('uuid-self', 'self', null);
-        await writeStandalone('uuid-other', 'other-one', '/repo/x');
-        await writeStandalone('uuid-third', 'third-one', '/repo/y');
-
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/repository-candidates',
-          { id: 'uuid-self' },
-          undefined,
-        );
-        expect(res.statusCode).toBe(200);
-        const payload = res.payload as { candidates: Array<{ path: string }> };
-        const paths = payload.candidates.map((c) => c.path).sort();
-        expect(paths).toEqual(['/repo/x', '/repo/y']);
-      });
     });
 
     // --- Redesign: branch listing, source tickets, validation, lock ---
 
     async function writeProjectTicket(
-      slug: string,
-      opts: { id?: string; repository?: string; branch?: string },
+      folderName: string,
+      opts: { id: string; slug: string; repository?: string; branch?: string },
     ): Promise<void> {
-      const dir = resolve(testDir, 'test-project', 'tickets', slug);
+      const dir = resolve(testDir, 'test-project', 'tickets', folderName);
       await mkdir(dir, { recursive: true });
       const repo = opts.repository ?? null;
       const branch = opts.branch ?? null;
@@ -1340,9 +1043,9 @@ tags: []
       await writeFile(
         resolve(dir, 'ticket.md'),
         `---
-id: ${opts.id ?? `${slug}-id`}
-slug: ${slug}
-title: ${slug} title
+id: ${opts.id}
+slug: ${opts.slug}
+title: ${opts.slug} title
 status: in_progress
 priority: medium
 created: "2026-03-20T10:00:00Z"
@@ -1358,44 +1061,7 @@ workspace:
 tags: []
 ---
 
-# ${slug}`,
-        'utf-8',
-      );
-    }
-
-    async function writeStandaloneTicket(
-      ticketsDir: string,
-      id: string,
-      slug: string,
-      opts: { repository?: string; branch?: string },
-    ): Promise<void> {
-      const dir = resolve(ticketsDir, id);
-      await mkdir(dir, { recursive: true });
-      const repo = opts.repository ?? null;
-      const branch = opts.branch ?? null;
-      const worktreePath = repo && branch ? `${repo}/.worktrees/${branch}` : null;
-      await writeFile(
-        resolve(dir, 'ticket.md'),
-        `---
-id: ${id}
-slug: ${slug}
-title: ${slug} title
-status: in_progress
-priority: medium
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
-externalIds: []
-dependsOn: []
-blockedReason: null
-workspace:
-  repository: ${repo ?? 'null'}
-  worktreePath: ${worktreePath ?? 'null'}
-  branch: ${branch ?? 'null'}
-  parentBranch: ${repo && branch ? 'main' : 'null'}
-tags: []
----
-
-# ${slug}`,
+# ${opts.slug}`,
         'utf-8',
       );
     }
@@ -1410,7 +1076,7 @@ tags: []
           router,
           'get',
           '/api/tickets/:id/repository-branches',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           undefined,
           { repo },
         );
@@ -1429,7 +1095,7 @@ tags: []
           router,
           'get',
           '/api/tickets/:id/repository-branches',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           undefined,
           { repo: resolve(repo, 'sub') },
         );
@@ -1444,7 +1110,7 @@ tags: []
           router,
           'get',
           '/api/tickets/:id/repository-branches',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           undefined,
           {},
         );
@@ -1479,62 +1145,33 @@ tags: []
         expect(res.statusCode).toBe(501);
       });
 
-      it('standalone: 404 when the ticket id is unknown', async () => {
-        const ticketsDir = resolve(testDir, 'standalone');
-        await mkdir(ticketsDir, { recursive: true });
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/repository-branches',
-          { id: 'nope' },
-          undefined,
-          { repo },
-        );
-        expect(res.statusCode).toBe(404);
-      });
-
-      it('standalone: returns branches when configured', async () => {
-        const ticketsDir = resolve(testDir, 'standalone');
-        await mkdir(ticketsDir, { recursive: true });
-        await writeStandaloneTicket(ticketsDir, 'uuid-1', 'task', {});
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/repository-branches',
-          { id: 'uuid-1' },
-          undefined,
-          { repo },
-        );
-        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
-        expect((res.payload as { branches: string[] }).branches).toContain('main');
-      });
     });
 
     describe('GET source-tickets', () => {
       it('project: excludes self + bare tickets, returns configured siblings', async () => {
         await createTicketFixture();
-        // The current ticket itself has a workspace — it must still be excluded.
-        await writeProjectTicket('test-ticket', {
-          id: 'cur-id',
+        await writeProjectTicket('TP-1-test-ticket', {
+          id: 'TP-1',
+          slug: 'test-ticket',
           repository: '/repo/self',
           branch: 'self-branch',
         });
-        await writeProjectTicket('sibling-configured', {
-          id: 'sib-1',
+        await writeProjectTicket('TP-2-sibling-configured', {
+          id: 'TP-2',
+          slug: 'sibling-configured',
           repository: '/repo/sib',
           branch: 'sib-branch',
         });
-        await writeProjectTicket('sibling-bare', { id: 'sib-2' });
+        await writeProjectTicket('TP-3-sibling-bare', {
+          id: 'TP-3',
+          slug: 'sibling-bare',
+        });
         const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'get',
           '/api/tickets/:id/source-tickets',
-          { id: 'cur-id' },
+          { id: 'TP-1' },
           undefined,
         );
         expect(res.statusCode).toBe(200);
@@ -1542,7 +1179,7 @@ tags: []
           sourceTickets: Array<{ id: string; slug: string; repository: string; branch: string }>;
         }).sourceTickets;
         expect(sources.map((s) => s.slug)).toEqual(['sibling-configured']);
-        expect(sources[0]!.id).toBe('sib-1');
+        expect(sources[0]!.id).toBe('TP-2');
         expect(sources[0]!.repository).toBe('/repo/sib');
         expect(sources[0]!.branch).toBe('sib-branch');
       });
@@ -1560,30 +1197,6 @@ tags: []
         expect(res.statusCode).toBe(404);
       });
 
-      it('standalone: excludes self by id, omits bare tickets', async () => {
-        const ticketsDir = resolve(testDir, 'standalone');
-        await mkdir(ticketsDir, { recursive: true });
-        await writeStandaloneTicket(ticketsDir, 'uuid-self', 'self', {
-          repository: '/repo/self',
-          branch: 'self-b',
-        });
-        await writeStandaloneTicket(ticketsDir, 'uuid-other', 'other', {
-          repository: '/repo/other',
-          branch: 'other-b',
-        });
-        await writeStandaloneTicket(ticketsDir, 'uuid-bare', 'bare', {});
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'get',
-          '/api/tickets/:id/source-tickets',
-          { id: 'uuid-self' },
-          undefined,
-        );
-        expect(res.statusCode).toBe(200);
-        const sources = (res.payload as { sourceTickets: Array<{ id: string }> }).sourceTickets;
-        expect(sources.map((s) => s.id)).toEqual(['uuid-other']);
-      });
     });
 
     describe('POST worktree validation + lock + branch-off', () => {
@@ -1595,14 +1208,14 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo, branch: 'bad name' },
         );
         expect(res.statusCode).toBe(400);
         const fs = await import('node:fs/promises');
         await expect(fs.stat(resolve(repo, '.worktrees', 'bad name'))).rejects.toBeTruthy();
         const content = await fs.readFile(
-          resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md'),
+          resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
         expect(content).toContain('worktreePath: null');
@@ -1619,7 +1232,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -1634,7 +1247,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: `  ${repo}  ` },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1652,7 +1265,7 @@ tags: []
           testDir,
           'test-project',
           'tickets',
-          'test-ticket',
+          'TP-1-test-ticket',
           'ticket.md',
         );
         worktreeInFlight.add(ticketPath);
@@ -1661,7 +1274,7 @@ tags: []
             router,
             'post',
             '/api/tickets/:id/worktree',
-            { id: 'ticket-1' },
+            { id: 'TP-1' },
             { repository: repo, branch: 'some-other-branch' },
           );
           expect(blocked.statusCode).toBe(409);
@@ -1675,7 +1288,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo, branch: 'some-other-branch' },
         );
         expect(ok.statusCode, JSON.stringify(ok.payload)).toBe(200);
@@ -1686,8 +1299,9 @@ tags: []
         const repo = await setupRepo();
         // The source's branch must exist so the parent-branch pre-flight passes.
         spawnSync('git', ['-C', repo, 'branch', 'feature/src'], { encoding: 'utf-8' });
-        await writeProjectTicket('source-asg', {
-          id: 'src-1',
+        await writeProjectTicket('TP-4-source-asg', {
+          id: 'TP-4',
+          slug: 'source-asg',
           repository: repo,
           branch: 'feature/src',
         });
@@ -1697,20 +1311,20 @@ tags: []
           router,
           'get',
           '/api/tickets/:id/source-tickets',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           undefined,
         );
         const sources = (list.payload as {
           sourceTickets: Array<{ id: string; repository: string; branch: string }>;
         }).sourceTickets;
-        const src = sources.find((s) => s.id === 'src-1')!;
+        const src = sources.find((s) => s.id === 'TP-4')!;
         expect(src.branch).toBe('feature/src');
         // 2. It submits the resolved repo + branch-as-parent via the same POST.
         const res = await invokeRoute(
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: src.repository, branch: 'syntaur/branched', parentBranch: src.branch },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1729,7 +1343,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(create.statusCode, JSON.stringify(create.payload)).toBe(200);
@@ -1754,7 +1368,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree/recreate',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           {},
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1778,7 +1392,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree/recreate',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { worktreePath: bogus, repository: '/etc' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1794,7 +1408,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree/recreate',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           {},
         );
         expect(res.statusCode).toBe(422);
@@ -1810,7 +1424,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree/recreate',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           {},
         );
         expect(res.statusCode).toBe(200);
@@ -1827,7 +1441,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1859,7 +1473,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: resolve(repo, 'sub') },
         );
         expect(res.statusCode).toBe(400);
@@ -1876,7 +1490,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         // Second create.
@@ -1884,7 +1498,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -1897,7 +1511,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           {},
         );
         expect(res.statusCode).toBe(400);
@@ -1910,7 +1524,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: './relative' },
         );
         expect(res.statusCode).toBe(400);
@@ -1923,7 +1537,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: '/nonexistent-path-' + Date.now() },
         );
         expect(res.statusCode).toBe(400);
@@ -1938,7 +1552,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: notGit },
         );
         expect(res.statusCode).toBe(400);
@@ -1956,7 +1570,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         // Caught by the pre-flight in plain language (AC #6) — not raw git stderr.
@@ -1966,7 +1580,7 @@ tags: []
         expect(payload.stderr).toBeUndefined();
         // Frontmatter must NOT be partially populated.
         const after = await readFile(
-          resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md'),
+          resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
         expect(after).toMatch(/worktreePath:\s*null/);
@@ -1980,7 +1594,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo, branch: 'feature/foo' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
@@ -1999,7 +1613,7 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(res.statusCode).toBe(409);
@@ -2018,55 +1632,20 @@ tags: []
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo, parentBranch: 'nonexistent' },
         );
         expect(res.statusCode).toBe(400);
         // No worktree, no branch, no frontmatter change.
         const after = await readFile(
-          resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'ticket.md'),
+          resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
         expect(after).toMatch(/worktreePath:\s*null/);
       });
     });
 
-    describe('POST /api/tickets/:id/worktree', () => {
-      async function setupStandalone(id: string, slug: string): Promise<{
-        ticketsDir: string;
-        ticketMd: string;
-      }> {
-        const ticketsDir = resolve(testDir, 'standalone');
-        const dir = resolve(ticketsDir, id);
-        await mkdir(dir, { recursive: true });
-        const ticketMd = resolve(dir, 'ticket.md');
-        await writeFile(
-          ticketMd,
-          `---
-id: ${id}
-slug: ${slug}
-title: ${slug}
-status: in_progress
-priority: medium
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
-externalIds: []
-dependsOn: []
-blockedReason: null
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []
----
-
-# ${slug}`,
-          'utf-8',
-        );
-        return { ticketsDir, ticketMd };
-      }
-
+    describe('POST /api/tickets/:id/worktree (id route)', () => {
       it('returns 501 when standalone tickets are not configured', async () => {
         const router = createWriteRouter(testDir);
         const res = await invokeRoute(
@@ -2080,208 +1659,32 @@ tags: []
       });
 
       it('returns 404 when id does not resolve', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'demo');
+        await createTicketFixture();
         const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'uuid-missing' },
+          { id: 'TP-99' },
           { repository: '/tmp' },
         );
         expect(res.statusCode).toBe(404);
       });
 
-      it('standalone branch uses parsed.slug (NOT the UUID stored in resolved.ticketSlug)', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo },
-        );
-        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
-        const payload = res.payload as { ticket: { workspace: { branch: string | null } } };
-        expect(payload.ticket.workspace.branch).toBe('syntaur/my-task');
-      });
-
       it('project-nested via id-route uses project slug prefix', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
-        const ticketsDir = resolve(testDir, 'standalone'); // empty but defined
-        await mkdir(ticketsDir, { recursive: true });
         const router = createWriteRouter(testDir, ticketsDir);
         const res = await invokeRoute(
           router,
           'post',
           '/api/tickets/:id/worktree',
-          { id: 'ticket-1' },
+          { id: 'TP-1' },
           { repository: repo },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
         const payload = res.payload as { ticket: { workspace: { branch: string | null } } };
         expect(payload.ticket.workspace.branch).toBe('syntaur/test-project/test-ticket');
-      });
-
-      // The id-route shares `handleWorktreeCreate` with the project-nested
-      // route, but each validation/conflict path must still be pinned here so
-      // a future divergence doesn't silently drop a check on standalone.
-
-      it('returns 409 when standalone workspace.worktreePath is already set', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo },
-        );
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo },
-        );
-        expect(res.statusCode).toBe(409);
-      });
-
-      it('returns 400 when repository is missing on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          {},
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('returns 400 when repository is relative on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: './relative' },
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('returns 400 when repository does not exist on disk on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: '/nonexistent-id-path-' + Date.now() },
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('returns 400 when repository is not a git working tree on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const notGit = resolve(testDir, 'not-git');
-        await mkdir(notGit, { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: notGit },
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('returns 400 when repository is a subdirectory on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        await mkdir(resolve(repo, 'sub'), { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: resolve(repo, 'sub') },
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('returns 409 with a plain-language error when branch exists (id-route)', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        spawnSync('git', ['-C', repo, 'branch', 'syntaur/my-task'], { encoding: 'utf-8' });
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo },
-        );
-        expect(res.statusCode).toBe(409);
-        const payload = res.payload as { error: string; stderr?: string };
-        expect(payload.error).toMatch(/already exists/i);
-        expect(payload.stderr).toBeUndefined();
-      });
-
-      it('returns 409 when the worktree dir already exists on disk (id-route)', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        await mkdir(resolve(repo, '.worktrees', 'syntaur/my-task'), { recursive: true });
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo },
-        );
-        expect(res.statusCode).toBe(409);
-      });
-
-      it('returns 400 when parentBranch does not exist on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo, parentBranch: 'nonexistent' },
-        );
-        expect(res.statusCode).toBe(400);
-      });
-
-      it('accepts custom branch override on id-route', async () => {
-        const { ticketsDir } = await setupStandalone('uuid-1', 'my-task');
-        const repo = await setupRepo();
-        const router = createWriteRouter(testDir, ticketsDir);
-        const res = await invokeRoute(
-          router,
-          'post',
-          '/api/tickets/:id/worktree',
-          { id: 'uuid-1' },
-          { repository: repo, branch: 'feature/foo' },
-        );
-        expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
-        const payload = res.payload as { ticket: { workspace: { branch: string | null; worktreePath: string | null } } };
-        expect(payload.ticket.workspace.branch).toBe('feature/foo');
-        expect(payload.ticket.workspace.worktreePath).toBe(resolve(repo, '.worktrees', 'feature/foo'));
       });
     });
   });
@@ -2289,13 +1692,27 @@ tags: []
 
 describe('statusHistory recording + virtual fields (write router)', () => {
   const PROJ = 'test-project';
-  const ASSIGN = 'test-ticket';
+  const DEFAULT_FOLDER = 'TP-1-test-ticket';
 
-  function ticketPath(slug = ASSIGN): string {
-    return resolve(testDir, PROJ, 'tickets', slug, 'ticket.md');
+  function ticketPath(folder = DEFAULT_FOLDER): string {
+    return resolve(testDir, PROJ, 'tickets', folder, 'ticket.md');
   }
-  async function readFm(slug = ASSIGN) {
-    return parseTicketFrontmatter(await readFile(ticketPath(slug), 'utf-8'));
+  async function readFmBySlug(slug: string) {
+    const { readdir } = await import('node:fs/promises');
+    const ticketsRoot = resolve(testDir, PROJ, 'tickets');
+    for (const entry of await readdir(ticketsRoot)) {
+      const path = resolve(ticketsRoot, entry, 'ticket.md');
+      try {
+        const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
+        if (fm.slug === slug) return fm;
+      } catch {
+        // skip unreadable
+      }
+    }
+    throw new Error(`ticket with slug "${slug}" not found`);
+  }
+  async function readFm(folder = DEFAULT_FOLDER) {
+    return parseTicketFrontmatter(await readFile(ticketPath(folder), 'utf-8'));
   }
 
   it('project status-override applies PIN semantics (derived-status v3)', async () => {
@@ -2305,7 +1722,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'post',
       '/api/tickets/:id/status-override',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { status: 'in_progress' },
     );
     expect(res.statusCode).toBe(200);
@@ -2324,7 +1741,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'post',
       '/api/tickets/:id/status-override',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { status: 'completed' },
     );
     expect(refused.statusCode).toBe(400);
@@ -2333,7 +1750,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'post',
       '/api/tickets/:id/status-override',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { status: null },
     );
     expect(cleared.statusCode).toBe(200);
@@ -2350,7 +1767,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'post',
       '/api/tickets/:id/status-override',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { status: 'in_progress' },
     );
     expect((await readFm()).statusHistory).toHaveLength(1);
@@ -2359,7 +1776,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'post',
       '/api/tickets/:id/status-override',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { status: 'in_progress' },
     );
     expect(res.statusCode).toBe(200);
@@ -2378,7 +1795,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'patch',
       '/api/tickets/:id',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { content: changed },
     );
     expect(r1.statusCode).toBe(200);
@@ -2394,7 +1811,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       router,
       'patch',
       '/api/tickets/:id',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { content: titleOnly },
     );
     expect(r2.statusCode).toBe(200);
@@ -2437,7 +1854,7 @@ tags: []
       { content },
     );
     expect(res.statusCode).toBe(201);
-    const fm = await readFm('fresh-one');
+    const fm = await readFmBySlug('fresh-one');
     expect(fm.statusHistory).toHaveLength(1);
     expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'draft', command: 'create', by: null });
   });
@@ -2452,7 +1869,7 @@ tags: []
       router,
       'post',
       '/api/tickets/:id/transitions/:command',
-      { id: 'ticket-1', command: 'complete' },
+      { id: 'TP-1', command: 'complete' },
       {},
     );
     const detail1 = (done.payload as { ticket: { completedAt: string | null; statusAge: number | null } })
@@ -2467,7 +1884,7 @@ tags: []
       router,
       'post',
       '/api/tickets/:id/transitions/:command',
-      { id: 'ticket-1', command: 'reopen' },
+      { id: 'TP-1', command: 'reopen' },
       {},
     );
     const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).ticket ?? (reopen.payload as any).ticket;
@@ -2516,11 +1933,11 @@ describe('comment write-boundary newline validation (AC1)', () => {
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'hi', type: 'note', author: 'alice\ninjected' },
     );
     expect(res.statusCode).toBe(400);
-    const commentsPath = resolve(testDir, 'test-project', 'tickets', 'test-ticket', 'comments.md');
+    const commentsPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'comments.md');
     let content = '';
     try { content = await readFile(commentsPath, 'utf-8'); } catch { /* not created */ }
     expect(content).not.toContain('**Author:**');
@@ -2533,7 +1950,7 @@ describe('comment write-boundary newline validation (AC1)', () => {
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'hi', type: 'note', replyTo: 'abcd\nefgh' },
     );
     expect(res.statusCode).toBe(400);
@@ -2546,27 +1963,12 @@ describe('comment write-boundary newline validation (AC1)', () => {
       router,
       'post',
       '/api/tickets/:id/comments',
-      { id: 'ticket-1' },
+      { id: 'TP-1' },
       { body: 'all good', type: 'note', author: 'alice' },
     );
     expect(res.statusCode).toBe(201);
   });
 
-  it('rejects a standalone comment whose author contains a newline (400)', async () => {
-    const ticketsDir = resolve(testDir, 'standalone');
-    await mkdir(ticketsDir, { recursive: true });
-    const router = createWriteRouter(testDir, ticketsDir);
-    const create = await invokeRoute(router, 'post', '/api/tickets', {}, { title: 'Task' });
-    const id = (create.payload as any).ticket.id as string;
-    const res = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/comments',
-      { id },
-      { body: 'hi', type: 'note', author: 'bob\nx' },
-    );
-    expect(res.statusCode).toBe(400);
-  });
 });
 
 // AC2: parseComments split on bare `^## ` truncates a comment body that contains
@@ -2635,7 +2037,7 @@ describe('parseComments preserves a body containing a "## " line (AC2)', () => {
 describe('POST plan/approve routes', () => {
   async function seedProjectPlanTicket(opts?: { withPlan?: boolean }): Promise<void> {
     const projectDir = resolve(testDir, 'plan-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'plan-ticket');
+    const ticketDir = resolve(projectDir, 'tickets', 'PP-1-plan-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(projectDir, 'project.md'),
@@ -2643,6 +2045,8 @@ describe('POST plan/approve routes', () => {
 id: plan-project-id
 slug: plan-project
 title: Plan Project
+prefix: PP
+nextTicket: 2
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 ---
@@ -2652,7 +2056,7 @@ updated: "2026-03-20T10:00:00Z"
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
       `---
-id: plan-ticket-id
+id: PP-1
 slug: plan-ticket
 title: Plan Ticket
 status: ready_for_planning
@@ -2676,7 +2080,7 @@ project: plan-project
       router,
       'post',
       '/api/tickets/:id/plan/approve',
-      { id: 'plan-ticket-id' },
+      { id: 'PP-1' },
       {},
     );
     expect(response.statusCode).toBe(200);
@@ -2684,7 +2088,7 @@ project: plan-project
     expect(ticket.status).toBe('ready_to_implement');
 
     const content = await readFile(
-      resolve(testDir, 'plan-project', 'tickets', 'plan-ticket', 'ticket.md'),
+      resolve(testDir, 'plan-project', 'tickets', 'PP-1-plan-ticket', 'ticket.md'),
       'utf-8',
     );
     const fm = parseTicketFrontmatter(content);
@@ -2699,7 +2103,7 @@ project: plan-project
       router,
       'post',
       '/api/tickets/:id/plan/approve',
-      { id: 'plan-ticket-id' },
+      { id: 'PP-1' },
       {},
     );
     expect(response.statusCode).toBe(409);
@@ -2718,43 +2122,4 @@ project: plan-project
     expect(response.statusCode).toBe(404);
   });
 
-  it('POST /api/tickets/:id/plan/approve writes planApproval for standalone', async () => {
-    const ticketsDir = resolve(process.env.SYNTAUR_HOME!, 'tickets');
-    const id = 'standalone-plan-id';
-    const ticketDir = resolve(ticketsDir, id);
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      `---
-id: ${id}
-slug: ${id}
-title: Standalone Plan
-status: ready_for_planning
-priority: medium
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
-project: null
----
-# Standalone Plan`,
-      'utf-8',
-    );
-    await writeFile(resolve(ticketDir, 'plan.md'), '# Standalone plan\n', 'utf-8');
-
-    const router = createWriteRouter(testDir, ticketsDir);
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/plan/approve',
-      { id },
-      {},
-    );
-    expect(response.statusCode).toBe(200);
-    const ticket = (response.payload as { ticket: { status: string } }).ticket ?? (response.payload as any).ticket;
-    expect(ticket.status).toBe('ready_to_implement');
-
-    const content = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
-    const fm = parseTicketFrontmatter(content);
-    expect(fm.planApproval?.file).toBe('plan.md');
-    expect(fm.planApproval?.digest).toBe(planDigest('# Standalone plan\n'));
-  });
 });

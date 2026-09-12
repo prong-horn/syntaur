@@ -95,37 +95,31 @@ describe('createProjectCommand', () => {
 });
 
 describe('newCommand', () => {
-  it('creates a standalone ticket via --one-off at ~/.syntaur/tickets/<uuid>/', async () => {
-    await newCommand('Write Tests', {
-      oneOff: true,
+  it('creates a scratch ticket when --project is omitted', async () => {
+    const result = await newCommand('Write Tests', { dir: testDir, silent: true });
+    expect(result.projectSlug).toBe('scratch');
+    expect(result.id).toBe('SCR-1');
+    const ticketDir = resolve(testDir, 'scratch', 'tickets', 'SCR-1-write-tests');
+    const content = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    expect(content).toContain('slug: write-tests');
+    expect(content).toContain('id: SCR-1');
+    expect(content).toContain('project: scratch');
+  });
+
+  it('allocates a per-project ticket id', async () => {
+    await createProjectCommand('Fitsync', { slug: 'fitsync', dir: testDir });
+    const result = await newCommand('First ticket', {
+      project: 'fitsync',
+      dir: testDir,
+      silent: true,
     });
-
-    const standaloneRoot = resolve(testDir, 'tickets');
-    const folders = await readdir(standaloneRoot);
-    expect(folders.length).toBe(1);
-    const uuid = folders[0];
-    const ticketDir = resolve(standaloneRoot, uuid);
-
-    const files = await readdir(ticketDir);
-    expect(files).toContain('ticket.md');
-    expect(files).not.toContain('plan.md');
-    expect(files).toContain('scratchpad.md');
-    expect(files).toContain('handoff.md');
-    expect(files).toContain('decision-record.md');
-    expect(files).toContain('progress.md');
-    expect(files).toContain('comments.md');
-    expect(files.length).toBe(6);
-
+    expect(result.id).toBe('FIT-1');
+    expect(isTicketId(result.id)).toBe(true);
     const content = await readFile(
-      resolve(ticketDir, 'ticket.md'),
+      resolve(testDir, 'fitsync', 'tickets', 'FIT-1-first-ticket', 'ticket.md'),
       'utf-8',
     );
-    expect(content).toContain('slug: write-tests');
-    expect(content).toContain(`id: ${uuid}`);
-    expect(content).toContain('project: null');
-    expect(content).toContain('status: draft');
-    expect(content).toContain('priority: medium');
-    expect(content).toContain('assignee: null');
+    expect(content).toContain('id: FIT-1');
   });
 
   it('writes acceptanceCriteria as checkbox items in ticket.md when option is set', async () => {
@@ -137,7 +131,7 @@ describe('newCommand', () => {
       acceptanceCriteria: ['fix the parser', 'add a test'],
     });
     const content = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'promoted-task', 'ticket.md'),
+      resolve(testDir, 'test-project', 'tickets', 'TP-1-promoted-task', 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('## Acceptance Criteria');
@@ -146,30 +140,37 @@ describe('newCommand', () => {
     expect(content).not.toContain('<!-- criterion 1 -->');
   });
 
-  it('rejects --one-off with --depends-on', async () => {
+  it('rejects invalid dependsOn ids', async () => {
+    await createProjectCommand('Test Project', { dir: testDir });
     await expect(
       newCommand('Test', {
-        oneOff: true,
-        dependsOn: 'foo',
+        project: 'test-project',
+        dir: testDir,
+        dependsOn: 'not-an-id',
       }),
-    ).rejects.toThrow('Standalone tickets cannot have dependencies');
+    ).rejects.toThrow('Invalid dependency id');
   });
 
   it('creates ticket with --project in specified dir', async () => {
     await createProjectCommand('Test Project', { dir: testDir });
+    const dep = await newCommand('Dependency', {
+      project: 'test-project',
+      dir: testDir,
+      silent: true,
+    });
 
     await newCommand('My Task', {
       project: 'test-project',
       dir: testDir,
       priority: 'high',
-      dependsOn: 'dep-one,dep-two',
+      dependsOn: dep.id,
     });
 
     const ticketDir = resolve(
       testDir,
       'test-project',
       'tickets',
-      'my-task',
+      'TP-2-my-task',
     );
     const content = await readFile(
       resolve(ticketDir, 'ticket.md'),
@@ -178,23 +179,7 @@ describe('newCommand', () => {
     expect(content).toContain('status: draft');
     expect(content).toContain('priority: high');
     expect(content).toContain('dependsOn:');
-    expect(content).toContain('  - dep-one');
-    expect(content).toContain('  - dep-two');
-  });
-
-  it('throws without --project or --one-off', async () => {
-    await expect(
-      newCommand('Test', {}),
-    ).rejects.toThrow('Either --project');
-  });
-
-  it('throws with both --project and --one-off', async () => {
-    await expect(
-      newCommand('Test', {
-        project: 'some-project',
-        oneOff: true,
-      }),
-    ).rejects.toThrow('Cannot use both');
+    expect(content).toContain(`  - ${dep.id}`);
   });
 
   it('throws on empty title', async () => {
@@ -213,7 +198,7 @@ describe('newCommand', () => {
     });
 
     const content = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'already-shaped', 'ticket.md'),
+      resolve(testDir, 'test-project', 'tickets', 'TP-1-already-shaped', 'ticket.md'),
       'utf-8',
     );
     expect(content).toContain('status: ready_for_planning');
@@ -229,15 +214,15 @@ describe('newCommand', () => {
     ).rejects.toThrow('Invalid project slug');
   });
 
-  it('throws on invalid dependency slug', async () => {
+  it('throws on invalid dependency id', async () => {
     await createProjectCommand('Test', { dir: testDir });
     await expect(
       newCommand('Task', {
         project: 'test',
         dir: testDir,
-        dependsOn: 'valid-dep,INVALID!',
+        dependsOn: 'TP-1,not-an-id',
       }),
-    ).rejects.toThrow('Invalid dependency slug');
+    ).rejects.toThrow('Invalid dependency id');
   });
 
 });

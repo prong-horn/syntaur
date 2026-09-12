@@ -1,44 +1,28 @@
-import { resolve } from 'node:path';
-import { readFile } from 'node:fs/promises';
-import { expandHome, ticketsDir as ticketsDirFn } from './paths.js';
-import { fileExists } from './fs.js';
 import { readConfig } from './config.js';
+import { expandHome } from './paths.js';
 import { isValidSlug } from './slug.js';
-import { resolveTicketById, type ResolvedTicket } from './ticket-resolver.js';
-import { extractFrontmatter, getField } from '../dashboard/parser.js';
+import { isTicketId } from './ticket-ids.js';
+import {
+  resolveTicketById,
+  resolveTicketSlugInProject,
+  type ResolvedTicket,
+} from './ticket-resolver.js';
 import type { EngagementBinding } from './engagement-binding.js';
 
 export interface TicketTargetOptions {
   project?: string;
   dir?: string;
   cwd?: string;
-  /**
-   * Resolve the active (ticket, stage) from the session's OPEN engagement
-   * (Case 3). Injected by callers — the real implementation is
-   * `resolveEngagementBinding(cwd)` from engagement-binding.ts; tests pass a
-   * stub. When unset or it resolves null, Case 3 throws the no-target selector
-   * error. This replaces the demoted `context.json` ticket scalar.
-   */
   resolveEngagement?: () => Promise<EngagementBinding | null>;
 }
 
 export class TicketTargetError extends Error {}
 
-/**
- * `.syntaur/context.json` is a WORKSPACE MARKER, not the active-ticket
- * source. The authoritative active (ticket, stage) lives on the session's
- * open engagement (see resolveTicketTarget Case 3); the legacy
- * `projectSlug`/`ticketSlug`/`ticketDir` scalars were removed here to
- * close the multi-ticket-in-one-worktree clobber.
- */
 export interface ContextJsonShape {
-  // Session metadata (populated by Claude Code's SessionStart hook). These are
-  // a legacy, co-tenant-clobberable HINT — never trust the sessionId value as
-  // identity (resolve that from the process via resolveOwnSessionId). Their
-  // PRESENCE vs absence is still a stable signal for classification.
   sessionId?: string | null;
   transcriptPath?: string | null;
-  // Workspace markers.
+  ticketId?: string | null;
+  ticketDir?: string | null;
   branch?: string | null;
   worktreePath?: string | null;
   repository?: string | null;
@@ -49,41 +33,15 @@ export type ContextKind = 'standalone' | 'empty';
 
 export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
   if (!ctx) return 'empty';
-  // Standalone = a session-only context. Classify on the
-  // PRESENCE of session metadata (sessionId or transcriptPath), not the specific
-  // id value — the value is a clobberable hint, but presence-vs-absence is
-  // stable under co-tenancy.
   if (ctx.sessionId || ctx.transcriptPath) return 'standalone';
   return 'empty';
 }
 
-async function readTicketFrontmatterId(ticketDir: string): Promise<string | null> {
-  const path = resolve(ticketDir, 'ticket.md');
-  if (!(await fileExists(path))) return null;
-  try {
-    const content = await readFile(path, 'utf-8');
-    const [fm] = extractFrontmatter(content);
-    return getField(fm, 'id');
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Resolve a ticket target across the three input shapes:
- *
- *   1. `--project <slug> + <ticket-slug>` (positional, explicit)
- *   2. bare UUID (positional, resolves standalone or project-nested via frontmatter id)
- *   3. no positional → the session's OPEN engagement (via `opts.resolveEngagement`).
- *      The legacy `.syntaur/context.json` ticket scalar is NO LONGER a
- *      resolution source — `context.json` is now a workspace marker only. With no
- *      positional and no open engagement, this throws the selector error.
- *
- * `--dir` overrides the projects base dir for cases 1 and 3 (project-nested).
- *
- * Throws TicketTargetError on any unresolved input. The returned shape
- * mirrors `ResolvedTicket` from ticket-resolver.ts; Case 3 also carries
- * the engagement `stage`.
+ * Resolve a ticket target:
+ *   1. `--project <slug> + <slug>` (legacy slug path within a project)
+ *   2. bare ticket id (`<PREFIX>-<n>`)
+ *   3. no positional → the session's open engagement
  */
 export async function resolveTicketTarget(
   input: string | undefined,
@@ -92,141 +50,74 @@ export async function resolveTicketTarget(
   const config = await readConfig();
   const baseDir = opts.dir ? expandHome(opts.dir) : config.defaultProjectDir;
 
-  // Case 1: --project + positional slug
   if (opts.project) {
     if (!input) {
       throw new TicketTargetError(
-        '--project requires a ticket slug as a positional argument.',
+        '--project requires a ticket slug or id as a positional argument.',
       );
     }
     if (!isValidSlug(opts.project)) {
       throw new TicketTargetError(`Invalid project slug "${opts.project}".`);
     }
+    if (isTicketId(input)) {
+      const resolved = await resolveTicketById(baseDir, undefined, input);
+      if (!resolved || resolved.projectSlug !== opts.project) {
+        throw new TicketTargetError(
+          `Ticket "${input}" not found in project "${opts.project}".`,
+        );
+      }
+      return resolved;
+    }
     if (!isValidSlug(input)) {
       throw new TicketTargetError(`Invalid ticket slug "${input}".`);
     }
-    const projectDir = resolve(baseDir, opts.project);
-    const projectMdPath = resolve(projectDir, 'project.md');
-    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new TicketTargetError(
-        `Project "${opts.project}" not found at ${projectDir}.`,
-      );
-    }
-    const ticketDir = resolve(projectDir, 'tickets', input);
-    const ticketMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(ticketMdPath))) {
-      throw new TicketTargetError(
-        `Ticket "${input}" not found in project "${opts.project}".`,
-      );
-    }
-    const id = (await readTicketFrontmatterId(ticketDir)) ?? input;
-    return {
-      ticketDir,
-      projectSlug: opts.project,
-      ticketSlug: input,
-      id,
-      standalone: false,
-    };
-  }
-
-  // Case 2: bare UUID/id positional
-  if (input) {
-    const resolved = await resolveTicketById(baseDir, ticketsDirFn(), input);
+    const resolved = await resolveTicketSlugInProject(baseDir, opts.project, input);
     if (!resolved) {
       throw new TicketTargetError(
-        `Ticket "${input}" not found. Provide --project <slug> + <slug> or a valid standalone UUID.`,
+        `Ticket "${input}" not found in project "${opts.project}".`,
       );
     }
     return resolved;
   }
 
-  // Case 3: no positional → resolve from the session's OPEN engagement.
+  if (input) {
+    if (!isTicketId(input)) {
+      throw new TicketTargetError(
+        `Ticket "${input}" is not a valid ticket id. Use <PREFIX>-<n> (e.g. SCR-1).`,
+      );
+    }
+    const resolved = await resolveTicketById(baseDir, undefined, input);
+    if (!resolved) {
+      throw new TicketTargetError(`Ticket "${input}" not found.`);
+    }
+    return resolved;
+  }
+
   const binding = opts.resolveEngagement ? await opts.resolveEngagement() : null;
   if (binding) {
     return reconstructFromBinding(binding, baseDir);
   }
 
   throw new TicketTargetError(
-    'No open engagement for this session. Pass --ticket <slug> (and --project) to target a ticket, or grab one first.',
+    'No open engagement for this session. Pass a ticket id, or grab one first.',
   );
 }
 
-/**
- * Rebuild a `ResolvedTicket` from the session's open-engagement binding.
- * Project-nested reconstructs `baseDir/<project>/tickets/<slug>`; standalone
- * uses the resolved `ticketId` (preferred) or the slug-as-UUID under the
- * standalone tickets dir. Rejects a binding with no usable identity.
- */
 export async function reconstructFromBinding(
   binding: EngagementBinding,
   baseDir: string,
 ): Promise<ResolvedTicket> {
-  // Project-nested engagement.
-  if (binding.projectSlug) {
-    if (
-      !isValidSlug(binding.projectSlug) ||
-      !binding.ticketSlug ||
-      !isValidSlug(binding.ticketSlug)
-    ) {
-      throw new TicketTargetError(
-        `Open engagement has invalid slugs: project="${binding.projectSlug}" ticket="${binding.ticketSlug}".`,
-      );
-    }
-    const ticketDir = resolve(baseDir, binding.projectSlug, 'tickets', binding.ticketSlug);
-    const ticketMdPath = resolve(ticketDir, 'ticket.md');
-    if (!(await fileExists(ticketMdPath))) {
-      throw new TicketTargetError(
-        `Open engagement points to a missing ticket: ${ticketDir}.`,
-      );
-    }
-    const id =
-      (await readTicketFrontmatterId(ticketDir)) ??
-      binding.ticketId ??
-      binding.ticketSlug;
-    return {
-      ticketDir,
-      projectSlug: binding.projectSlug,
-      ticketSlug: binding.ticketSlug,
-      id,
-      standalone: false,
-      stage: binding.stage,
-    };
-  }
-
-  // Standalone engagement: prefer the resolved id, else the slug-as-UUID.
-  const standaloneId = binding.ticketId ?? binding.ticketSlug;
-  if (!standaloneId) {
+  const ticketId = binding.ticketId;
+  if (!ticketId || !isTicketId(ticketId)) {
     throw new TicketTargetError(
-      'Open engagement has neither a ticket id nor a slug to resolve.',
+      `Open engagement has invalid ticket id: "${ticketId ?? ''}".`,
     );
   }
-  // The id becomes a path segment under the standalone tickets dir — reject
-  // separators / traversal / absolute so a malformed DB binding can't resolve
-  // outside ticketsDir(). (Project-nested slugs go through isValidSlug above.)
-  if (
-    standaloneId.includes('/') ||
-    standaloneId.includes('\\') ||
-    standaloneId.includes('..') ||
-    standaloneId.startsWith('.')
-  ) {
+  const resolved = await resolveTicketById(baseDir, undefined, ticketId);
+  if (!resolved) {
     throw new TicketTargetError(
-      `Open engagement has an unsafe standalone ticket id: "${standaloneId}".`,
+      `Open engagement points to a missing ticket: ${ticketId}.`,
     );
   }
-  const dir = resolve(ticketsDirFn(), standaloneId);
-  const ticketMdPath = resolve(dir, 'ticket.md');
-  if (!(await fileExists(ticketMdPath))) {
-    throw new TicketTargetError(
-      `Open engagement points to a missing standalone ticket: ${dir}.`,
-    );
-  }
-  const id = (await readTicketFrontmatterId(dir)) ?? standaloneId;
-  return {
-    ticketDir: dir,
-    projectSlug: null,
-    ticketSlug: standaloneId,
-    id,
-    standalone: true,
-    stage: binding.stage,
-  };
+  return { ...resolved, stage: binding.stage };
 }

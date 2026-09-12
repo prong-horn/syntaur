@@ -2,6 +2,7 @@ import { watch } from 'chokidar';
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
 import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import type { WsMessage } from './types.js';
+import { parseTicketFolderName } from '../utils/ticket-folder.js';
 
 /** Minimal slice of `node:path` the matcher needs. Injectable so tests can
  * exercise `path.win32` / `path.posix` behavior deterministically on any OS. */
@@ -70,7 +71,6 @@ export interface WatcherOptions {
 }
 
 export function createWatcher(options: WatcherOptions): { close: () => Promise<void> } {
-  const ticketsDir = options.ticketsDir;
   const {
     projectsDir,
     playbooksDir,
@@ -99,21 +99,28 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     if (parts.length === 0) return;
 
     const projectSlug = parts[0];
+    let ticketFolder: string | undefined;
+    let ticketId: string | undefined;
     let ticketSlug: string | undefined;
 
     if (parts.length >= 3 && parts[1] === 'tickets') {
-      ticketSlug = parts[2];
+      ticketFolder = parts[2];
+      const parsed = ticketFolder ? parseTicketFolderName(ticketFolder) : null;
+      if (parsed) {
+        ticketId = parsed.id;
+        ticketSlug = parsed.slug;
+      }
     }
 
-    const debounceKey = ticketSlug
-      ? `${projectSlug}/${ticketSlug}`
+    const debounceKey = ticketId
+      ? `${projectSlug}/${ticketId}`
       : projectSlug;
 
     const existing = pendingEvents.get(debounceKey);
     if (existing) clearTimeout(existing);
 
     // Session events are now emitted by the API write path, not the file watcher
-    const messageType: WsMessage['type'] = ticketSlug
+    const messageType: WsMessage['type'] = ticketId
       ? 'ticket-updated'
       : 'project-updated';
 
@@ -124,12 +131,13 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
         const message: WsMessage = {
           type: messageType,
           projectSlug,
+          ticketId,
           ticketSlug,
           timestamp: new Date().toISOString(),
         };
         onMessage(message);
-        if (ticketSlug && onTicketChanged) {
-          onTicketChanged(projectSlug, ticketSlug);
+        if (ticketId && onTicketChanged) {
+          onTicketChanged(projectSlug, ticketId);
         }
       }, debounceMs),
     );
@@ -138,49 +146,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   projectsWatcher.on('change', handleProjectChange);
   projectsWatcher.on('add', handleProjectChange);
   projectsWatcher.on('unlink', handleProjectChange);
-
-  // --- Standalone tickets watcher ---
-  let standaloneWatcher: ReturnType<typeof watch> | null = null;
-
-  if (ticketsDir) {
-    standaloneWatcher = watch(ticketsDir, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 5,
-      ignored: ignoreDotSegmentsBelow(ticketsDir),
-    });
-
-    function handleStandaloneChange(filePath: string): void {
-      const rel = relative(ticketsDir!, filePath);
-      const parts = rel.split(sep);
-      if (parts.length === 0) return;
-      const ticketId = parts[0];
-      if (!ticketId) return;
-
-      const debounceKey = `__standalone__/${ticketId}`;
-      const existing = pendingEvents.get(debounceKey);
-      if (existing) clearTimeout(existing);
-
-      pendingEvents.set(
-        debounceKey,
-        setTimeout(() => {
-          pendingEvents.delete(debounceKey);
-          const message: WsMessage = {
-            type: 'ticket-updated',
-            projectSlug: null,
-            ticketSlug: ticketId,
-            timestamp: new Date().toISOString(),
-          };
-          onMessage(message);
-          if (onTicketChanged) onTicketChanged(null, ticketId);
-        }, debounceMs),
-      );
-    }
-
-    standaloneWatcher.on('change', handleStandaloneChange);
-    standaloneWatcher.on('add', handleStandaloneChange);
-    standaloneWatcher.on('unlink', handleStandaloneChange);
-  }
 
   // --- Playbooks watcher ---
   let playbooksWatcher: ReturnType<typeof watch> | null = null;
@@ -329,7 +294,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       });
       pendingEvents.clear();
       await projectsWatcher.close();
-      if (standaloneWatcher) await standaloneWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (workflowsWatcher) await workflowsWatcher.close();
       if (sessionsDbWatcher) await sessionsDbWatcher.close();

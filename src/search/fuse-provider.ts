@@ -36,7 +36,7 @@ export class FuseProvider implements SearchProvider {
     });
 
     const fuse = new Fuse(subset, {
-      keys: ['title', 'body'],
+      keys: ['title', 'body', 'ticketId', 'ticketSlug'],
       threshold: 0.4,
       includeScore: true,
       includeMatches: true,

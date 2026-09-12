@@ -6,7 +6,6 @@ import { listTicketsByProject } from '../utils/ticket-walk.js';
 
 let root: string;
 let projectsDir: string;
-let standaloneDir: string;
 
 async function seedTicket(dir: string, status = 'pending'): Promise<void> {
   await mkdir(dir, { recursive: true });
@@ -19,9 +18,7 @@ async function seedTicket(dir: string, status = 'pending'): Promise<void> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-ticket-walk-'));
   projectsDir = join(root, 'projects');
-  standaloneDir = join(root, 'standalone');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(standaloneDir, { recursive: true });
 });
 
 afterEach(async () => {
@@ -29,61 +26,26 @@ afterEach(async () => {
 });
 
 describe('listTicketsByProject', () => {
-  it('walks project + standalone trees and groups with vs without ticket.md', async () => {
-    await seedTicket(join(projectsDir, 'p1', 'tickets', 'a1'));
-    await seedTicket(join(projectsDir, 'p1', 'tickets', 'a2'));
-    await seedTicket(join(projectsDir, 'p2', 'tickets', 'b1'));
-    await seedTicket(join(standaloneDir, 'uuid-1'));
-    // Folder with no ticket.md → orphan
+  it('walks project tickets with <ID>-<slug> folders', async () => {
+    await seedTicket(join(projectsDir, 'p1', 'tickets', 'FIT-1-alpha'));
+    await seedTicket(join(projectsDir, 'p1', 'tickets', 'FIT-2-beta'));
+    await seedTicket(join(projectsDir, 'p2', 'tickets', 'SCR-1-gamma'));
     await mkdir(join(projectsDir, 'p1', 'tickets', 'orphan-x'), { recursive: true });
-    await mkdir(join(standaloneDir, 'orphan-y'), { recursive: true });
-
-    const result = await listTicketsByProject(projectsDir, standaloneDir);
-
-    expect(result.withTicketMd).toHaveLength(4);
-    expect(result.orphanFolders).toHaveLength(2);
-
-    const slugs = result.withTicketMd.map((e) => e.ticketSlug).sort();
-    expect(slugs).toEqual(['a1', 'a2', 'b1', 'uuid-1']);
-
-    const standaloneEntry = result.withTicketMd.find((e) => e.ticketSlug === 'uuid-1');
-    expect(standaloneEntry?.standalone).toBe(true);
-    expect(standaloneEntry?.projectSlug).toBeNull();
-
-    const projectEntry = result.withTicketMd.find((e) => e.ticketSlug === 'a1');
-    expect(projectEntry?.projectSlug).toBe('p1');
-    expect(projectEntry?.standalone).toBe(false);
-  });
-
-  it('skips dot-prefixed and underscore-prefixed directories at every level', async () => {
-    await seedTicket(join(projectsDir, 'p1', 'tickets', 'visible'));
-    await seedTicket(join(projectsDir, 'p1', 'tickets', '.hidden'));
-    await seedTicket(join(projectsDir, 'p1', 'tickets', '_underscore'));
-    await seedTicket(join(projectsDir, '.hidden-project', 'tickets', 'a'));
-    await seedTicket(join(projectsDir, '_idx', 'tickets', 'a'));
-    await seedTicket(join(standaloneDir, '.hidden-uuid'));
-    await seedTicket(join(standaloneDir, '_meta'));
-    await seedTicket(join(standaloneDir, 'real-uuid'));
-
-    const result = await listTicketsByProject(projectsDir, standaloneDir);
-
-    const slugs = result.withTicketMd.map((e) => e.ticketSlug).sort();
-    expect(slugs).toEqual(['real-uuid', 'visible']);
-  });
-
-  it('treats standaloneDir=null as skip-standalone (matches non-standalone-mode dashboards)', async () => {
-    await seedTicket(join(projectsDir, 'p1', 'tickets', 'a1'));
-    await seedTicket(join(standaloneDir, 'uuid-1'));
 
     const result = await listTicketsByProject(projectsDir, null);
 
-    expect(result.withTicketMd).toHaveLength(1);
-    expect(result.withTicketMd[0].ticketSlug).toBe('a1');
+    expect(result.withTicketMd).toHaveLength(3);
+    expect(result.orphanFolders).toHaveLength(1);
+    expect(result.withTicketMd.map((e) => e.ticketId).sort()).toEqual(['FIT-1', 'FIT-2', 'SCR-1']);
+    expect(result.withTicketMd.every((e) => e.standalone === false)).toBe(true);
   });
 
-  it('returns empty result when projectsDir does not exist', async () => {
-    const result = await listTicketsByProject(join(root, 'nonexistent'), null);
-    expect(result.withTicketMd).toHaveLength(0);
-    expect(result.orphanFolders).toHaveLength(0);
+  it('skips dot-prefixed and underscore-prefixed directories at every level', async () => {
+    await seedTicket(join(projectsDir, 'p1', 'tickets', 'TP-1-visible'));
+    await seedTicket(join(projectsDir, 'p1', 'tickets', '.hidden'));
+    await seedTicket(join(projectsDir, 'p1', 'tickets', '_underscore'));
+
+    const result = await listTicketsByProject(projectsDir, null);
+    expect(result.withTicketMd.map((e) => e.ticketId)).toEqual(['TP-1']);
   });
 });

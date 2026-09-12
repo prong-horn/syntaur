@@ -10,9 +10,7 @@ const CATEGORY = 'workspace';
 interface ContextFile {
   sessionId?: string;
   transcriptPath?: string;
-  projectSlug?: string;
-  ticketSlug?: string;
-  projectDir?: string;
+  ticketId?: string;
   ticketDir?: string;
   workspaceRoot?: string;
   branch?: string;
@@ -21,7 +19,7 @@ interface ContextFile {
   boundAt?: string;
 }
 
-const TICKET_FIELDS = ['projectSlug', 'ticketSlug', 'projectDir', 'ticketDir'] as const;
+const TICKET_FIELDS = ['ticketId', 'ticketDir'] as const;
 // context.json is a WORKSPACE MARKER now — these are the fields the launcher/grab
 // flow writes. The active ticket resolves from the session's open engagement,
 // NOT from this file (the legacy ticket scalars were removed).

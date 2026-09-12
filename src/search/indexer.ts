@@ -30,12 +30,9 @@ import type { FileKind, SearchDoc } from './types.js';
 
 export interface IndexOptions {
   projectsDir: string;
+  /** @deprecated Standalone tickets were removed; ignored when set. */
   ticketsDir?: string;
   includeArchived?: boolean;
-}
-
-function resolveStandaloneTicketsDir(opts: IndexOptions): string {
-  return opts.ticketsDir ?? opts.projectsDir;
 }
 
 /** Identity carried from the owning ticket onto every sidecar doc. */
@@ -43,7 +40,8 @@ interface TicketIdentity {
   ticketId: string | null;
   ticketSlug: string;
   projectSlug: string | null;
-  standalone: boolean;
+  /** @deprecated Standalone tickets were removed; always false. */
+  standalone: false;
   type?: string;
   status?: string;
   archived: boolean;
@@ -64,7 +62,6 @@ const SIDECARS: Array<{ file: string; kind: FileKind; body: (content: string) =>
  */
 export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   const { projectsDir, includeArchived = false } = opts;
-  const ticketsDir = resolveStandaloneTicketsDir(opts);
   const docs: SearchDoc[] = [];
 
   const projectArchived = new Map<string, boolean>();
@@ -87,8 +84,8 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     }
   }
 
-  // ── tickets (project-nested + standalone) ───────────────────────────
-  const { withTicketMd } = await listTicketsByProject(projectsDir, ticketsDir);
+  // ── project-nested tickets under tickets/<ID>-<slug>/ ───────────────
+  const { withTicketMd } = await listTicketsByProject(projectsDir, null);
   for (const entry of withTicketMd) {
     const ticketMdPath = resolve(entry.ticketDir, 'ticket.md');
     let ticketContent: string;
@@ -108,11 +105,12 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
 
     if (!includeArchived && archived) continue;
 
+    const ticketId = ticket.id || entry.ticketId;
     const identity: TicketIdentity = {
-      ticketId: ticket.id || null,
+      ticketId: ticketId || null,
       ticketSlug: entry.ticketSlug,
       projectSlug: entry.projectSlug,
-      standalone: entry.standalone,
+      standalone: false,
       type: ticket.type ?? undefined,
       status: ticket.status,
       archived,
@@ -158,8 +156,11 @@ function makeTicketDoc(
   body: string,
   identity: TicketIdentity,
 ): SearchDoc {
+  const stableId = identity.ticketId
+    ? `${identity.ticketId}:${fileKind}:${path}`
+    : path;
   return {
-    id: path,
+    id: stableId,
     path,
     fileKind,
     title,
@@ -196,7 +197,7 @@ interface CacheEntry {
 const cache = new Map<string, CacheEntry>();
 
 function cacheKey(opts: IndexOptions): string {
-  return `${opts.projectsDir}|${resolveStandaloneTicketsDir(opts)}|${opts.includeArchived ?? false}`;
+  return `${opts.projectsDir}|${opts.includeArchived ?? false}`;
 }
 
 function signaturesEqual(a: IndexSignature, b: IndexSignature): boolean {
@@ -210,7 +211,6 @@ function signaturesEqual(a: IndexSignature, b: IndexSignature): boolean {
  */
 async function indexSignature(
   projectsDir: string,
-  ticketsDir: string,
 ): Promise<IndexSignature> {
   let count = 0;
   let mtimeMax = 0;
@@ -240,7 +240,6 @@ async function indexSignature(
     }
   }
   await walk(projectsDir);
-  if (ticketsDir !== projectsDir) await walk(ticketsDir);
   return { count, mtimeMax, sizeSum };
 }
 
@@ -255,8 +254,7 @@ async function indexSignature(
  */
 export async function getIndex(opts: IndexOptions): Promise<SearchDoc[]> {
   const key = cacheKey(opts);
-  const ticketsDir = resolveStandaloneTicketsDir(opts);
-  const signature = await indexSignature(opts.projectsDir, ticketsDir);
+  const signature = await indexSignature(opts.projectsDir);
   const existing = cache.get(key);
   if (existing && signaturesEqual(existing.signature, signature)) {
     return existing.docs;

@@ -8,7 +8,6 @@ import type { SearchDoc } from '../search/types.js';
 
 let root: string;
 let projectsDir: string;
-let ticketsDir: string;
 
 async function write(path: string, content: string): Promise<void> {
   await mkdir(join(path, '..'), { recursive: true });
@@ -18,59 +17,55 @@ async function write(path: string, content: string): Promise<void> {
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-search-'));
   projectsDir = join(root, 'projects');
-  ticketsDir = join(root, 'tickets');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
 
-  // ── project "alpha" with workspace, one nested ticket ─────
+  // ── project "alpha" with workspace, nested tickets ─────
   const alpha = join(projectsDir, 'alpha');
   await write(
     join(alpha, 'project.md'),
-    `---\nid: p-alpha\nslug: alpha\ntitle: Alpha\nworkspace: alpha-ws\narchived: false\n---\n# Alpha project\n`,
+    `---\nid: p-alpha\nslug: alpha\ntitle: Alpha\nprefix: ALP\nnextTicket: 3\nworkspace: alpha-ws\narchived: false\n---\n# Alpha project\n`,
   );
-  const aDir = join(alpha, 'tickets', 'build-widget');
+  const aDir = join(alpha, 'tickets', 'ALP-1-build-widget');
   await write(
     join(aDir, 'ticket.md'),
-    `---\nid: asg-001\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Build Widget\n\nWe must construct the flux capacitor.\n`,
+    `---\nid: ALP-1\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Build Widget\n\nWe must construct the flux capacitor.\n`,
   );
-  // latest plan = plan-v2.md (plan.md is v1, must NOT be indexed)
   await write(
     join(aDir, 'plan.md'),
-    `---\nticket: asg-001\n---\n# Old Plan v1\n\nObsolete approach.\n`,
+    `---\nticket: ALP-1\n---\n# Old Plan v1\n\nObsolete approach.\n`,
   );
   await write(
     join(aDir, 'plan-v2.md'),
-    `---\nticket: asg-001\n---\n# Plan v2\n\nThe approved strawberry approach.\n`,
+    `---\nticket: ALP-1\n---\n# Plan v2\n\nThe approved strawberry approach.\n`,
   );
   await write(
     join(aDir, 'comments.md'),
-    `---\nticket: asg-001\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
+    `---\nticket: ALP-1\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
   );
 
-  // ── standalone ticket ─────────────────────────────────────────────────
-  const sDir = join(ticketsDir, 'uuid-standalone');
+  const choreDir = join(alpha, 'tickets', 'ALP-2-oneoff');
   await write(
-    join(sDir, 'ticket.md'),
-    `---\nid: asg-standalone\nslug: oneoff\ntitle: One Off\ntype: chore\nstatus: pending\narchived: false\n---\n# One Off\n\nStandalone kiwi task.\n`,
+    join(choreDir, 'ticket.md'),
+    `---\nid: ALP-2\nslug: oneoff\ntitle: One Off\ntype: chore\nstatus: pending\narchived: false\n---\n# One Off\n\nStandalone kiwi task.\n`,
   );
 
   // ── archived ticket (excluded by default) ─────────────────────────────
-  const arDir = join(alpha, 'tickets', 'old-task');
+  const arDir = join(alpha, 'tickets', 'ALP-3-old-task');
   await write(
     join(arDir, 'ticket.md'),
-    `---\nid: asg-arch\nslug: old-task\ntitle: Old Task\ntype: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
+    `---\nid: ALP-3\nslug: old-task\ntitle: Old Task\ntype: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
   );
 
   // ── archived PROJECT "zeta" — its ticket must be excluded by default.
   const zeta = join(projectsDir, 'zeta');
   await write(
     join(zeta, 'project.md'),
-    `---\nid: p-zeta\nslug: zeta\ntitle: Zeta\nworkspace: zeta-ws\narchived: true\n---\n# Zeta project\n`,
+    `---\nid: p-zeta\nslug: zeta\ntitle: Zeta\nprefix: ZET\nnextTicket: 2\nworkspace: zeta-ws\narchived: true\n---\n# Zeta project\n`,
   );
-  const zDir = join(zeta, 'tickets', 'zeta-task');
+  const zDir = join(zeta, 'tickets', 'ZET-1-zeta-task');
   await write(
     join(zDir, 'ticket.md'),
-    `---\nid: asg-zeta\nslug: zeta-task\ntitle: Zeta Task\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
+    `---\nid: ZET-1\nslug: zeta-task\ntitle: Zeta Task\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
   );
 });
 
@@ -84,20 +79,17 @@ function find(docs: SearchDoc[], fileKind: string, slug: string | null): SearchD
 
 describe('buildIndex', () => {
   it('emits a doc per file kind across tickets and sidecars', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
+    const docs = await buildIndex({ projectsDir });
     const kinds = docs.map((d) => d.fileKind).sort();
     expect(kinds).toContain('ticket');
     expect(kinds).toContain('plan');
     expect(kinds).toContain('comments');
     const ticketDocs = docs.filter((d) => d.fileKind === 'ticket');
-    expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual([
-      'build-widget',
-      'uuid-standalone',
-    ]);
+    expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual(['build-widget', 'oneoff']);
   });
 
   it('indexes only the latest plan (plan-v2, not plan.md)', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
+    const docs = await buildIndex({ projectsDir });
     const planDocs = docs.filter((d) => d.fileKind === 'plan');
     expect(planDocs).toHaveLength(1);
     expect(planDocs[0].path).toMatch(/plan-v2\.md$/);
@@ -106,21 +98,21 @@ describe('buildIndex', () => {
   });
 
   it('excludes archived tickets unless includeArchived', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
+    const docs = await buildIndex({ projectsDir });
     expect(docs.some((d) => d.ticketSlug === 'old-task')).toBe(false);
 
-    const withArchived = await buildIndex({ projectsDir, ticketsDir, includeArchived: true });
+    const withArchived = await buildIndex({ projectsDir, includeArchived: true });
     expect(withArchived.some((d) => d.ticketSlug === 'old-task')).toBe(true);
   });
 
   it('excludes an archived project’s tickets by default', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
+    const docs = await buildIndex({ projectsDir });
     expect(docs.some((d) => d.projectSlug === 'zeta')).toBe(false);
     expect(docs.some((d) => d.ticketSlug === 'zeta-task')).toBe(false);
   });
 
   it('includes an archived project’s content (archived:true stamped) when includeArchived', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir, includeArchived: true });
+    const docs = await buildIndex({ projectsDir, includeArchived: true });
     const zetaDocs = docs.filter((d) => d.projectSlug === 'zeta');
     expect(zetaDocs.length).toBeGreaterThan(0);
     for (const d of zetaDocs) {
@@ -129,18 +121,19 @@ describe('buildIndex', () => {
     expect(zetaDocs.some((d) => d.fileKind === 'ticket')).toBe(true);
   });
 
-  it('marks standalone tickets on indexed docs', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
-    const standalone = find(docs, 'ticket', 'uuid-standalone');
-    expect(standalone?.standalone).toBe(true);
-    expect(standalone?.projectSlug).toBeNull();
+  it('marks project-nested tickets on indexed docs', async () => {
+    const docs = await buildIndex({ projectsDir });
+    const nested = find(docs, 'ticket', 'oneoff');
+    expect(nested?.standalone).toBe(false);
+    expect(nested?.projectSlug).toBe('alpha');
+    expect(nested?.ticketId).toBe('ALP-2');
   });
 
   it('propagates ticket identity/filter fields onto sidecars', async () => {
-    const docs = await buildIndex({ projectsDir, ticketsDir });
+    const docs = await buildIndex({ projectsDir });
     const comments = find(docs, 'comments', 'build-widget');
     expect(comments).toBeDefined();
-    expect(comments?.ticketId).toBe('asg-001');
+    expect(comments?.ticketId).toBe('ALP-1');
     expect(comments?.ticketSlug).toBe('build-widget');
     expect(comments?.type).toBe('feature');
     expect(comments?.status).toBe('in_progress');
@@ -150,7 +143,7 @@ describe('buildIndex', () => {
 
 describe('FuseProvider.query', () => {
   async function provider() {
-    const docs = await buildIndex({ projectsDir, ticketsDir, includeArchived: true });
+    const docs = await buildIndex({ projectsDir, includeArchived: true });
     const p = new FuseProvider();
     p.index(docs);
     return p;
@@ -194,7 +187,8 @@ describe('FuseProvider.query', () => {
     const p = await provider();
     const hits = p.query({ query: 'task', project: 'alpha' }, 20);
     expect(hits.every((h) => h.projectSlug === 'alpha')).toBe(true);
-    expect(hits.some((h) => h.ticketSlug === 'oneoff')).toBe(false);
+    expect(hits.some((h) => h.ticketSlug === 'oneoff')).toBe(true);
+    expect(hits.some((h) => h.projectSlug === 'zeta')).toBe(false);
   });
 
   it('respects the type[] filter', async () => {
@@ -203,7 +197,7 @@ describe('FuseProvider.query', () => {
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.every((h) => h.ticketId !== null)).toBe(true);
     for (const h of hits) {
-      expect(['asg-standalone', 'asg-arch']).toContain(h.ticketId);
+      expect(['ALP-2', 'ALP-3']).toContain(h.ticketId);
     }
   });
 
@@ -211,7 +205,7 @@ describe('FuseProvider.query', () => {
     const p = await provider();
     const hits = p.query({ query: 'task', status: ['pending'] }, 20);
     for (const h of hits) {
-      if (h.ticketId) expect(h.ticketId).toBe('asg-standalone');
+      if (h.ticketId) expect(h.ticketId).toBe('ALP-2');
     }
   });
 

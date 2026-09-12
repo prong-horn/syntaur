@@ -14,7 +14,11 @@ import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveTicketById, type ResolvedTicket } from '../utils/ticket-resolver.js';
+import {
+  resolveTicketById,
+  resolveTicketSlugInProject,
+  type ResolvedTicket,
+} from '../utils/ticket-resolver.js';
 import {
   parseTicketFrontmatter,
   updateTicketFile,
@@ -77,7 +81,10 @@ async function resolveTarget(ticket: string, options: DeriveVerbOptions): Promis
     if (!isValidSlug(options.project)) throw new Error(`Invalid project slug "${options.project}".`);
     if (!isValidSlug(ticket)) throw new Error(`Invalid ticket slug "${ticket}".`);
     const projectDir = resolve(baseDir, options.project);
-    const ticketDir = resolve(projectDir, 'tickets', ticket);
+    const resolved = await resolveTicketSlugInProject(baseDir, options.project, ticket);
+    const ticketDir = resolved
+      ? resolved.ticketDir
+      : resolve(projectDir, 'tickets', ticket);
     const ticketPath = resolve(ticketDir, 'ticket.md');
     if (!(await fileExists(ticketPath))) {
       throw new Error(`Ticket "${ticket}" not found at ${ticketPath}.`);
@@ -428,7 +435,7 @@ async function applyStageFact(
     // was reviewing a DIFFERENT ticket must not mark this one as rework
     // (codex finding). Pass the resolved path so --dir is honoured.
     const prevStage =
-      sw.previous && sw.previous.assignment_id === fm.id ? sw.previous.stage : null;
+      sw.previous && sw.previous.ticket_id === fm.id ? sw.previous.stage : null;
     await assertStageFactOnOpen({
       ticketPath: target.ticketPath,
       projectDir: target.projectDir,

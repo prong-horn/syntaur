@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { readdir, stat } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
+import { parseTicketFolderName } from '../../ticket-folder.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'project';
@@ -149,7 +150,43 @@ const orphanFiles: Check = {
   },
 };
 
-export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles];
+const ticketFolderLayout: Check = {
+  id: 'project.ticket-folder-layout',
+  category: CATEGORY,
+  title: 'Ticket folders under tickets/ use <ID>-<slug> naming',
+  async run(ctx) {
+    const projects = await listProjects(ctx);
+    const results: CheckResult[] = [];
+    for (const projectDir of projects) {
+      const ticketsRoot = resolve(projectDir, 'tickets');
+      if (!(await fileExists(ticketsRoot))) continue;
+      const entries = await readdir(ticketsRoot, { withFileTypes: true });
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        if (e.name.startsWith('.') || e.name.startsWith('_')) continue;
+        if (parseTicketFolderName(e.name)) continue;
+        results.push({
+          id: this.id,
+          category: this.category,
+          title: this.title,
+          status: 'warn',
+          detail: `ticket folder "${e.name}" in ${ticketsRoot} does not match <ID>-<slug> (e.g. SCR-1-my-feature)`,
+          affected: [resolve(ticketsRoot, e.name)],
+          remediation: {
+            kind: 'manual',
+            suggestion: 'Rename the folder to <ticket-id>-<slug> or run syntaur migrate v2 on a copy first',
+            command: null,
+          },
+          autoFixable: false,
+        });
+      }
+    }
+    if (results.length === 0) return pass(this);
+    return results;
+  },
+};
+
+export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles, ticketFolderLayout];
 
 async function newestTicketMtime(projectDir: string): Promise<number> {
   const ticketsRoot = resolve(projectDir, 'tickets');

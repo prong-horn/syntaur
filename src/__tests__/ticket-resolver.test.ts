@@ -2,16 +2,18 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { resolveTicketBySlug } from '../utils/ticket-resolver.js';
+import {
+  resolveTicketById,
+  resolveTicketSlugInProject,
+  TicketResolverError,
+} from '../utils/ticket-resolver.js';
 
 let sandbox: string;
 let projectsDir: string;
-let ticketsDir: string;
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-resolver-'));
   projectsDir = resolve(sandbox, 'projects');
-  ticketsDir = resolve(sandbox, 'tickets');
 });
 
 afterEach(async () => {
@@ -20,46 +22,52 @@ afterEach(async () => {
 
 async function writeProjectTicket(
   projectSlug: string,
-  ticketSlug: string,
+  folderName: string,
   frontmatter: string,
 ): Promise<void> {
-  const dir = resolve(projectsDir, projectSlug, 'tickets', ticketSlug);
+  const dir = resolve(projectsDir, projectSlug, 'tickets', folderName);
   await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), `---\n${frontmatter}\n---\n\n# ${ticketSlug}\n`, 'utf-8');
+  await writeFile(resolve(dir, 'ticket.md'), `---\n${frontmatter}\n---\n\n# ticket\n`, 'utf-8');
 }
 
-async function writeStandaloneTicket(slug: string, frontmatter: string): Promise<void> {
-  const dir = resolve(ticketsDir, slug);
-  await mkdir(dir, { recursive: true });
-  await writeFile(resolve(dir, 'ticket.md'), `---\n${frontmatter}\n---\n\n# ${slug}\n`, 'utf-8');
-}
-
-describe('resolveTicketBySlug', () => {
-  it('returns {exists:true, id} for a project-nested ticket', async () => {
-    await writeProjectTicket('proj', 'asgn', 'id: abc-123\nslug: asgn\ntitle: Asgn');
-    const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'asgn');
-    expect(r).toEqual({ exists: true, id: 'abc-123' });
+describe('resolveTicketById', () => {
+  it('resolves by id through the <ID>-<slug> folder name', async () => {
+    await writeProjectTicket(
+      'proj',
+      'FIT-1-my-ticket',
+      'id: FIT-1\nslug: my-ticket\ntitle: My Ticket',
+    );
+    const r = await resolveTicketById(projectsDir, undefined, 'FIT-1');
+    expect(r).toMatchObject({
+      projectSlug: 'proj',
+      ticketSlug: 'my-ticket',
+      id: 'FIT-1',
+      standalone: false,
+    });
   });
 
-  it('returns {exists:true, id} for a standalone ticket', async () => {
-    await writeStandaloneTicket('solo', 'id: solo-uuid\nslug: solo\ntitle: Solo');
-    const r = await resolveTicketBySlug(projectsDir, ticketsDir, null, 'solo');
-    expect(r).toEqual({ exists: true, id: 'solo-uuid' });
+  it('returns null when no folder matches the id prefix', async () => {
+    const r = await resolveTicketById(projectsDir, undefined, 'FIT-9');
+    expect(r).toBeNull();
   });
 
-  it('returns {exists:true, id:null} for an existing but idless ticket', async () => {
-    await writeProjectTicket('proj', 'noid', 'slug: noid\ntitle: NoId');
-    const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'noid');
-    expect(r).toEqual({ exists: true, id: null });
+  it('throws when multiple folders match the same id', async () => {
+    await writeProjectTicket('proj', 'FIT-1-a', 'id: FIT-1\nslug: a\ntitle: A');
+    await writeProjectTicket('proj', 'FIT-1-b', 'id: FIT-1\nslug: b\ntitle: B');
+    await expect(resolveTicketById(projectsDir, undefined, 'FIT-1')).rejects.toBeInstanceOf(
+      TicketResolverError,
+    );
   });
+});
 
-  it('returns {exists:false, id:null} for a missing ticket', async () => {
-    const r = await resolveTicketBySlug(projectsDir, ticketsDir, 'proj', 'ghost');
-    expect(r).toEqual({ exists: false, id: null });
-  });
-
-  it('does not throw on a missing standalone ticket', async () => {
-    const r = await resolveTicketBySlug(projectsDir, ticketsDir, null, 'ghost');
-    expect(r).toEqual({ exists: false, id: null });
+describe('resolveTicketSlugInProject', () => {
+  it('finds a ticket by display slug within a project', async () => {
+    await writeProjectTicket(
+      'proj',
+      'SCR-2-alpha',
+      'id: SCR-2\nslug: alpha\ntitle: Alpha',
+    );
+    const r = await resolveTicketSlugInProject(projectsDir, 'proj', 'alpha');
+    expect(r?.id).toBe('SCR-2');
   });
 });

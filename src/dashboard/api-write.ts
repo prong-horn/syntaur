@@ -8,6 +8,7 @@ import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
 import { allocateTicketId, derivePrefix } from '../utils/ticket-ids.js';
+import { formatTicketFolderName } from '../utils/ticket-folder.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import {
@@ -21,9 +22,7 @@ import { validateBranchName } from '../utils/branch-name.js';
 import { recreateForTarget, recreateOutcomeToHttp } from './worktree-recreate.js';
 import {
   getProjectRepositoryCandidates,
-  getStandaloneRepositoryCandidates,
   getProjectSourceTickets,
-  getStandaloneSourceTickets,
 } from './repository-candidates.js';
 import {
   parseTicketFull,
@@ -477,8 +476,7 @@ export function createWriteRouter(
     res.json({ content });
   });
 
-  router.get('/api/templates/ticket', (req: Request, res: Response) => {
-    const standalone = req.query.standalone === '1';
+  router.get('/api/templates/ticket', (_req: Request, res: Response) => {
     const content = renderTicket({
       id: generateId(),
       slug: 'my-new-ticket',
@@ -487,7 +485,6 @@ export function createWriteRouter(
       priority: 'medium',
       dependsOn: [],
       links: [],
-      project: standalone ? null : undefined,
     });
     res.json({ content });
   });
@@ -614,16 +611,19 @@ export function createWriteRouter(
         return;
       }
 
-      const ticketDir = resolve(projectDir, 'tickets', ticketSlug);
+      const timestamp = fields.created || nowTimestamp();
+      const ticketId = await allocateTicketId(projectDir);
+      const ticketDir = resolve(
+        projectDir,
+        'tickets',
+        formatTicketFolderName(ticketId, ticketSlug),
+      );
       if (await fileExists(ticketDir)) {
         res.status(409).json({
           error: `Ticket "${ticketSlug}" already exists in project "${projectSlug}"`,
         });
         return;
       }
-
-      const timestamp = fields.created || nowTimestamp();
-      const ticketId = await allocateTicketId(projectDir);
       const contentWithId = /^id:\s/m.test(content)
         ? content.replace(/^id:\s*.*$/m, `id: ${ticketId}`)
         : content.replace(/^(---\n)/, `---\nid: ${ticketId}\n`);
@@ -877,9 +877,10 @@ export function createWriteRouter(
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
-        const candidates = resolved.standalone
-          ? await getStandaloneRepositoryCandidates(ticketsDir, id)
-          : await getProjectRepositoryCandidates(projectsDir, resolved.projectSlug!);
+        const candidates = await getProjectRepositoryCandidates(
+          projectsDir,
+          resolved.projectSlug,
+        );
         res.json({ candidates });
       } catch (error) {
         console.error('Error listing repository candidates:', error);
@@ -949,13 +950,11 @@ export function createWriteRouter(
           res.status(404).json({ error: `Ticket "${id}" not found` });
           return;
         }
-        const sourceTickets = resolved.standalone
-          ? await getStandaloneSourceTickets(ticketsDir, id)
-          : await getProjectSourceTickets(
-              projectsDir,
-              resolved.projectSlug!,
-              resolved.ticketSlug,
-            );
+        const sourceTickets = await getProjectSourceTickets(
+          projectsDir,
+          resolved.projectSlug,
+          resolved.ticketSlug,
+        );
         res.json({ sourceTickets });
       } catch (error) {
         console.error('Error listing source tickets:', error);
@@ -1140,7 +1139,7 @@ export function createWriteRouter(
 
 
 
-  async function handleStandaloneArchive(
+  async function handleTicketArchiveById(
     req: Request,
     res: Response,
     archived: boolean,
@@ -1160,9 +1159,13 @@ export function createWriteRouter(
     const reason = archived ? archiveReason(req.body) : null;
     await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
 
-    // Audit event (best-effort): standalone → projectSlug null.
     const parsed = parseTicketFull(content);
-    emitDashboardEvent(parsed.id || resolved.id, null, archived ? 'archived' : 'restored', reason ? { reason } : {});
+    emitDashboardEvent(
+      parsed.id || resolved.id,
+      resolved.projectSlug,
+      archived ? 'archived' : 'restored',
+      reason ? { reason } : {},
+    );
 
     const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
     res.json({ ticket });
@@ -1190,7 +1193,7 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/archive', async (req: Request, res: Response) => {
     try {
-      await handleStandaloneArchive(req, res, true);
+      await handleTicketArchiveById(req, res, true);
     } catch (error) {
       console.error('Error archiving ticket:', error);
       res.status(500).json({ error: `Failed to archive ticket: ${(error as Error).message}` });
@@ -1199,7 +1202,7 @@ export function createWriteRouter(
 
   router.post('/api/tickets/:id/unarchive', async (req: Request, res: Response) => {
     try {
-      await handleStandaloneArchive(req, res, false);
+      await handleTicketArchiveById(req, res, false);
     } catch (error) {
       console.error('Error restoring ticket:', error);
       res.status(500).json({ error: `Failed to restore ticket: ${(error as Error).message}` });
@@ -1213,192 +1216,6 @@ export function createWriteRouter(
 
 
 
-  // =========================================================================
-  // Standalone (by-id) routes — `~/.syntaur/tickets/<uuid>/`
-  // Active only when the write router was constructed with a ticketsDir.
-  // =========================================================================
-
-  router.post('/api/tickets', async (req: Request, res: Response) => {
-    try {
-      if (!ticketsDir) {
-        res.status(501).json({ error: 'Standalone tickets not configured on this server' });
-        return;
-      }
-
-      // Two body shapes are supported:
-      //   1) { content: <markdown> } — same shape as POST /api/projects/:slug/tickets. Used by the dashboard UI.
-      //   2) { title, slug?, priority?, type? } — original structured form, retained for back-compat.
-      const rawContent = typeof req.body?.content === 'string' ? req.body.content : '';
-      if (rawContent.trim()) {
-        const fields = extractFrontmatter(rawContent);
-        if (!fields) {
-          res.status(400).json({ error: 'Invalid frontmatter: missing --- delimiters' });
-          return;
-        }
-        const validation = validateRequired(fields, ['slug', 'title']);
-        if (!validation.valid) {
-          res.status(400).json({ error: `Missing required fields: ${validation.missing.join(', ')}` });
-          return;
-        }
-        const submittedSlug = fields.slug;
-        if (!isValidSlug(submittedSlug)) {
-          res.status(400).json({ error: `Invalid slug "${submittedSlug}". Must be lowercase and hyphen-separated.` });
-          return;
-        }
-        const validPriorities = ['low', 'medium', 'high', 'critical'];
-        const submittedPriority = fields.priority || 'medium';
-        if (!validPriorities.includes(submittedPriority)) {
-          res.status(400).json({ error: `Invalid priority "${submittedPriority}". Must be low, medium, high, or critical.` });
-          return;
-        }
-
-        // Standalone-specific guard: no project.
-        if (fields.project && fields.project !== 'null') {
-          res.status(400).json({
-            error: 'Standalone tickets cannot have a project; remove "project" or set it to null.',
-          });
-          return;
-        }
-
-        const id = generateId();
-        const ticketDir = resolve(ticketsDir, id);
-        if (await fileExists(ticketDir)) {
-          res.status(500).json({ error: 'UUID collision — try again' });
-          return;
-        }
-
-        const timestamp = fields.created || nowTimestamp();
-        await ensureDir(ticketDir);
-        // Normalize the frontmatter id to the freshly-generated UUID — the template ships a placeholder.
-        let normalizedContent = setTopLevelField(rawContent, 'id', id);
-        // Raw create bypasses renderTicket, so seed statusHistory here (only
-        // when the body didn't already supply one — never double-seed).
-        const seededHere = parseTicketFull(normalizedContent).statusHistory.length === 0;
-        const createdStatus = parseTicketFull(normalizedContent).status;
-        if (seededHere) {
-          normalizedContent = appendStatusHistoryEntry(normalizedContent, {
-            at: timestamp,
-            from: null,
-            to: createdStatus,
-            command: 'create',
-            by: null,
-          });
-        }
-        await writeFileForce(resolve(ticketDir, 'ticket.md'), normalizedContent);
-
-        await writeFileForce(
-          resolve(ticketDir, 'scratchpad.md'),
-          renderScratchpad({ ticketSlug: id, timestamp }),
-        );
-        await writeFileForce(
-          resolve(ticketDir, 'handoff.md'),
-          renderHandoff({ ticketSlug: id, timestamp }),
-        );
-        await writeFileForce(
-          resolve(ticketDir, 'decision-record.md'),
-          renderDecisionRecord({ ticketSlug: id, timestamp }),
-        );
-        await writeFileForce(
-          resolve(ticketDir, 'progress.md'),
-          renderProgress({ ticket: id, timestamp }),
-        );
-        await writeFileForce(
-          resolve(ticketDir, 'comments.md'),
-          renderComments({ ticket: id, timestamp }),
-        );
-
-        // Audit event (best-effort): emit AFTER all companion files are written
-        // (FIX 2). Standalone → null projectSlug. Only when we seeded here.
-        if (seededHere) {
-          emitDashboardEvent(id, null, 'status-change', {
-            from: null,
-            to: createdStatus,
-            command: 'create',
-          });
-        }
-
-        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
-        res.status(201).json({ ticket: detail });
-        return;
-      }
-
-      // Structured-form path (back-compat).
-      const { title, slug, priority, type } = req.body || {};
-      if (!title || typeof title !== 'string' || !title.trim()) {
-        res.status(400).json({ error: 'title is required' });
-        return;
-      }
-      const { dependsOn } = req.body || {};
-      if (Array.isArray(dependsOn) && dependsOn.length > 0) {
-        res.status(400).json({ error: 'Standalone tickets cannot declare dependsOn.' });
-        return;
-      }
-
-      const id = generateId();
-      const ticketDir = resolve(ticketsDir, id);
-      if (await fileExists(ticketDir)) {
-        res.status(500).json({ error: 'UUID collision — try again' });
-        return;
-      }
-
-      const timestamp = nowTimestamp();
-      const resolvedSlug = typeof slug === 'string' && slug.trim() ? slug.trim() : slugifyLocal(title);
-      const resolvedPriority = (typeof priority === 'string' && ['low', 'medium', 'high', 'critical'].includes(priority))
-        ? (priority as 'low' | 'medium' | 'high' | 'critical')
-        : 'medium';
-
-      await ensureDir(ticketDir);
-      const ticketContent = renderTicket({
-        id,
-        slug: resolvedSlug,
-        title: title.trim(),
-        timestamp,
-        priority: resolvedPriority,
-        dependsOn: [],
-        links: [],
-        project: null,
-        type: typeof type === 'string' ? type : undefined,
-      });
-      await writeFileForce(resolve(ticketDir, 'ticket.md'), ticketContent);
-      await writeFileForce(
-        resolve(ticketDir, 'scratchpad.md'),
-        renderScratchpad({ ticketSlug: id, timestamp }),
-      );
-      await writeFileForce(
-        resolve(ticketDir, 'handoff.md'),
-        renderHandoff({ ticketSlug: id, timestamp }),
-      );
-      await writeFileForce(
-        resolve(ticketDir, 'decision-record.md'),
-        renderDecisionRecord({ ticketSlug: id, timestamp }),
-      );
-      await writeFileForce(
-        resolve(ticketDir, 'progress.md'),
-        renderProgress({ ticket: id, timestamp }),
-      );
-      await writeFileForce(
-        resolve(ticketDir, 'comments.md'),
-        renderComments({ ticket: id, timestamp }),
-      );
-
-      // Audit event (best-effort): emit AFTER all companion files are written
-      // (FIX 2 ordering). renderTicket seeds an initial `create` statusHistory
-      // entry (draft); the RAW create emits a matching status-change, so the
-      // structured create must too (FIX 4). Standalone → null projectSlug.
-      emitDashboardEvent(id, null, 'status-change', {
-        from: null,
-        to: 'draft',
-        command: 'create',
-      });
-
-      const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
-      res.status(201).json({ ticket: detail });
-    } catch (error) {
-      console.error('Error creating standalone ticket:', error);
-      res.status(500).json({ error: `Failed to create standalone ticket: ${(error as Error).message}` });
-    }
-  });
-
   router.post('/api/tickets/:id/comments', async (req: Request, res: Response) => {
     try {
       if (!ticketsDir) {
@@ -1411,10 +1228,8 @@ export function createWriteRouter(
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
-      await appendCommentTo(resolved.ticketDir, resolved.standalone ? resolved.id : resolved.ticketSlug, req, res, async () => {
-        return resolved.standalone
-          ? getTicketDetailById(projectsDir, ticketsDir, id)
-          : getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
+      await appendCommentTo(resolved.ticketDir, resolved.ticketSlug, req, res, async () => {
+        return getTicketDetailById(projectsDir, ticketsDir, id);
       });
     } catch (error) {
       console.error('Error appending comment (by id):', error);
@@ -1436,9 +1251,7 @@ export function createWriteRouter(
         return;
       }
       await toggleCommentResolvedAt(resolved.ticketDir, commentId, req, res, async () => {
-        return resolved.standalone
-          ? getTicketDetailById(projectsDir, ticketsDir, id)
-          : getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
+        return getTicketDetailById(projectsDir, ticketsDir, id);
       });
     } catch (error) {
       console.error('Error toggling comment resolved (by id):', error);
@@ -1550,7 +1363,7 @@ export function createWriteRouter(
       // WS-2: same engine-active-mover guard as the project raw PATCH (both
       // routes; codex review blocker 4 — gate on a resolved workflow, not the
       // marker alone).
-      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+      const byIdProjectDir = resolve(resolved.ticketDir, '..', '..');
       const { isEngineActiveForTicket } = await import('../lifecycle/engine-transition.js');
       if (await isEngineActiveForTicket(ticketPath, byIdProjectDir)) {
         const violation = rawPatchMoverViolation(current, next);
@@ -1562,10 +1375,10 @@ export function createWriteRouter(
         }
       }
 
-      // Standalone: restore id + project + slug frontmatter (all immutable after create).
+      // Restore id + project + slug frontmatter (immutable after create).
       let nextContent = nextContentRaw;
       if (current.id) nextContent = setTopLevelField(nextContent, 'id', current.id);
-      nextContent = setTopLevelField(nextContent, 'project', null);
+      nextContent = setTopLevelField(nextContent, 'project', resolved.projectSlug);
       if (current.slug) nextContent = setTopLevelField(nextContent, 'slug', current.slug);
 
       const now = nowTimestamp();
@@ -1589,25 +1402,24 @@ export function createWriteRouter(
 
       await writeFileForce(ticketPath, nextContent);
 
-      // Audit events (best-effort): standalone → projectSlug null.
       const ticketId = current.id || next.id;
       if (next.status !== current.status) {
-        emitDashboardEvent(ticketId, null, 'status-change', {
+        emitDashboardEvent(ticketId, resolved.projectSlug, 'status-change', {
           from: current.status,
           to: next.status,
           command: 'edit',
         });
       }
       emitTrackedFieldDiffs(
-        { id: current.id, project: null, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
-        { id: current.id, project: null, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
-        null,
+        { id: current.id, project: resolved.projectSlug, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
+        { id: current.id, project: resolved.projectSlug, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
+        resolved.projectSlug,
       );
 
       const ticket = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ ticket, content: nextContent });
     } catch (error) {
-      console.error('Error updating standalone ticket:', error);
+      console.error('Error updating ticket:', error);
       res.status(500).json({ error: `Failed to update ticket: ${(error as Error).message}` });
     }
   });
@@ -1791,7 +1603,7 @@ export function createWriteRouter(
       }
       const { status } = req.body || {};
       const clearing = status === null;
-      const projectDirForId = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+      const projectDirForId = resolve(resolved.ticketDir, '..', '..');
 
       // WS-2 (Decision 1): engine-active → `manual-override` engine move (parity
       // with the project route). Try it BEFORE the legacy status-id validation —
@@ -1889,9 +1701,8 @@ export function createWriteRouter(
       content = setTopLevelField(content, 'updated', nowTimestamp());
       await writeFileForce(ticketPath, content);
 
-      // Audit event (best-effort): standalone → projectSlug null.
       if (prior.assignee !== validation.value) {
-        emitDashboardEvent(prior.id || id, null, 'assignee-change', {
+        emitDashboardEvent(prior.id || id, resolved.projectSlug, 'assignee-change', {
           from: prior.assignee,
           to: validation.value,
         });
@@ -2006,7 +1817,7 @@ export function createWriteRouter(
       );
       const { context, workflowResolver } = await resolveRecomputeContext();
       const byIdPath = resolve(resolved.ticketDir, 'ticket.md');
-      const byIdProjectDir = resolved.standalone ? null : resolve(resolved.ticketDir, '..', '..');
+      const byIdProjectDir = resolve(resolved.ticketDir, '..', '..');
 
       // Same derived-status routing as the project route (codex r2 finding 2):
       // block/unblock = fact mutations in-lock; terminal commands honor the
@@ -2034,9 +1845,7 @@ export function createWriteRouter(
           res.status(503).json({ error: result.warning });
           return;
         }
-        const detail = resolved.standalone
-          ? await getTicketDetailById(projectsDir, ticketsDir, id)
-          : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
+        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
         res.json({ ticket: detail, warnings: [] });
         return;
       }
@@ -2063,9 +1872,7 @@ export function createWriteRouter(
             workflowResolver,
           });
         }
-        const detail = resolved.standalone
-          ? await getTicketDetailById(projectsDir, ticketsDir, id)
-          : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
+        const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
         res.json({ ticket: detail, warnings: engineResult.warnings ?? [] });
         return;
       }
@@ -2088,7 +1895,6 @@ export function createWriteRouter(
         resolved.ticketDir,
         command as any,
         {
-          standalone: resolved.standalone,
           reason: typeof reason === 'string' ? reason : undefined,
           // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
           auditActor: 'human',
@@ -2136,9 +1942,7 @@ export function createWriteRouter(
         }
       }
 
-      const detail = resolved.standalone
-        ? await getTicketDetailById(projectsDir, ticketsDir, id)
-        : await getTicketDetail(projectsDir, resolved.projectSlug!, resolved.ticketSlug);
+      const detail = await getTicketDetailById(projectsDir, ticketsDir, id);
       res.json({ ticket: detail, warnings: transitionResult.warnings ?? [] });
     } catch (error) {
       console.error('Error transitioning by id:', error);
@@ -2171,13 +1975,6 @@ export function createWriteRouter(
   });
 
   return router;
-}
-
-function slugifyLocal(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'untitled';
 }
 
 type AssigneeValidation =

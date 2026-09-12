@@ -7,16 +7,13 @@ import { resolveTicketTarget, TicketTargetError } from '../utils/ticket-target.j
 let originalHome: string | undefined;
 let tmpRoot: string;
 let projectsDir: string;
-let ticketsDir: string;
 let cwdRoot: string;
 
 beforeEach(async () => {
   tmpRoot = await mkdtemp(join(tmpdir(), 'syntaur-ticket-target-'));
   projectsDir = resolve(tmpRoot, 'projects');
-  ticketsDir = resolve(tmpRoot, 'tickets');
   cwdRoot = resolve(tmpRoot, 'cwd');
   await mkdir(projectsDir, { recursive: true });
-  await mkdir(ticketsDir, { recursive: true });
   await mkdir(cwdRoot, { recursive: true });
 
   originalHome = process.env.SYNTAUR_HOME;
@@ -29,7 +26,7 @@ afterEach(async () => {
   await rm(tmpRoot, { recursive: true, force: true });
 });
 
-async function writeProject(slug: string): Promise<void> {
+async function writeProject(slug: string, prefix = 'MP'): Promise<void> {
   const dir = resolve(projectsDir, slug);
   await mkdir(dir, { recursive: true });
   await writeFile(
@@ -39,6 +36,8 @@ async function writeProject(slug: string): Promise<void> {
       `id: proj-${slug}`,
       `slug: ${slug}`,
       `title: ${slug}`,
+      `prefix: ${prefix}`,
+      'nextTicket: 2',
       '---',
       '',
       `# ${slug}`,
@@ -48,15 +47,18 @@ async function writeProject(slug: string): Promise<void> {
 }
 
 async function writeTicket(
-  dir: string,
+  projectSlug: string,
+  folderName: string,
   id: string,
+  slug: string,
   extras: Record<string, string> = {},
 ): Promise<void> {
+  const dir = resolve(projectsDir, projectSlug, 'tickets', folderName);
   await mkdir(dir, { recursive: true });
   const lines = [
     '---',
     `id: ${id}`,
-    'slug: example',
+    `slug: ${slug}`,
     'title: Example',
     'status: pending',
     'priority: medium',
@@ -81,58 +83,40 @@ describe('resolveTicketTarget', () => {
   it('resolves --project + ticket slug', async () => {
     const projectSlug = 'my-proj';
     const aslug = 'do-thing';
-    const id = '11111111-2222-3333-4444-555555555555';
-    await writeProject(projectSlug);
-    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
-      slug: aslug,
-      project: projectSlug,
-    });
+    await writeProject(projectSlug, 'MP');
+    await writeTicket(projectSlug, 'MP-1-do-thing', 'MP-1', aslug, { project: projectSlug });
 
-    const resolved = await resolveTicketTarget(aslug, { project: projectSlug, dir: tmpRoot + '/projects' });
+    const resolved = await resolveTicketTarget(aslug, {
+      project: projectSlug,
+      dir: projectsDir,
+    });
 
     expect(resolved.projectSlug).toBe(projectSlug);
     expect(resolved.ticketSlug).toBe(aslug);
     expect(resolved.standalone).toBe(false);
-    expect(resolved.id).toBe(id);
+    expect(resolved.id).toBe('MP-1');
   });
 
-  it('resolves a bare standalone UUID', async () => {
-    const id = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-    await writeTicket(resolve(ticketsDir, id), id, { project: 'null' });
-
-    const resolved = await resolveTicketTarget(id, { dir: projectsDir });
-
-    expect(resolved.standalone).toBe(true);
-    expect(resolved.ticketSlug).toBe(id);
-    expect(resolved.id).toBe(id);
-  });
-
-  it('resolves a project-nested UUID via frontmatter id scan', async () => {
-    const id = '99999999-aaaa-bbbb-cccc-dddddddddddd';
-    const projectSlug = 'scan-proj';
-    const aslug = 'scan-task';
-    await writeProject(projectSlug);
-    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
-      slug: aslug,
-      project: projectSlug,
+  it('resolves a bare ticket id', async () => {
+    await writeProject('scan-proj', 'SP');
+    await writeTicket('scan-proj', 'SP-1-scan-task', 'SP-1', 'scan-task', {
+      project: 'scan-proj',
     });
 
-    const resolved = await resolveTicketTarget(id, { dir: projectsDir });
+    const resolved = await resolveTicketTarget('SP-1', { dir: projectsDir });
 
-    expect(resolved.projectSlug).toBe(projectSlug);
-    expect(resolved.ticketSlug).toBe(aslug);
+    expect(resolved.projectSlug).toBe('scan-proj');
+    expect(resolved.ticketSlug).toBe('scan-task');
     expect(resolved.standalone).toBe(false);
+    expect(resolved.id).toBe('SP-1');
   });
 
   it('resolves from the open engagement (project-nested)', async () => {
     const projectSlug = 'eng-proj';
     const aslug = 'eng-task';
-    const id = '33333333-4444-5555-6666-777777777777';
-    await writeProject(projectSlug);
-    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
-      slug: aslug,
-      project: projectSlug,
-    });
+    const id = 'EP-1';
+    await writeProject(projectSlug, 'EP');
+    await writeTicket(projectSlug, 'EP-1-eng-task', id, aslug, { project: projectSlug });
 
     const resolved = await resolveTicketTarget(undefined, {
       cwd: cwdRoot,
@@ -152,34 +136,11 @@ describe('resolveTicketTarget', () => {
     expect(resolved.stage).toBe('plan');
   });
 
-  it('resolves from the open engagement (standalone, by id)', async () => {
-    const id = 'dddddddd-eeee-ffff-0000-111111111111';
-    await writeTicket(resolve(ticketsDir, id), id, { project: 'null' });
-
-    const resolved = await resolveTicketTarget(undefined, {
-      cwd: cwdRoot,
-      dir: projectsDir,
-      resolveEngagement: async () => ({
-        ticketId: id,
-        projectSlug: null,
-        ticketSlug: id,
-        stage: 'implement',
-      }),
-    });
-
-    expect(resolved.standalone).toBe(true);
-    expect(resolved.ticketSlug).toBe(id);
-    expect(resolved.id).toBe(id);
-    expect(resolved.stage).toBe('implement');
-  });
-
   it('explicit --project + slug takes precedence over the open engagement (seam not consulted)', async () => {
     const projectSlug = 'explicit-proj';
     const aslug = 'explicit-task';
-    const id = '44444444-5555-6666-7777-888888888888';
-    await writeProject(projectSlug);
-    await writeTicket(resolve(projectsDir, projectSlug, 'tickets', aslug), id, {
-      slug: aslug,
+    await writeProject(projectSlug, 'XP');
+    await writeTicket(projectSlug, 'XP-1-explicit-task', 'XP-1', aslug, {
       project: projectSlug,
     });
 
@@ -189,7 +150,7 @@ describe('resolveTicketTarget', () => {
       dir: projectsDir,
       resolveEngagement: async () => {
         called = true;
-        return { ticketId: 'x', projectSlug: 'other', ticketSlug: 'other', stage: 'plan' };
+        return { ticketId: 'XP-99', projectSlug: 'other', ticketSlug: 'other', stage: 'plan' };
       },
     });
 
@@ -231,10 +192,14 @@ describe('resolveTicketTarget', () => {
     ).rejects.toThrow(/not found/);
   });
 
-  it('throws on unknown bare UUID', async () => {
+  it('throws on invalid ticket id format', async () => {
     await expect(
       resolveTicketTarget('not-a-real-id-xxxx', { dir: projectsDir }),
-    ).rejects.toThrow(/not found/);
+    ).rejects.toThrow(/not a valid ticket id/);
+  });
+
+  it('throws on unknown ticket id', async () => {
+    await expect(resolveTicketTarget('SCR-99', { dir: projectsDir })).rejects.toThrow(/not found/);
   });
 
   it('throws when the open engagement points to a missing ticket', async () => {
@@ -243,7 +208,7 @@ describe('resolveTicketTarget', () => {
         cwd: cwdRoot,
         dir: projectsDir,
         resolveEngagement: async () => ({
-          ticketId: 'x',
+          ticketId: 'MP-99',
           projectSlug: 'ghost-proj',
           ticketSlug: 'ghost-task',
           stage: 'plan',
@@ -253,8 +218,6 @@ describe('resolveTicketTarget', () => {
   });
 
   it('does not let a workspace-marker-only context.json resolve a ticket', async () => {
-    // context.json with only workspace markers (the demoted shape) must NOT
-    // resolve a target — only the open engagement can.
     await writeContextJson(cwdRoot, {
       repository: '/repo',
       branch: 'feat/x',

@@ -25,6 +25,7 @@ export interface ProjectNewOptions {
   slug?: string;
   prefix?: string;
   dir?: string;
+  silent?: boolean;
 }
 
 export async function projectNewCommand(
@@ -113,16 +114,18 @@ export async function projectNewCommand(
     await writeFileForce(filePath, content);
   }
 
-  console.log(`Created project "${title}" at ${projectDir}/`);
-  console.log(`  Slug: ${slug}`);
-  console.log(`  Prefix: ${prefix}`);
-  console.log(`  Files created:`);
-  console.log(`    manifest.md`);
-  console.log(`    project.md`);
-  console.log(`    _index-tickets.md`);
-  console.log(`    _index-plans.md`);
-  console.log(`    _index-decisions.md`);
-  console.log(`    _status.md`);
+  if (!options.silent) {
+    console.log(`Created project "${title}" at ${projectDir}/`);
+    console.log(`  Slug: ${slug}`);
+    console.log(`  Prefix: ${prefix}`);
+    console.log(`  Files created:`);
+    console.log(`    manifest.md`);
+    console.log(`    project.md`);
+    console.log(`    _index-tickets.md`);
+    console.log(`    _index-plans.md`);
+    console.log(`    _index-decisions.md`);
+    console.log(`    _status.md`);
+  }
 
   return slug;
 }

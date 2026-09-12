@@ -86,9 +86,7 @@ export interface TicketSummary {
 }
 
 export interface TicketBoardItem extends TicketSummary {
-  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone tickets. */
   projectTitle: string | null;
   blockedReason: string | null;
   availableTransitions: TicketTransitionAction[];
@@ -189,7 +187,6 @@ export interface EngagementInfo {
 
 export interface TicketDetail {
   id: string;
-  /** `null` for standalone tickets. */
   projectSlug: string | null;
   slug: string;
   title: string;
@@ -307,9 +304,7 @@ export type OverviewSegmentId =
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone tickets. */
   projectTitle: string | null;
   ticketSlug: string;
   ticketTitle: string;

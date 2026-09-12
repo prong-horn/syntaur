@@ -2,6 +2,7 @@ import { Command, InvalidArgumentError } from 'commander';
 import { initCommand } from './commands/init.js';
 import { projectCommand } from './commands/project.js';
 import { newCommand } from './commands/new.js';
+import { renameCommand } from './commands/rename.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { unassignCommand } from './commands/unassign.js';
@@ -106,11 +107,10 @@ program
 
 program
   .command('new')
-  .description('Create a new ticket within a project')
+  .description('Create a new ticket (defaults to the scratch project when --project is omitted)')
   .argument('<title>', 'Ticket title')
-  .option('--project <slug>', 'Target project slug (required unless --one-off)')
-  .option('--one-off', 'Create a standalone ticket at ~/.syntaur/tickets/<uuid>/')
-  .option('--slug <slug>', 'Override auto-generated slug (display only for standalone; folder name for project-nested)')
+  .option('--project <slug>', 'Target project slug (defaults to scratch)')
+  .option('--slug <slug>', 'Override auto-generated display slug')
   .option(
     '--priority <level>',
     'Priority level (low|medium|high|critical)',
@@ -118,13 +118,25 @@ program
   )
   .option('--type <type>', 'Ticket type (e.g. feature, bug, refactor)')
   .option('--workflow <id>', 'Lifecycle workflow this ticket follows (defaults to the resolved binding)')
-  .option('--depends-on <slugs>', 'Comma-separated dependency slugs (not allowed with --one-off)')
-  .option('--links <slugs>', 'Comma-separated linked ticket slugs (projectSlug/ticketSlug format)')
-  .option('--dir <path>', 'Override default project directory (ignored for --one-off)')
+  .option('--depends-on <ids>', 'Comma-separated dependency ticket ids')
+  .option('--links <ids>', 'Comma-separated linked ticket ids')
+  .option('--dir <path>', 'Override default project directory')
   .option('--ready', 'Create the ticket directly as ready_for_planning (skips the draft phase)')
   .action(
     runCommand(async (title, options) => {
       await newCommand(title, options);
+    }),
+  );
+
+program
+  .command('rename')
+  .description('Rename a ticket slug (folder becomes <ID>-<new-slug>)')
+  .argument('<ticket>', 'Ticket id (<PREFIX>-<n>)')
+  .argument('<new-slug>', 'New display slug')
+  .option('--dir <path>', 'Override default project directory')
+  .action(
+    runCommand(async (ticket, newSlug, options) => {
+      await renameCommand(ticket, newSlug, options);
     }),
   );
 

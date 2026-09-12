@@ -53,17 +53,16 @@ import { useToast, Toaster } from '../components/Toast';
 
 const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
 
-/** The Workflow detail row — a dropdown to bind a project ticket to a workflow
- * (or inherit the resolved binding). Standalone tickets render read-only (the
- * change route is project-scoped). */
+/** The Workflow detail row — a dropdown to bind a ticket to a workflow
+ * (or inherit the resolved binding). */
 function WorkflowSelectRow({
-  projectSlug,
+  projectSlug: _projectSlug,
   ticketId,
   workflow,
   workflowLabel,
   onChanged,
 }: {
-  projectSlug: string | null;
+  projectSlug: string;
   ticketId: string;
   workflow: string | null;
   workflowLabel: string;
@@ -72,10 +71,6 @@ function WorkflowSelectRow({
   const { workflows } = useWorkflows();
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-
-  if (!projectSlug) {
-    return <DetailRow label="Workflow" value={workflowLabel} />;
-  }
 
   async function change(value: string) {
     setSaving(true);
@@ -123,11 +118,7 @@ function WorkflowSelectRow({
   );
 }
 
-/**
- * Ticket detail for project-scoped and standalone tickets at `/t/:id`.
- * Folded the former `StandaloneTicketDetail` into this page — `ticket.projectSlug`
- * gates project-only UI (workflow binding, dependency panel, etc.).
- */
+/** Ticket detail for project-nested tickets at `/t/:id`. */
 export function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -865,13 +856,17 @@ export function TicketDetail() {
                   <TypeChip type={ticket.type} compact />
                 </DetailNodeRow>
               )}
-              <WorkflowSelectRow
-                projectSlug={ticket.projectSlug}
-                ticketId={id}
-                workflow={ticket.workflow}
-                workflowLabel={ticket.workflowLabel}
-                onChanged={refetch}
-              />
+              {ticket.projectSlug ? (
+                <WorkflowSelectRow
+                  projectSlug={ticket.projectSlug}
+                  ticketId={id}
+                  workflow={ticket.workflow}
+                  workflowLabel={ticket.workflowLabel}
+                  onChanged={refetch}
+                />
+              ) : (
+                <DetailRow label="Workflow" value={ticket.workflowLabel} />
+              )}
               {ticket.phase && ticket.phase !== ticket.status && (
                 <DetailRow label="Phase" value={ticket.phase} />
               )}

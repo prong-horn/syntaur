@@ -136,8 +136,7 @@ TICKET_SEG=""
 EXTERNAL_SEG=""
 CONTEXT_FILE="$CWD/.syntaur/context.json"
 if [ -f "$CONTEXT_FILE" ]; then
-  PROJECT_SLUG=$(jq -r '.projectSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
-  TICKET_SLUG=$(jq -r '.ticketSlug // empty' "$CONTEXT_FILE" 2>/dev/null)
+  TICKET_ID=$(jq -r '.ticketId // empty' "$CONTEXT_FILE" 2>/dev/null)
   TICKET_DIR=$(jq -r '.ticketDir // empty' "$CONTEXT_FILE" 2>/dev/null)
   TITLE=""
   if [ -n "$TICKET_DIR" ] && [ -f "$TICKET_DIR/ticket.md" ]; then
@@ -169,10 +168,8 @@ if [ -f "$CONTEXT_FILE" ]; then
     ' "$TICKET_DIR/ticket.md" 2>/dev/null)
   fi
   LABEL=""
-  if [ -n "$PROJECT_SLUG" ] && [ -n "$TICKET_SLUG" ]; then
-    LABEL="$PROJECT_SLUG/$TICKET_SLUG"
-  elif [ -n "$TICKET_SLUG" ]; then
-    LABEL="standalone/${TICKET_SLUG:0:8}"
+  if [ -n "$TICKET_ID" ]; then
+    LABEL="$TICKET_ID"
   fi
   if [ -n "$LABEL" ] && [ -n "$TITLE" ]; then
     TICKET_SEG="$LABEL — $TITLE"

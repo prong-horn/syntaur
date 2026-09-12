@@ -1,7 +1,9 @@
 import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
-import { resolveTicketBySlug } from '../utils/ticket-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { isTicketId } from '../utils/ticket-ids.js';
+import { resolveTicketSlugInProject } from '../utils/ticket-resolver.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { derivePathFromTranscript } from '../utils/transcript.js';
@@ -97,14 +99,15 @@ export async function trackSessionCommand(
     // engagement carries `assignment_id` up front — a later `implement` stage
     // assertion then won't split the interval merely to repair the id.
     if (options.ticket) {
-      ticketId = (
-        await resolveTicketBySlug(
-          baseDir,
-          ticketsDirFn(),
-          options.project || null,
-          options.ticket,
-        )
-      ).id;
+      if (isTicketId(options.ticket)) {
+        ticketId = (
+          await resolveTicketById(baseDir, undefined, options.ticket)
+        )?.id ?? null;
+      } else if (options.project) {
+        ticketId = (
+          await resolveTicketSlugInProject(baseDir, options.project, options.ticket)
+        )?.id ?? null;
+      }
     }
   }
 

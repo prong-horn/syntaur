@@ -1,15 +1,18 @@
 import { resolve } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { fileExists } from './fs.js';
+import { parseTicketFolderName } from './ticket-folder.js';
 
 export interface TicketEntry {
   projectDir: string;
-  /** `null` for standalone tickets (no containing project). */
-  projectSlug: string | null;
+  projectSlug: string;
   ticketDir: string;
-  /** For standalone, this is the UUID folder name. */
+  /** Slug from frontmatter or parsed from the `<ID>-<slug>` folder name. */
   ticketSlug: string;
-  standalone: boolean;
+  /** Ticket id parsed from the folder name when present. */
+  ticketId: string | null;
+  /** @deprecated Standalone tickets were removed; always false. */
+  standalone: false;
 }
 
 export interface TicketWalkResult {
@@ -19,7 +22,7 @@ export interface TicketWalkResult {
 
 export async function listTicketsByProject(
   projectsDir: string,
-  standaloneDir: string | null,
+  _standaloneDir: string | null = null,
 ): Promise<TicketWalkResult> {
   const result: TicketWalkResult = {
     withTicketMd: [],
@@ -40,11 +43,13 @@ export async function listTicketsByProject(
         if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
         const ticketDir = resolve(ticketsDir, a.name);
         const ticketMd = resolve(ticketDir, 'ticket.md');
+        const parsedFolder = parseTicketFolderName(a.name);
         const entry: TicketEntry = {
           projectDir: resolve(projectsDir, m.name),
           projectSlug: m.name,
           ticketDir,
-          ticketSlug: a.name,
+          ticketSlug: parsedFolder?.slug ?? a.name,
+          ticketId: parsedFolder?.id ?? null,
           standalone: false,
         };
         if (await fileExists(ticketMd)) {
@@ -52,28 +57,6 @@ export async function listTicketsByProject(
         } else {
           result.orphanFolders.push(entry);
         }
-      }
-    }
-  }
-
-  if (standaloneDir !== null && (await fileExists(standaloneDir))) {
-    const entries = await readdir(standaloneDir, { withFileTypes: true });
-    for (const a of entries) {
-      if (!a.isDirectory()) continue;
-      if (a.name.startsWith('.') || a.name.startsWith('_')) continue;
-      const ticketDir = resolve(standaloneDir, a.name);
-      const ticketMd = resolve(ticketDir, 'ticket.md');
-      const entry: TicketEntry = {
-        projectDir: standaloneDir,
-        projectSlug: null,
-        ticketDir,
-        ticketSlug: a.name,
-        standalone: true,
-      };
-      if (await fileExists(ticketMd)) {
-        result.withTicketMd.push(entry);
-      } else {
-        result.orphanFolders.push(entry);
       }
     }
   }

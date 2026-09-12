@@ -1,10 +1,13 @@
 import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { allocateTicketId } from '../utils/ticket-ids.js';
-import { expandHome, ticketsDir as ticketsDirFn } from '../utils/paths.js';
+import { allocateTicketId, isTicketId } from '../utils/ticket-ids.js';
+import { expandHome } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
+import { ensureScratchProject } from '../utils/scratch-project.js';
+import { formatTicketFolderName } from '../utils/ticket-folder.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import {
   renderTicket,
   renderScratchpad,
@@ -16,7 +19,6 @@ import {
 
 export interface NewTicketOptions {
   project?: string;
-  oneOff?: boolean;
   slug?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
   dependsOn?: string;
@@ -32,7 +34,7 @@ export interface NewTicketOptions {
 export interface NewTicketResult {
   id: string;
   slug: string;
-  projectSlug: string | null;
+  projectSlug: string;
   ticketDir: string;
 }
 
@@ -44,25 +46,17 @@ export async function newCommand(
     throw new Error('Ticket title cannot be empty.');
   }
 
-  if (!options.project && !options.oneOff) {
-    throw new Error(
-      'Either --project <slug> or --one-off is required.',
-    );
-  }
-  if (options.project && options.oneOff) {
-    throw new Error(
-      'Cannot use both --project and --one-off. Use --project to add to an existing project, or --one-off to create a standalone ticket.',
-    );
-  }
+  const config = await readConfig();
+  const baseDir = options.dir
+    ? expandHome(options.dir)
+    : config.defaultProjectDir;
 
-  if (options.project && !isValidSlug(options.project)) {
-    throw new Error(
-      `Invalid project slug "${options.project}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
-    );
-  }
+  const projectSlug = options.project ?? await ensureScratchProject(baseDir);
 
-  if (options.oneOff && options.dependsOn) {
-    throw new Error('Standalone tickets cannot have dependencies (--depends-on is not allowed with --one-off).');
+  if (!isValidSlug(projectSlug)) {
+    throw new Error(
+      `Invalid project slug "${projectSlug}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+    );
   }
 
   const ticketSlug = options.slug || slugify(title);
@@ -76,10 +70,14 @@ export async function newCommand(
     ? options.dependsOn.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
   for (const dep of dependsOn) {
-    if (!isValidSlug(dep)) {
+    if (!isTicketId(dep)) {
       throw new Error(
-        `Invalid dependency slug "${dep}". Slugs must be lowercase, hyphen-separated, with no special characters.`,
+        `Invalid dependency id "${dep}". dependsOn entries must be ticket ids (e.g. SCR-1).`,
       );
+    }
+    const resolved = await resolveTicketById(baseDir, undefined, dep);
+    if (!resolved) {
+      console.warn(`Warning: dependency "${dep}" was not found on disk yet.`);
     }
   }
 
@@ -87,11 +85,14 @@ export async function newCommand(
     ? options.links.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
   for (const link of links) {
-    const parts = link.split('/');
-    if (parts.length !== 2 || !parts.every(isValidSlug)) {
+    if (!isTicketId(link)) {
       throw new Error(
-        `Invalid link "${link}". Links must be in projectSlug/ticketSlug format (e.g., "my-project/my-ticket").`,
+        `Invalid link "${link}". Links must be ticket ids (e.g. SCR-2).`,
       );
+    }
+    const resolved = await resolveTicketById(baseDir, undefined, link);
+    if (!resolved) {
+      console.warn(`Warning: linked ticket "${link}" was not found on disk yet.`);
     }
   }
 
@@ -103,54 +104,18 @@ export async function newCommand(
     );
   }
 
-  const config = await readConfig();
   const timestamp = nowTimestamp();
-
-  let ticketDir: string;
-  let projectSlug: string | null;
-  let folderName: string;
-  let id: string;
-
-  if (options.oneOff) {
-    // Standalone: folder name = UUID, project: null (removed in Task 6)
-    const standaloneRoot = ticketsDirFn();
-    const { generateId } = await import('../utils/uuid.js');
-    id = generateId();
-    folderName = id;
-    ticketDir = resolve(standaloneRoot, folderName);
-    projectSlug = null;
-    await ensureDir(standaloneRoot);
-  } else {
-    const baseDir = options.dir
-      ? expandHome(options.dir)
-      : config.defaultProjectDir;
-    projectSlug = options.project!;
-    const projectDir = resolve(baseDir, projectSlug);
-
-    const projectMdPath = resolve(projectDir, 'project.md');
-    if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
-      throw new Error(
-        `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur project new' first or use --one-off.`,
-      );
-    }
-
-    id = await allocateTicketId(projectDir);
-
-    if (dependsOn.length > 0) {
-      const depDirBase = resolve(projectDir, 'tickets');
-      for (const dep of dependsOn) {
-        const depDir = resolve(depDirBase, dep);
-        if (!(await fileExists(depDir))) {
-          console.warn(
-            `Warning: dependency "${dep}" does not exist in project "${projectSlug}" yet.`,
-          );
-        }
-      }
-    }
-
-    folderName = ticketSlug;
-    ticketDir = resolve(projectDir, 'tickets', folderName);
+  const projectDir = resolve(baseDir, projectSlug);
+  const projectMdPath = resolve(projectDir, 'project.md');
+  if (!(await fileExists(projectDir)) || !(await fileExists(projectMdPath))) {
+    throw new Error(
+      `Project "${projectSlug}" not found at ${projectDir}.\nRun 'syntaur project new' first.`,
+    );
   }
+
+  const id = await allocateTicketId(projectDir);
+  const folderName = formatTicketFolderName(id, ticketSlug);
+  const ticketDir = resolve(projectDir, 'tickets', folderName);
 
   if (await fileExists(ticketDir)) {
     throw new Error(
@@ -159,8 +124,6 @@ export async function newCommand(
   }
 
   await ensureDir(ticketDir);
-
-  const companionTicketRef = projectSlug === null ? id : ticketSlug;
 
   const files: Array<[string, string]> = [
     [
@@ -182,38 +145,23 @@ export async function newCommand(
     ],
     [
       resolve(ticketDir, 'scratchpad.md'),
-      renderScratchpad({
-        ticketSlug: companionTicketRef,
-        timestamp,
-      }),
+      renderScratchpad({ ticketSlug, timestamp }),
     ],
     [
       resolve(ticketDir, 'handoff.md'),
-      renderHandoff({
-        ticketSlug: companionTicketRef,
-        timestamp,
-      }),
+      renderHandoff({ ticketSlug, timestamp }),
     ],
     [
       resolve(ticketDir, 'decision-record.md'),
-      renderDecisionRecord({
-        ticketSlug: companionTicketRef,
-        timestamp,
-      }),
+      renderDecisionRecord({ ticketSlug, timestamp }),
     ],
     [
       resolve(ticketDir, 'progress.md'),
-      renderProgress({
-        ticket: companionTicketRef,
-        timestamp,
-      }),
+      renderProgress({ ticket: ticketSlug, timestamp }),
     ],
     [
       resolve(ticketDir, 'comments.md'),
-      renderComments({
-        ticket: companionTicketRef,
-        timestamp,
-      }),
+      renderComments({ ticket: ticketSlug, timestamp }),
     ],
   ];
 
@@ -222,19 +170,11 @@ export async function newCommand(
   }
 
   if (!options.silent) {
-    if (projectSlug === null) {
-      console.log(
-        `Created standalone ticket "${title}" at ${ticketDir}/`,
-      );
-      console.log(`  UUID: ${id}`);
-      console.log(`  Slug: ${ticketSlug} (display only)`);
-    } else {
-      console.log(
-        `Created ticket "${title}" in project "${projectSlug}" at ${ticketDir}/`,
-      );
-      console.log(`  Id: ${id}`);
-      console.log(`  Slug: ${ticketSlug}`);
-    }
+    console.log(
+      `Created ticket "${title}" in project "${projectSlug}" at ${ticketDir}/`,
+    );
+    console.log(`  Id: ${id}`);
+    console.log(`  Slug: ${ticketSlug}`);
     console.log(`  Priority: ${priority}`);
     if (options.type) {
       console.log(`  Type: ${options.type}`);

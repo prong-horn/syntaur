@@ -1,6 +1,6 @@
 import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ChevronDown, ChevronUp, FilterX, FolderKanban, Plus, Pencil, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, FilterX, FolderKanban, Pencil, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
 import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
 import { buildWorkflowLanes } from '../lib/workflow-board';
@@ -1068,16 +1068,6 @@ export function TicketsPage() {
 
   return (
     <div className="space-y-5" data-density={prefs.density}>
-      <div className="flex items-center justify-end">
-        <Link
-          to={`/tickets/new`}
-          className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-foreground/90"
-        >
-          <Plus className="h-4 w-4" />
-          New Ticket
-        </Link>
-      </div>
-
       <FilterBar>
         {/* Canonical AQL query box. Owns the filter applied to the board; the chips
             below are a visual editor over its chip-representable subset. */}
@@ -1156,10 +1146,7 @@ export function TicketsPage() {
           className="max-w-[180px]"
           allLabel="All projects"
           disabled={!chipsRepresentable}
-          options={[
-            { value: '__standalone__', label: 'Standalone' },
-            ...uniqueProjects.map(([slug, title]) => ({ value: slug, label: title })),
-          ]}
+          options={uniqueProjects.map(([slug, title]) => ({ value: slug, label: title }))}
           value={projectFilter}
           onChange={handleSetProjectFilter}
         />

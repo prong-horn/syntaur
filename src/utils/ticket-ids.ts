@@ -128,6 +128,11 @@ export async function readProjectTicketCounter(
   return { prefix, nextTicket };
 }
 
+/**
+ * Deviation (Phase B): lazily writes `prefix`/`nextTicket` only when `prefix` is
+ * absent — never rewrites an existing prefix. Production homes get prefixes from
+ * `migrate v2` (Task 9); this path is for legacy/test project.md only.
+ */
 async function ensureProjectTicketCounter(
   projectDir: string,
 ): Promise<{ prefix: string; nextTicket: number }> {
