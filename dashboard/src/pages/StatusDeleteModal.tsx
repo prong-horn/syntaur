@@ -48,7 +48,7 @@ export function StatusDeleteModal({
   const [headlineTarget, setHeadlineTarget] = useState<string>(remaining[0]?.id ?? '');
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const hasAssignments = affected.count > 0;
+  const hasTickets = affected.count > 0;
 
   useEffect(() => {
     if (open) {
@@ -63,7 +63,7 @@ export function StatusDeleteModal({
 
   const canConfirm =
     (mode === 'remap' && remaining.length > 0 && target !== '' && target !== affected.id) ||
-    (mode === 'delete' && (!hasAssignments || confirmDelete) && headlineRemapOk);
+    (mode === 'delete' && (!hasTickets || confirmDelete) && headlineRemapOk);
 
   function handleConfirm() {
     if (!canConfirm) return;
@@ -74,7 +74,7 @@ export function StatusDeleteModal({
     }
   }
 
-  const visibleSample = affected.assignments.slice(0, 10);
+  const visibleSample = affected.tickets.slice(0, 10);
   const remaining_extra = affected.count - visibleSample.length;
 
   return (
@@ -83,22 +83,22 @@ export function StatusDeleteModal({
         <DialogHeader>
           <DialogTitle>
             Delete status "{affected.label}"
-            {hasAssignments
-              ? ` — ${affected.count} assignment${affected.count === 1 ? '' : 's'} reference it`
+            {hasTickets
+              ? ` — ${affected.count} ticket${affected.count === 1 ? '' : 's'} reference it`
               : ''}
           </DialogTitle>
           <DialogDescription>
-            {hasAssignments
-              ? 'Choose how to resolve the affected assignments before this status is removed from the workflow.'
-              : 'No assignments use this status, but workflow rules reference it. Choose how to resolve them.'}
+            {hasTickets
+              ? 'Choose how to resolve the affected tickets before this status is removed from the workflow.'
+              : 'No tickets use this status, but workflow rules reference it. Choose how to resolve them.'}
           </DialogDescription>
         </DialogHeader>
 
-        {hasAssignments && (
+        {hasTickets && (
           <div className="rounded-md border border-border/60 bg-background/80 p-3">
             <ul className="space-y-1 text-sm">
               {visibleSample.map((a) => (
-                <li key={`${a.projectSlug ?? 'standalone'}/${a.assignmentSlug}`}>
+                <li key={`${a.projectSlug ?? 'standalone'}/${a.ticketSlug}`}>
                   <span className="font-mono text-xs text-muted-foreground">{a.display}</span>
                 </li>
               ))}
@@ -142,7 +142,7 @@ export function StatusDeleteModal({
             />
             <span className="flex-1">
               <span className="block text-sm font-medium">
-                {hasAssignments ? 'Remap to another status' : 'Remap rules to another status'}
+                {hasTickets ? 'Remap to another status' : 'Remap rules to another status'}
               </span>
               <select
                 value={target}
@@ -176,11 +176,11 @@ export function StatusDeleteModal({
             />
             <span className="flex-1">
               <span className="block text-sm font-medium text-error-foreground">
-                {hasAssignments ? 'Delete these assignments' : 'Drop the referencing rules'}
+                {hasTickets ? 'Delete these tickets' : 'Drop the referencing rules'}
               </span>
               <span className="block text-xs text-muted-foreground mt-1">
-                {hasAssignments
-                  ? `Permanently removes ${affected.count} assignment${affected.count === 1 ? '' : 's'} from disk. This cannot be undone.`
+                {hasTickets
+                  ? `Permanently removes ${affected.count} ticket${affected.count === 1 ? '' : 's'} from disk. This cannot be undone.`
                   : 'Ladder rungs and transitions referencing this status are removed.'}
               </span>
               {mode === 'delete' && headlineReferences && (
@@ -204,7 +204,7 @@ export function StatusDeleteModal({
                   </span>
                 </span>
               )}
-              {mode === 'delete' && hasAssignments && (
+              {mode === 'delete' && hasTickets && (
                 <label className="mt-2 flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -212,7 +212,7 @@ export function StatusDeleteModal({
                     onChange={(e) => setConfirmDelete(e.target.checked)}
                   />
                   <span className="text-xs">
-                    I understand this will permanently delete {affected.count} assignment{affected.count === 1 ? '' : 's'}.
+                    I understand this will permanently delete {affected.count} ticket{affected.count === 1 ? '' : 's'}.
                   </span>
                 </label>
               )}
@@ -233,10 +233,10 @@ export function StatusDeleteModal({
             } disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {mode === 'remap'
-              ? hasAssignments
+              ? hasTickets
                 ? `Remap ${affected.count} → ${target || '...'}`
                 : `Remap rules → ${target || '...'}`
-              : hasAssignments
+              : hasTickets
                 ? `Delete ${affected.count}`
                 : 'Drop rules'}
           </button>

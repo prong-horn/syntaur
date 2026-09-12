@@ -14,7 +14,7 @@ import { cn } from '../../lib/utils';
 import type { ChatAgentSummary, Participants } from '../../lib/chat-types';
 
 /**
- * Attach agents to this assignment, pick the default, and set the hop budget —
+ * Attach agents to this ticket, pick the default, and set the hop budget —
  * the three things `chat/participants.json` holds (Decision 1).
  *
  * Everything else a definition declares (harness, model, mode, `respondsTo`) is

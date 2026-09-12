@@ -41,7 +41,7 @@ export interface FiledChatRecord {
 
 export interface ChatItemBase {
   itemId: string;
-  assignmentId: string;
+  ticketId: string;
   turnId: string | null;
   agentId: string;
   type: ChatItemType;
@@ -276,7 +276,7 @@ export interface ChatCommand {
 export type ChatCommandsSource = 'session' | 'harness-cache';
 
 export interface ChatSessionSummary {
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
   harness: 'claude' | 'codex' | 'cursor';
   acpSessionId: string | null;
@@ -302,7 +302,7 @@ export interface ChatSessionSummary {
 }
 
 /**
- * The per-assignment participant set — `<assignmentDir>/chat/participants.json`
+ * The per-ticket participant set — `<ticketDir>/chat/participants.json`
  * (Decision 1).
  */
 export interface Participants {
@@ -452,18 +452,18 @@ export interface AgentTestResult {
 }
 
 export interface ChatItemFrame {
-  assignmentId: string;
+  ticketId: string;
   patch: ItemPatch;
 }
 
 export interface ChatSessionFrame {
-  assignmentId: string;
+  ticketId: string;
   agentId: string;
   session: ChatSessionSummary;
 }
 
 export interface ChatParticipantsFrame {
-  assignmentId: string;
+  ticketId: string;
   participants: Participants;
   agents: ChatAgentSummary[];
 }

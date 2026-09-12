@@ -9,7 +9,7 @@
 export interface WsMessage {
   type:
     | 'project-updated'
-    | 'assignment-updated'
+    | 'ticket-updated'
     | 'agent-sessions-updated'
     | 'playbooks-updated'
     | 'chat-item'
@@ -18,7 +18,7 @@ export interface WsMessage {
     | 'chat-agents'
     | 'connected';
   projectSlug?: string;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   timestamp: string;
   /**
    * Frame body. Every other type is a refetch HINT — the consumer re-reads the
@@ -26,7 +26,7 @@ export interface WsMessage {
    * codex, so `chat-item`, `chat-session` and `chat-participants` carry their
    * payload inline (`ChatItemFrame` / `ChatSessionFrame` /
    * `ChatParticipantsFrame` in `lib/chat-types.ts`). Consumers filter by
-   * `payload.assignmentId`.
+   * `payload.ticketId`.
    */
   payload?: unknown;
 }

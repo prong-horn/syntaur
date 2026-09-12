@@ -85,7 +85,7 @@ export function useInbox(opts?: UseInboxOptions): UseInboxResult {
   }, [fetchCount, project, maxAgeDays, includeSnoozed]);
 
   useWebSocket((message: WsMessage) => {
-    if (message.type === 'assignment-updated' || message.type === 'project-updated') {
+    if (message.type === 'ticket-updated' || message.type === 'project-updated') {
       refetch();
     }
   });

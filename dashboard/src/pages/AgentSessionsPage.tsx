@@ -59,7 +59,7 @@ const SORT_LABELS: Record<SessionSort, string> = {
   started_asc: 'Oldest first',
   duration_desc: 'Longest first',
   duration_asc: 'Shortest first',
-  assignment_asc: 'Assignment A-Z',
+  assignment_asc: 'Ticket A-Z',
   agent_asc: 'Agent A-Z',
   spend_desc: 'Most expensive',
   tokens_desc: 'Most tokens',
@@ -321,7 +321,7 @@ export function AgentSessionsPage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search project, assignment, agent, session ID, path, or description"
+          placeholder="Search project, ticket, agent, session ID, path, or description"
         />
         <label className="flex min-w-[150px] flex-col gap-1 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
           Started From
@@ -421,7 +421,7 @@ export function AgentSessionsPage() {
       {!hasAnySessions ? (
         <EmptyState
           title="No agent sessions"
-          description="No agent sessions have been registered yet. Use /grab-assignment or syntaur track-session to register one."
+          description="No agent sessions have been registered yet. Use /grab-ticket or syntaur track-session to register one."
         />
       ) : totalCount === 0 ? (
         <EmptyState
@@ -451,7 +451,7 @@ export function AgentSessionsPage() {
                     </button>
                   </th>
                   <th className="w-[140px] pb-2 pr-3">Project</th>
-                  <th className="w-[160px] pb-2 pr-3">Assignment</th>
+                  <th className="w-[160px] pb-2 pr-3">Ticket</th>
                   <th className="w-[200px] pb-2 pr-3">Description</th>
                   <th className="w-[110px] pb-2 pr-3">Agent</th>
                   <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
@@ -506,7 +506,7 @@ export function AgentSessionsPage() {
                         setPendingDelete({
                           sessionIds: [session.sessionId],
                           title: `Delete session ${session.sessionId.slice(0, 8)}...?`,
-                          description: `Remove this ${session.agent} session record${session.assignmentSlug ? ` for ${session.assignmentSlug}` : ''}. This cannot be undone.`,
+                          description: `Remove this ${session.agent} session record${session.ticketSlug ? ` for ${session.ticketSlug}` : ''}. This cannot be undone.`,
                           confirmLabel: 'Delete Session',
                         })
                       }
@@ -690,7 +690,7 @@ function SessionRow({
           >
             {toTitleCase(session.projectSlug)}
           </Link>
-        ) : session.assignmentSlug ? (
+        ) : session.ticketSlug ? (
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
             Standalone
           </span>
@@ -699,21 +699,21 @@ function SessionRow({
         )}
       </td>
       <td className="py-2 pr-3">
-        {session.projectSlug && session.assignmentSlug ? (
+        {session.projectSlug && session.ticketSlug ? (
           <Link
-            to={`/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`}
+            to={`/projects/${session.projectSlug}/tickets/${session.ticketSlug}`}
             className="block truncate text-primary hover:underline"
-            title={toTitleCase(session.assignmentSlug)}
+            title={toTitleCase(session.ticketSlug)}
           >
-            {toTitleCase(session.assignmentSlug)}
+            {toTitleCase(session.ticketSlug)}
           </Link>
-        ) : session.assignmentSlug ? (
+        ) : session.ticketSlug ? (
           <Link
-            to={`/assignments/${session.assignmentSlug}`}
+            to={`/tickets/${session.ticketSlug}`}
             className="block truncate font-mono text-primary hover:underline"
-            title={session.assignmentSlug}
+            title={session.ticketSlug}
           >
-            {session.assignmentSlug}
+            {session.ticketSlug}
           </Link>
         ) : (
           <span className="text-muted-foreground">&mdash;</span>

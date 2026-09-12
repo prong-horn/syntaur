@@ -1,18 +1,18 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
 
-export function AppendAssignmentHandoff() {
+export function AppendTicketHandoff() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
-    ? `/api/assignments/${id}/handoff/edit`
-    : `/api/projects/${slug}/assignments/${aslug}/handoff/edit`;
+    ? `/api/tickets/${id}/handoff/edit`
+    : `/api/projects/${slug}/tickets/${aslug}/handoff/edit`;
   const saveUrl = isStandalone
-    ? `/api/assignments/${id}/handoff/entries`
-    : `/api/projects/${slug}/assignments/${aslug}/handoff/entries`;
+    ? `/api/tickets/${id}/handoff/entries`
+    : `/api/projects/${slug}/tickets/${aslug}/handoff/entries`;
   const redirectTo = isStandalone
-    ? `/assignments/${id}?tab=handoff`
-    : `/projects/${slug}/assignments/${aslug}?tab=handoff`;
+    ? `/tickets/${id}?tab=handoff`
+    : `/projects/${slug}/tickets/${aslug}?tab=handoff`;
 
   return (
     <AppendEntryPage

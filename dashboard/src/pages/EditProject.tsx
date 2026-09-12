@@ -14,7 +14,7 @@ export function EditProject() {
       description="Project edits change the human-authored source document. The structured form stays focused on title, slug, tags, and overview content."
       documentType="project"
       helpTitle="Editable vs derived project fields"
-      helpBody="Project status remains derived from assignment state. If you need less common frontmatter fields, switch to raw markdown mode instead of expanding the structured form."
+      helpBody="Project status remains derived from ticket state. If you need less common frontmatter fields, switch to raw markdown mode instead of expanding the structured form."
     />
   );
 }

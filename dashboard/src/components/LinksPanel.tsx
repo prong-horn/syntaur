@@ -1,15 +1,15 @@
 import { Link } from 'react-router-dom';
 import { ArrowUpRight, ArrowLeft, ArrowRight } from 'lucide-react';
-import { AssignmentStatusPill } from './AssignmentStatusPill';
+import { TicketStatusPill } from './TicketStatusPill';
 import { SectionCard } from './SectionCard';
 import type { EnrichedLink } from '../hooks/useProjects';
 
 interface LinksPanelProps {
   links: EnrichedLink[];
-  onAssignmentChange?: () => void;
+  onTicketChange?: () => void;
 }
 
-export function LinksPanel({ links, onAssignmentChange }: LinksPanelProps) {
+export function LinksPanel({ links, onTicketChange }: LinksPanelProps) {
 
   if (links.length === 0) return null;
 
@@ -18,14 +18,14 @@ export function LinksPanel({ links, onAssignmentChange }: LinksPanelProps) {
 
   return (
     <SectionCard
-      title="Linked Assignments"
+      title="Linked Tickets"
       description={`${links.length} ${links.length === 1 ? 'link' : 'links'}`}
     >
       <div className="divide-y divide-border/40">
         {forwardLinks.map((link) => (
           <Link
             key={`fwd-${link.slug}`}
-            to={`/projects/${link.projectSlug}/assignments/${link.assignmentSlug}`}
+            to={`/projects/${link.projectSlug}/tickets/${link.ticketSlug}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -33,12 +33,12 @@ export function LinksPanel({ links, onAssignmentChange }: LinksPanelProps) {
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <AssignmentStatusPill
+              <TicketStatusPill
                 projectSlug={link.projectSlug}
-                slug={link.assignmentSlug}
+                slug={link.ticketSlug}
                 status={link.status}
                 title={link.title}
-                onChange={onAssignmentChange}
+                onChange={onTicketChange}
               />
             </span>
             <div className="min-w-0 flex-1">
@@ -53,7 +53,7 @@ export function LinksPanel({ links, onAssignmentChange }: LinksPanelProps) {
         {reverseLinks.map((link) => (
           <Link
             key={`rev-${link.slug}`}
-            to={`/projects/${link.projectSlug}/assignments/${link.assignmentSlug}`}
+            to={`/projects/${link.projectSlug}/tickets/${link.ticketSlug}`}
             className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
           >
             <ArrowLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -61,12 +61,12 @@ export function LinksPanel({ links, onAssignmentChange }: LinksPanelProps) {
               onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
               onPointerDown={(e) => e.stopPropagation()}
             >
-              <AssignmentStatusPill
+              <TicketStatusPill
                 projectSlug={link.projectSlug}
-                slug={link.assignmentSlug}
+                slug={link.ticketSlug}
                 status={link.status}
                 title={link.title}
-                onChange={onAssignmentChange}
+                onChange={onTicketChange}
               />
             </span>
             <div className="min-w-0 flex-1">

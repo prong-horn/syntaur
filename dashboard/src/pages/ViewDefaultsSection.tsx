@@ -24,8 +24,8 @@ const DENSITY_LABEL: Record<Density, string> = {
   compact: 'Compact',
 };
 
-// Assignment-only sort labels. Partial because the shared SortField union also
-// carries session-only fields, which the assignment view defaults never offer.
+// Ticket-only sort labels. Partial because the shared SortField union also
+// carries session-only fields, which the ticket view defaults never offer.
 const SORT_FIELD_LABEL: Partial<Record<SortField, string>> = {
   title: 'Title',
   status: 'Status',
@@ -81,7 +81,7 @@ export function ViewDefaultsSection() {
   return (
     <SectionCard
       title="View defaults"
-      description="Defaults for the assignments board, list, and table views. Per-project overrides are saved automatically as you use them."
+      description="Defaults for the tickets board, list, and table views. Per-project overrides are saved automatically as you use them."
       actions={
         file.custom ? (
           <button

@@ -8,8 +8,8 @@ const SCOPE_LABEL: Record<HotkeyScope, string> = {
   global: 'Global',
   'list:overview': 'Overview',
   'list:projects': 'Projects list',
-  'list:assignments': 'Assignments list',
-  assignment: 'Assignment detail',
+  'list:tickets': 'Tickets list',
+  ticket: 'Ticket detail',
   project: 'Project detail',
 };
 
@@ -17,9 +17,9 @@ const SCOPE_ORDER: HotkeyScope[] = [
   'global',
   'list:overview',
   'list:projects',
-  'list:assignments',
+  'list:tickets',
   'project',
-  'assignment',
+  'ticket',
 ];
 
 function formatKeys(keys: string): string {

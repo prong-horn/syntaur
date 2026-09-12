@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocket, type WsMessage } from './useWebSocket';
 
 /**
- * One audit-timeline event for an assignment. Local to the SPA — the dashboard
+ * One audit-timeline event for an ticket. Local to the SPA — the dashboard
  * is a separate TS project and cannot import backend `src/` types. Mirrors the
  * `EventRow` shape from `src/db/events-db.ts` with `details` already parsed from
  * its stored JSON string into an object (or null).
@@ -23,7 +23,7 @@ interface EventsResponse {
   events: ActivityEvent[];
 }
 
-interface UseAssignmentEventsResult {
+interface UseTicketEventsResult {
   events: ActivityEvent[];
   loading: boolean;
   error: string | null;
@@ -31,19 +31,19 @@ interface UseAssignmentEventsResult {
 }
 
 /**
- * Fetch the per-assignment events endpoint. Mirrors the `useFetch` pattern in
- * `useProjects.ts`: keyed on the URL, auto-refetches on the `assignment-updated`
+ * Fetch the per-ticket events endpoint. Mirrors the `useFetch` pattern in
+ * `useProjects.ts`: keyed on the URL, auto-refetches on the `ticket-updated`
  * / `project-updated` WebSocket broadcast so the Activity tab live-updates the
  * same way the rest of the detail page does (no new WS message type).
  *
  * Best-effort by design — the endpoint never 500s (returns `{ events: [] }`),
  * and any fetch failure here is surfaced ONLY inside the Activity tab; it must
- * not break the rest of the assignment detail page.
+ * not break the rest of the ticket detail page.
  */
-export function useAssignmentEvents(
+export function useTicketEvents(
   eventsUrl: string | null,
   enabled = true,
-): UseAssignmentEventsResult {
+): UseTicketEventsResult {
   const [events, setEvents] = useState<ActivityEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +56,7 @@ export function useAssignmentEvents(
   }, []);
 
   // Drop stale events the moment the target URL changes, during render, so a
-  // previous assignment's timeline is never painted on a new key.
+  // previous ticket's timeline is never painted on a new key.
   const lastUrlRef = useRef(activeUrl);
   if (lastUrlRef.current !== activeUrl) {
     lastUrlRef.current = activeUrl;
@@ -103,7 +103,7 @@ export function useAssignmentEvents(
 
   useWebSocket((message: WsMessage) => {
     if (!activeUrl) return;
-    if (message.type === 'assignment-updated' || message.type === 'project-updated') {
+    if (message.type === 'ticket-updated' || message.type === 'project-updated') {
       refetch();
     }
   });

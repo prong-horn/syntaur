@@ -82,18 +82,18 @@ function SessionRow({ session }: SessionRowProps) {
 }
 
 function sessionLink(session: AgentSession): string {
-  if (session.projectSlug && session.assignmentSlug) {
-    return `/projects/${session.projectSlug}/assignments/${session.assignmentSlug}`;
+  if (session.projectSlug && session.ticketSlug) {
+    return `/projects/${session.projectSlug}/tickets/${session.ticketSlug}`;
   }
   return '/agent-sessions';
 }
 
 function sessionLinkLabel(session: AgentSession): string {
-  if (session.assignmentSlug && session.projectSlug) {
-    return `${session.projectSlug}/${session.assignmentSlug}`;
+  if (session.ticketSlug && session.projectSlug) {
+    return `${session.projectSlug}/${session.ticketSlug}`;
   }
-  if (session.assignmentSlug) {
-    return `standalone/${session.assignmentSlug}`;
+  if (session.ticketSlug) {
+    return `standalone/${session.ticketSlug}`;
   }
   return 'standalone';
 }

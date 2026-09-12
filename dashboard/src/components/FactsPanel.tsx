@@ -19,10 +19,10 @@ interface FactsPanelProps {
 }
 
 /**
- * Current materialized state of an assignment's custom facts and review
+ * Current materialized state of an ticket's custom facts and review
  * attestations (server-derived; display-only). Renders nothing when there are
  * no facts or attestations — i.e. for zero-config users and terminal
- * assignments (derived: null). Lives inside the Activity tab, above the
+ * tickets (derived: null). Lives inside the Activity tab, above the
  * audit-trail timeline, so the "now" state sits next to the history of changes.
  */
 export function FactsPanel({ customFacts, attestations }: FactsPanelProps) {

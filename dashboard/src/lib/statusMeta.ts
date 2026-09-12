@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { StatusConfigResponse, StatusDefinition } from '../hooks/useStatusConfig';
-import type { AssignmentTransitionAction } from '../hooks/useProjects';
+import type { TicketTransitionAction } from '../hooks/useProjects';
 
 /**
  * Config-driven status appearance + option helpers. This module is intentionally
@@ -80,7 +80,7 @@ export interface StatusOption {
 
 /**
  * A config-driven "set status to X" entry, shown after the forward transitions.
- * The parent decorates these per-assignment (e.g. disabling terminal targets that
+ * The parent decorates these per-ticket (e.g. disabling terminal targets that
  * have no available transition) so the picker stays presentation-only.
  */
 export interface StatusOverrideTarget {
@@ -210,7 +210,7 @@ export function deriveStatusOptions(config: StatusConfigResponse): StatusOption[
 export function overrideTargetsForStatus(
   config: StatusConfigResponse,
   status: string,
-  availableTransitions?: AssignmentTransitionAction[],
+  availableTransitions?: TicketTransitionAction[],
 ): StatusOverrideTarget[] {
   return deriveStatusOptions(config).map((option) => {
     if (option.id === status) {

@@ -49,17 +49,17 @@ export function Overview() {
             <Inbox className="h-5 w-5 text-muted-foreground group-hover:text-foreground" />
             <span className="text-lg font-medium text-foreground">Needs me</span>
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">Assignments and reviews waiting on you.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Tickets and reviews waiting on you.</p>
         </Link>
         <Link
-          to="/assignments"
+          to="/tickets"
           className="group rounded-xl border border-border/60 bg-background/60 p-5 shadow-sm transition hover:border-border hover:bg-background"
         >
           <div className="flex items-center gap-3">
             <ListTodo className="h-5 w-5 text-muted-foreground group-hover:text-foreground" />
             <span className="text-lg font-medium text-foreground">Board</span>
           </div>
-          <p className="mt-2 text-sm text-muted-foreground">Kanban and table views across all assignments.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Kanban and table views across all tickets.</p>
         </Link>
       </div>
     </div>

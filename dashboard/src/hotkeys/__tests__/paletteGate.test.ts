@@ -35,25 +35,25 @@ const PROJECT = {
   keywords: [] as string[],
 };
 const A_PAYMENT = {
-  type: 'assignment',
+  type: 'ticket',
   id: 'a1',
   title: 'Payment flow',
   status: 'in_progress',
   tags: ['backend'],
   assignee: 'claude',
-  assignmentType: 'feature',
+  ticketType: 'feature',
   project: 'billing',
   externalIds: [{ system: 'jira', id: 'PROJ-123', url: null }],
-  keywords: ['PROJ-123', 'jira:PROJ-123'],
+  keywords: ['PROJ-123', 'jirt:PROJ-123'],
 };
 const A_REFUND = {
-  type: 'assignment',
+  type: 'ticket',
   id: 'a2',
   title: 'Refund logic',
   status: 'done',
   tags: [] as string[],
   assignee: null,
-  assignmentType: 'bug',
+  ticketType: 'bug',
   project: 'billing',
   externalIds: [] as Array<{ system: string; id: string; url: string | null }>,
   keywords: [] as string[],
@@ -68,32 +68,32 @@ describe('palette gate + rank integration', () => {
     expect(titles(runPalette('status:done', INDEX))).toEqual(['Refund logic']);
   });
 
-  it('jira:PROJ-123 narrows to the entity carrying that external ID', () => {
-    expect(titles(runPalette('jira:PROJ-123', INDEX))).toEqual(['Payment flow']);
+  it('jirt:PROJ-123 narrows to the entity carrying that external ID', () => {
+    expect(titles(runPalette('jirt:PROJ-123', INDEX))).toEqual(['Payment flow']);
   });
 
-  it('a: payment → assignments fuzzy-ranked by "payment"', () => {
-    const r = runPalette('a: payment', INDEX);
+  it('t: payment → tickets fuzzy-ranked by "payment"', () => {
+    const r = runPalette('t: payment', INDEX);
     expect(r[0].title).toBe('Payment flow');
     // Refund logic has no "payment" subsequence → dropped.
     expect(titles(r)).not.toContain('Refund logic');
   });
 
-  it('pure a: → all assignments in default order (empty fuzzy)', () => {
-    expect(titles(runPalette('a:', INDEX))).toEqual(['Payment flow', 'Refund logic']);
+  it('pure t: → all tickets in default order (empty fuzzy)', () => {
+    expect(titles(runPalette('t:', INDEX))).toEqual(['Payment flow', 'Refund logic']);
   });
 
   it('bare PROJ-123 finds the item via folded keywords (fuzzy path, no gate)', () => {
     expect(titles(runPalette('PROJ-123', INDEX))).toEqual(['Payment flow']);
   });
 
-  it('a: jira:PROJ payment combines gate + fuzzy', () => {
-    expect(titles(runPalette('a: jira:PROJ payment', INDEX))).toEqual(['Payment flow']);
+  it('t: jirt:PROJ payment combines gate + fuzzy', () => {
+    expect(titles(runPalette('t: jirt:PROJ payment', INDEX))).toEqual(['Payment flow']);
   });
 
-  it('type:feature matches via assignmentType, not the entity kind', () => {
+  it('type:feature matches via ticketType, not the entity kind', () => {
     expect(titles(runPalette('type:feature', INDEX))).toEqual(['Payment flow']);
-    expect(titles(runPalette('type:assignment', INDEX))).toEqual([]);
+    expect(titles(runPalette('type:ticket', INDEX))).toEqual([]);
   });
 
   it('negation of a missing field includes field-less entities, excludes the matched one', () => {
@@ -115,17 +115,17 @@ describe('palette gate + rank integration', () => {
 
 describe('palette external-ID boundary', () => {
   const A_LEGACY = {
-    type: 'assignment',
+    type: 'ticket',
     id: 'a3',
     title: 'Legacy import',
     status: 'pending',
-    assignmentType: 'chore',
+    ticketType: 'chore',
     externalIds: [{ system: 'jira', id: '123-ABC', url: null }],
-    keywords: ['123-ABC', 'jira:123-ABC'],
+    keywords: ['123-ABC', 'jirt:123-ABC'],
   };
 
   it('a leading-digit external ID is matchable when quoted', () => {
-    expect(titles(runPalette('jira:"123-ABC"', [A_LEGACY]))).toEqual(['Legacy import']);
+    expect(titles(runPalette('jirt:"123-ABC"', [A_LEGACY]))).toEqual(['Legacy import']);
   });
 
   it('the same ID is still findable as bare free text via keywords', () => {

@@ -8,11 +8,11 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { DIALOG_COPY } from '../lib/overviewCopy';
-import type { QuickCommentType } from '../lib/assignments';
+import type { QuickCommentType } from '../lib/tickets';
 
 interface QuickCommentDialogProps {
   open: boolean;
-  assignmentTitle: string;
+  ticketTitle: string;
   loading?: boolean;
   onSubmit: (body: string, type: QuickCommentType) => Promise<void> | void;
   onOpenChange: (open: boolean) => void;
@@ -20,7 +20,7 @@ interface QuickCommentDialogProps {
 
 export function QuickCommentDialog({
   open,
-  assignmentTitle,
+  ticketTitle,
   loading = false,
   onSubmit,
   onOpenChange,
@@ -49,7 +49,7 @@ export function QuickCommentDialog({
         >
           <DialogHeader>
             <DialogTitle>{DIALOG_COPY.quickCommentTitle}</DialogTitle>
-            <DialogDescription>On “{assignmentTitle}”</DialogDescription>
+            <DialogDescription>On “{ticketTitle}”</DialogDescription>
           </DialogHeader>
 
           <textarea

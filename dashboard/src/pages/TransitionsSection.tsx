@@ -222,7 +222,7 @@ export function TransitionsSection({
   }
 
   const description = isReadOnlyDefaults
-    ? 'Which commands move an assignment between statuses, as a state-machine graph. Showing the built-in defaults.'
+    ? 'Which commands move an ticket between statuses, as a state-machine graph. Showing the built-in defaults.'
     : 'Statuses are nodes; commands are labeled directed edges. Edit transitions in the table, or drag node-to-node in the graph.';
 
   return (

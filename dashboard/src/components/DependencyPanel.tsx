@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertCircle, ArrowUpRight, CheckCircle2, ChevronDown } from 'lucide-react';
-import { AssignmentStatusPill } from './AssignmentStatusPill';
+import { TicketStatusPill } from './TicketStatusPill';
 import { SectionCard } from './SectionCard';
 
 interface DependencyInfo {
@@ -16,10 +16,10 @@ interface DependencyPanelProps {
   projectSlug: string;
   dependencies: DependencyInfo[];
   blockedReason: string | null;
-  onAssignmentChange?: () => void;
+  onTicketChange?: () => void;
 }
 
-export function DependencyPanel({ projectSlug, dependencies, blockedReason, onAssignmentChange }: DependencyPanelProps) {
+export function DependencyPanel({ projectSlug, dependencies, blockedReason, onTicketChange }: DependencyPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (dependencies.length === 0) return null;
@@ -82,19 +82,19 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason, onAs
           {dependencies.map((dep) => (
             <Link
               key={dep.slug}
-              to={`/projects/${projectSlug}/assignments/${dep.slug}`}
+              to={`/projects/${projectSlug}/tickets/${dep.slug}`}
               className="flex items-center gap-3 px-1 py-2.5 transition hover:bg-muted/40 first:pt-0 last:pb-0"
             >
               <span
                 onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <AssignmentStatusPill
+                <TicketStatusPill
                   projectSlug={projectSlug}
                   slug={dep.slug}
                   status={dep.status}
                   title={dep.title}
-                  onChange={onAssignmentChange}
+                  onChange={onTicketChange}
                 />
               </span>
               <div className="min-w-0 flex-1">

@@ -22,7 +22,7 @@ export const DEFAULT_ASSIGNMENT_BOARD_COLUMNS = [
 
 export const ASSIGNMENT_BOARD_COLUMNS = DEFAULT_ASSIGNMENT_BOARD_COLUMNS;
 
-export function getAssignmentColumns(configOrder?: string[]): string[] {
+export function getTicketColumns(configOrder?: string[]): string[] {
   return configOrder && configOrder.length > 0
     ? configOrder
     : [...DEFAULT_ASSIGNMENT_BOARD_COLUMNS];

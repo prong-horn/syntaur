@@ -9,7 +9,7 @@ const author: ItemAuthor = { id: 'claude', name: 'Claude', color: 'violet', avat
 function reply(overrides: Partial<AgentMessageItem> = {}): AgentMessageItem {
   return {
     itemId: 'reply-1',
-    assignmentId: 'assign-1',
+    ticketId: 'assign-1',
     turnId: 'turn-1',
     agentId: 'claude',
     type: 'agent.message',

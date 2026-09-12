@@ -12,32 +12,32 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useAssignment, useProject, useAssignmentSessions, useAssignmentUsage, type AssignmentTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
-import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
+import { useTicket, useProject, useTicketSessions, useTicketUsage, type TicketTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useTicketEvents } from '../hooks/useTicketEvents';
 import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
-import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
+import { TicketStatusPill } from '../components/TicketStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { EmptyState } from '../components/EmptyState';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
-import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
-import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
+import { TicketUsageSection } from '../components/TicketUsageSection';
+import { TicketTransitionDialog } from '../components/TicketTransitionDialog';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import {
-  deleteAssignment,
-  runAssignmentTransition,
-  overrideAssignmentStatus,
+  deleteTicket,
+  runTicketTransition,
+  overrideTicketStatus,
   transitionNeedsReason,
-} from '../lib/assignments';
-import { splitAssignmentSummary } from '../lib/acceptanceCriteria';
+} from '../lib/tickets';
+import { splitTicketSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { FactsPanel } from '../components/FactsPanel';
 import { LinksPanel } from '../components/LinksPanel';
@@ -81,7 +81,7 @@ function WorkflowSelectRow({
     setErr(null);
     try {
       const res = await fetch(
-        `/api/projects/${encodeURIComponent(projectSlug!)}/assignments/${encodeURIComponent(aslug)}/workflow`,
+        `/api/projects/${encodeURIComponent(projectSlug!)}/tickets/${encodeURIComponent(aslug)}/workflow`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -122,19 +122,19 @@ function WorkflowSelectRow({
   );
 }
 
-export function AssignmentDetail() {
+export function TicketDetail() {
   const { slug, aslug } = useParams<{ slug: string; aslug: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [transitionError, setTransitionError] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useToast();
   const [transitioning, setTransitioning] = useState<string | null>(null);
-  const [pendingTransition, setPendingTransition] = useState<AssignmentTransitionAction | null>(null);
+  const [pendingTransition, setPendingTransition] = useState<TicketTransitionAction | null>(null);
   const [criteriaError, setCriteriaError] = useState<string | null>(null);
   const [savingCriterionIndex, setSavingCriterionIndex] = useState<number | null>(null);
   // Optimistic overlay for acceptance-criterion checkboxes, keyed by index.
   // Set immediately on toggle, removed on error (reverting to server state), and
-  // cleared wholesale once fresh assignment data lands (server is source of truth).
+  // cleared wholesale once fresh ticket data lands (server is source of truth).
   const [optimisticChecks, setOptimisticChecks] = useState<Record<number, boolean>>({});
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -143,23 +143,23 @@ export function AssignmentDetail() {
   // Honor `#section` deep-links from the command palette once the pane renders.
   useHashScroll(tab);
   const statusConfig = useStatusConfig();
-  const { data: assignment, loading, error, refetch } = useAssignment(slug, aslug);
+  const { data: ticket, loading, error, refetch } = useTicket(slug, aslug);
   const { data: project } = useProject(slug);
-  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessions(slug, aslug);
-  const { data: usageData, loading: usageLoading, error: usageError } = useAssignmentUsage(slug, aslug);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useTicketSessions(slug, aslug);
+  const { data: usageData, loading: usageLoading, error: usageError } = useTicketUsage(slug, aslug);
   const eventsUrl =
-    slug && aslug ? `/api/projects/${slug}/assignments/${aslug}/events` : null;
+    slug && aslug ? `/api/projects/${slug}/tickets/${aslug}/events` : null;
   const {
     events,
     loading: eventsLoading,
     error: eventsError,
     refetch: refetchEvents,
-  } = useAssignmentEvents(eventsUrl);
+  } = useTicketEvents(eventsUrl);
 
   const enrichedDeps = useMemo(() => {
-    if (!assignment || !project) return [];
-    const map = new Map(project.assignments.map((a) => [a.slug, a]));
-    return assignment.dependsOn.map((depSlug) => {
+    if (!ticket || !project) return [];
+    const map = new Map(project.tickets.map((a) => [a.slug, a]));
+    return ticket.dependsOn.map((depSlug) => {
       const s = map.get(depSlug);
       return {
         slug: depSlug,
@@ -169,16 +169,16 @@ export function AssignmentDetail() {
         assignee: s?.assignee ?? null,
       };
     });
-  }, [assignment, project]);
+  }, [ticket, project]);
 
   const unmetDeps = enrichedDeps.filter(
     (d) => d.status !== 'completed' && d.status !== 'review',
   );
 
-  // Hotkey wiring — scoped to 'assignment'.
-  useHotkeyScope('assignment');
+  // Hotkey wiring — scoped to 'ticket'.
+  useHotkeyScope('ticket');
   const siblingSlugs = useMemo(
-    () => (project?.assignments ?? []).map((a) => a.slug),
+    () => (project?.tickets ?? []).map((a) => a.slug),
     [project],
   );
   const currentIndex = aslug ? siblingSlugs.indexOf(aslug) : -1;
@@ -187,64 +187,64 @@ export function AssignmentDetail() {
     currentIndex >= 0 && currentIndex < siblingSlugs.length - 1
       ? siblingSlugs[currentIndex + 1]
       : null;
-  const baseRoute = `/projects/${slug}/assignments/${aslug}`;
+  const baseRoute = `/projects/${slug}/tickets/${aslug}`;
 
   useHotkey({
     keys: 'e',
-    scope: 'assignment',
-    description: 'Edit assignment',
+    scope: 'ticket',
+    description: 'Edit ticket',
     handler: () => navigate(`${baseRoute}/edit`),
   });
   useHotkey({
     keys: 'p',
-    scope: 'assignment',
+    scope: 'ticket',
     description: 'Edit plan',
     handler: () => navigate(`${baseRoute}/plan/edit`),
   });
   useHotkey({
     keys: 'h',
-    scope: 'assignment',
+    scope: 'ticket',
     description: 'Append handoff',
     handler: () => navigate(`${baseRoute}/handoff/edit`),
   });
   useHotkey({
     keys: 'd',
-    scope: 'assignment',
+    scope: 'ticket',
     description: 'Append decision record',
     handler: () => navigate(`${baseRoute}/decision-record/edit`),
   });
   useHotkey({
     keys: 's',
-    scope: 'assignment',
+    scope: 'ticket',
     description: 'Edit scratchpad',
     handler: () => navigate(`${baseRoute}/scratchpad/edit`),
   });
   useHotkey({
     keys: '[',
-    scope: 'assignment',
-    description: 'Previous assignment in project',
+    scope: 'ticket',
+    description: 'Previous ticket in project',
     enabled: !!prevSlug,
     handler: () =>
-      prevSlug && navigate(`/projects/${slug}/assignments/${prevSlug}`),
+      prevSlug && navigate(`/projects/${slug}/tickets/${prevSlug}`),
   });
   useHotkey({
     keys: ']',
-    scope: 'assignment',
-    description: 'Next assignment in project',
+    scope: 'ticket',
+    description: 'Next ticket in project',
     enabled: !!nextSlug,
     handler: () =>
-      nextSlug && navigate(`/projects/${slug}/assignments/${nextSlug}`),
+      nextSlug && navigate(`/projects/${slug}/tickets/${nextSlug}`),
   });
 
   const summarySections = useMemo(
-    () => (assignment ? splitAssignmentSummary(assignment.body) : { acceptanceCriteria: [], summaryBody: '' }),
-    [assignment],
+    () => (ticket ? splitTicketSummary(ticket.body) : { acceptanceCriteria: [], summaryBody: '' }),
+    [ticket],
   );
   // Fresh server data is authoritative — drop any optimistic overlay so the
-  // checkboxes reflect the canonical assignment body again.
+  // checkboxes reflect the canonical ticket body again.
   useEffect(() => {
     setOptimisticChecks({});
-  }, [assignment]);
+  }, [ticket]);
   const criteria = summarySections.acceptanceCriteria;
   const checkedCount = criteria.filter((c) => c.checked).length;
   const allChecked = criteria.length > 0 && checkedCount === criteria.length;
@@ -252,11 +252,11 @@ export function AssignmentDetail() {
   const initialSyncDoneRef = useRef(false);
 
   useEffect(() => {
-    // Wait until the assignment payload has loaded before treating any state as a transition.
+    // Wait until the ticket payload has loaded before treating any state as a transition.
     // Without this guard, the initial empty-criteria render (allChecked === false) followed by
     // the post-fetch render (allChecked === true) reads as a "just became all-checked" event
-    // and fires the glow on page load for already-complete assignments.
-    if (!assignment) return;
+    // and fires the glow on page load for already-complete tickets.
+    if (!ticket) return;
     if (!initialSyncDoneRef.current) {
       prevAllCheckedRef.current = allChecked;
       initialSyncDoneRef.current = true;
@@ -266,27 +266,27 @@ export function AssignmentDetail() {
       setReviewGlowKey((n) => n + 1);
     }
     prevAllCheckedRef.current = allChecked;
-  }, [allChecked, assignment]);
+  }, [allChecked, ticket]);
 
   if (loading) {
-    return <LoadingState label="Loading assignment workspace…" />;
+    return <LoadingState label="Loading ticket workspace…" />;
   }
 
-  if (error || !assignment || !slug || !aslug) {
-    return <ErrorState error={error || 'Assignment not found.'} onRetry={refetch} />;
+  if (error || !ticket || !slug || !aslug) {
+    return <ErrorState error={error || 'Ticket not found.'} onRetry={refetch} />;
   }
 
   const projectSlug = slug;
-  const assignmentSlug = aslug;
+  const ticketSlug = aslug;
   const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
 
-  const transitions = assignment.availableTransitions ?? [];
+  const transitions = ticket.availableTransitions ?? [];
   // Exclude same-target transitions: the backend currently returns every command as enabled
   // even when the targetStatus equals the current status, which would produce a meaningless
   // idempotent primary action. Filter those out for the primary slot; they still surface in
   // the overflow menu as disabled with "Already in this status".
   const enabledTransitions = transitions.filter(
-    (a) => !a.disabled && a.targetStatus !== assignment.status,
+    (a) => !a.disabled && a.targetStatus !== ticket.status,
   );
   const primaryTransition =
     TRANSITION_PRECEDENCE.map((cmd) => enabledTransitions.find((a) => a.command === cmd)).find(Boolean) ??
@@ -296,7 +296,7 @@ export function AssignmentDetail() {
   async function handleStatusOverride(status: string) {
     setTransitionError(null);
     try {
-      await overrideAssignmentStatus(projectSlug, assignmentSlug, status);
+      await overrideTicketStatus(projectSlug, ticketSlug, status);
       refetch();
       refetchEvents();
     } catch (err) {
@@ -304,11 +304,11 @@ export function AssignmentDetail() {
     }
   }
 
-  async function handleArchiveAssignment(archived: boolean) {
+  async function handleArchiveTicket(archived: boolean) {
     setTransitionError(null);
     try {
       const response = await fetch(
-        `/api/projects/${projectSlug}/assignments/${assignmentSlug}/${archived ? 'archive' : 'unarchive'}`,
+        `/api/projects/${projectSlug}/tickets/${ticketSlug}/${archived ? 'archive' : 'unarchive'}`,
         { method: 'POST', headers: { 'Content-Type': 'application/json' } },
       );
       if (!response.ok) {
@@ -317,16 +317,16 @@ export function AssignmentDetail() {
       }
       refetch();
       refetchEvents();
-      showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
+      showToast(archived ? 'Ticket archived' : 'Ticket restored', 'success');
     } catch (err) {
       setTransitionError((err as Error).message);
     }
   }
 
-  async function handleDeleteAssignment() {
+  async function handleDeleteTicket() {
     setDeleteLoading(true);
     try {
-      await deleteAssignment(projectSlug, assignmentSlug);
+      await deleteTicket(projectSlug, ticketSlug);
       navigate(`/projects/${projectSlug}`);
     } catch (err) {
       setTransitionError((err as Error).message);
@@ -335,12 +335,12 @@ export function AssignmentDetail() {
     }
   }
 
-  async function runTransition(action: AssignmentTransitionAction, reason?: string): Promise<boolean> {
+  async function runTransition(action: TicketTransitionAction, reason?: string): Promise<boolean> {
     setTransitionError(null);
     setTransitioning(action.command);
 
     try {
-      await runAssignmentTransition(projectSlug, assignmentSlug, action, reason);
+      await runTicketTransition(projectSlug, ticketSlug, action, reason);
       refetch();
       refetchEvents();
       return true;
@@ -352,7 +352,7 @@ export function AssignmentDetail() {
     }
   }
 
-  function handleTransitionClick(action: AssignmentTransitionAction) {
+  function handleTransitionClick(action: TicketTransitionAction) {
     if (transitionNeedsReason(action)) {
       setPendingTransition(action);
       return;
@@ -369,7 +369,7 @@ export function AssignmentDetail() {
 
     try {
       const response = await fetch(
-        `/api/projects/${projectSlug}/assignments/${assignmentSlug}/acceptance-criteria/${index}`,
+        `/api/projects/${projectSlug}/tickets/${ticketSlug}/acceptance-criteria/${index}`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -409,62 +409,62 @@ export function AssignmentDetail() {
         disabled: transitioning === action.command,
       })),
     ...transitions
-      .filter((a) => a.disabled || a.targetStatus === assignment.status)
+      .filter((a) => a.disabled || a.targetStatus === ticket.status)
       .map<OverflowMenuItem>((action) => ({
         key: `transition-${action.command}`,
         label: action.label,
         disabled: true,
         disabledReason:
-          action.targetStatus === assignment.status
-            ? `Already ${assignment.status.replace(/_/g, ' ')}`
+          action.targetStatus === ticket.status
+            ? `Already ${ticket.status.replace(/_/g, ' ')}`
             : action.disabledReason ?? action.warning ?? action.description,
       })),
     ...statusConfig.statuses.map<OverflowMenuItem>((s) => ({
       key: `override-${s.id}`,
       label: `Override → ${s.label}`,
       onSelect: () => handleStatusOverride(s.id),
-      disabled: s.id === assignment.status,
-      disabledReason: s.id === assignment.status ? 'Already in this status' : undefined,
+      disabled: s.id === ticket.status,
+      disabledReason: s.id === ticket.status ? 'Already in this status' : undefined,
     })),
     {
-      key: 'edit-assignment',
-      label: 'Edit assignment source',
+      key: 'edit-ticket',
+      label: 'Edit ticket source',
       icon: FilePenLine,
-      href: `/projects/${slug}/assignments/${aslug}/edit`,
+      href: `/projects/${slug}/tickets/${aslug}/edit`,
     },
     {
       key: 'edit-plan',
       label: 'Edit plan',
       icon: SendToBack,
-      href: `/projects/${slug}/assignments/${aslug}/plan/edit`,
+      href: `/projects/${slug}/tickets/${aslug}/plan/edit`,
     },
     {
       key: 'edit-scratchpad',
       label: 'Edit scratchpad',
       icon: NotebookPen,
-      href: `/projects/${slug}/assignments/${aslug}/scratchpad/edit`,
+      href: `/projects/${slug}/tickets/${aslug}/scratchpad/edit`,
     },
     {
       key: 'append-handoff',
       label: 'Append handoff',
       icon: ArrowUpRight,
-      href: `/projects/${slug}/assignments/${aslug}/handoff/edit`,
+      href: `/projects/${slug}/tickets/${aslug}/handoff/edit`,
     },
     {
       key: 'append-decision',
       label: 'Append decision',
       icon: Hammer,
-      href: `/projects/${slug}/assignments/${aslug}/decision-record/edit`,
+      href: `/projects/${slug}/tickets/${aslug}/decision-record/edit`,
     },
     {
-      key: assignment.archived ? 'unarchive' : 'archive',
-      label: assignment.archived ? 'Restore assignment' : 'Archive assignment',
-      icon: assignment.archived ? ArchiveRestore : Archive,
-      onSelect: () => handleArchiveAssignment(!assignment.archived),
+      key: ticket.archived ? 'unarchive' : 'archive',
+      label: ticket.archived ? 'Restore ticket' : 'Archive ticket',
+      icon: ticket.archived ? ArchiveRestore : Archive,
+      onSelect: () => handleArchiveTicket(!ticket.archived),
     },
     {
       key: 'delete',
-      label: 'Delete assignment',
+      label: 'Delete ticket',
       icon: Trash2,
       destructive: true,
       onSelect: () => setShowDeleteConfirm(true),
@@ -478,21 +478,21 @@ export function AssignmentDetail() {
       <Toaster toast={toast} onDismiss={dismissToast} />
       <div className="sticky top-12 z-20 rounded-lg border border-border/60 bg-card/90 p-3 shadow-sm backdrop-blur">
         <div className="flex items-center gap-3">
-          <AssignmentStatusPill
-            id={assignment.id}
-            slug={assignmentSlug}
+          <TicketStatusPill
+            id={ticket.id}
+            slug={ticketSlug}
             projectSlug={projectSlug}
-            status={assignment.status}
-            title={assignment.title}
-            availableTransitions={assignment.availableTransitions}
+            status={ticket.status}
+            title={ticket.title}
+            availableTransitions={ticket.availableTransitions}
             progress={progress}
             onChange={() => refetch()}
           />
           <h1
             className="min-w-0 flex-1 truncate text-lg font-semibold text-foreground"
-            title={assignment.title}
+            title={ticket.title}
           >
-            {assignment.title}
+            {ticket.title}
           </h1>
           {unmetDeps.length > 0 && (
             <span
@@ -503,10 +503,10 @@ export function AssignmentDetail() {
             </span>
           )}
           <span className="flex shrink-0 items-center gap-2">
-            {!assignment.workspace?.worktreePath && slug && aslug && (
+            {!ticket.workspace?.worktreePath && slug && aslug && (
               <CreateWorktreeButton
                 projectSlug={slug}
-                assignmentSlug={aslug}
+                ticketSlug={aslug}
                 defaultBranch={`syntaur/${slug}/${aslug}`}
                 onCreated={() => refetch()}
               />
@@ -539,27 +539,27 @@ export function AssignmentDetail() {
           </p>
         ) : null}
 
-        {assignment.blockedReason ? (
+        {ticket.blockedReason ? (
           <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
-            <strong>Blocked reason:</strong> {assignment.blockedReason}
+            <strong>Blocked reason:</strong> {ticket.blockedReason}
           </div>
         ) : null}
 
         {/* Pin divergence: the always-visible "would otherwise be Y" (v3) */}
-        {assignment.override && assignment.derived &&
-          assignment.derived.derivedStatus !== assignment.status ? (
+        {ticket.override && ticket.derived &&
+          ticket.derived.derivedStatus !== ticket.status ? (
           <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
-            <strong>Pinned to {assignment.status}</strong> by {assignment.override.source}
-            {assignment.override.reason ? <> — “{assignment.override.reason}”</> : null}
-            {' · '}would otherwise be <strong>{assignment.derived.derivedStatus}</strong>
+            <strong>Pinned to {ticket.status}</strong> by {ticket.override.source}
+            {ticket.override.reason ? <> — “{ticket.override.reason}”</> : null}
+            {' · '}would otherwise be <strong>{ticket.derived.derivedStatus}</strong>
           </div>
         ) : null}
 
         {/* Next action from the phase ladder */}
-        {assignment.derived?.nextAction ? (
+        {ticket.derived?.nextAction ? (
           <p className="mt-3 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">Next:</span>{' '}
-            {assignment.derived.nextAction}
+            {ticket.derived.nextAction}
           </p>
         ) : null}
       </div>
@@ -568,26 +568,26 @@ export function AssignmentDetail() {
         <DependencyPanel
           projectSlug={slug!}
           dependencies={enrichedDeps}
-          blockedReason={assignment.blockedReason}
-          onAssignmentChange={() => refetch()}
+          blockedReason={ticket.blockedReason}
+          onTicketChange={() => refetch()}
         />
       )}
 
-      {assignment.enrichedLinks && assignment.enrichedLinks.length > 0 && (
-        <LinksPanel links={assignment.enrichedLinks} onAssignmentChange={() => refetch()} />
+      {ticket.enrichedLinks && ticket.enrichedLinks.length > 0 && (
+        <LinksPanel links={ticket.enrichedLinks} onTicketChange={() => refetch()} />
       )}
 
-      {assignment.referencedBy && assignment.referencedBy.length > 0 && (
+      {ticket.referencedBy && ticket.referencedBy.length > 0 && (
         <SectionCard
           title="Referenced by"
-          description="Other assignments whose progress, comments, or handoffs link to this one."
+          description="Other tickets whose progress, comments, or handoffs link to this one."
         >
           <ul className="space-y-2">
-            {assignment.referencedBy.map((ref) => {
+            {ticket.referencedBy.map((ref) => {
               const href =
                 ref.sourceProjectSlug === null
-                  ? `/assignments/${ref.sourceId}`
-                  : `/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`;
+                  ? `/tickets/${ref.sourceId}`
+                  : `/projects/${ref.sourceProjectSlug}/tickets/${ref.sourceSlug}`;
               return (
                 <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
                   <Link to={href} className="text-foreground hover:text-primary">
@@ -622,7 +622,7 @@ export function AssignmentDetail() {
                     {summarySections.acceptanceCriteria.length > 0 ? (
                       <SectionCard
                         title="Acceptance Criteria"
-                        description="These checkboxes update the source assignment markdown."
+                        description="These checkboxes update the source ticket markdown."
                       >
                         <div className="space-y-3">
                           {criteriaError ? (
@@ -661,13 +661,13 @@ export function AssignmentDetail() {
                       </SectionCard>
                     ) : null}
 
-                    <SectionCard title="Assignment Summary">
+                    <SectionCard title="Ticket Summary">
                       <MarkdownRenderer
                         content={summarySections.summaryBody}
                         emptyState={
                           summarySections.acceptanceCriteria.length > 0
                             ? 'No additional summary markdown beyond the acceptance criteria.'
-                            : 'This assignment does not have summary markdown yet.'
+                            : 'This ticket does not have summary markdown yet.'
                         }
                       />
                     </SectionCard>
@@ -679,52 +679,52 @@ export function AssignmentDetail() {
                 // the new default" is left for Brennen to call.
                 value: 'chat',
                 label: 'Chat',
-                content: <ChatTab assignmentId={assignment.id} />,
+                content: <ChatTab ticketId={ticket.id} />,
               },
               {
                 value: 'plan',
                 label: 'Plan',
-                count: assignment.plan ? 1 : 0,
-                content: assignment.plan ? (
+                count: ticket.plan ? 1 : 0,
+                content: ticket.plan ? (
                   <div className="space-y-5">
                     <SectionCard
                       title="Plan"
                       description="Shows plan.md only. Versioned plans (plan-v2.md, ...) are not yet rendered here — open them from the filesystem."
                       actions={
-                        <Link className="shell-action" to={`/projects/${slug}/assignments/${aslug}/plan/edit`}>
+                        <Link className="shell-action" to={`/projects/${slug}/tickets/${aslug}/plan/edit`}>
                           <NotebookPen className="h-4 w-4" />
                           <span>Edit Plan</span>
                         </Link>
                       }
                     >
                       <div className="mb-4">
-                        <StatusBadge status={assignment.plan.status} />
+                        <StatusBadge status={ticket.plan.status} />
                       </div>
-                      <MarkdownRenderer content={assignment.plan.body} emptyState="No plan content yet." />
+                      <MarkdownRenderer content={ticket.plan.body} emptyState="No plan content yet." />
                     </SectionCard>
                   </div>
                 ) : (
                   <EmptyState
                     title="No plan yet"
-                    description="Plan files are optional and versioned. Run /plan-assignment to create plan.md (or plan-v2.md, ...)."
+                    description="Plan files are optional and versioned. Run /plan-ticket to create plan.md (or plan-v2.md, ...)."
                   />
                 ),
               },
               {
                 value: 'scratchpad',
                 label: 'Scratchpad',
-                count: assignment.scratchpad ? 1 : 0,
-                content: assignment.scratchpad ? (
+                count: ticket.scratchpad ? 1 : 0,
+                content: ticket.scratchpad ? (
                   <SectionCard
                     title="Scratchpad"
                     actions={
-                      <Link className="shell-action" to={`/projects/${slug}/assignments/${aslug}/scratchpad/edit`}>
+                      <Link className="shell-action" to={`/projects/${slug}/tickets/${aslug}/scratchpad/edit`}>
                         <NotebookPen className="h-4 w-4" />
                         <span>Edit Scratchpad</span>
                       </Link>
                     }
                   >
-                    <MarkdownRenderer content={assignment.scratchpad.body} emptyState="Scratchpad is empty." />
+                    <MarkdownRenderer content={ticket.scratchpad.body} emptyState="Scratchpad is empty." />
                   </SectionCard>
                 ) : (
                   <EmptyState
@@ -736,17 +736,17 @@ export function AssignmentDetail() {
               {
                 value: 'handoff',
                 label: 'Handoff',
-                count: assignment.handoff?.handoffCount ?? 0,
+                count: ticket.handoff?.handoffCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.handoff ? (
+                    {ticket.handoff ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
+                        <MarkdownRenderer content={ticket.handoff.body} emptyState="No handoff history yet." />
                       </SectionCard>
                     ) : (
                       <EmptyState
                         title="No handoff log yet"
-                        description="Handoffs appear here when an agent runs /complete-assignment or you append one manually."
+                        description="Handoffs appear here when an agent runs /complete-ticket or you append one manually."
                       />
                     )}
                   </div>
@@ -755,16 +755,16 @@ export function AssignmentDetail() {
               {
                 value: 'progress',
                 label: 'Progress',
-                count: assignment.progress?.entryCount ?? 0,
+                count: ticket.progress?.entryCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.progress && assignment.progress.entries.length > 0 ? (
+                    {ticket.progress && ticket.progress.entries.length > 0 ? (
                       <SectionCard
                         title="Progress"
-                        description="Reverse-chronological log of work done on this assignment. Agents append entries via progress.md."
+                        description="Reverse-chronological log of work done on this ticket. Agents append entries via progress.md."
                       >
                         <ol className="space-y-4">
-                          {assignment.progress.entries.map((entry, idx) => (
+                          {ticket.progress.entries.map((entry, idx) => (
                             <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
                               <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
                               <MarkdownRenderer content={entry.body} />
@@ -784,14 +784,14 @@ export function AssignmentDetail() {
               {
                 value: 'comments',
                 label: 'Comments',
-                count: assignment.comments?.entryCount ?? 0,
+                count: ticket.comments?.entryCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.comments && assignment.comments.entries.length > 0 ? (
+                    {ticket.comments && ticket.comments.entries.length > 0 ? (
                       <CommentsThread
                         projectSlug={slug!}
-                        assignmentSlug={aslug!}
-                        entries={assignment.comments.entries}
+                        ticketSlug={aslug!}
+                        entries={ticket.comments.entries}
                       />
                     ) : (
                       <EmptyState
@@ -805,12 +805,12 @@ export function AssignmentDetail() {
               {
                 value: 'decisions',
                 label: 'Decisions',
-                count: assignment.decisionRecord?.decisionCount ?? 0,
+                count: ticket.decisionRecord?.decisionCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.decisionRecord ? (
+                    {ticket.decisionRecord ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
+                        <MarkdownRenderer content={ticket.decisionRecord.body} emptyState="No decision history yet." />
                       </SectionCard>
                     ) : (
                       <EmptyState
@@ -828,8 +828,8 @@ export function AssignmentDetail() {
                 content: (
                   <div className="space-y-5">
                     <FactsPanel
-                      customFacts={assignment.derived?.customFacts}
-                      attestations={assignment.derived?.attestations}
+                      customFacts={ticket.derived?.customFacts}
+                      attestations={ticket.derived?.attestations}
                     />
                     <ActivityTimeline
                       events={events}
@@ -842,10 +842,10 @@ export function AssignmentDetail() {
               {
                 value: 'session-activity',
                 label: 'Session Activity',
-                count: assignment.engagements.length,
+                count: ticket.engagements.length,
                 content: (
                   <SessionActivityTimeline
-                    engagements={assignment.engagements}
+                    engagements={ticket.engagements}
                   />
                 ),
               },
@@ -856,51 +856,51 @@ export function AssignmentDetail() {
         <div className="min-w-0 space-y-5">
           <SectionCard title="Details">
             <dl className="space-y-3 text-sm">
-              <DetailRow label="ID" value={assignment.id} copyable />
-              <DetailRow label="Priority" value={assignment.priority} />
-              {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
-              {assignment.type && (
+              <DetailRow label="ID" value={ticket.id} copyable />
+              <DetailRow label="Priority" value={ticket.priority} />
+              {ticket.assignee && <DetailRow label="Assignee" value={ticket.assignee} />}
+              {ticket.type && (
                 <DetailNodeRow label="Type">
-                  <TypeChip type={assignment.type} compact />
+                  <TypeChip type={ticket.type} compact />
                 </DetailNodeRow>
               )}
               <WorkflowSelectRow
-                projectSlug={assignment.projectSlug}
+                projectSlug={ticket.projectSlug}
                 aslug={aslug ?? ''}
-                workflow={assignment.workflow}
-                workflowLabel={assignment.workflowLabel}
+                workflow={ticket.workflow}
+                workflowLabel={ticket.workflowLabel}
                 onChanged={refetch}
               />
-              {assignment.phase && assignment.phase !== assignment.status && (
-                <DetailRow label="Phase" value={assignment.phase} />
+              {ticket.phase && ticket.phase !== ticket.status && (
+                <DetailRow label="Phase" value={ticket.phase} />
               )}
-              {assignment.disposition && assignment.disposition !== 'active' && (
+              {ticket.disposition && ticket.disposition !== 'active' && (
                 <DetailNodeRow label="Disposition">
                   <span
                     className="rounded-full border border-warning-foreground/40 px-2 py-0.5 text-[11px] text-warning-foreground"
                     title="Disposition dimension — orthogonal to phase"
                   >
-                    {assignment.disposition}
+                    {ticket.disposition}
                   </span>
                 </DetailNodeRow>
               )}
               <DetailRow
                 label="Updated"
-                value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
+                value={`${formatShortDateTime(ticket.updated)} · Created ${formatShortDate(ticket.created)}`}
               />
-              {assignment.workspace.repository && (
-                <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
+              {ticket.workspace.repository && (
+                <DetailRow label="Repository" value={ticket.workspace.repository} copyable />
               )}
-              {assignment.workspace.worktreePath && (
-                <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
+              {ticket.workspace.worktreePath && (
+                <DetailRow label="Worktree" value={ticket.workspace.worktreePath} copyable />
               )}
-              {assignment.workspace.branch && (
-                <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
+              {ticket.workspace.branch && (
+                <DetailRow label="Branch" value={ticket.workspace.branch} copyable />
               )}
-              {assignment.workspace.parentBranch && (
-                <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
+              {ticket.workspace.parentBranch && (
+                <DetailRow label="Parent branch" value={ticket.workspace.parentBranch} copyable />
               )}
-              {assignment.externalIds.map((entry, idx) => (
+              {ticket.externalIds.map((entry, idx) => (
                 <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
               ))}
             </dl>
@@ -914,7 +914,7 @@ export function AssignmentDetail() {
             onNotice={(m) => showToast(m, 'success')}
           />
 
-          <AssignmentUsageSection
+          <TicketUsageSection
             summary={usageData?.summary}
             loading={usageLoading}
             error={usageError}
@@ -922,10 +922,10 @@ export function AssignmentDetail() {
         </div>
       </div>
 
-      <AssignmentTransitionDialog
+      <TicketTransitionDialog
         open={pendingTransition !== null}
         action={pendingTransition}
-        assignmentTitle={assignment.title}
+        ticketTitle={ticket.title}
         loading={transitioning === pendingTransition?.command}
         onOpenChange={(open) => {
           if (!open) {
@@ -947,15 +947,15 @@ export function AssignmentDetail() {
 
       <ConfirmDialog
         open={showDeleteConfirm}
-        title="Delete assignment?"
-        description={`This will permanently delete "${assignment.title}" and all its files (plan, scratchpad, handoff, decision record). This cannot be undone.`}
-        confirmLabel="Delete Assignment"
+        title="Delete ticket?"
+        description={`This will permanently delete "${ticket.title}" and all its files (plan, scratchpad, handoff, decision record). This cannot be undone.`}
+        confirmLabel="Delete Ticket"
         destructive
         loading={deleteLoading}
         onOpenChange={(open) => {
           if (!open) setShowDeleteConfirm(false);
         }}
-        onConfirm={handleDeleteAssignment}
+        onConfirm={handleDeleteTicket}
       />
     </div>
   );

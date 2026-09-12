@@ -3,12 +3,12 @@ export interface AcceptanceCriterion {
   text: string;
 }
 
-export interface AssignmentSummarySections {
+export interface TicketSummarySections {
   acceptanceCriteria: AcceptanceCriterion[];
   summaryBody: string;
 }
 
-export function splitAssignmentSummary(body: string): AssignmentSummarySections {
+export function splitTicketSummary(body: string): TicketSummarySections {
   const lines = body.split('\n');
   const sectionStart = lines.findIndex((line) => /^##\s+Acceptance Criteria\s*$/i.test(line.trim()));
 

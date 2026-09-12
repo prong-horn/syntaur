@@ -456,7 +456,7 @@ export function ActionPalette({ entries }: ActionPaletteProps) {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handlePickerKeyDown}
-              placeholder="Run an action: new project, new assignment, toggle…"
+              placeholder="Run an action: new project, new ticket, toggle…"
               disabled={running}
               className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary disabled:opacity-60"
             />

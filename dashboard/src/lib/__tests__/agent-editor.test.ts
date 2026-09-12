@@ -280,7 +280,7 @@ describe('modeChoices and badges', () => {
 describe('staleNote', () => {
   it('returns the thin-row text when staleDefinition is set', () => {
     const session: ChatSessionSummary = {
-      assignmentId: 'a1',
+      ticketId: 'a1',
       agentId: 'planner',
       harness: 'claude',
       acpSessionId: 's1',

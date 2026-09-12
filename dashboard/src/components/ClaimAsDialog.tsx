@@ -8,7 +8,7 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { DIALOG_COPY } from '../lib/overviewCopy';
-import { readClaimAs, writeClaimAs } from '../lib/assignments';
+import { readClaimAs, writeClaimAs } from '../lib/tickets';
 
 interface ClaimAsDialogProps {
   open: boolean;

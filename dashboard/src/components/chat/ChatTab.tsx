@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Loader2, Square, Users } from 'lucide-react';
-import { useAssignmentChat } from '../../hooks/useAssignmentChat';
+import { useTicketChat } from '../../hooks/useTicketChat';
 import {
   agentColorClasses,
   formatDuration,
@@ -62,11 +62,11 @@ const STATE_TONES: Record<ChatSessionState, string> = {
 };
 
 export interface ChatTabProps {
-  /** The assignment's frontmatter `id` — every chat route is keyed on it. */
-  assignmentId: string;
+  /** The ticket's frontmatter `id` — every chat route is keyed on it. */
+  ticketId: string;
 }
 
-export function ChatTab({ assignmentId }: ChatTabProps) {
+export function ChatTab({ ticketId }: ChatTabProps) {
   const {
     items,
     sessions,
@@ -86,7 +86,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
     answerPermission,
     answerQuestion,
     loadOlder,
-  } = useAssignmentChat(assignmentId);
+  } = useTicketChat(ticketId);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filing, setFiling] = useState<{ item: UserMessageItem | AgentMessageItem; kind: ChatRecordKind } | null>(
@@ -212,7 +212,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
           Running in <code className="font-mono">{cwdSession.cwd}</code>
           {cwdSession.cwdTier ? ` (${cwdSession.cwdTier})` : ''}
           {cwdSession.cwdTier === 'home' &&
-            ' — no worktree on this assignment; create one from the assignment header.'}
+            ' — no worktree on this ticket; create one from the ticket header.'}
         </div>
       )}
 
@@ -269,7 +269,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
         {column.length === 0 ? (
           <EmptyState
             title="No messages yet"
-            description="Send a message to start an agent. It will run in the assignment's worktree, repository, or home directory. Mention an agent with @ to address it directly; anything unmentioned goes to the default agent."
+            description="Send a message to start an agent. It will run in the ticket's worktree, repository, or home directory. Mention an agent with @ to address it directly; anything unmentioned goes to the default agent."
           />
         ) : (
           column.map((item) => (
@@ -331,7 +331,7 @@ export function ChatTab({ assignmentId }: ChatTabProps) {
           if (!filing) return;
           setFilingBusy(true);
           try {
-            const { record } = await fileChatRecord(assignmentId, filing.item.itemId, input);
+            const { record } = await fileChatRecord(ticketId, filing.item.itemId, input);
             showToast(recordFiledCopy(record), 'success');
             setFiling(null);
           } catch (err) {

@@ -14,7 +14,7 @@ import {
 } from './ui/dialog';
 
 const COLUMN_LABELS: Record<TableColumnId, string> = {
-  title: 'Assignment',
+  title: 'Ticket',
   status: 'Status',
   priority: 'Priority',
   assignee: 'Assignee',

@@ -10,11 +10,11 @@ function epoch(value: string | undefined): number {
 }
 
 /**
- * Sort a list of assignment-like records by the given field and direction.
- * Used by both `AssignmentsPage` and `ProjectDetail` so both surfaces share
+ * Sort a list of ticket-like records by the given field and direction.
+ * Used by both `TicketsPage` and `ProjectDetail` so both surfaces share
  * a single sort implementation. Returns a new array — does not mutate input.
  */
-export function sortAssignments<
+export function sortTickets<
   T extends {
     title: string;
     status: string;

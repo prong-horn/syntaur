@@ -40,7 +40,7 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
     label: 'Work',
     items: [
       { to: '/projects', label: 'Projects', icon: FolderKanban },
-      { to: '/assignments', label: 'Assignments', icon: ListTodo },
+      { to: '/tickets', label: 'Tickets', icon: ListTodo },
     ],
   },
   {

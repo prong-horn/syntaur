@@ -19,7 +19,7 @@ interface CommandPaletteProps {
 const TYPE_LABEL: Record<string, string> = {
   page: 'Page',
   project: 'Project',
-  assignment: 'Assignment',
+  ticket: 'Ticket',
   playbook: 'Playbook',
   content: 'Content',
 };
@@ -338,7 +338,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
             }}
             onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
             onKeyDown={handleKeyDown}
-            placeholder="Search…  try  a:  p:  jira:PROJ-123  tag:backend"
+            placeholder="Search…  try  t:  p:  jira:PROJ-123  tag:backend"
             className="w-full rounded-t-xl border-0 border-b border-border/70 bg-transparent px-4 py-3 text-sm text-foreground outline-none focus:border-primary"
           />
           {showSuggestions ? (

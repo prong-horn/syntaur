@@ -6,11 +6,11 @@
 
 export type BindableActionKind =
   | 'new-project'
-  | 'new-assignment';
+  | 'new-ticket';
 
 export const BINDABLE_ACTION_KINDS: readonly BindableActionKind[] = [
   'new-project',
-  'new-assignment',
+  'new-ticket',
 ];
 
 export function isBindableActionKind(value: unknown): value is BindableActionKind {
@@ -41,7 +41,7 @@ export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
   'g',
   'g o',
   'g m',
-  'g a',
+  'g t',
   'g !',
   'g ,',
   // list-scope navigation
@@ -148,7 +148,7 @@ export function isReservedCombo(combo: string): boolean {
  */
 export const DEFAULT_BINDABLE_HOTKEYS: Readonly<Record<BindableActionKind, string>> = {
   'new-project': canonicalizeCombo('Mod+Shift+Alt+p'),
-  'new-assignment': canonicalizeCombo('Mod+Shift+Alt+a'),
+  'new-ticket': canonicalizeCombo('Mod+Shift+Alt+t'),
 };
 
 /**

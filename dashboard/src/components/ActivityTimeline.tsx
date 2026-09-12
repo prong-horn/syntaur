@@ -2,7 +2,7 @@ import { SectionCard } from './SectionCard';
 import { EmptyState } from './EmptyState';
 import { LoadingState } from './LoadingState';
 import { formatRelativeTime, formatShortDateTime, toTitleCase } from '../lib/format';
-import type { ActivityEvent } from '../hooks/useAssignmentEvents';
+import type { ActivityEvent } from '../hooks/useTicketEvents';
 
 interface ActivityTimelineProps {
   events: ActivityEvent[];
@@ -111,7 +111,7 @@ function EventGist({ event }: { event: ActivityEvent }) {
 }
 
 /**
- * Renders an assignment's audit-timeline events newest-first. Each row shows the
+ * Renders an ticket's audit-timeline events newest-first. Each row shows the
  * event time (relative + absolute on hover), actor, a human label for the type,
  * and a `from → to` / details gist. All values render as React nodes — never
  * `dangerouslySetInnerHTML`. Empty-state when there are no events.
@@ -142,7 +142,7 @@ export function ActivityTimeline({ events, loading, error }: ActivityTimelinePro
   return (
     <SectionCard
       title="Activity"
-      description="Reverse-chronological audit trail of tracked changes to this assignment — who changed what, when."
+      description="Reverse-chronological audit trail of tracked changes to this ticket — who changed what, when."
     >
       <ol className="space-y-3">
         {events.map((event) => (

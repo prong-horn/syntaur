@@ -5,8 +5,8 @@ import type { InboxItem } from '../../lib/inbox';
 
 const base: InboxItem = {
   project: 'demo',
-  assignmentSlug: 'task',
-  assignmentId: 'uuid-1',
+  ticketSlug: 'task',
+  ticketId: 'uuid-1',
   title: 'Needs me',
   category: 'question',
   since: '2026-06-16T00:00:00Z',
@@ -14,7 +14,7 @@ const base: InboxItem = {
   summary: 'Which name?',
   commentId: 'c1',
   action: { verb: 'Answer', command: 'syntaur comment task "<answer>" --reply-to c1 --project demo' },
-  assignmentUpdated: '',
+  ticketUpdated: '',
 };
 
 function mockInboxWindow(window: '14d' | 'all' = '14d') {

@@ -1,10 +1,10 @@
-import type { ProjectSummary, AssignmentBoardItem, ExternalIdInfo } from '../hooks/useProjects';
+import type { ProjectSummary, TicketBoardItem, ExternalIdInfo } from '../hooks/useProjects';
 import type { PlaybookSummary } from '../types';
 import type { ContentHit, ContentMatchRange } from '../hooks/useContentSearch';
 
 export type PaletteEntryType =
   | 'project'
-  | 'assignment'
+  | 'ticket'
   | 'playbook'
   | 'page'
   | 'content';
@@ -19,7 +19,7 @@ export interface PaletteEntry {
   status?: string;
   tags?: string[];
   assignee?: string | null;
-  assignmentType?: string | null;
+  ticketType?: string | null;
   project?: string | null;
   externalIds?: ExternalIdInfo[];
   snippet?: string;
@@ -29,7 +29,7 @@ export interface PaletteEntry {
 export const STATIC_PAGES = [
   { id: 'page-overview',    title: 'Overview',    basePath: '/',            keywords: ['home', 'dashboard'] },
   { id: 'page-projects',    title: 'Projects',    basePath: '/projects',    keywords: [] },
-  { id: 'page-assignments', title: 'Assignments', basePath: '/assignments', keywords: [] },
+  { id: 'page-tickets', title: 'Tickets', basePath: '/tickets', keywords: [] },
   { id: 'page-agent-sessions', title: 'Agent Sessions', basePath: '/agent-sessions', keywords: ['sessions', 'runs', 'claude', 'codex'] },
   { id: 'page-playbooks',   title: 'Playbooks',   basePath: '/playbooks',   keywords: [] },
   { id: 'page-workflow',    title: 'Workflow',    basePath: '/workflow',    keywords: ['statuses', 'transitions', 'derive', 'facts'] },
@@ -39,7 +39,7 @@ export const STATIC_PAGES = [
 
 interface BuildInput {
   projects?: ProjectSummary[];
-  assignments?: AssignmentBoardItem[];
+  tickets?: TicketBoardItem[];
   playbooks?: PlaybookSummary[];
   externalIds?: boolean;
 }
@@ -88,22 +88,22 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
     });
   }
 
-  for (const a of input.assignments ?? []) {
+  for (const a of input.tickets ?? []) {
     out.push({
-      type: 'assignment',
-      id: a.projectSlug === null ? `assignment-standalone-${a.id}` : `assignment-${a.projectSlug}-${a.slug}`,
+      type: 'ticket',
+      id: a.projectSlug === null ? `ticket-standalone-${a.id}` : `ticket-${a.projectSlug}-${a.slug}`,
       title: a.title,
       subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
       keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...idKeywords(a.externalIds)].filter(
         (s): s is string => Boolean(s),
       ),
       route: a.projectSlug === null
-        ? `/assignments/${a.id}`
-        : `/projects/${a.projectSlug}/assignments/${a.slug}`,
+        ? `/tickets/${a.id}`
+        : `/projects/${a.projectSlug}/tickets/${a.slug}`,
       status: a.status,
       tags: a.tags,
       assignee: a.assignee,
-      assignmentType: a.type,
+      ticketType: a.type,
       project: a.projectSlug,
       externalIds: idField(a.externalIds),
     });
@@ -128,7 +128,7 @@ export function contentHitsToEntries(hits: ContentHit[]): PaletteEntry[] {
   return hits.map((hit, idx) => ({
     type: 'content' as const,
     id: `content-${hit.path}-${idx}`,
-    title: `${hit.assignmentSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
+    title: `${hit.ticketSlug ?? ''} › ${hit.section ?? hit.fileKind}`,
     subtitle: hit.projectSlug ?? (hit.standalone ? 'standalone' : undefined),
     route: hit.route,
     project: hit.projectSlug,

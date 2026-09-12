@@ -3,24 +3,24 @@ import { CheckCircle2, Circle, Reply } from 'lucide-react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { SectionCard } from './SectionCard';
 import { cn } from '../lib/utils';
-import type { AssignmentCommentEntry } from '../hooks/useProjects';
+import type { TicketCommentEntry } from '../hooks/useProjects';
 
 type CommentType = 'note' | 'question' | 'feedback';
 
 interface CommentsThreadProps {
-  /** `null` for standalone assignments — uses the /api/assignments/:id/comments route. */
+  /** `null` for standalone tickets — uses the /api/tickets/:id/comments route. */
   projectSlug: string | null;
-  /** Project-nested: the assignment slug. Standalone: the UUID. */
-  assignmentSlug: string;
-  entries: AssignmentCommentEntry[];
+  /** Project-nested: the ticket slug. Standalone: the UUID. */
+  ticketSlug: string;
+  entries: TicketCommentEntry[];
 }
 
 interface ThreadNode {
-  entry: AssignmentCommentEntry;
+  entry: TicketCommentEntry;
   replies: ThreadNode[];
 }
 
-function buildThread(entries: AssignmentCommentEntry[]): ThreadNode[] {
+function buildThread(entries: TicketCommentEntry[]): ThreadNode[] {
   const nodes = new Map<string, ThreadNode>();
   for (const entry of entries) {
     nodes.set(entry.id, { entry, replies: [] });
@@ -37,14 +37,14 @@ function buildThread(entries: AssignmentCommentEntry[]): ThreadNode[] {
   return roots;
 }
 
-function buildCommentBase(projectSlug: string | null, assignmentSlug: string): string {
+function buildCommentBase(projectSlug: string | null, ticketSlug: string): string {
   return projectSlug === null
-    ? `/api/assignments/${encodeURIComponent(assignmentSlug)}/comments`
-    : `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments`;
+    ? `/api/tickets/${encodeURIComponent(ticketSlug)}/comments`
+    : `/api/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}/comments`;
 }
 
-export function CommentsThread({ projectSlug, assignmentSlug, entries }: CommentsThreadProps) {
-  const [localEntries, setLocalEntries] = useState<AssignmentCommentEntry[]>(entries);
+export function CommentsThread({ projectSlug, ticketSlug, entries }: CommentsThreadProps) {
+  const [localEntries, setLocalEntries] = useState<TicketCommentEntry[]>(entries);
   useEffect(() => {
     setLocalEntries(entries);
   }, [entries]);
@@ -63,7 +63,7 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
 
     // Optimistic append.
     const tempId = `tmp-${Date.now()}`;
-    const optimistic: AssignmentCommentEntry = {
+    const optimistic: TicketCommentEntry = {
       id: tempId,
       timestamp: new Date().toISOString(),
       author: 'human',
@@ -74,7 +74,7 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
     setLocalEntries((prev) => [...prev, optimistic]);
 
     try {
-      const res = await fetch(buildCommentBase(projectSlug, assignmentSlug), {
+      const res = await fetch(buildCommentBase(projectSlug, ticketSlug), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: newBody, type: newType }),
@@ -113,8 +113,8 @@ export function CommentsThread({ projectSlug, assignmentSlug, entries }: Comment
     try {
       const url =
         projectSlug === null
-          ? `/api/assignments/${encodeURIComponent(assignmentSlug)}/comments/${encodeURIComponent(commentId)}/resolved`
-          : `/api/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}/comments/${encodeURIComponent(commentId)}/resolved`;
+          ? `/api/tickets/${encodeURIComponent(ticketSlug)}/comments/${encodeURIComponent(commentId)}/resolved`
+          : `/api/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}/comments/${encodeURIComponent(commentId)}/resolved`;
       const res = await fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

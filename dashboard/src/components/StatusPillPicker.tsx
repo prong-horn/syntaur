@@ -5,12 +5,12 @@ import { STATUS_PILL_BASE, getStatusIcon, StatusProgressRing } from './StatusBad
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { resolveStatusAppearance } from '../lib/statusMeta';
 import type { StatusOverrideTarget } from '../lib/statusMeta';
-import type { AssignmentTransitionAction } from '../hooks/useProjects';
+import type { TicketTransitionAction } from '../hooks/useProjects';
 
 interface StatusPillPickerProps {
   currentStatus: string;
-  availableTransitions: AssignmentTransitionAction[];
-  onSelect: (action: AssignmentTransitionAction) => void;
+  availableTransitions: TicketTransitionAction[];
+  onSelect: (action: TicketTransitionAction) => void;
   /** Config-driven direct-set targets, rendered as an "Override → …" section. */
   overrideTargets?: StatusOverrideTarget[];
   onOverride?: (statusId: string) => void;

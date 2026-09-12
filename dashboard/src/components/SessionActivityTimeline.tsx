@@ -14,9 +14,9 @@ interface SessionActivityTimelineProps {
 }
 
 /**
- * Per-session stage attribution for an assignment: each engagement interval
+ * Per-session stage attribution for an ticket: each engagement interval
  * shows which agent/session worked it, in which **stage** (plan/implement/
- * review — the engagement's own stage, NOT the derived assignment phase), and
+ * review — the engagement's own stage, NOT the derived ticket phase), and
  * when (started/ended + duration). Open intervals (`endedAt == null`) render an
  * "In progress" badge and a live elapsed duration with no negative value.
  * Chronological, oldest first. Empty-state when there are no engagements.
@@ -28,7 +28,7 @@ export function SessionActivityTimeline({
     return (
       <EmptyState
         title="No session activity"
-        description="When an agent session works this assignment in a plan, implement, or review stage, each interval appears here as a chronological attribution trail."
+        description="When an agent session works this ticket in a plan, implement, or review stage, each interval appears here as a chronological attribution trail."
       />
     );
   }
@@ -36,7 +36,7 @@ export function SessionActivityTimeline({
   return (
     <SectionCard
       title="Session Activity"
-      description="Per-session stage attribution — which agent session worked this assignment, in which stage, and when."
+      description="Per-session stage attribution — which agent session worked this ticket, in which stage, and when."
     >
       <ol className="space-y-3">
         {engagements.map((engagement) => {

@@ -9,7 +9,7 @@ const author: ItemAuthor = { id: 'human', name: 'You', color: 'slate', avatar: '
 function message(overrides: Partial<UserMessageItem> = {}): UserMessageItem {
   return {
     itemId: 'i1',
-    assignmentId: 'assign-1',
+    ticketId: 'assign-1',
     turnId: null,
     agentId: 'human',
     type: 'user.message',
@@ -41,8 +41,8 @@ describe('UserMessageBubble attachments', () => {
       />,
     );
     expect(html.match(/<img /g)?.length).toBe(2);
-    expect(html).toContain('/api/assignments/assign-1/chat/attachments/a1');
-    expect(html).toContain('/api/assignments/assign-1/chat/attachments/a2');
+    expect(html).toContain('/api/tickets/assign-1/chat/attachments/a1');
+    expect(html).toContain('/api/tickets/assign-1/chat/attachments/a2');
     expect(html).toContain('target="_blank"');
   });
 

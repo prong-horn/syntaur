@@ -39,7 +39,7 @@ export function ProgressBar({
     // Use config order to determine segment ordering, then append any statuses
     // present in `progress` but missing from the configured order (orphan/custom
     // statuses). Without this, a status outside config.order would be dropped —
-    // leaving an empty bar and a misleading "No assignments yet" legend even
+    // leaving an empty bar and a misleading "No tickets yet" legend even
     // though total > 0.
     const progressKeys = Object.keys(progress).filter((k) => k !== 'total');
     const keys = config.order.length > 0
@@ -88,7 +88,7 @@ export function ProgressBar({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground/70">No assignments yet</p>
+          <p className="text-xs text-muted-foreground/70">No tickets yet</p>
         )
       ) : null}
     </div>

@@ -36,7 +36,7 @@ const TICK_MS = 1000;
 
 const CHAT_FRAMES = new Set(['chat-item', 'chat-session', 'chat-participants', 'chat-agents']);
 
-export interface UseAssignmentChatResult {
+export interface UseTicketChatResult {
   items: ChatItem[];
   /** One entry per agent that has a session, keyed by agent id. */
   sessions: Map<string, ChatSessionSummary>;
@@ -67,18 +67,18 @@ export interface UseAssignmentChatResult {
 }
 
 /**
- * Load an assignment's chat and keep it live.
+ * Load an ticket's chat and keep it live.
  *
  * History comes from REST; everything after that arrives as `chat-item`,
  * `chat-session` and `chat-participants` frames on the shared `/ws` connection.
  * The broadcast is a flat fan-out with no topics (Decision 3), so frames for
- * other assignments are filtered out here.
+ * other tickets are filtered out here.
  *
  * A chat holds SEVERAL agents now, so the session is a map keyed by agent id
  * and every item resolves its own author rather than inheriting one from the
  * tab.
  */
-export function useAssignmentChat(assignmentId: string | null): UseAssignmentChatResult {
+export function useTicketChat(ticketId: string | null): UseTicketChatResult {
   const [state, setState] = useState<ChatState>(emptyChatState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -89,7 +89,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
   const refresh = useCallback(() => setReloadCount((n) => n + 1), []);
 
   useEffect(() => {
-    if (!assignmentId) {
+    if (!ticketId) {
       setState(emptyChatState());
       setLoading(false);
       return;
@@ -100,15 +100,15 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     void (async () => {
       try {
         const [page, roster] = await Promise.all([
-          fetchChatItems(assignmentId, { limit: PAGE_SIZE }),
-          fetchChatParticipants(assignmentId),
+          fetchChatItems(ticketId, { limit: PAGE_SIZE }),
+          fetchChatParticipants(ticketId),
         ]);
         if (cancelled) return;
         // One read per attached agent. The server materialises attached agents
         // itself now, so this is a read rather than a create.
         const summaries = await Promise.all(
           roster.participants.agents.map((agentId) =>
-            fetchChatSession(assignmentId, agentId).catch(() => ({ session: null })),
+            fetchChatSession(ticketId, agentId).catch(() => ({ session: null })),
           ),
         );
         if (cancelled) return;
@@ -129,23 +129,23 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
     return () => {
       cancelled = true;
     };
-  }, [assignmentId, reloadCount]);
+  }, [ticketId, reloadCount]);
 
   useWebSocket(
     useCallback(
       (message: WsMessage) => {
-        if (!assignmentId) return;
+        if (!ticketId) return;
         if (!CHAT_FRAMES.has(message.type)) return;
         setState((prev) =>
           applyFrame(
             prev,
-            assignmentId,
+            ticketId,
             message.type as 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents',
             message.payload,
           ),
         );
       },
-      [assignmentId],
+      [ticketId],
     ),
   );
 
@@ -198,7 +198,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
 
   const send = useCallback(
     async (text: string, agentId?: string | null, images?: PendingImage[]) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       setError(null);
       try {
         const attachmentIds: string[] = [];
@@ -207,7 +207,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
           for (const image of images) {
             const { blob, width, height, mimeType } = await downscaleImage(image.file);
             const uploaded = await uploadChatAttachment(
-              assignmentId,
+              ticketId,
               blob,
               attachmentUploadName(image.name, mimeType),
               mimeType,
@@ -216,7 +216,7 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
             attachmentMeta[uploaded.id] = { width, height };
           }
         }
-        await sendChatMessage(assignmentId, text, agentId, {
+        await sendChatMessage(ticketId, text, agentId, {
           ...(attachmentIds.length ? { attachmentIds, attachmentMeta } : {}),
         });
       } catch (err) {
@@ -224,84 +224,84 @@ export function useAssignmentChat(assignmentId: string | null): UseAssignmentCha
         throw err;
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const withdraw = useCallback(
     async (messageId: string) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       try {
-        await withdrawChatMessage(assignmentId, messageId);
+        await withdrawChatMessage(ticketId, messageId);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const cancel = useCallback(
     async (agentId?: string | null) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       try {
-        await cancelChatTurn(assignmentId, agentId ?? null);
+        await cancelChatTurn(ticketId, agentId ?? null);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const setParticipants = useCallback(
     async (next: Participants) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       setError(null);
       try {
-        const saved = await putChatParticipants(assignmentId, next);
+        const saved = await putChatParticipants(ticketId, next);
         setState((prev) => ({ ...prev, participants: saved.participants, agents: saved.agents }));
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         throw err;
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const answerPermission = useCallback(
     async (requestId: string, optionId: string, opts?: { allowAllSession?: boolean }) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       try {
-        await answerChatPermission(assignmentId, requestId, optionId, opts);
+        await answerChatPermission(ticketId, requestId, optionId, opts);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const answerQuestion = useCallback(
     async (requestId: string, answer: { optionId?: string; text?: string }) => {
-      if (!assignmentId) return;
+      if (!ticketId) return;
       try {
-        await answerChatQuestion(assignmentId, requestId, answer);
+        await answerChatQuestion(ticketId, requestId, answer);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [assignmentId],
+    [ticketId],
   );
 
   const loadOlder = useCallback(async () => {
-    if (!assignmentId || loadingOlder.current || !state.hasMore || state.oldestSeq === null) return;
+    if (!ticketId || loadingOlder.current || !state.hasMore || state.oldestSeq === null) return;
     loadingOlder.current = true;
     try {
-      const page = await fetchChatItems(assignmentId, { before: state.oldestSeq, limit: PAGE_SIZE });
+      const page = await fetchChatItems(ticketId, { before: state.oldestSeq, limit: PAGE_SIZE });
       setState((prev) => mergePage(prev, page, PAGE_SIZE));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       loadingOlder.current = false;
     }
-  }, [assignmentId, state.hasMore, state.oldestSeq]);
+  }, [ticketId, state.hasMore, state.oldestSeq]);
 
   return {
     items,

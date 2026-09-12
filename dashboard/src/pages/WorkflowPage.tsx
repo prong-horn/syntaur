@@ -279,7 +279,7 @@ export function WorkflowPage() {
             ? errBody.unresolved.map((u: { id: string }) => u.id).join(', ')
             : '';
           throw new Error(
-            `Cannot save — these statuses have assignments that need a resolution: ${ids}. Click the trash icon on each row to choose remap or delete.`,
+            `Cannot save — these statuses have tickets that need a resolution: ${ids}. Click the trash icon on each row to choose remap or delete.`,
           );
         }
         if (res.status === 409 && errBody?.error === 'concurrent-edit') {
@@ -288,7 +288,7 @@ export function WorkflowPage() {
             : '';
           setFeedback({
             type: 'error',
-            message: `Concurrent edit detected${applied}: ${errBody.cause ?? 'an assignment moved to a still-dropped status during save'}. Refreshing — please re-resolve.`,
+            message: `Concurrent edit detected${applied}: ${errBody.cause ?? 'an ticket moved to a still-dropped status during save'}. Refreshing — please re-resolve.`,
           });
           await loadConfig();
           return;
@@ -522,7 +522,7 @@ export function WorkflowPage() {
     const ruleReferences = findStatusRuleReferences(removedId, derive, transitions);
     const headlineReferences = headlineReferencesStatus(removedId, derive);
 
-    // Row added in this session (not on disk yet) — no assignments possible.
+    // Row added in this session (not on disk yet) — no tickets possible.
     if (!savedStatusIds.has(removedId)) {
       if (ruleReferences.length === 0) {
         dropRowAndPrune(removedId);
@@ -530,7 +530,7 @@ export function WorkflowPage() {
       }
       setModalState({
         open: true,
-        affected: { id: removedId, count: 0, truncated: false, assignments: [] },
+        affected: { id: removedId, count: 0, truncated: false, tickets: [] },
         pendingId: removedId,
         ruleReferences,
         headlineReferences,
@@ -538,7 +538,7 @@ export function WorkflowPage() {
       return;
     }
 
-    // Row backed by disk — check for affected assignments.
+    // Row backed by disk — check for affected tickets.
     try {
       const res = await fetch(affectedEndpoint(selectedWorkflowId, removedId));
       if (!res.ok) {
@@ -553,7 +553,7 @@ export function WorkflowPage() {
     } catch (err) {
       setFeedback({
         type: 'error',
-        message: `Could not check affected assignments for "${removedId}": ${
+        message: `Could not check affected tickets for "${removedId}": ${
           err instanceof Error ? err.message : String(err)
         }`,
       });
@@ -599,7 +599,7 @@ export function WorkflowPage() {
       setPendingResolutions((prevRes) => {
         // First drop resolutions whose target is now gone (because we just
         // removed pendingId), then add the new resolution for pendingId — but
-        // only when there are real assignments to resolve (count 0 needs none).
+        // only when there are real tickets to resolve (count 0 needs none).
         const pruned = pruneStaleResolutions(prevRes, nextIds);
         const next = new Map(pruned);
         if (affected.count > 0) next.set(pendingId, resolution);

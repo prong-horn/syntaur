@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Archive as ArchiveIcon, ArchiveRestore, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react';
-import { useArchived, type ArchivedAssignmentItem, type ArchivedProjectItem } from '../hooks/useProjects';
+import { useArchived, type ArchivedTicketItem, type ArchivedProjectItem } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -20,10 +20,10 @@ function ArchivedPill() {
   );
 }
 
-function assignmentHref(item: ArchivedAssignmentItem): string {
+function ticketHref(item: ArchivedTicketItem): string {
   return item.projectSlug
-    ? `/projects/${item.projectSlug}/assignments/${item.slug}`
-    : `/assignments/${item.id}`;
+    ? `/projects/${item.projectSlug}/tickets/${item.slug}`
+    : `/tickets/${item.id}`;
 }
 
 export function Archive() {
@@ -55,26 +55,26 @@ export function Archive() {
     return post(`/api/projects/${project.slug}/unarchive`, `project:${project.slug}`, 'Project restored');
   }
 
-  function restoreAssignment(item: ArchivedAssignmentItem) {
+  function restoreTicket(item: ArchivedTicketItem) {
     const url = item.projectSlug
-      ? `/api/projects/${item.projectSlug}/assignments/${item.slug}/unarchive`
-      : `/api/assignments/${item.id}/unarchive`;
-    return post(url, `assignment:${item.id}`, 'Assignment restored');
+      ? `/api/projects/${item.projectSlug}/tickets/${item.slug}/unarchive`
+      : `/api/tickets/${item.id}/unarchive`;
+    return post(url, `ticket:${item.id}`, 'Ticket restored');
   }
 
   if (loading) return <LoadingState label="Loading archived content…" />;
   if (error) return <ErrorState error={error} />;
 
   const projects = data?.projects ?? [];
-  const assignments = data?.assignments ?? [];
-  const isEmpty = projects.length === 0 && assignments.length === 0;
+  const tickets = data?.tickets ?? [];
+  const isEmpty = projects.length === 0 && tickets.length === 0;
 
   return (
     <div className="space-y-6">
       <Toaster toast={toast} onDismiss={dismissToast} />
       <PageHeader
         title="Archive"
-        description="Archived projects and individually-archived assignments. Restoring a project also brings back its cascade-hidden assignments; assignments archived on their own stay archived until restored here."
+        description="Archived projects and individually-archived tickets. Restoring a project also brings back its cascade-hidden tickets; tickets archived on their own stay archived until restored here."
       />
 
       {actionError ? (
@@ -86,12 +86,12 @@ export function Archive() {
       {isEmpty ? (
         <EmptyState
           title="Nothing archived"
-          description="Archived projects and assignments will appear here, ready to restore."
+          description="Archived projects and tickets will appear here, ready to restore."
         />
       ) : (
         <>
           {projects.length > 0 && (
-            <SectionCard title="Archived Projects" description="Restoring a project unhides every cascade-hidden assignment; individually-archived children stay archived.">
+            <SectionCard title="Archived Projects" description="Restoring a project unhides every cascade-hidden ticket; individually-archived children stay archived.">
               <ul className="divide-y divide-border">
                 {projects.map((project) => {
                   const open = expanded[project.slug] ?? false;
@@ -108,7 +108,7 @@ export function Archive() {
                           <FolderKanban className="h-4 w-4 text-muted-foreground" />
                           {project.title}
                           <span className="text-xs text-muted-foreground">
-                            ({project.assignments.length} assignment{project.assignments.length === 1 ? '' : 's'})
+                            ({project.tickets.length} ticket{project.tickets.length === 1 ? '' : 's'})
                           </span>
                         </button>
                         <span className="text-xs text-muted-foreground">
@@ -133,11 +133,11 @@ export function Archive() {
                           </button>
                         </div>
                       </div>
-                      {open && project.assignments.length > 0 && (
+                      {open && project.tickets.length > 0 && (
                         <ul className="mt-2 space-y-1 pl-9">
-                          {project.assignments.map((child) => (
+                          {project.tickets.map((child) => (
                             <li key={child.id} className="flex flex-wrap items-center gap-2 text-sm">
-                              <Link to={assignmentHref(child)} className="text-foreground hover:text-foreground/80">
+                              <Link to={ticketHref(child)} className="text-foreground hover:text-foreground/80">
                                 {child.title}
                               </Link>
                               <StatusBadge status={child.status} showIcon={false} />
@@ -157,12 +157,12 @@ export function Archive() {
             </SectionCard>
           )}
 
-          {assignments.length > 0 && (
-            <SectionCard title="Archived Assignments" description="Individually-archived assignments whose project is still active.">
+          {tickets.length > 0 && (
+            <SectionCard title="Archived Tickets" description="Individually-archived tickets whose project is still active.">
               <ul className="divide-y divide-border">
-                {assignments.map((item) => (
+                {tickets.map((item) => (
                   <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
-                    <Link to={assignmentHref(item)} className="text-sm font-medium text-foreground hover:text-foreground/80">
+                    <Link to={ticketHref(item)} className="text-sm font-medium text-foreground hover:text-foreground/80">
                       {item.title}
                     </Link>
                     <StatusBadge status={item.status} showIcon={false} />
@@ -174,8 +174,8 @@ export function Archive() {
                     </span>
                     <button
                       type="button"
-                      onClick={() => restoreAssignment(item)}
-                      disabled={busy === `assignment:${item.id}`}
+                      onClick={() => restoreTicket(item)}
+                      disabled={busy === `ticket:${item.id}`}
                       className="ml-auto inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground disabled:opacity-50"
                     >
                       <ArchiveRestore className="h-3 w-3" />

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 
-export function CreateAssignment() {
-  const { slug } = useParams<{ slug: string }>();
+export function CreateStandaloneTicket() {
   const navigate = useNavigate();
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -13,7 +12,7 @@ export function CreateAssignment() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch('/api/templates/assignment')
+    fetch('/api/templates/ticket?standalone=1')
       .then((response) => response.json())
       .then((payload) => {
         setContent(payload.content);
@@ -26,16 +25,11 @@ export function CreateAssignment() {
   }, []);
 
   async function handleSave(markdownContent: string) {
-    if (!slug) {
-      setError('Project slug is required.');
-      return;
-    }
-
     setSaving(true);
     setError(null);
 
     try {
-      const response = await fetch(`/api/projects/${slug}/assignments`, {
+      const response = await fetch('/api/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: markdownContent }),
@@ -48,7 +42,13 @@ export function CreateAssignment() {
         return;
       }
 
-      navigate(`/projects/${slug}/assignments/${payload.slug}`);
+      const newId = payload?.ticket?.id;
+      if (!newId) {
+        setError('Server did not return the new ticket id.');
+        setSaving(false);
+        return;
+      }
+      navigate(`/tickets/${newId}`);
     } catch (saveError) {
       setError((saveError as Error).message);
       setSaving(false);
@@ -59,7 +59,7 @@ export function CreateAssignment() {
   }
 
   if (loading) {
-    return <LoadingState label="Loading assignment template…" />;
+    return <LoadingState label="Loading ticket template…" />;
   }
 
   if (error && !content) {
@@ -69,16 +69,16 @@ export function CreateAssignment() {
   return (
     <MarkdownEditor
       initialContent={content || ''}
-      documentType="assignment"
+      documentType="ticket"
       mode="create"
       onSave={handleSave}
       saving={saving}
       error={error}
-      title="Create Assignment"
-      description="Assignments are the execution unit. Declare dependencies here, keep status pending until work starts, and use blocked later only for runtime obstacles."
-      onCancel={() => navigate(slug ? `/projects/${slug}` : `/projects`)}
-      helpTitle="Assignment editing rules"
-      helpBody="Use structured fields for priority, assignee, dependencies, and tags. Status can be changed through lifecycle actions, kanban drag, or the status override."
+      title="Create Standalone Ticket"
+      description="Standalone tickets live outside any project."
+      onCancel={() => navigate('/tickets')}
+      helpTitle="Standalone ticket editing rules"
+      helpBody="No project field is needed (it must remain null). Status, priority, and tags work the same as project-nested tickets."
       allowSlugEdit
     />
   );

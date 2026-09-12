@@ -1,29 +1,29 @@
 import { useParams } from 'react-router-dom';
 import { DocumentEditorPage } from '../components/DocumentEditorPage';
 
-export function EditAssignment() {
+export function EditTicket() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
 
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
-    ? `/api/assignments/${id}/edit`
-    : `/api/projects/${slug}/assignments/${aslug}/edit`;
+    ? `/api/tickets/${id}/edit`
+    : `/api/projects/${slug}/tickets/${aslug}/edit`;
   const saveUrl = isStandalone
-    ? `/api/assignments/${id}`
-    : `/api/projects/${slug}/assignments/${aslug}`;
+    ? `/api/tickets/${id}`
+    : `/api/projects/${slug}/tickets/${aslug}`;
   const redirectTo = isStandalone
-    ? `/assignments/${id}`
-    : `/projects/${slug}/assignments/${aslug}`;
+    ? `/tickets/${id}`
+    : `/projects/${slug}/tickets/${aslug}`;
 
   return (
     <DocumentEditorPage
       loadUrl={loadUrl}
       saveUrl={saveUrl}
       redirectTo={redirectTo}
-      title="Edit Assignment"
-      description="Edit assignment fields including status, priority, assignee, dependencies, and body."
-      documentType="assignment"
-      helpTitle="Assignment editing"
+      title="Edit Ticket"
+      description="Edit ticket fields including status, priority, assignee, dependencies, and body."
+      documentType="ticket"
+      helpTitle="Ticket editing"
       helpBody="All fields are editable. Status can also be changed through lifecycle actions or kanban drag."
     />
   );

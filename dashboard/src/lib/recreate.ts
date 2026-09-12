@@ -5,10 +5,10 @@
 
 /** Identity carried by a recreate request — enough to route the POST. */
 export interface RecreateIdentity {
-  kind: 'assignment' | 'session';
+  kind: 'ticket' | 'session';
   id: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
 }
 
 /**
@@ -16,8 +16,8 @@ export interface RecreateIdentity {
  * server re-derives the path/repo/branch from persisted state, so the request
  * carries no path — only the route identifies the target:
  *   - session            -> /api/agent-sessions/:id/worktree/recreate
- *   - project assignment -> /api/projects/:slug/assignments/:aslug/worktree/recreate
- *   - standalone          -> /api/assignments/:id/worktree/recreate
+ *   - project ticket -> /api/projects/:slug/tickets/:aslug/worktree/recreate
+ *   - standalone          -> /api/tickets/:id/worktree/recreate
  */
 export function recreateRequest(identity: RecreateIdentity): {
   method: 'POST';
@@ -29,14 +29,14 @@ export function recreateRequest(identity: RecreateIdentity): {
       url: `/api/agent-sessions/${encodeURIComponent(identity.id)}/worktree/recreate`,
     };
   }
-  if (identity.projectSlug && identity.assignmentSlug) {
+  if (identity.projectSlug && identity.ticketSlug) {
     return {
       method: 'POST',
-      url: `/api/projects/${encodeURIComponent(identity.projectSlug)}/assignments/${encodeURIComponent(identity.assignmentSlug)}/worktree/recreate`,
+      url: `/api/projects/${encodeURIComponent(identity.projectSlug)}/tickets/${encodeURIComponent(identity.ticketSlug)}/worktree/recreate`,
     };
   }
   return {
     method: 'POST',
-    url: `/api/assignments/${encodeURIComponent(identity.id)}/worktree/recreate`,
+    url: `/api/tickets/${encodeURIComponent(identity.id)}/worktree/recreate`,
   };
 }

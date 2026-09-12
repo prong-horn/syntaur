@@ -86,7 +86,7 @@ describe('workInProgress', () => {
   const card = (overrides: Partial<AgentWorkItem>): AgentWorkItem =>
     ({
       itemId: 't:0',
-      assignmentId: 'a',
+      ticketId: 'a',
       turnId: 't',
       agentId: 'claude',
       type: 'agent.work',
@@ -125,9 +125,9 @@ describe('workInProgress', () => {
 describe('formatLocations', () => {
   it('shows the basename, line and an overflow count', () => {
     expect(formatLocations([])).toBe('');
-    expect(formatLocations([{ path: '/a/b/server.ts' }])).toBe('server.ts');
-    expect(formatLocations([{ path: '/a/b/server.ts', line: 126 }])).toBe('server.ts:126');
-    expect(formatLocations([{ path: '/a/b/server.ts' }, { path: '/a/c.ts' }])).toBe('server.ts +1');
+    expect(formatLocations([{ path: '/t/b/server.ts' }])).toBe('server.ts');
+    expect(formatLocations([{ path: '/t/b/server.ts', line: 126 }])).toBe('server.ts:126');
+    expect(formatLocations([{ path: '/t/b/server.ts' }, { path: '/t/c.ts' }])).toBe('server.ts +1');
   });
 });
 
@@ -175,7 +175,7 @@ describe('permission options', () => {
 
 describe('pinnedPlan', () => {
   const base = {
-    assignmentId: 'a',
+    ticketId: 'a',
     agentId: 'claude',
     ts: '2026-09-02T12:00:00.000Z',
     seqLast: 0,
@@ -281,7 +281,7 @@ describe('raw I/O', () => {
 describe('groupByTurn', () => {
   const row = (over: Partial<ChatItem> & Pick<ChatItem, 'itemId' | 'type'>): ChatItem =>
     ({
-      assignmentId: 'a1',
+      ticketId: 'a1',
       turnId: 't1',
       agentId: 'planner',
       ts: '2026-09-02T12:00:00.000Z',

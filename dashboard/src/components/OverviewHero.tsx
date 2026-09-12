@@ -31,10 +31,10 @@ export function OverviewHero({ hero, itemsById }: OverviewHeroProps) {
   }
 
   const item = hero.itemId ? itemsById[hero.itemId] : undefined;
-  const title = item?.assignmentTitle ?? '';
+  const title = item?.ticketTitle ?? '';
   const copyTemplate = HERO_COPY[hero.copyKey as HeroCopyKey] ?? HERO_COPY[hero.kind as HeroCopyKey];
   const headline = formatCopy(copyTemplate, { total: hero.total, title });
-  const href = item?.href ?? '/assignments';
+  const href = item?.href ?? '/tickets';
 
   return (
     <section
@@ -53,7 +53,7 @@ export function OverviewHero({ hero, itemsById }: OverviewHeroProps) {
       ) : null}
       <div className="mt-4">
         <Link to={href} className="shell-action shell-action--cta">
-          Open {title || 'assignment'}
+          Open {title || 'ticket'}
         </Link>
       </div>
     </section>

@@ -1,7 +1,7 @@
 import { DEFAULT_ASSIGNMENT_BOARD_COLUMNS } from './kanban';
 
 /** Minimal shape a board item must expose for workflow-aware grouping. Satisfied
- * by AssignmentSummary / AssignmentBoardItem (Task 9 payload fields). */
+ * by TicketSummary / TicketBoardItem (Task 9 payload fields). */
 export interface WorkflowBoardItem {
   resolvedWorkflow: string;
   workflowLabel: string;

@@ -53,7 +53,7 @@ export const BUILTIN_HOTKEY_CATALOG: readonly BuiltinHotkeyEntry[] = [
   { combo: 'g',           description: 'Start navigation chord',        scope: 'global' },
   { combo: 'g o',         description: 'Go to Overview',                scope: 'global' },
   { combo: 'g m',         description: 'Go to Projects',                scope: 'global' },
-  { combo: 'g a',         description: 'Go to Assignments',             scope: 'global' },
+  { combo: 'g t',         description: 'Go to Tickets',             scope: 'global' },
   { combo: 'g !',         description: 'Go to Attention',               scope: 'global' },
   { combo: 'g ,',         description: 'Go to Settings',                scope: 'global' },
 
@@ -61,18 +61,18 @@ export const BUILTIN_HOTKEY_CATALOG: readonly BuiltinHotkeyEntry[] = [
   { combo: 'k',           description: 'Move selection up',             scope: 'list' },
   { combo: 'o',           description: 'Open selected item',            scope: 'list' },
 
-  { combo: 'a',           description: 'New assignment in project',     scope: 'project' },
-  { combo: 'e',           description: 'Edit project / assignment',     scope: 'project|assignment' },
+  { combo: 'a',           description: 'New ticket in project',     scope: 'project' },
+  { combo: 'e',           description: 'Edit project / ticket',     scope: 'project|ticket' },
 
-  { combo: '/',           description: 'Focus search',                  scope: 'assignments-board' },
-  { combo: 'r',           description: 'Refresh board',                 scope: 'assignments-board' },
+  { combo: '/',           description: 'Focus search',                  scope: 'tickets-board' },
+  { combo: 'r',           description: 'Refresh board',                 scope: 'tickets-board' },
 
-  { combo: 'p',           description: 'Edit plan',                     scope: 'assignment' },
-  { combo: 'h',           description: 'Append handoff',                scope: 'assignment' },
-  { combo: 'd',           description: 'Append decision record',        scope: 'assignment' },
-  { combo: 's',           description: 'Edit scratchpad',               scope: 'assignment' },
-  { combo: '[',           description: 'Previous assignment',           scope: 'assignment' },
-  { combo: ']',           description: 'Next assignment',               scope: 'assignment' },
+  { combo: 'p',           description: 'Edit plan',                     scope: 'ticket' },
+  { combo: 'h',           description: 'Append handoff',                scope: 'ticket' },
+  { combo: 'd',           description: 'Append decision record',        scope: 'ticket' },
+  { combo: 's',           description: 'Edit scratchpad',               scope: 'ticket' },
+  { combo: '[',           description: 'Previous ticket',           scope: 'ticket' },
+  { combo: ']',           description: 'Next ticket',               scope: 'ticket' },
 ];
 
 export function lookupReservedCombo(combo: string): BuiltinHotkeyEntry | null {
@@ -87,6 +87,6 @@ export function lookupReservedCombo(combo: string): BuiltinHotkeyEntry | null {
  */
 export const BINDABLE_ACTION_LABELS: Record<BindableActionKind, string> = {
   'new-project': 'New Project',
-  'new-assignment': 'New Assignment',
+  'new-ticket': 'New Ticket',
 };
 

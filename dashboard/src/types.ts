@@ -28,7 +28,7 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 
 export interface AgentSession {
   projectSlug: string | null;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   agent: string;
   sessionId: string;
   started: string;

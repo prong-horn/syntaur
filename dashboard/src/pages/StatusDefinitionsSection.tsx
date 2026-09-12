@@ -72,7 +72,7 @@ function SortableStatusRow({ row, isSaved, onUpdate, onRemove }: SortableStatusR
               />
             </TooltipTrigger>
             <TooltipContent className="max-w-xs text-xs font-normal normal-case tracking-normal">
-              To rename a saved status, delete the row and create a new one (this triggers the orphan-resolution flow if assignments still reference it).
+              To rename a saved status, delete the row and create a new one (this triggers the orphan-resolution flow if tickets still reference it).
             </TooltipContent>
           </Tooltip>
         ) : (
@@ -125,7 +125,7 @@ function SortableStatusRow({ row, isSaved, onUpdate, onRemove }: SortableStatusR
             </span>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-xs font-normal normal-case tracking-normal">
-            When enabled, assignments in this status count as finished — they fill the "done" portion of progress bars and satisfy dependency requirements.
+            When enabled, tickets in this status count as finished — they fill the "done" portion of progress bars and satisfy dependency requirements.
           </TooltipContent>
         </Tooltip>
         <button
@@ -196,7 +196,7 @@ export function StatusDefinitionsSection({
   return (
     <SectionCard
       title="Status Definitions"
-      description="Define the statuses assignments can have. Drag rows to set the display order used by Kanban columns, progress bars, and dropdowns."
+      description="Define the statuses tickets can have. Drag rows to set the display order used by Kanban columns, progress bars, and dropdowns."
       actions={
         <button className="shell-action text-xs" onClick={onAdd}>
           <Plus className="h-3 w-3" />

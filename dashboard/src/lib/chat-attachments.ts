@@ -94,8 +94,8 @@ export async function downscaleImage(
   return { blob, width, height, mimeType: encodedMime };
 }
 
-export function chatAttachmentUrl(assignmentId: string, attachmentId: string): string {
-  return `/api/assignments/${encodeURIComponent(assignmentId)}/chat/attachments/${encodeURIComponent(attachmentId)}`;
+export function chatAttachmentUrl(ticketId: string, attachmentId: string): string {
+  return `/api/tickets/${encodeURIComponent(ticketId)}/chat/attachments/${encodeURIComponent(attachmentId)}`;
 }
 
 const MIME_EXT: Record<string, string> = {

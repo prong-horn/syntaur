@@ -4,12 +4,12 @@ import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from
 import { CopyButton } from '../components/CopyButton';
 import { ProjectWorkflowSection } from '../components/ProjectWorkflowSection';
 import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
-import { useProject, type AssignmentSummary } from '../hooks/useProjects';
+import { useProject, type TicketSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
-import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
+import { TicketStatusPill } from '../components/TicketStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
@@ -27,16 +27,16 @@ import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { coerceProjectDetailView, toFilterValues, type SortField, type SortDirection, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
-import { getAssignmentColumns } from '../lib/kanban';
-import { sortAssignments } from '../lib/sortAssignments';
-import { filterAssignment } from '../lib/assignmentFilter';
+import { getTicketColumns } from '../lib/kanban';
+import { sortTickets } from '../lib/sortTickets';
+import { filterTicket } from '../lib/ticketFilter';
 import { MultiSelect, type MultiSelectOption } from '../components/ui/MultiSelect';
 import { DateRangeControl } from '../components/ui/DateRangeControl';
 import { minimizeDateRange, type DateRangeUiState } from '../lib/dateRange';
 import type { TableColumnId } from '@shared/view-prefs-schema';
 import { useToast, Toaster } from '../components/Toast';
 
-const VALID_TABS = new Set(['overview', 'assignments', 'workflow', 'dependencies']);
+const VALID_TABS = new Set(['overview', 'tickets', 'workflow', 'dependencies']);
 const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
 
 export function ProjectDetail() {
@@ -46,8 +46,8 @@ export function ProjectDetail() {
   useHotkey({
     keys: 'a',
     scope: 'project',
-    description: 'Create assignment',
-    handler: () => navigate(`/projects/${slug}/create/assignment`),
+    description: 'Create ticket',
+    handler: () => navigate(`/projects/${slug}/create/ticket`),
   });
   useHotkey({
     keys: 'e',
@@ -75,11 +75,11 @@ export function ProjectDetail() {
       { replace: true },
     );
   }
-  // Namespace the scope key (see AssignmentsPage for rationale).
+  // Namespace the scope key (see TicketsPage for rationale).
   const scopeKey = slug ? `p:${slug}` : null;
   const prefs = useViewPrefs(scopeKey);
 
-  const [assignmentView, setAssignmentView] = useState<'kanban' | 'table'>(
+  const [ticketView, setTicketView] = useState<'kanban' | 'table'>(
     () => coerceProjectDetailView(prefs.defaultView),
   );
   const [statusFilter, setStatusFilter] = useState<string[]>(() => toFilterValues(prefs.filters.status));
@@ -106,7 +106,7 @@ export function ProjectDetail() {
   // Persistence is driven by user-action wrappers below, so these setX calls
   // do not trigger saves — inherited fields stay inherited.
   useEffect(() => {
-    setAssignmentView(coerceProjectDetailView(prefs.defaultView));
+    setTicketView(coerceProjectDetailView(prefs.defaultView));
     setStatusFilter(toFilterValues(prefs.filters.status));
     setAssigneeFilter(toFilterValues(prefs.filters.assignee));
     setPriorityFilter(toFilterValues(prefs.filters.priority));
@@ -127,9 +127,9 @@ export function ProjectDetail() {
     [scopeKey],
   );
 
-  const handleSetAssignmentView = useCallback(
+  const handleSetTicketView = useCallback(
     (v: 'kanban' | 'table') => {
-      setAssignmentView(v);
+      setTicketView(v);
       persistField({ defaultView: v });
     },
     [persistField],
@@ -205,11 +205,11 @@ export function ProjectDetail() {
 
   const dependencyRoutes = useMemo(
     () => project ? Object.fromEntries(
-      project.assignments.flatMap((assignment) => {
-        const route = `/projects/${project.slug}/assignments/${assignment.slug}`;
+      project.tickets.flatMap((ticket) => {
+        const route = `/projects/${project.slug}/tickets/${ticket.slug}`;
         return [
-          [assignment.slug, route],
-          [assignment.title, route],
+          [ticket.slug, route],
+          [ticket.title, route],
         ];
       }),
     ) : {},
@@ -272,11 +272,11 @@ export function ProjectDetail() {
   }
 
   // Assignee options: the sentinel-aware shared model (null -> '__unassigned__'),
-  // matching AssignmentsPage and filterAssignment, so an Unassigned saved view
+  // matching TicketsPage and filterTicket, so an Unassigned saved view
   // round-trips here. MultiSelect injects any orphan selection not in this list.
   const assigneeOptions: MultiSelectOption[] = (() => {
     const names = new Set<string>();
-    for (const a of project.assignments) {
+    for (const a of project.tickets) {
       if (a.assignee) names.add(a.assignee);
     }
     // Always offer Unassigned so a user can proactively filter/save for it.
@@ -287,12 +287,12 @@ export function ProjectDetail() {
   // Centralized predicate (multi-value + sentinel-aware). No workspace/project/
   // activity criteria here — ProjectDetail is already scoped to its slug.
   const tagOptions: MultiSelectOption[] = Array.from(
-    new Set(project.assignments.flatMap((a) => a.tags ?? [])),
+    new Set(project.tickets.flatMap((a) => a.tags ?? [])),
   )
     .sort()
     .map((t) => ({ value: t, label: t }));
-  const filteredAssignments = project.assignments.filter((assignment) =>
-    filterAssignment(assignment, {
+  const filteredTickets = project.tickets.filter((ticket) =>
+    filterTicket(ticket, {
       status: statusFilter,
       priority: priorityFilter,
       type: typeFilter,
@@ -301,7 +301,7 @@ export function ProjectDetail() {
       dateRange: minimizeDateRange(dateRange),
     }),
   );
-  const sortedAssignments = sortAssignments(filteredAssignments, sortField, sortDirection);
+  const sortedTickets = sortTickets(filteredTickets, sortField, sortDirection);
   const knownTypeIds = new Set(typesConfig.definitions.map((d) => d.id));
   const kanbanColumns: KanbanColumn[] =
     grouping === 'type'
@@ -311,17 +311,17 @@ export function ProjectDetail() {
             title: getTypeLabel(typesConfig, def.id),
             description: def.description,
           })),
-          ...(filteredAssignments.some((a) => !a.type || !knownTypeIds.has(a.type))
+          ...(filteredTickets.some((a) => !a.type || !knownTypeIds.has(a.type))
             ? [
                 {
                   id: UNKNOWN_TYPE_COLUMN_ID,
                   title: 'Other',
-                  description: 'Assignments with no recognized type.',
+                  description: 'Tickets with no recognized type.',
                 },
               ]
             : []),
         ]
-      : getAssignmentColumns(statusConfig.order).map((id) => ({
+      : getTicketColumns(statusConfig.order).map((id) => ({
           id,
           title: getStatusLabel(statusConfig, id),
           description: getStatusDescription(id),
@@ -386,8 +386,8 @@ export function ProjectDetail() {
           disabled={actionPending}
           title={
             project.archived
-              ? 'Restore this project and its cascade-hidden assignments'
-              : 'Archive this project (hides it and its assignments from normal views)'
+              ? 'Restore this project and its cascade-hidden tickets'
+              : 'Archive this project (hides it and its tickets from normal views)'
           }
         >
           {project.archived ? 'Restore' : 'Archive'}
@@ -396,14 +396,14 @@ export function ProjectDetail() {
           <SquarePen className="h-4 w-4" />
           <span>Edit Project</span>
         </Link>
-        {/* "New Assignment" is the persistent primary CTA in the TopBar on every
+        {/* "New Ticket" is the persistent primary CTA in the TopBar on every
             project page (and a Quick Link below) — no need to repeat it here. */}
         <ExternalIdBadges externalIds={project.externalIds} />
         <span className="text-xs text-muted-foreground">Created {formatDate(project.created)}. Last source update {formatDateTime(project.updated)}.</span>
       </div>
 
       <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
-        <StatCard label="Assignments" value={project.progress.total} />
+        <StatCard label="Tickets" value={project.progress.total} />
         <StatCard label="In Progress" value={project.progress['in_progress'] ?? 0} tone="info" />
         <StatCard label="Review" value={project.progress['review'] ?? 0} tone="info" />
         <StatCard label="Blocked" value={project.progress['blocked'] ?? 0} tone="warn" />
@@ -444,15 +444,15 @@ export function ProjectDetail() {
                 ),
               },
               {
-                value: 'assignments',
-                label: 'Assignments',
-                // Archived assignments are hidden from the table; don't inflate the count with them.
-                count: project.assignments.filter((a) => !a.archived).length,
+                value: 'tickets',
+                label: 'Tickets',
+                // Archived tickets are hidden from the table; don't inflate the count with them.
+                count: project.tickets.filter((a) => !a.archived).length,
                 content: (
                   <div className="space-y-5">
                     <SectionCard
-                      title="Assignment Queue"
-                      description="Board and table views over the source assignment files."
+                      title="Ticket Queue"
+                      description="Board and table views over the source ticket files."
                       actions={
                         <div className="flex flex-wrap items-center gap-2">
                           <MultiSelect
@@ -505,7 +505,7 @@ export function ProjectDetail() {
                             value={dateRange}
                             onChange={setDateRange}
                           />
-                          {assignmentView === 'kanban' && (
+                          {ticketView === 'kanban' && (
                             <select value={grouping === 'type' || grouping === 'workflow' ? grouping : 'status'} onChange={(event) => handleSetGrouping(event.target.value as Grouping)} className="editor-input max-w-[170px]" title="Group kanban by">
                               <option value="status">Group: Status</option>
                               <option value="type">Group: Type</option>
@@ -513,8 +513,8 @@ export function ProjectDetail() {
                             </select>
                           )}
                           <ViewToggle
-                            value={assignmentView}
-                            onChange={(value) => handleSetAssignmentView(value as 'kanban' | 'table')}
+                            value={ticketView}
+                            onChange={(value) => handleSetTicketView(value as 'kanban' | 'table')}
                             options={[
                               { value: 'kanban', label: 'Kanban' },
                               { value: 'table', label: 'Table' },
@@ -523,29 +523,29 @@ export function ProjectDetail() {
                         </div>
                       }
                     >
-                      {filteredAssignments.length === 0 ? (
+                      {filteredTickets.length === 0 ? (
                         <EmptyState
-                          title="No assignments match these filters"
-                          description="Clear the current filters or create a new assignment for this project."
+                          title="No tickets match these filters"
+                          description="Clear the current filters or create a new ticket for this project."
                           actions={
-                            <Link className="shell-action shell-action--cta" to={`/projects/${project.slug}/create/assignment`}>
-                              Create Assignment
+                            <Link className="shell-action shell-action--cta" to={`/projects/${project.slug}/create/ticket`}>
+                              Create Ticket
                             </Link>
                           }
                         />
-                      ) : assignmentView === 'kanban' && grouping === 'workflow' ? (
+                      ) : ticketView === 'kanban' && grouping === 'workflow' ? (
                         <WorkflowSwimlanes
-                          items={sortedAssignments}
+                          items={sortedTickets}
                           getItemId={(a) => a.slug}
                           renderCard={(item) => (
-                            <AssignmentCard projectSlug={project.slug} assignment={item} onAssignmentChange={() => refetch()} />
+                            <TicketCard projectSlug={project.slug} ticket={item} onTicketChange={() => refetch()} />
                           )}
-                          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+                          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
                         />
-                      ) : assignmentView === 'kanban' ? (
+                      ) : ticketView === 'kanban' ? (
                         <KanbanBoard
                           columns={kanbanColumns}
-                          items={sortedAssignments}
+                          items={sortedTickets}
                           getItemId={(a) => a.slug}
                           getColumnId={(a) =>
                             grouping === 'type'
@@ -557,9 +557,9 @@ export function ProjectDetail() {
                           dragDisabled
                           boundedColumns
                           renderCard={(item) => (
-                            <AssignmentCard projectSlug={project.slug} assignment={item} onAssignmentChange={() => refetch()} />
+                            <TicketCard projectSlug={project.slug} ticket={item} onTicketChange={() => refetch()} />
                           )}
-                          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+                          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
                           hiddenColumnIds={kanbanColumnVisibility.hidden}
                           onHideColumn={(columnId) =>
                             setKanbanColumnVisibility((current) => {
@@ -590,7 +590,7 @@ export function ProjectDetail() {
                           <table className="w-full min-w-[720px] text-left text-sm">
                             <thead>
                               <tr className="border-b border-border/60 text-muted-foreground">
-                                {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                                {showCol('title') ? <SortHeader field="title">Ticket</SortHeader> : null}
                                 {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
                                 <th className="pb-3 font-medium">Type</th>
                                 {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
@@ -601,25 +601,25 @@ export function ProjectDetail() {
                               </tr>
                             </thead>
                             <tbody>
-                              {sortedAssignments.map((assignment) => (
-                                <tr key={assignment.slug} className="border-b border-border/50 last:border-0">
+                              {sortedTickets.map((ticket) => (
+                                <tr key={ticket.slug} className="border-b border-border/50 last:border-0">
                                   {showCol('title') ? (
                                   <td className="py-4">
                                     <Link
-                                      to={`/projects/${project.slug}/assignments/${assignment.slug}`}
+                                      to={`/projects/${project.slug}/tickets/${ticket.slug}`}
                                       className="font-semibold text-foreground hover:text-primary"
                                     >
-                                      {assignment.title}
+                                      {ticket.title}
                                     </Link>
                                   </td>
                                   ) : null}
-                                  {showCol('status') ? <td className="py-4"><AssignmentStatusPill projectSlug={project.slug} slug={assignment.slug} status={assignment.status} title={assignment.title} className="max-w-[150px]" onChange={() => refetch()} /></td> : null}
-                                  <td className="py-4"><TypeChip type={assignment.type} compact /></td>
-                                  {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
-                                  {showCol('assignee') ? <td className="py-4 text-muted-foreground">{assignment.assignee ?? '\u2014'}</td> : null}
-                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
-                                  {showCol('created') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.created)}</td> : null}
-                                  {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
+                                  {showCol('status') ? <td className="py-4"><TicketStatusPill projectSlug={project.slug} slug={ticket.slug} status={ticket.status} title={ticket.title} className="max-w-[150px]" onChange={() => refetch()} /></td> : null}
+                                  <td className="py-4"><TypeChip type={ticket.type} compact /></td>
+                                  {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{ticket.priority}</td> : null}
+                                  {showCol('assignee') ? <td className="py-4 text-muted-foreground">{ticket.assignee ?? '\u2014'}</td> : null}
+                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{ticket.dependsOn.length}</td> : null}
+                                  {showCol('created') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.created)}</td> : null}
+                                  {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.updated)}</td> : null}
                                 </tr>
                               ))}
                             </tbody>
@@ -657,7 +657,7 @@ export function ProjectDetail() {
                 ) : (
                   <EmptyState
                     title="No dependency graph yet"
-                    description="Dependencies appear here once assignments declare dependsOn relationships."
+                    description="Dependencies appear here once tickets declare dependsOn relationships."
                   />
                 ),
               },
@@ -710,9 +710,9 @@ export function ProjectDetail() {
                 <SquarePen className="h-4 w-4" />
                 Edit project source
               </Link>
-              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/create/assignment`}>
+              <Link className="flex items-center gap-2 text-primary hover:underline" to={`/projects/${project.slug}/create/ticket`}>
                 <Plus className="h-4 w-4" />
-                Create assignment
+                Create ticket
               </Link>
               <Link className="flex items-center gap-2 text-primary hover:underline" to="/help">
                 <BookOpenText className="h-4 w-4" />
@@ -748,55 +748,55 @@ export function ProjectDetail() {
   );
 }
 
-function AssignmentCard({
+function TicketCard({
   projectSlug,
-  assignment,
-  onAssignmentChange,
+  ticket,
+  onTicketChange,
 }: {
   projectSlug: string;
-  assignment: AssignmentSummary;
-  onAssignmentChange?: () => void;
+  ticket: TicketSummary;
+  onTicketChange?: () => void;
 }) {
   return (
     <Link
-      to={`/projects/${projectSlug}/assignments/${assignment.slug}`}
+      to={`/projects/${projectSlug}/tickets/${ticket.slug}`}
       className="vp-card block rounded-lg border border-border/60 bg-background/80 p-3 transition hover:border-primary/40"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h3 className="font-semibold text-foreground">{assignment.title}</h3>
-          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
-            {assignment.id.slice(0, 8)}
+          <h3 className="font-semibold text-foreground">{ticket.title}</h3>
+          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={ticket.id}>
+            {ticket.id.slice(0, 8)}
             <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}>
-              <CopyButton value={assignment.id} />
+              <CopyButton value={ticket.id} />
             </span>
           </p>
-          <p className="text-sm text-muted-foreground">Updated {formatDate(assignment.updated)}</p>
+          <p className="text-sm text-muted-foreground">Updated {formatDate(ticket.updated)}</p>
         </div>
         <span
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          <AssignmentStatusPill
+          <TicketStatusPill
             projectSlug={projectSlug}
-            slug={assignment.slug}
-            status={assignment.status}
-            title={assignment.title}
+            slug={ticket.slug}
+            status={ticket.status}
+            title={ticket.title}
             className="max-w-[150px]"
-            onChange={onAssignmentChange}
+            onChange={onTicketChange}
           />
         </span>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <TypeChip type={assignment.type} />
+        <TypeChip type={ticket.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
-          {assignment.priority}
+          {ticket.priority}
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {assignment.assignee ?? 'Unassigned'}
+          {ticket.assignee ?? 'Unassigned'}
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {assignment.dependsOn.length} dependencies
+          {ticket.dependsOn.length} dependencies
         </span>
       </div>
     </Link>

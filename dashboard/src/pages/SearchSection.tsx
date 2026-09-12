@@ -17,7 +17,7 @@ import {
 const SCOPE_LABELS: Record<DefaultScope, string> = {
   all: 'Everything',
   ticket: 'Tickets',
-  assignment: 'Assignments',
+  assignment: 'Tickets (legacy alias)',
   project: 'Projects',
   playbook: 'Playbooks',
 };
@@ -89,7 +89,7 @@ export function SearchSection() {
   }
 
   function addRow() {
-    setRows((prev) => [...prev, { prefix: '', kind: 'assignment' }]);
+    setRows((prev) => [...prev, { prefix: '', kind: 'ticket' }]);
     setDirty(true);
   }
 

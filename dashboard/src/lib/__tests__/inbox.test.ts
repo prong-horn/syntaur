@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  assignmentHref,
+  ticketHref,
   chatItemHref,
   chatReplyText,
   commentsEndpoint,
@@ -24,20 +24,20 @@ import {
 function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): InboxItem {
   return {
     project: 'proj',
-    assignmentSlug: 'my-task',
-    assignmentId: 'uuid-1',
+    ticketSlug: 'my-task',
+    ticketId: 'uuid-1',
     title: 'My Task',
     since: '2026-06-16T00:00:00Z',
     ageMs: 1000,
     summary: 'context',
     action: { verb: 'Accept', command: 'syntaur complete my-task --project proj' },
-    assignmentUpdated: '',
+    ticketUpdated: '',
     ...overrides,
   };
 }
 
 describe('rowKey', () => {
-  it('prefers commentId, then chat item id, then category:assignmentId', () => {
+  it('prefers commentId, then chat item id, then category:ticketId', () => {
     expect(rowKey(makeItem({ category: 'question', commentId: 'c1' }))).toBe('c1');
     expect(
       rowKey(
@@ -47,7 +47,7 @@ describe('rowKey', () => {
         }),
       ),
     ).toBe('item:1');
-    expect(rowKey(makeItem({ category: 'review', assignmentId: 'uuid-r' }))).toBe(
+    expect(rowKey(makeItem({ category: 'review', ticketId: 'uuid-r' }))).toBe(
       'review:uuid-r',
     );
   });
@@ -75,7 +75,7 @@ describe('projectOptions', () => {
       makeItem({ category: 'review', project: 'beta' }),
       makeItem({ category: 'question', project: 'alpha' }),
       makeItem({ category: 'review', project: 'alpha' }),
-      makeItem({ category: 'plan-approval', project: null, assignmentId: 's1' }),
+      makeItem({ category: 'plan-approval', project: null, ticketId: 's1' }),
     ];
     expect(projectOptions(items)).toEqual(['alpha', 'beta', null]);
   });
@@ -151,12 +151,12 @@ describe('planApproveEndpoint', () => {
     const proj = makeItem({ category: 'plan-approval' });
     expect(planApproveEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/assignments/my-task/plan/approve',
+      url: '/api/projects/proj/tickets/my-task/plan/approve',
     });
-    const standalone = makeItem({ category: 'plan-approval', project: null, assignmentId: 'uuid-pa' });
+    const standalone = makeItem({ category: 'plan-approval', project: null, ticketId: 'uuid-pa' });
     expect(planApproveEndpoint(standalone)).toEqual({
       method: 'POST',
-      url: '/api/assignments/uuid-pa/plan/approve',
+      url: '/api/tickets/uuid-pa/plan/approve',
     });
   });
 });
@@ -184,15 +184,15 @@ describe('transitionEndpoint', () => {
     const item = makeItem({ category: 'review' });
     expect(transitionEndpoint(item, 'complete')).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/assignments/my-task/transitions/complete',
+      url: '/api/projects/proj/tickets/my-task/transitions/complete',
     });
   });
 
   it('maps review accept for a standalone item (UUID-keyed)', () => {
-    const item = makeItem({ category: 'review', project: null, assignmentId: 'uuid-99' });
+    const item = makeItem({ category: 'review', project: null, ticketId: 'uuid-99' });
     expect(transitionEndpoint(item, 'complete')).toEqual({
       method: 'POST',
-      url: '/api/assignments/uuid-99/transitions/complete',
+      url: '/api/tickets/uuid-99/transitions/complete',
     });
   });
 });
@@ -202,12 +202,12 @@ describe('commentsEndpoint', () => {
     const proj = makeItem({ category: 'question' });
     expect(commentsEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/projects/proj/assignments/my-task/comments',
+      url: '/api/projects/proj/tickets/my-task/comments',
     });
-    const standalone = makeItem({ category: 'question', project: null, assignmentId: 'uuid-q' });
+    const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
     expect(commentsEndpoint(standalone)).toEqual({
       method: 'POST',
-      url: '/api/assignments/uuid-q/comments',
+      url: '/api/tickets/uuid-q/comments',
     });
   });
 });
@@ -217,30 +217,30 @@ describe('resolveCommentEndpoint', () => {
     const proj = makeItem({ category: 'question' });
     expect(resolveCommentEndpoint(proj, 'c1')).toEqual({
       method: 'PATCH',
-      url: '/api/projects/proj/assignments/my-task/comments/c1/resolved',
+      url: '/api/projects/proj/tickets/my-task/comments/c1/resolved',
     });
-    const standalone = makeItem({ category: 'question', project: null, assignmentId: 'uuid-q' });
+    const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
     expect(resolveCommentEndpoint(standalone, 'c2')).toEqual({
       method: 'PATCH',
-      url: '/api/assignments/uuid-q/comments/c2/resolved',
+      url: '/api/tickets/uuid-q/comments/c2/resolved',
     });
   });
 });
 
-describe('assignmentHref', () => {
+describe('ticketHref', () => {
   it('builds the project jump-href, with and without a tab', () => {
     const item = makeItem({ category: 'plan-approval' });
-    expect(assignmentHref(item)).toBe('/projects/proj/assignments/my-task');
-    expect(assignmentHref(item, 'plan')).toBe('/projects/proj/assignments/my-task?tab=plan');
-    expect(assignmentHref(item, 'comments')).toBe(
-      '/projects/proj/assignments/my-task?tab=comments',
+    expect(ticketHref(item)).toBe('/projects/proj/tickets/my-task');
+    expect(ticketHref(item, 'plan')).toBe('/projects/proj/tickets/my-task?tab=plan');
+    expect(ticketHref(item, 'comments')).toBe(
+      '/projects/proj/tickets/my-task?tab=comments',
     );
   });
 
   it('builds the standalone jump-href keyed on the UUID', () => {
-    const item = makeItem({ category: 'plan-approval', project: null, assignmentId: 'uuid-pa' });
-    expect(assignmentHref(item)).toBe('/assignments/uuid-pa');
-    expect(assignmentHref(item, 'plan')).toBe('/assignments/uuid-pa?tab=plan');
+    const item = makeItem({ category: 'plan-approval', project: null, ticketId: 'uuid-pa' });
+    expect(ticketHref(item)).toBe('/tickets/uuid-pa');
+    expect(ticketHref(item, 'plan')).toBe('/tickets/uuid-pa?tab=plan');
   });
 });
 
@@ -250,14 +250,14 @@ describe('chatItemHref', () => {
       category: 'question',
       chat: { kind: 'reply', itemId: 'item-1', agentId: 'claude' },
     });
-    expect(chatItemHref(item)).toBe('/projects/proj/assignments/my-task?tab=chat#item-1');
+    expect(chatItemHref(item)).toBe('/projects/proj/tickets/my-task?tab=chat#item-1');
     const standalone = makeItem({
       category: 'question',
       project: null,
-      assignmentId: 'uuid-q',
+      ticketId: 'uuid-q',
       chat: { kind: 'ask', itemId: 'q-2', agentId: 'cursor' },
     });
-    expect(chatItemHref(standalone)).toBe('/assignments/uuid-q?tab=chat#q-2');
+    expect(chatItemHref(standalone)).toBe('/tickets/uuid-q?tab=chat#q-2');
   });
 
   it('keeps colons in scope item ids unencoded in the hash', () => {
@@ -266,7 +266,7 @@ describe('chatItemHref', () => {
       chat: { kind: 'reply', itemId: 'd73e60eb-9891-4ad9-a817-92eeb1df40d1:1', agentId: 'claude' },
     });
     expect(chatItemHref(item)).toBe(
-      '/projects/proj/assignments/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
+      '/projects/proj/tickets/my-task?tab=chat#d73e60eb-9891-4ad9-a817-92eeb1df40d1:1',
     );
   });
 });

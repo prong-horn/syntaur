@@ -16,7 +16,7 @@ export interface ProjectEditorState {
   body: string;
 }
 
-export interface AssignmentEditorState {
+export interface TicketEditorState {
   title: string;
   slug: string;
   status: string;
@@ -30,13 +30,13 @@ export interface AssignmentEditorState {
 }
 
 export interface PlanEditorState {
-  assignment: string;
+  ticket: string;
   status: string;
   body: string;
 }
 
 export interface ScratchpadEditorState {
-  assignment: string;
+  ticket: string;
   body: string;
 }
 
@@ -296,13 +296,13 @@ export function updateProjectContent(
   return serializeFrontmatterModel(model);
 }
 
-export function parseAssignmentEditorState(content: string): AssignmentEditorState {
+export function parseTicketEditorState(content: string): TicketEditorState {
   const model = parseFrontmatterModel(content);
   return {
     title: getScalar(model, 'title'),
     slug: getScalar(model, 'slug'),
     status: getScalar(model, 'status'),
-    priority: (getScalar(model, 'priority') || 'medium') as AssignmentEditorState['priority'],
+    priority: (getScalar(model, 'priority') || 'medium') as TicketEditorState['priority'],
     assignee: getScalar(model, 'assignee'),
     dependsOn: getStringList(model, 'dependsOn').join(', '),
     links: getStringList(model, 'links').join(', '),
@@ -312,12 +312,12 @@ export function parseAssignmentEditorState(content: string): AssignmentEditorSta
   };
 }
 
-export function updateAssignmentContent(
+export function updateTicketContent(
   content: string,
-  updates: Partial<AssignmentEditorState>,
+  updates: Partial<TicketEditorState>,
 ): string {
   const model = parseFrontmatterModel(content);
-  const next = { ...parseAssignmentEditorState(content), ...updates };
+  const next = { ...parseTicketEditorState(content), ...updates };
 
   setScalar(model, 'title', next.title);
   setScalar(model, 'slug', next.slug);
@@ -336,7 +336,7 @@ export function updateAssignmentContent(
 export function parsePlanEditorState(content: string): PlanEditorState {
   const model = parseFrontmatterModel(content);
   return {
-    assignment: getScalar(model, 'assignment'),
+    ticket: getScalar(model, 'ticket'),
     status: getScalar(model, 'status'),
     body: model.body,
   };
@@ -349,7 +349,7 @@ export function updatePlanContent(
   const model = parseFrontmatterModel(content);
   const next = { ...parsePlanEditorState(content), ...updates };
 
-  setScalar(model, 'assignment', next.assignment);
+  setScalar(model, 'ticket', next.ticket);
   setScalar(model, 'status', next.status);
   model.body = next.body;
 
@@ -359,7 +359,7 @@ export function updatePlanContent(
 export function parseScratchpadEditorState(content: string): ScratchpadEditorState {
   const model = parseFrontmatterModel(content);
   return {
-    assignment: getScalar(model, 'assignment'),
+    ticket: getScalar(model, 'ticket'),
     body: model.body,
   };
 }
@@ -371,7 +371,7 @@ export function updateScratchpadContent(
   const model = parseFrontmatterModel(content);
   const next = { ...parseScratchpadEditorState(content), ...updates };
 
-  setScalar(model, 'assignment', next.assignment);
+  setScalar(model, 'ticket', next.ticket);
   model.body = next.body;
 
   return serializeFrontmatterModel(model);
@@ -414,8 +414,8 @@ export function normalizeEditorContent(
   switch (type) {
     case 'project':
       return updateProjectContent(content, updates as Partial<ProjectEditorState>);
-    case 'assignment':
-      return updateAssignmentContent(content, updates as Partial<AssignmentEditorState>);
+    case 'ticket':
+      return updateTicketContent(content, updates as Partial<TicketEditorState>);
     case 'plan':
       return updatePlanContent(content, updates as Partial<PlanEditorState>);
     case 'scratchpad':

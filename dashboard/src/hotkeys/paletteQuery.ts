@@ -15,7 +15,7 @@ import type { EntityKind, DefaultScope } from '@shared/search-schema';
  * `splitPaletteQuery` is called without an explicit map.
  */
 const TYPE_ALIASES: Record<string, EntityKind> = {
-  a: 'assignment',
+  t: 'ticket',
   p: 'project',
   pb: 'playbook',
 };
@@ -71,7 +71,7 @@ function jiraHaystack(item: QueryItem): string {
  * The palette's AQL vocabulary. The index entry IS the `QueryItem` the gate
  * evaluates, so accessors read the entry's own keys. An atom referencing a field
  * an entity lacks evaluates to `false` for it (so `status:done` narrows to
- * assignments, `jira:X` to entities carrying external IDs) — no special
+ * tickets, `jira:X` to entities carrying external IDs) — no special
  * multi-entity casing needed. `type` (frontmatter type) is distinct from `kind`
  * (the entity kind, target of the aliases).
  */
@@ -81,7 +81,7 @@ export const PALETTE_FIELDS: FieldRegistry = {
   tag: { kind: 'list', get: (i) => i['tags'] },
   tags: { kind: 'list' },
   assignee: { kind: 'string', noneSentinel: true, get: (i) => ('assignee' in i ? i['assignee'] : ABSENT) },
-  type: { kind: 'enum', get: (i) => i['assignmentType'] },
+  type: { kind: 'enum', get: (i) => i['ticketType'] },
   project: { kind: 'string', noneSentinel: true, get: (i) => ('project' in i ? i['project'] : ABSENT) },
   externalid: { kind: 'substring', get: externalIdHaystack },
   jira: { kind: 'substring', get: jiraHaystack },
@@ -99,7 +99,7 @@ export interface SplitResult {
 /**
  * Split a raw palette query into `{ aqlExpr, fuzzy }`.
  *
- * - Type aliases (`a:`/`p:`/`s:`/`pb:`) desugar to `kind:<entityType>`; any
+ * - Type aliases (`t:`/`p:`/`s:`/`pb:`) desugar to `kind:<entityType>`; any
  *   value after the alias colon is left for normal classification (a bare word →
  *   free text; another atom → its own atom).
  * - A token run forms a filter atom only if its IDENT resolves in `PALETTE_FIELDS`;

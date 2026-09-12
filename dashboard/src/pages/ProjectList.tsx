@@ -177,7 +177,7 @@ export function ProjectList() {
               The task manager built for agents, by agents
             </h2>
             <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
-              A project groups assignments under one objective. Markdown stays authoritative — the dashboard is just a view.
+              A project groups tickets under one objective. Markdown stays authoritative — the dashboard is just a view.
             </p>
             <div className="mt-6 flex flex-wrap justify-center gap-3">
               <Link className="shell-action shell-action--solid" to={`/create/project`}>
@@ -235,7 +235,7 @@ export function ProjectList() {
                     </p>
                   </div>
                   <div className="rounded-md border border-border/60 bg-background/80 p-3">
-                    <p className="text-muted-foreground">Assignments</p>
+                    <p className="text-muted-foreground">Tickets</p>
                     <p className="mt-1 font-semibold text-foreground">{project.progress.total}</p>
                   </div>
                 </div>
@@ -370,7 +370,7 @@ export function ProjectList() {
         <div className="flex items-start gap-3">
           <Info className="mt-0.5 h-4 w-4" />
           <p>
-            Project status is derived from assignment state by default.{view === 'kanban' ? ' Drag projects between columns or use' : ' Use'} the status override on the project detail page to set a manual status.
+            Project status is derived from ticket state by default.{view === 'kanban' ? ' Drag projects between columns or use' : ' Use'} the status override on the project detail page to set a manual status.
           </p>
         </div>
       </div>
@@ -455,7 +455,7 @@ function ProjectBoardCard({
           </span>
         ))}
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {project.progress.total} assignments
+          {project.progress.total} tickets
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
           {project.needsAttention.blockedCount + project.needsAttention.failedCount} needs attention

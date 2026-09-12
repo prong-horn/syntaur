@@ -12,14 +12,14 @@ import type { InboxItem } from '../inbox';
 function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): InboxItem {
   return {
     project: 'proj',
-    assignmentSlug: 'my-task',
-    assignmentId: 'uuid-1',
+    ticketSlug: 'my-task',
+    ticketId: 'uuid-1',
     title: 'My Task',
     since: '2026-06-16T00:00:00Z',
     ageMs: 1000,
     summary: 'context line',
     action: { verb: 'Answer', command: 'syntaur comment my-task' },
-    assignmentUpdated: '',
+    ticketUpdated: '',
     ...overrides,
   };
 }
@@ -50,7 +50,7 @@ describe('diffChatRows', () => {
     commentId: 'c-perm',
     chat: { kind: 'permission', itemId: 'perm-1', agentId: 'cursor' },
   });
-  const plan = makeItem({ category: 'plan-approval', assignmentId: 'uuid-plan' });
+  const plan = makeItem({ category: 'plan-approval', ticketId: 'uuid-plan' });
   const reply = makeItem({
     category: 'question',
     commentId: 'c-reply',

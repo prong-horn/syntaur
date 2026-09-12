@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Archive, ArchiveRestore, ExternalLink } from 'lucide-react';
-import { useAssignmentById, useAssignmentSessionsById, useStandaloneAssignmentUsage, type ExternalIdInfo } from '../hooks/useProjects';
-import { useAssignmentEvents } from '../hooks/useAssignmentEvents';
+import { useTicketById, useTicketSessionsById, useStandaloneTicketUsage, type ExternalIdInfo } from '../hooks/useProjects';
+import { useTicketEvents } from '../hooks/useTicketEvents';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
+import { TicketStatusPill } from '../components/TicketStatusPill';
 import { TypeChip } from '../components/TypeChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { CopyButton } from '../components/CopyButton';
@@ -17,36 +17,36 @@ import { EmptyState } from '../components/EmptyState';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { AgentSessionsSection } from '../components/AgentSessionsSection';
-import { AssignmentUsageSection } from '../components/AssignmentUsageSection';
+import { TicketUsageSection } from '../components/TicketUsageSection';
 import { ChatTab } from '../components/chat/ChatTab';
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import { useToast, Toaster } from '../components/Toast';
 import { useHashScroll } from '../hooks/useHashScroll';
 
 /**
- * Read-and-edit view for standalone assignments (those at
- * `~/.syntaur/assignments/<uuid>/`). Edit links route to the shared editor pages.
+ * Read-and-edit view for standalone tickets (those at
+ * `~/.syntaur/tickets/<uuid>/`). Edit links route to the shared editor pages.
  */
-export function StandaloneAssignmentDetail() {
+export function StandaloneTicketDetail() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = searchParams.get('tab') ?? 'summary';
   // Standalone hits can carry `#section` too — honor the deep-link hash.
   useHashScroll(tab);
-  const { data: assignment, loading, error, refetch } = useAssignmentById(id);
-  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useAssignmentSessionsById(id);
-  // D3: the standalone usage endpoint keys on the assignment SLUG, not the UUID
-  // `id`. `assignment` is undefined until loaded, so gate on `assignment?.slug`.
-  const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneAssignmentUsage(assignment?.slug);
+  const { data: ticket, loading, error, refetch } = useTicketById(id);
+  const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useTicketSessionsById(id);
+  // D3: the standalone usage endpoint keys on the ticket SLUG, not the UUID
+  // `id`. `ticket` is undefined until loaded, so gate on `ticket?.slug`.
+  const { data: usageData, loading: usageLoading, error: usageError } = useStandaloneTicketUsage(ticket?.slug);
   // Events are keyed on the standalone UUID `id` (the events table's
   // assignment_id), unlike usage which keys on the slug.
-  const eventsUrl = id ? `/api/standalone/assignments/${id}/events` : null;
+  const eventsUrl = id ? `/api/standalone/tickets/${id}/events` : null;
   const {
     events,
     loading: eventsLoading,
     error: eventsError,
     refetch: refetchEvents,
-  } = useAssignmentEvents(eventsUrl);
+  } = useTicketEvents(eventsUrl);
   const [archiveError, setArchiveError] = useState<string | null>(null);
   const { toast, showToast, dismissToast } = useToast();
 
@@ -54,7 +54,7 @@ export function StandaloneAssignmentDetail() {
     if (!id) return;
     setArchiveError(null);
     try {
-      const res = await fetch(`/api/assignments/${id}/${archived ? 'archive' : 'unarchive'}`, {
+      const res = await fetch(`/api/tickets/${id}/${archived ? 'archive' : 'unarchive'}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -64,7 +64,7 @@ export function StandaloneAssignmentDetail() {
       }
       refetch();
       refetchEvents();
-      showToast(archived ? 'Assignment archived' : 'Assignment restored', 'success');
+      showToast(archived ? 'Ticket archived' : 'Ticket restored', 'success');
     } catch (err) {
       setArchiveError(err instanceof Error ? err.message : 'Archive failed');
     }
@@ -72,70 +72,70 @@ export function StandaloneAssignmentDetail() {
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} />;
-  if (!assignment) return <ErrorState error="Assignment not found" />;
+  if (!ticket) return <ErrorState error="Ticket not found" />;
 
   return (
     <div className="space-y-6">
       <Toaster toast={toast} onDismiss={dismissToast} />
       <header className="space-y-2">
         <div className="flex flex-wrap items-center gap-3">
-          <AssignmentStatusPill
-            id={assignment.id}
-            status={assignment.status}
-            title={assignment.title}
-            availableTransitions={assignment.availableTransitions}
+          <TicketStatusPill
+            id={ticket.id}
+            status={ticket.status}
+            title={ticket.title}
+            availableTransitions={ticket.availableTransitions}
             onChange={() => refetch()}
           />
-          <TypeChip type={assignment.type} />
-          <span className="text-xs font-mono text-muted-foreground">{assignment.id}</span>
-          <ExternalIdBadges externalIds={assignment.externalIds} />
+          <TypeChip type={ticket.type} />
+          <span className="text-xs font-mono text-muted-foreground">{ticket.id}</span>
+          <ExternalIdBadges externalIds={ticket.externalIds} />
           <div className="ml-auto flex items-center gap-2">
-            {!assignment.workspace?.worktreePath && (
+            {!ticket.workspace?.worktreePath && (
               <CreateWorktreeButton
-                assignmentId={assignment.id}
-                defaultBranch={`syntaur/${assignment.slug}`}
+                ticketId={ticket.id}
+                defaultBranch={`syntaur/${ticket.slug}`}
                 onCreated={() => refetch()}
               />
             )}
             <Link
-              to={`/assignments/${assignment.id}/edit`}
+              to={`/tickets/${ticket.id}/edit`}
               className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
             >
               Edit
             </Link>
             <button
               type="button"
-              onClick={() => handleArchive(!assignment.archived)}
+              onClick={() => handleArchive(!ticket.archived)}
               className="inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
-              title={assignment.archived ? 'Restore this assignment' : 'Archive this assignment'}
+              title={ticket.archived ? 'Restore this ticket' : 'Archive this ticket'}
             >
-              {assignment.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
-              {assignment.archived ? 'Restore' : 'Archive'}
+              {ticket.archived ? <ArchiveRestore className="h-3 w-3" /> : <Archive className="h-3 w-3" />}
+              {ticket.archived ? 'Restore' : 'Archive'}
             </button>
           </div>
         </div>
-        <h1 className="text-2xl font-semibold text-foreground">{assignment.title}</h1>
-        {assignment.blockedReason ? (
-          <p className="text-sm text-warning-foreground">Blocked: {assignment.blockedReason}</p>
+        <h1 className="text-2xl font-semibold text-foreground">{ticket.title}</h1>
+        {ticket.blockedReason ? (
+          <p className="text-sm text-warning-foreground">Blocked: {ticket.blockedReason}</p>
         ) : null}
         {archiveError ? (
           <p className="text-sm text-status-failed-foreground">{archiveError}</p>
         ) : null}
       </header>
 
-      {assignment.referencedBy && assignment.referencedBy.length > 0 ? (
+      {ticket.referencedBy && ticket.referencedBy.length > 0 ? (
         <SectionCard
           title="Referenced by"
-          description="Other assignments whose bodies link to this one."
+          description="Other tickets whose bodies link to this one."
         >
           <ul className="space-y-2">
-            {assignment.referencedBy.map((ref) => (
+            {ticket.referencedBy.map((ref) => (
               <li key={ref.sourceId} className="flex items-center gap-2 text-sm">
                 <Link
                   to={
                     ref.sourceProjectSlug === null
-                      ? `/assignments/${ref.sourceId}`
-                      : `/projects/${ref.sourceProjectSlug}/assignments/${ref.sourceSlug}`
+                      ? `/tickets/${ref.sourceId}`
+                      : `/projects/${ref.sourceProjectSlug}/tickets/${ref.sourceSlug}`
                   }
                   className="text-foreground hover:text-primary"
                 >
@@ -161,10 +161,10 @@ export function StandaloneAssignmentDetail() {
                 label: 'Summary',
                 content: (
                   <div className="space-y-5">
-                    <SectionCard title="Assignment">
+                    <SectionCard title="Ticket">
                       <MarkdownRenderer
-                        content={assignment.body}
-                        emptyState="This assignment does not have summary markdown yet."
+                        content={ticket.body}
+                        emptyState="This ticket does not have summary markdown yet."
                       />
                     </SectionCard>
                   </div>
@@ -173,21 +173,21 @@ export function StandaloneAssignmentDetail() {
               {
                 value: 'chat',
                 label: 'Chat',
-                content: <ChatTab assignmentId={assignment.id} />,
+                content: <ChatTab ticketId={ticket.id} />,
               },
               {
                 value: 'progress',
                 label: 'Progress',
-                count: assignment.progress?.entryCount ?? 0,
+                count: ticket.progress?.entryCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.progress && assignment.progress.entries.length > 0 ? (
+                    {ticket.progress && ticket.progress.entries.length > 0 ? (
                       <SectionCard
                         title="Progress"
-                        description="Reverse-chronological log of work done on this assignment."
+                        description="Reverse-chronological log of work done on this ticket."
                       >
                         <ol className="space-y-4">
-                          {assignment.progress.entries.map((entry, idx) => (
+                          {ticket.progress.entries.map((entry, idx) => (
                             <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
                               <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
                               <MarkdownRenderer content={entry.body} />
@@ -207,13 +207,13 @@ export function StandaloneAssignmentDetail() {
               {
                 value: 'comments',
                 label: 'Comments',
-                count: assignment.comments?.entryCount ?? 0,
+                count: ticket.comments?.entryCount ?? 0,
                 content: (
                   <div className="space-y-5">
                     <CommentsThread
                       projectSlug={null}
-                      assignmentSlug={assignment.id}
-                      entries={assignment.comments?.entries ?? []}
+                      ticketSlug={ticket.id}
+                      entries={ticket.comments?.entries ?? []}
                     />
                   </div>
                 ),
@@ -223,12 +223,12 @@ export function StandaloneAssignmentDetail() {
                 label: 'Plan',
                 content: (
                   <div className="space-y-5">
-                    {assignment.plan ? (
+                    {ticket.plan ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.plan.body} emptyState="Plan file exists but is empty." />
+                        <MarkdownRenderer content={ticket.plan.body} emptyState="Plan file exists but is empty." />
                         <div className="mt-3 flex justify-end">
                           <Link
-                            to={`/assignments/${assignment.id}/plan/edit`}
+                            to={`/tickets/${ticket.id}/plan/edit`}
                             className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                           >
                             Edit plan
@@ -238,7 +238,7 @@ export function StandaloneAssignmentDetail() {
                     ) : (
                       <EmptyState
                         title="No plan file yet"
-                        description="Create one via the CLI or `/plan-assignment`."
+                        description="Create one via the CLI or `/plan-ticket`."
                       />
                     )}
                   </div>
@@ -249,12 +249,12 @@ export function StandaloneAssignmentDetail() {
                 label: 'Scratchpad',
                 content: (
                   <div className="space-y-5">
-                    {assignment.scratchpad ? (
+                    {ticket.scratchpad ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.scratchpad.body} emptyState="Scratchpad is empty." />
+                        <MarkdownRenderer content={ticket.scratchpad.body} emptyState="Scratchpad is empty." />
                         <div className="mt-3 flex justify-end">
                           <Link
-                            to={`/assignments/${assignment.id}/scratchpad/edit`}
+                            to={`/tickets/${ticket.id}/scratchpad/edit`}
                             className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                           >
                             Edit scratchpad
@@ -264,7 +264,7 @@ export function StandaloneAssignmentDetail() {
                     ) : (
                       <EmptyState
                         title="No scratchpad yet"
-                        description="Scratchpad is scaffolded at assignment creation time."
+                        description="Scratchpad is scaffolded at ticket creation time."
                       />
                     )}
                   </div>
@@ -273,15 +273,15 @@ export function StandaloneAssignmentDetail() {
               {
                 value: 'handoff',
                 label: 'Handoff',
-                count: assignment.handoff?.handoffCount ?? 0,
+                count: ticket.handoff?.handoffCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.handoff ? (
+                    {ticket.handoff ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.handoff.body} emptyState="No handoff history yet." />
+                        <MarkdownRenderer content={ticket.handoff.body} emptyState="No handoff history yet." />
                         <div className="mt-3 flex justify-end">
                           <Link
-                            to={`/assignments/${assignment.id}/handoff/edit`}
+                            to={`/tickets/${ticket.id}/handoff/edit`}
                             className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                           >
                             Append handoff
@@ -300,15 +300,15 @@ export function StandaloneAssignmentDetail() {
               {
                 value: 'decisions',
                 label: 'Decisions',
-                count: assignment.decisionRecord?.decisionCount ?? 0,
+                count: ticket.decisionRecord?.decisionCount ?? 0,
                 content: (
                   <div className="space-y-5">
-                    {assignment.decisionRecord ? (
+                    {ticket.decisionRecord ? (
                       <SectionCard>
-                        <MarkdownRenderer content={assignment.decisionRecord.body} emptyState="No decision history yet." />
+                        <MarkdownRenderer content={ticket.decisionRecord.body} emptyState="No decision history yet." />
                         <div className="mt-3 flex justify-end">
                           <Link
-                            to={`/assignments/${assignment.id}/decision-record/edit`}
+                            to={`/tickets/${ticket.id}/decision-record/edit`}
                             className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground"
                           >
                             Append decision
@@ -343,26 +343,26 @@ export function StandaloneAssignmentDetail() {
         <div className="min-w-0 space-y-5">
           <SectionCard title="Details">
             <dl className="space-y-3 text-sm">
-              <DetailRow label="ID" value={assignment.id} copyable />
-              <DetailRow label="Priority" value={assignment.priority} />
-              {assignment.assignee && <DetailRow label="Assignee" value={assignment.assignee} />}
+              <DetailRow label="ID" value={ticket.id} copyable />
+              <DetailRow label="Priority" value={ticket.priority} />
+              {ticket.assignee && <DetailRow label="Assignee" value={ticket.assignee} />}
               <DetailRow
                 label="Updated"
-                value={`${formatShortDateTime(assignment.updated)} · Created ${formatShortDate(assignment.created)}`}
+                value={`${formatShortDateTime(ticket.updated)} · Created ${formatShortDate(ticket.created)}`}
               />
-              {assignment.workspace.repository && (
-                <DetailRow label="Repository" value={assignment.workspace.repository} copyable />
+              {ticket.workspace.repository && (
+                <DetailRow label="Repository" value={ticket.workspace.repository} copyable />
               )}
-              {assignment.workspace.worktreePath && (
-                <DetailRow label="Worktree" value={assignment.workspace.worktreePath} copyable />
+              {ticket.workspace.worktreePath && (
+                <DetailRow label="Worktree" value={ticket.workspace.worktreePath} copyable />
               )}
-              {assignment.workspace.branch && (
-                <DetailRow label="Branch" value={assignment.workspace.branch} copyable />
+              {ticket.workspace.branch && (
+                <DetailRow label="Branch" value={ticket.workspace.branch} copyable />
               )}
-              {assignment.workspace.parentBranch && (
-                <DetailRow label="Parent branch" value={assignment.workspace.parentBranch} copyable />
+              {ticket.workspace.parentBranch && (
+                <DetailRow label="Parent branch" value={ticket.workspace.parentBranch} copyable />
               )}
-              {assignment.externalIds.map((entry, idx) => (
+              {ticket.externalIds.map((entry, idx) => (
                 <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
               ))}
             </dl>
@@ -376,7 +376,7 @@ export function StandaloneAssignmentDetail() {
             onNotice={(m) => showToast(m, 'success')}
           />
 
-          <AssignmentUsageSection
+          <TicketUsageSection
             summary={usageData?.summary}
             loading={usageLoading}
             error={usageError}

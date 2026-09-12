@@ -13,7 +13,7 @@ import {
   preferredAllowOption,
 } from '../../lib/chat-format';
 import {
-  assignmentHref,
+  ticketHref,
   chatItemHref,
   chatReplyText,
   commentsEndpoint,
@@ -176,7 +176,7 @@ function ReplyActions({ item, onMutated, onError, onSuccess }: InboxRowActionPro
     if (!text.trim()) return;
     setBusy(true);
     const ok = await runMutationTask(
-      () => sendChatMessage(item.assignmentId, chatReplyText(agentId, text)),
+      () => sendChatMessage(item.ticketId, chatReplyText(agentId, text)),
       { onMutated, onError, onSuccess },
       `Sent to @${agentId} — the row clears when it answers`,
     );
@@ -221,7 +221,7 @@ function PermissionActions({ item, onMutated, onError, onSuccess }: InboxRowActi
     setBusy(true);
     await runMutationTask(
       () =>
-        answerChatPermission(item.assignmentId, card.requestId, optionId, {
+        answerChatPermission(item.ticketId, card.requestId, optionId, {
           allowAllSession: allowAllSession || undefined,
         }),
       { onMutated, onError, onSuccess },
@@ -288,7 +288,7 @@ function AskActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps
     if (!card) return;
     setBusy(true);
     await runMutationTask(
-      () => answerChatQuestion(item.assignmentId, card.requestId, { optionId }),
+      () => answerChatQuestion(item.ticketId, card.requestId, { optionId }),
       { onMutated, onError, onSuccess },
       'Answer sent',
     );
@@ -299,7 +299,7 @@ function AskActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps
     if (!card || !text.trim()) return;
     setBusy(true);
     const ok = await runMutationTask(
-      () => answerChatQuestion(item.assignmentId, card.requestId, { text: text.trim() }),
+      () => answerChatQuestion(item.ticketId, card.requestId, { text: text.trim() }),
       { onMutated, onError, onSuccess },
       'Answer sent',
     );
@@ -385,7 +385,7 @@ function PlainQuestionActions({ item, onMutated, onError, onSuccess }: InboxRowA
 
   async function resolve() {
     if (!replyToId) {
-      onError('Could not determine which question to resolve — open the assignment to resolve it.');
+      onError('Could not determine which question to resolve — open the ticket to resolve it.');
       return;
     }
     setBusy(true);
@@ -401,7 +401,7 @@ function PlainQuestionActions({ item, onMutated, onError, onSuccess }: InboxRowA
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Link to={assignmentHref(item, 'comments')} className={ACTION_BTN}>
+        <Link to={ticketHref(item, 'comments')} className={ACTION_BTN}>
           <ArrowRight className="h-3.5 w-3.5" />
           Open to answer
         </Link>
@@ -480,7 +480,7 @@ function PlanActions({ item, onMutated, onError, onSuccess }: InboxRowActionProp
         <Check className="h-3.5 w-3.5" />
         {busy ? 'Approving…' : 'Approve'}
       </button>
-      <Link to={assignmentHref(item, 'plan')} className={ACTION_BTN}>
+      <Link to={ticketHref(item, 'plan')} className={ACTION_BTN}>
         <ArrowRight className="h-3.5 w-3.5" />
         Read plan
       </Link>

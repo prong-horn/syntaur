@@ -17,11 +17,11 @@ export interface ContentMatchRange {
 export interface ContentHit {
   path: string;
   projectSlug: string | null;
-  assignmentSlug: string | null;
-  assignmentId: string | null;
+  ticketSlug: string | null;
+  ticketId: string | null;
   standalone: boolean;
   fileKind:
-    | 'assignment'
+    | 'ticket'
     | 'plan'
     | 'progress'
     | 'comments'

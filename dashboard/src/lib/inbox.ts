@@ -48,12 +48,12 @@ export interface InboxAction {
 }
 
 export interface InboxItem {
-  /** Owning project slug; `null` for standalone assignments. */
+  /** Owning project slug; `null` for standalone tickets. */
   project: string | null;
-  /** Assignment slug; for standalone, the UUID folder name. */
-  assignmentSlug: string;
-  /** Assignment id (UUID from frontmatter). For standalone routes, this is the URL `:id`. */
-  assignmentId: string;
+  /** Ticket slug; for standalone, the UUID folder name. */
+  ticketSlug: string;
+  /** Ticket id (UUID from frontmatter). For standalone routes, this is the URL `:id`. */
+  ticketId: string;
   title: string;
   category: InboxCategory;
   /** RFC 3339 timestamp — when the item entered its awaiting-human state. */
@@ -75,7 +75,7 @@ export interface InboxItem {
   /** Permission/ask chat rows: card options from the API. */
   card?: InboxCard | null;
   /** Frontmatter `updated` from the API (may be `''`). */
-  assignmentUpdated: string;
+  ticketUpdated: string;
   /** Present when `includeSnoozed` is set and the row is snoozed. */
   snoozed?: { until: string | null };
 }
@@ -97,17 +97,17 @@ export interface EndpointDescriptor {
 /**
  * Identity fields needed to derive a route — the subset of `InboxItem` the URL
  * builders read. `project === null` selects the standalone routes (keyed on the
- * UUID `assignmentId`); otherwise the project-nested routes (keyed on
- * `project` + `assignmentSlug`).
+ * UUID `ticketId`); otherwise the project-nested routes (keyed on
+ * `project` + `ticketSlug`).
  */
-type RouteIdentity = Pick<InboxItem, 'project' | 'assignmentSlug' | 'assignmentId'>;
+type RouteIdentity = Pick<InboxItem, 'project' | 'ticketSlug' | 'ticketId'>;
 
 /**
  * Stable row key shared by the list, anchors, and notifier.
  * Must stay in lockstep with `inboxRowKey` in `src/inbox/index.ts`.
  */
 export function rowKey(item: InboxItem): string {
-  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.assignmentId}`;
+  return item.commentId ?? item.chat?.itemId ?? `${item.category}:${item.ticketId}`;
 }
 
 export function snoozeEndpoint(rowKeyValue: string): EndpointDescriptor {
@@ -230,12 +230,12 @@ export function transitionEndpoint(
   if (item.project === null) {
     return {
       method: 'POST',
-      url: `/api/assignments/${encodeURIComponent(item.assignmentId)}/transitions/${cmd}`,
+      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/transitions/${cmd}`,
     };
   }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}/transitions/${cmd}`,
+    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/transitions/${cmd}`,
   };
 }
 
@@ -243,12 +243,12 @@ export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
   if (item.project === null) {
     return {
       method: 'POST',
-      url: `/api/assignments/${encodeURIComponent(item.assignmentId)}/plan/approve`,
+      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/plan/approve`,
     };
   }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}/plan/approve`,
+    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/plan/approve`,
   };
 }
 
@@ -259,12 +259,12 @@ export function commentsEndpoint(item: RouteIdentity): EndpointDescriptor {
   if (item.project === null) {
     return {
       method: 'POST',
-      url: `/api/assignments/${encodeURIComponent(item.assignmentId)}/comments`,
+      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments`,
     };
   }
   return {
     method: 'POST',
-    url: `/api/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}/comments`,
+    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/comments`,
   };
 }
 
@@ -279,32 +279,32 @@ export function resolveCommentEndpoint(
   if (item.project === null) {
     return {
       method: 'PATCH',
-      url: `/api/assignments/${encodeURIComponent(item.assignmentId)}/comments/${cid}/resolved`,
+      url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments/${cid}/resolved`,
     };
   }
   return {
     method: 'PATCH',
-    url: `/api/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}/comments/${cid}/resolved`,
+    url: `/api/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}/comments/${cid}/resolved`,
   };
 }
 
 /**
- * Build the SPA jump-href to an assignment's detail page, optionally targeting a
+ * Build the SPA jump-href to an ticket's detail page, optionally targeting a
  * tab (`plan` for plan-approval, `comments` for questions).
  */
-export function assignmentHref(
+export function ticketHref(
   item: RouteIdentity,
   tab?: 'plan' | 'comments' | 'chat',
 ): string {
   const query = tab ? `?tab=${tab}` : '';
   if (item.project === null) {
-    return `/assignments/${encodeURIComponent(item.assignmentId)}${query}`;
+    return `/tickets/${encodeURIComponent(item.ticketId)}${query}`;
   }
-  return `/projects/${encodeURIComponent(item.project)}/assignments/${encodeURIComponent(item.assignmentSlug)}${query}`;
+  return `/projects/${encodeURIComponent(item.project)}/tickets/${encodeURIComponent(item.ticketSlug)}${query}`;
 }
 
 /** SPA href to a chat item anchor for a chat-sourced inbox row. */
 export function chatItemHref(item: InboxItem): string {
-  if (!item.chat) return assignmentHref(item, 'chat');
-  return `${assignmentHref(item, 'chat')}#${item.chat.itemId}`;
+  if (!item.chat) return ticketHref(item, 'chat');
+  return `${ticketHref(item, 'chat')}#${item.chat.itemId}`;
 }

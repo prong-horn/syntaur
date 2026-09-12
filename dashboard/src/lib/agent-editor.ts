@@ -39,8 +39,8 @@ const MAX_AVATAR_CODEPOINTS = 4;
 
 /** Mirrored from `src/chat/agents.ts` — shown as the system-prompt placeholder. */
 export const BASE_SYSTEM_PROMPT = [
-  'You are working inside a Syntaur assignment chat. Your reply is the chat message the human reads — write it as prose, not as a status dump.',
-  'Records are separate from chat: use the `syntaur` CLI (`syntaur progress log`, criteria writeback, transitions) when something belongs in the assignment files. Plain talk needs no CLI call.',
+  'You are working inside a Syntaur ticket chat. Your reply is the chat message the human reads — write it as prose, not as a status dump.',
+  'Records are separate from chat: use the `syntaur` CLI (`syntaur progress log`, criteria writeback, transitions) when something belongs in the ticket files. Plain talk needs no CLI call.',
   'Never end a turn on a tool call with no summary — if you did work, say what you did and what it means.',
 ].join('\n');
 

@@ -9,7 +9,7 @@ import { authorOf } from '../../lib/chat-api';
 import type { ChatAgentSummary } from '../../lib/chat-types';
 import { agentColorClasses } from '../../lib/chat-format';
 import {
-  assignmentHref,
+  ticketHref,
   chatItemHref,
   formatAge,
   rowKey,
@@ -45,10 +45,10 @@ export function InboxRow({ item, agents, highlighted, snoozed = false, ...action
 
   const titleHref =
     kind === 'plan-approval'
-      ? assignmentHref(item, 'plan')
+      ? ticketHref(item, 'plan')
       : item.chat
         ? chatItemHref(item)
-        : assignmentHref(item);
+        : ticketHref(item);
 
   return (
     <li

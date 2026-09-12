@@ -34,7 +34,7 @@ export interface SearchConfig {
 
 export const DEFAULT_SEARCH_CONFIG: SearchConfig = {
   defaultScope: 'all',
-  aliases: { a: 'ticket', p: 'project', pb: 'playbook' },
+  aliases: { t: 'ticket', p: 'project', pb: 'playbook' },
   externalIds: true,
 };
 

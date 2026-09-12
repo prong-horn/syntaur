@@ -34,13 +34,13 @@ export interface ProjectSummary {
 export interface EnrichedLink {
   slug: string;
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   title: string;
   status: string;
   isReverse: boolean;
 }
 
-export interface AssignmentSummary {
+export interface TicketSummary {
   id: string;
   slug: string;
   title: string;
@@ -84,16 +84,16 @@ export interface AssignmentSummary {
   facts?: Record<string, boolean | number | string[]>;
 }
 
-export interface AssignmentBoardItem extends AssignmentSummary {
-  /** `null` for standalone assignments. */
+export interface TicketBoardItem extends TicketSummary {
+  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectTitle: string | null;
   blockedReason: string | null;
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
 }
 
-export interface ArchivedAssignmentItem {
+export interface ArchivedTicketItem {
   id: string;
   slug: string;
   title: string;
@@ -114,12 +114,12 @@ export interface ArchivedProjectItem {
   title: string;
   archivedAt: string | null;
   archivedReason: string | null;
-  assignments: ArchivedAssignmentItem[];
+  tickets: ArchivedTicketItem[];
 }
 
 export interface ArchiveResponse {
   projects: ArchivedProjectItem[];
-  assignments: ArchivedAssignmentItem[];
+  tickets: ArchivedTicketItem[];
 }
 
 export interface ProjectDetail {
@@ -140,7 +140,7 @@ export interface ProjectDetail {
   body: string;
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  assignments: AssignmentSummary[];
+  tickets: TicketSummary[];
   dependencyGraph: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
@@ -159,7 +159,7 @@ export interface ExternalIdInfo {
   url: string | null;
 }
 
-export interface AssignmentTransitionAction {
+export interface TicketTransitionAction {
   command: string;
   label: string;
   description: string;
@@ -171,7 +171,7 @@ export interface AssignmentTransitionAction {
 }
 
 /**
- * One session↔assignment engagement interval for the "Session Activity"
+ * One session↔ticket engagement interval for the "Session Activity"
  * attribution view. Slim camelCase mirror of the server `EngagementInfo`
  * (`src/dashboard/types.ts`). `agent` null ⇒ owning session row gone;
  * `endedAt` null ⇒ engagement still open (in progress).
@@ -180,15 +180,15 @@ export interface EngagementInfo {
   id: number;
   sessionId: string;
   agent: string | null;
-  /** Engagement stage (plan | implement | review | …) — attribution source, NOT the derived assignment phase. */
+  /** Engagement stage (plan | implement | review | …) — attribution source, NOT the derived ticket phase. */
   stage: string;
   startedAt: string;
   endedAt: string | null;
 }
 
-export interface AssignmentDetail {
+export interface TicketDetail {
   id: string;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectSlug: string | null;
   slug: string;
   title: string;
@@ -202,7 +202,7 @@ export interface AssignmentDetail {
   workflowLabel: string;
   /** Display label of the current status WITHIN the resolved workflow. */
   statusLabel: string;
-  priority: AssignmentSummary['priority'];
+  priority: TicketSummary['priority'];
   assignee: string | null;
   dependsOn: string[];
   links: string[];
@@ -222,12 +222,12 @@ export interface AssignmentDetail {
   scratchpad: { updated: string; body: string } | null;
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
-  progress: AssignmentProgress | null;
-  comments: AssignmentComments | null;
-  referencedBy: AssignmentReference[];
+  progress: TicketProgress | null;
+  comments: TicketComments | null;
+  referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first); empty when the server's session DB is uninitialized. */
   engagements: EngagementInfo[];
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
   // ── derived-status v3 (server-materialized; may be absent on old servers) ──
   /** Cached phase dimension (null pre-migration). */
   phase?: string | null;
@@ -236,7 +236,7 @@ export interface AssignmentDetail {
   /** The active sticky pin, when present. */
   override?: { status: string; source: string; reason: string | null; at: string } | null;
   /** Server-materialized derivation: pre-override headline + next action + facts.
-   * Null for terminal assignments (derivation defers). */
+   * Null for terminal tickets (derivation defers). */
   derived?: {
     derivedStatus: string;
     nextAction: string | null;
@@ -258,7 +258,7 @@ export interface AssignmentDetail {
   } | null;
 }
 
-export interface AssignmentReference {
+export interface TicketReference {
   sourceId: string;
   sourceSlug: string;
   sourceTitle: string;
@@ -266,18 +266,18 @@ export interface AssignmentReference {
   mentions: number;
 }
 
-export interface AssignmentProgressEntry {
+export interface TicketProgressEntry {
   timestamp: string;
   body: string;
 }
 
-export interface AssignmentProgress {
+export interface TicketProgress {
   updated: string;
   entryCount: number;
-  entries: AssignmentProgressEntry[];
+  entries: TicketProgressEntry[];
 }
 
-export interface AssignmentCommentEntry {
+export interface TicketCommentEntry {
   id: string;
   timestamp: string;
   author: string;
@@ -287,10 +287,10 @@ export interface AssignmentCommentEntry {
   resolved?: boolean;
 }
 
-export interface AssignmentComments {
+export interface TicketComments {
   updated: string;
   entryCount: number;
-  entries: AssignmentCommentEntry[];
+  entries: TicketCommentEntry[];
 }
 
 export type OverviewSegmentId =
@@ -306,12 +306,12 @@ export type OverviewSegmentId =
 export interface AttentionItem {
   id: string;
   severity: 'critical' | 'high' | 'medium' | 'low';
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectSlug: string | null;
-  /** `null` for standalone assignments. */
+  /** `null` for standalone tickets. */
   projectTitle: string | null;
-  assignmentSlug: string;
-  assignmentTitle: string;
+  ticketSlug: string;
+  ticketTitle: string;
   status: string;
   reason: string;
   updated: string;
@@ -321,7 +321,7 @@ export interface AttentionItem {
   segment: OverviewSegmentId;
   agingMs: number;
   assignee: string | null;
-  availableTransitions: AssignmentTransitionAction[];
+  availableTransitions: TicketTransitionAction[];
 }
 
 export type OverviewHeroKind =
@@ -363,20 +363,20 @@ export interface OverviewSegments {
   stale: OverviewStaleSegmentPayload;
 }
 
-export interface AssignmentsBoardResponse {
+export interface TicketsBoardResponse {
   generatedAt: string;
-  assignments: AssignmentBoardItem[];
+  tickets: TicketBoardItem[];
 }
 
 export interface RecentActivityItem {
   id: string;
-  type: 'project' | 'assignment';
+  type: 'project' | 'ticket';
   title: string;
   updated: string;
   href: string;
   projectSlug: string;
   projectTitle: string;
-  assignmentSlug: string | null;
+  ticketSlug: string | null;
   summary: string;
 }
 
@@ -385,11 +385,11 @@ export interface OverviewResponse {
   firstRun: boolean;
   stats: {
     activeProjects: number;
-    inProgressAssignments: number;
-    blockedAssignments: number;
-    reviewAssignments: number;
-    failedAssignments: number;
-    staleAssignments: number;
+    inProgressTickets: number;
+    blockedTickets: number;
+    reviewTickets: number;
+    failedTickets: number;
+    staleTickets: number;
   };
   hero: OverviewHeroRecommendation;
   segments: OverviewSegments;
@@ -454,7 +454,7 @@ export interface HelpResponse {
 
 export type EditableDocumentType =
   | 'project'
-  | 'assignment'
+  | 'ticket'
   | 'plan'
   | 'scratchpad'
   | 'handoff'
@@ -466,7 +466,7 @@ export interface EditableDocumentResponse {
   title: string;
   content: string;
   projectSlug: string;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   appendOnly: boolean;
 }
 
@@ -479,12 +479,12 @@ interface FetchState<T> {
 
 function useFetch<T>(
   url: string | null,
-  websocketScope?: 'projects' | 'project' | 'assignment' | 'assignments' | 'overview' | 'agent-sessions' | 'playbooks',
+  websocketScope?: 'projects' | 'project' | 'ticket' | 'tickets' | 'overview' | 'agent-sessions' | 'playbooks',
   enabled = true,
   // By default `data` is retained across URL changes so filter-driven views
   // (e.g. UsagePage's date range) update smoothly without flashing empty. Set
   // this for entity-keyed fetches where rendering a *previous* entity's data on
-  // a new key would be wrong (e.g. assignment-to-assignment navigation).
+  // a new key would be wrong (e.g. ticket-to-ticket navigation).
   resetDataOnUrlChange = false,
 ): FetchState<T> {
   const [data, setData] = useState<T | null>(null);
@@ -570,7 +570,7 @@ function useFetch<T>(
       return;
     }
 
-    if (message.type === 'project-updated' || message.type === 'assignment-updated') {
+    if (message.type === 'project-updated' || message.type === 'ticket-updated') {
       refetch();
     }
 
@@ -608,13 +608,13 @@ export function useOverview(options: { staleLimit?: number; staleOffset?: number
   return useFetch<OverviewResponse>(url, 'overview');
 }
 
-export function useAssignmentsBoard(enabled = true): FetchState<AssignmentsBoardResponse> {
-  return useFetch<AssignmentsBoardResponse>('/api/assignments', 'assignments', enabled);
+export function useTicketsBoard(enabled = true): FetchState<TicketsBoardResponse> {
+  return useFetch<TicketsBoardResponse>('/api/tickets', 'tickets', enabled);
 }
 
 export function useArchived(enabled = true): FetchState<ArchiveResponse> {
-  // Refetches on any project/assignment broadcast so a restore elsewhere updates the page.
-  return useFetch<ArchiveResponse>('/api/archived', 'assignments', enabled);
+  // Refetches on any project/ticket broadcast so a restore elsewhere updates the page.
+  return useFetch<ArchiveResponse>('/api/archived', 'tickets', enabled);
 }
 
 export function useHelp(): FetchState<HelpResponse> {
@@ -629,22 +629,22 @@ export function useProject(slug: string | undefined): FetchState<ProjectDetail> 
   return useFetch<ProjectDetail>(url, 'project', true, true);
 }
 
-export function useAssignment(
+export function useTicket(
   projectSlug: string | undefined,
-  assignmentSlug: string | undefined,
-): FetchState<AssignmentDetail> {
+  ticketSlug: string | undefined,
+): FetchState<TicketDetail> {
   const url =
-    projectSlug && assignmentSlug
-      ? `/api/projects/${projectSlug}/assignments/${assignmentSlug}`
+    projectSlug && ticketSlug
+      ? `/api/projects/${projectSlug}/tickets/${ticketSlug}`
       : null;
-  return useFetch<AssignmentDetail>(url, 'assignment', true, true);
+  return useFetch<TicketDetail>(url, 'ticket', true, true);
 }
 
-export function useAssignmentById(
+export function useTicketById(
   id: string | undefined,
-): FetchState<AssignmentDetail> {
-  const url = id ? `/api/assignments/${id}` : null;
-  return useFetch<AssignmentDetail>(url, 'assignment', true, true);
+): FetchState<TicketDetail> {
+  const url = id ? `/api/tickets/${id}` : null;
+  return useFetch<TicketDetail>(url, 'ticket', true, true);
 }
 
 export function useEditableDocument(
@@ -728,62 +728,62 @@ export function useAgentSession(
   return useFetch<AgentSessionDetailResponse>(url, 'agent-sessions', true, true);
 }
 
-export function useAssignmentSessions(
+export function useTicketSessions(
   projectSlug: string | undefined,
-  assignmentSlug: string | undefined,
+  ticketSlug: string | undefined,
 ): FetchState<AgentSessionsResponse> {
   const url =
-    projectSlug && assignmentSlug
-      ? `/api/agent-sessions/${projectSlug}?assignment=${assignmentSlug}`
+    projectSlug && ticketSlug
+      ? `/api/agent-sessions/${projectSlug}?ticket=${ticketSlug}`
       : null;
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions', true, true);
 }
 
-export function useAssignmentSessionsById(
+export function useTicketSessionsById(
   id: string | undefined,
 ): FetchState<AgentSessionsResponse> {
-  const url = id ? `/api/assignments/${id}/sessions` : null;
+  const url = id ? `/api/tickets/${id}/sessions` : null;
   return useFetch<AgentSessionsResponse>(url, 'agent-sessions', true, true);
 }
 
-export interface AssignmentUsageSummary {
+export interface TicketUsageSummary {
   totalTokens: number;
   totalCost: number;
   lastEventDay: string | null;
   byModel: { model: string; totalTokens: number; totalCost: number }[];
 }
 
-export interface AssignmentUsageResponse {
-  summary: AssignmentUsageSummary;
+export interface TicketUsageResponse {
+  summary: TicketUsageSummary;
   // `daily` / `events` are returned for backward compat but unused by the panel.
   daily?: unknown[];
   events?: unknown[];
 }
 
 // Usage is read-only and not broadcast over the websocket, so these hooks omit
-// the `websocketScope` arg — they fetch once per (project, assignment) and stay
-// inert to project/assignment/session broadcasts.
-export function useAssignmentUsage(
+// the `websocketScope` arg — they fetch once per (project, ticket) and stay
+// inert to project/ticket/session broadcasts.
+export function useTicketUsage(
   projectSlug: string | undefined,
-  assignmentSlug: string | undefined,
-): FetchState<AssignmentUsageResponse> {
+  ticketSlug: string | undefined,
+): FetchState<TicketUsageResponse> {
   const url =
-    projectSlug && assignmentSlug
-      ? `/api/usage/projects/${encodeURIComponent(projectSlug)}/assignments/${encodeURIComponent(assignmentSlug)}`
+    projectSlug && ticketSlug
+      ? `/api/usage/projects/${encodeURIComponent(projectSlug)}/tickets/${encodeURIComponent(ticketSlug)}`
       : null;
-  // resetDataOnUrlChange: never render a prior assignment's totals on a new one.
-  return useFetch<AssignmentUsageResponse>(url, undefined, true, true);
+  // resetDataOnUrlChange: never render a prior ticket's totals on a new one.
+  return useFetch<TicketUsageResponse>(url, undefined, true, true);
 }
 
-// Keyed on the assignment SLUG (not the UUID id): the standalone usage endpoint
+// Keyed on the ticket SLUG (not the UUID id): the standalone usage endpoint
 // matches `assignment_slug`, and `sessions.assignment_slug` is written with the
 // slug. Passing the UUID would always return empty.
-export function useStandaloneAssignmentUsage(
+export function useStandaloneTicketUsage(
   slug: string | undefined,
-): FetchState<AssignmentUsageResponse> {
+): FetchState<TicketUsageResponse> {
   const url = slug ? `/api/usage/standalone/${encodeURIComponent(slug)}` : null;
-  // resetDataOnUrlChange: never render a prior assignment's totals on a new one.
-  return useFetch<AssignmentUsageResponse>(url, undefined, true, true);
+  // resetDataOnUrlChange: never render a prior ticket's totals on a new one.
+  return useFetch<TicketUsageResponse>(url, undefined, true, true);
 }
 
 export function usePlaybooks(enabled = true): FetchState<PlaybooksResponse> {
@@ -805,7 +805,7 @@ export interface UsageDailyRow {
 
 export interface UsageSummaryRow {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;

@@ -10,7 +10,7 @@ export function workflowApiBase(workflowId: string): string {
 }
 
 /** The `/affected/:statusId` endpoint for a workflow (used by the remap flow when
- * a status with assignments is dropped). */
+ * a status with tickets is dropped). */
 export function affectedEndpoint(workflowId: string, statusId: string): string {
   return `${workflowApiBase(workflowId)}/affected/${encodeURIComponent(statusId)}`;
 }

@@ -69,7 +69,7 @@ export function CreateProject() {
       saving={saving}
       error={error}
       title="Create Project"
-      description="Projects hold the high-level objective, shared context, and human-authored overview. Put execution details in assignments instead of overloading project.md."
+      description="Projects hold the high-level objective, shared context, and human-authored overview. Put execution details in tickets instead of overloading project.md."
       onCancel={() => navigate('/projects')}
       helpTitle="Project editing rules"
       helpBody="Use this form for project intent, slug, tags, and overview content. If you ever need less common metadata, raw markdown mode still exposes the full file."

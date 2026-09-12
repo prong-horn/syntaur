@@ -50,7 +50,7 @@ interface SessionActionButtonsProps {
   onDelete?: (sessionId: string) => void;
   /**
    * `inline` (default) renders every action as its own labelled button — the
-   * assignment-detail list has a wrapping flex row and plenty of width.
+   * ticket-detail list has a wrapping flex row and plenty of width.
    *
    * `compact` keeps only Pin visible and folds the rest into a `⋯` menu, for
    * the Agent Sessions table where the actions live in the last column of a
@@ -61,7 +61,7 @@ interface SessionActionButtonsProps {
 
 /**
  * One action in the row. Both layouts render from this single list, so a new
- * action cannot appear in the table but go missing from the assignment page.
+ * action cannot appear in the table but go missing from the ticket page.
  */
 interface RowAction {
   key: string;
@@ -87,7 +87,7 @@ interface RowAction {
 
 /**
  * Per-row action group rendered on the standalone `/agent-sessions` page and on
- * embedded `AgentSessionsSection` lists under assignment detail pages.
+ * embedded `AgentSessionsSection` lists under ticket detail pages.
  *
  * Affordances, in render order:
  *

@@ -11,31 +11,31 @@ import {
 } from './ui/dialog';
 import {
   CreateWorktreeError,
-  createAssignmentWorktree,
-  createAssignmentWorktreeById,
-  getAssignmentRepositoryCandidatesById,
+  createTicketWorktree,
+  createTicketWorktreeById,
+  getTicketRepositoryCandidatesById,
   getProjectRepositoryCandidates,
-  getProjectSourceAssignments,
+  getProjectSourceTickets,
   getRepositoryBranches,
   getRepositoryBranchesById,
-  getSourceAssignmentsById,
+  getSourceTicketsById,
   validateBranchName,
   type RepositoryCandidate,
-  type SourceAssignment,
-} from '../lib/assignments';
+  type SourceTicket,
+} from '../lib/tickets';
 
 type Mode =
-  | { kind: 'project-nested'; projectSlug: string; assignmentSlug: string }
-  | { kind: 'standalone'; assignmentId: string };
+  | { kind: 'project-nested'; projectSlug: string; ticketSlug: string }
+  | { kind: 'standalone'; ticketId: string };
 
 /** Which flavour of worktree the user is creating. */
 type FlowMode = 'new-branch' | 'branch-off';
 
 interface CreateWorktreeButtonProps {
-  /** Project-nested: pass slug + aslug. Standalone: pass assignment id only. */
+  /** Project-nested: pass slug + aslug. Standalone: pass ticket id only. */
   projectSlug?: string;
-  assignmentSlug?: string;
-  assignmentId?: string;
+  ticketSlug?: string;
+  ticketId?: string;
   /**
    * Branch-name default. Caller computes this so the button doesn't have to
    * know the convention. Project-nested: `syntaur/<project>/<slug>`;
@@ -53,15 +53,15 @@ const SELECT_CLASS =
 
 export function CreateWorktreeButton({
   projectSlug,
-  assignmentSlug,
-  assignmentId,
+  ticketSlug,
+  ticketId,
   defaultBranch,
   defaultParentBranch = 'main',
   onCreated,
 }: CreateWorktreeButtonProps): JSX.Element {
-  const mode: Mode = projectSlug && assignmentSlug
-    ? { kind: 'project-nested', projectSlug, assignmentSlug }
-    : { kind: 'standalone', assignmentId: assignmentId! };
+  const mode: Mode = projectSlug && ticketSlug
+    ? { kind: 'project-nested', projectSlug, ticketSlug }
+    : { kind: 'standalone', ticketId: ticketId! };
 
   const [open, setOpen] = useState(false);
   const [flowMode, setFlowMode] = useState<FlowMode>('new-branch');
@@ -79,8 +79,8 @@ export function CreateWorktreeButton({
   const [branchesError, setBranchesError] = useState<string | null>(null);
   const [parentBranch, setParentBranch] = useState('');
 
-  // Branch-off mode: pick a source assignment; repo + parent come from it.
-  const [sourceAssignments, setSourceAssignments] = useState<SourceAssignment[] | null>(null);
+  // Branch-off mode: pick a source ticket; repo + parent come from it.
+  const [sourceTickets, setSourceTickets] = useState<SourceTicket[] | null>(null);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const [selectedSourceId, setSelectedSourceId] = useState('');
 
@@ -89,7 +89,7 @@ export function CreateWorktreeButton({
   const [submitError, setSubmitError] = useState<{ message: string; stderr?: string } | null>(null);
 
   // On open: reset everything, then load repo candidates (new-branch mode) and
-  // source assignments (branch-off mode) in parallel.
+  // source tickets (branch-off mode) in parallel.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -103,7 +103,7 @@ export function CreateWorktreeButton({
     setBranchesLoading(false);
     setBranchesError(null);
     setParentBranch('');
-    setSourceAssignments(null);
+    setSourceTickets(null);
     setSourceError(null);
     setSelectedSourceId('');
     setBranch(defaultBranch);
@@ -111,7 +111,7 @@ export function CreateWorktreeButton({
 
     const candLoader = mode.kind === 'project-nested'
       ? getProjectRepositoryCandidates(mode.projectSlug)
-      : getAssignmentRepositoryCandidatesById(mode.assignmentId);
+      : getTicketRepositoryCandidatesById(mode.ticketId);
     candLoader
       .then((list) => {
         if (cancelled) return;
@@ -133,16 +133,16 @@ export function CreateWorktreeButton({
       });
 
     const sourceLoader = mode.kind === 'project-nested'
-      ? getProjectSourceAssignments(mode.projectSlug, mode.assignmentSlug)
-      : getSourceAssignmentsById(mode.assignmentId);
+      ? getProjectSourceTickets(mode.projectSlug, mode.ticketSlug)
+      : getSourceTicketsById(mode.ticketId);
     sourceLoader
       .then((list) => {
-        if (!cancelled) setSourceAssignments(list);
+        if (!cancelled) setSourceTickets(list);
       })
       .catch((err: Error) => {
         if (cancelled) return;
         setSourceError(err.message);
-        setSourceAssignments([]);
+        setSourceTickets([]);
       });
 
     return () => {
@@ -150,13 +150,13 @@ export function CreateWorktreeButton({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode is rebuilt
     // each render from stable primitive props; listing those is the real dep set.
-  }, [open, defaultBranch, defaultParentBranch, projectSlug, assignmentSlug, assignmentId]);
+  }, [open, defaultBranch, defaultParentBranch, projectSlug, ticketSlug, ticketId]);
 
   const selectedSource = flowMode === 'branch-off'
-    ? (sourceAssignments ?? []).find((s) => s.id === selectedSourceId) ?? null
+    ? (sourceTickets ?? []).find((s) => s.id === selectedSourceId) ?? null
     : null;
 
-  // In branch-off mode the repo is the source assignment's repo; otherwise it's
+  // In branch-off mode the repo is the source ticket's repo; otherwise it's
   // the selected candidate (or the advanced custom path).
   const repository = flowMode === 'branch-off'
     ? (selectedSource?.repository ?? '')
@@ -184,8 +184,8 @@ export function CreateWorktreeButton({
     // Clear the stale parent selection while the new repo's branches load.
     setParentBranch('');
     const loader = mode.kind === 'project-nested'
-      ? getRepositoryBranches(mode.projectSlug, mode.assignmentSlug, repository)
-      : getRepositoryBranchesById(mode.assignmentId, repository);
+      ? getRepositoryBranches(mode.projectSlug, mode.ticketSlug, repository)
+      : getRepositoryBranchesById(mode.ticketId, repository);
     loader
       .then((res) => {
         if (cancelled) return;
@@ -213,7 +213,7 @@ export function CreateWorktreeButton({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mode rebuilt from
     // stable primitive props; repository/flowMode are the real triggers.
-  }, [open, flowMode, repository, defaultParentBranch, projectSlug, assignmentSlug, assignmentId]);
+  }, [open, flowMode, repository, defaultParentBranch, projectSlug, ticketSlug, ticketId]);
 
   const branchValidationError = validateBranchName(branch.trim());
 
@@ -223,7 +223,7 @@ export function CreateWorktreeButton({
   }, [repository, branch]);
 
   const hasNoCandidates = candidates !== null && candidates.length === 0;
-  const hasNoSources = sourceAssignments !== null && sourceAssignments.length === 0;
+  const hasNoSources = sourceTickets !== null && sourceTickets.length === 0;
 
   const handleFlowMode = (next: FlowMode) => {
     if (next === flowMode) return;
@@ -243,7 +243,7 @@ export function CreateWorktreeButton({
 
   const handleSourceSelect = (id: string) => {
     setSelectedSourceId(id);
-    const src = (sourceAssignments ?? []).find((s) => s.id === id);
+    const src = (sourceTickets ?? []).find((s) => s.id === id);
     setParentBranch(src?.branch ?? '');
   };
 
@@ -254,7 +254,7 @@ export function CreateWorktreeButton({
     !parentBranch.trim() ||
     (flowMode === 'new-branch'
       ? candidates === null || branchesLoading
-      : sourceAssignments === null || !selectedSourceId);
+      : sourceTickets === null || !selectedSourceId);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -266,9 +266,9 @@ export function CreateWorktreeButton({
         parentBranch: parentBranch.trim(),
       };
       if (mode.kind === 'project-nested') {
-        await createAssignmentWorktree(mode.projectSlug, mode.assignmentSlug, payload);
+        await createTicketWorktree(mode.projectSlug, mode.ticketSlug, payload);
       } else {
-        await createAssignmentWorktreeById(mode.assignmentId, payload);
+        await createTicketWorktreeById(mode.ticketId, payload);
       }
       setOpen(false);
       onCreated();
@@ -300,7 +300,7 @@ export function CreateWorktreeButton({
           <DialogTitle>Create worktree</DialogTitle>
           <DialogDescription>
             Creates a git worktree at <code>{`<repo>/.worktrees/<branch>`}</code> and records the
-            workspace fields on this assignment&apos;s frontmatter.
+            workspace fields on this ticket&apos;s frontmatter.
           </DialogDescription>
         </DialogHeader>
 
@@ -329,7 +329,7 @@ export function CreateWorktreeButton({
                   : 'text-muted-foreground hover:bg-muted'
               }`}
             >
-              Branch off another assignment
+              Branch off another ticket
             </button>
           </div>
 
@@ -361,8 +361,8 @@ export function CreateWorktreeButton({
                       {c.path}
                       {c.source === 'project'
                         ? ' (project)'
-                        : c.sourceAssignmentSlug
-                          ? ` (sibling — ${c.sourceAssignmentSlug})`
+                        : c.sourceTicketSlug
+                          ? ` (sibling — ${c.sourceTicketSlug})`
                           : ' (sibling)'}
                     </option>
                   ))}
@@ -422,26 +422,26 @@ export function CreateWorktreeButton({
             <>
               {sourceError ? (
                 <div className="rounded-md border border-error-foreground/30 bg-error px-3 py-2 text-xs text-error-foreground">
-                  Could not load assignments: {sourceError}
+                  Could not load tickets: {sourceError}
                 </div>
               ) : null}
 
               {hasNoSources ? (
                 <div className="rounded-md border border-warning-foreground/30 bg-warning px-3 py-2 text-xs text-warning-foreground">
-                  No other assignments with a configured workspace to branch off. Create a worktree
+                  No other tickets with a configured workspace to branch off. Create a worktree
                   for one first, or use “New branch from repo”.
                 </div>
               ) : (
                 <label className="grid gap-1">
-                  <span className="text-xs font-medium text-muted-foreground">Source assignment</span>
+                  <span className="text-xs font-medium text-muted-foreground">Source ticket</span>
                   <select
                     className={SELECT_CLASS}
                     value={selectedSourceId}
                     onChange={(e) => handleSourceSelect(e.target.value)}
-                    disabled={submitting || sourceAssignments === null}
+                    disabled={submitting || sourceTickets === null}
                   >
-                    <option value="">— select an assignment —</option>
-                    {(sourceAssignments ?? []).map((s) => (
+                    <option value="">— select an ticket —</option>
+                    {(sourceTickets ?? []).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.title} ({s.branch})
                       </option>

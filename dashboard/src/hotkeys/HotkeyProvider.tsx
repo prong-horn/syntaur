@@ -13,7 +13,7 @@ import { useTheme } from '../theme';
 import { matchesPattern } from './match';
 import {
   useProjects,
-  useAssignmentsBoard,
+  useTicketsBoard,
   usePlaybooks,
 } from '../hooks/useProjects';
 import { useSearchConfig } from '../hooks/useSearchConfig';
@@ -39,8 +39,8 @@ export type HotkeyScope =
   | 'global'
   | 'list:overview'
   | 'list:projects'
-  | 'list:assignments'
-  | 'assignment'
+  | 'list:tickets'
+  | 'ticket'
   | 'project';
 
 export interface HotkeyBinding {
@@ -108,29 +108,29 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
 
   // Palette index data is fetched lazily: these hooks stay inert until the
   // command/actions palette is first opened. Previously they fired five
-  // requests (projects, assignments, playbooks) on *every* page load,
+  // requests (projects, tickets, playbooks) on *every* page load,
   // which is what made the overview slow
   // on every load, not just the first. Global hotkeys and g-chord navigation
   // don't need this data, so deferring it doesn't affect them.
   const [paletteDataEnabled, setPaletteDataEnabled] = useState(false);
   const projectsState = useProjects(paletteDataEnabled);
-  const assignmentsState = useAssignmentsBoard(paletteDataEnabled);
+  const ticketsState = useTicketsBoard(paletteDataEnabled);
   const playbooksState = usePlaybooks(paletteDataEnabled);
   const { search: searchCfg } = useSearchConfig();
 
   const paletteEntries = useMemo<PaletteEntry[]>(() => {
     const projects = projectsState.data ?? [];
-    const assignments = assignmentsState.data?.assignments ?? [];
+    const tickets = ticketsState.data?.tickets ?? [];
     const playbooks = playbooksState.data?.playbooks ?? [];
     return buildIndex({
       projects,
-      assignments,
+      tickets,
       playbooks,
       externalIds: searchCfg.externalIds,
     });
   }, [
     projectsState.data,
-    assignmentsState.data,
+    ticketsState.data,
     playbooksState.data,
     searchCfg.externalIds,
   ]);
@@ -490,7 +490,7 @@ export function HotkeyProvider({ children }: { children: ReactNode }) {
     const chords: Array<{ suffix: string; basePath: string; desc: string }> = [
       { suffix: 'o', basePath: '/',            desc: 'Go to Overview' },
       { suffix: 'm', basePath: '/projects',    desc: 'Go to Projects' },
-      { suffix: 'a', basePath: '/assignments', desc: 'Go to Assignments' },
+      { suffix: 't', basePath: '/tickets', desc: 'Go to Tickets' },
       { suffix: ',', basePath: '/settings',    desc: 'Go to Settings' },
     ];
     const ids = chords.map((c) =>

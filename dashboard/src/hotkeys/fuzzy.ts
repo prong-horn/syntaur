@@ -3,7 +3,7 @@
 // -1 per gap capped at -40, -Infinity if any needle char is not found.
 // Entry score = max(title*1.0, subtitle*0.5, keywords*0.3).
 // Tie-break: (1) shorter title length, (2) alphabetical title, (3) type priority
-// page > project > assignment > playbook.
+// page > project > ticket > playbook.
 
 const GAP_PENALTY = -1;
 const GAP_CAP = -40;
@@ -48,7 +48,7 @@ export function scoreField(needle: string, haystack: string): number {
 const TYPE_PRIORITY: Record<string, number> = {
   page: 0,
   project: 1,
-  assignment: 2,
+  ticket: 2,
   playbook: 3,
 };
 

@@ -5,7 +5,7 @@ import type { AgentMessageItem } from '../../../lib/chat-types';
 
 const reply: AgentMessageItem = {
   itemId: 'reply-1',
-  assignmentId: 'assign-1',
+  ticketId: 'assign-1',
   turnId: 'turn-1',
   agentId: 'claude',
   type: 'agent.message',

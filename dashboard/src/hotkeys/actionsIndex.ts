@@ -188,12 +188,12 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
   });
 
   out.push({
-    id: 'new-assignment',
-    title: 'New Assignment',
+    id: 'new-ticket',
+    title: 'New Ticket',
     subtitle: 'Pick standalone or a project',
     group: 'Create',
-    keywords: ['new', 'create', 'assignment'],
-    bindableKind: 'new-assignment',
+    keywords: ['new', 'create', 'ticket'],
+    bindableKind: 'new-ticket',
     flow: {
       steps: [
         {
@@ -217,7 +217,7 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         {
           kind: 'text',
           id: 'title',
-          label: 'Assignment title',
+          label: 'Ticket title',
           placeholder: 'What needs to get done?',
           required: true,
         },
@@ -230,34 +230,34 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         if (!slug) throw new Error('Title must contain at least one alphanumeric character');
 
         if (projectChoice === '_standalone') {
-          let template = await fetchTemplate('/api/templates/assignment?standalone=1');
+          let template = await fetchTemplate('/api/templates/ticket?standalone=1');
           template = setFrontmatterField(template, 'slug', slug);
           template = setFrontmatterField(template, 'title', title);
 
-          const res = await fetch('/api/assignments', {
+          const res = await fetch('/api/tickets', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content: template }),
           });
           const payload = await res.json().catch(() => ({}));
           if (!res.ok) {
-            throw new Error(payload.error || `Failed to create assignment (HTTP ${res.status})`);
+            throw new Error(payload.error || `Failed to create ticket (HTTP ${res.status})`);
           }
-          const id = payload?.assignment?.id ?? payload?.id;
+          const id = payload?.ticket?.id ?? payload?.id;
           if (id) {
-            helpers.navigate(`/assignments/${id}`);
+            helpers.navigate(`/tickets/${id}`);
           } else {
-            helpers.navigate('/assignments');
+            helpers.navigate('/tickets');
           }
           return;
         }
 
-        let template = await fetchTemplate('/api/templates/assignment');
+        let template = await fetchTemplate('/api/templates/ticket');
         template = setFrontmatterField(template, 'slug', slug);
         template = setFrontmatterField(template, 'title', title);
 
         const res = await fetch(
-          `/api/projects/${encodeURIComponent(projectChoice)}/assignments`,
+          `/api/projects/${encodeURIComponent(projectChoice)}/tickets`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -266,10 +266,10 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
         );
         const payload = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(payload.error || `Failed to create assignment (HTTP ${res.status})`);
+          throw new Error(payload.error || `Failed to create ticket (HTTP ${res.status})`);
         }
         const aslug = payload.slug ?? slug;
-        helpers.navigate(`/projects/${projectChoice}/assignments/${aslug}`);
+        helpers.navigate(`/projects/${projectChoice}/tickets/${aslug}`);
       },
     },
   });
@@ -286,22 +286,22 @@ export function buildActionsIndex(input: BuildActionsInput): Action[] {
   });
 
   out.push({
-    id: 'create-standalone-assignment',
-    title: 'New Standalone Assignment (editor)',
+    id: 'create-standalone-ticket',
+    title: 'New Standalone Ticket (editor)',
     subtitle: 'Open the markdown editor',
     group: 'Create',
-    keywords: ['new', 'create', 'assignment', 'standalone', 'one-off', 'editor'],
-    run: () => navigate('/assignments/new'),
+    keywords: ['new', 'create', 'ticket', 'standalone', 'one-off', 'editor'],
+    run: () => navigate('/tickets/new'),
   });
 
   if (projectSlug) {
     out.push({
-      id: `create-assignment-in-${projectSlug}`,
-      title: `New Assignment in ${currentProjectTitle ?? projectSlug}`,
+      id: `create-ticket-in-${projectSlug}`,
+      title: `New Ticket in ${currentProjectTitle ?? projectSlug}`,
       subtitle: projectSlug,
       group: 'Create',
-      keywords: ['new', 'create', 'assignment', projectSlug],
-      run: () => navigate(`/projects/${projectSlug}/create/assignment`),
+      keywords: ['new', 'create', 'ticket', projectSlug],
+      run: () => navigate(`/projects/${projectSlug}/create/ticket`),
     });
   }
 

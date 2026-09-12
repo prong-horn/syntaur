@@ -1,18 +1,18 @@
-import type { AssignmentDetail, AssignmentTransitionAction } from '../hooks/useProjects';
+import type { TicketDetail, TicketTransitionAction } from '../hooks/useProjects';
 import { recreateRequest, type RecreateIdentity } from './recreate';
 
 interface TransitionResponse {
-  assignment: AssignmentDetail;
+  ticket: TicketDetail;
 }
 
-export async function runAssignmentTransition(
+export async function runTicketTransition(
   projectSlug: string,
-  assignmentSlug: string,
-  action: AssignmentTransitionAction,
+  ticketSlug: string,
+  action: TicketTransitionAction,
   reason?: string,
-): Promise<AssignmentDetail> {
+): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/transitions/${action.command}`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}/transitions/${action.command}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -25,16 +25,16 @@ export async function runAssignmentTransition(
     throw new Error(payload?.error || `HTTP ${response.status}`);
   }
 
-  return (payload as TransitionResponse).assignment;
+  return (payload as TransitionResponse).ticket;
 }
 
-export async function overrideAssignmentStatus(
+export async function overrideTicketStatus(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   status: string,
-): Promise<AssignmentDetail> {
+): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/status-override`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}/status-override`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -47,15 +47,15 @@ export async function overrideAssignmentStatus(
     throw new Error(payload?.error || `HTTP ${response.status}`);
   }
 
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
-export async function deleteAssignment(
+export async function deleteTicket(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
 ): Promise<void> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}`,
     { method: 'DELETE' },
   );
 
@@ -65,17 +65,17 @@ export async function deleteAssignment(
   }
 }
 
-export function transitionNeedsReason(action: AssignmentTransitionAction): boolean {
+export function transitionNeedsReason(action: TicketTransitionAction): boolean {
   return action.requiresReason || action.command === 'block';
 }
 
-export async function runAssignmentTransitionById(
+export async function runTicketTransitionById(
   id: string,
-  action: AssignmentTransitionAction,
+  action: TicketTransitionAction,
   reason?: string,
-): Promise<AssignmentDetail> {
+): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/assignments/${id}/transitions/${action.command}`,
+    `/api/tickets/${id}/transitions/${action.command}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -88,15 +88,15 @@ export async function runAssignmentTransitionById(
     throw new Error(payload?.error || `HTTP ${response.status}`);
   }
 
-  return (payload as TransitionResponse).assignment;
+  return (payload as TransitionResponse).ticket;
 }
 
-export async function overrideAssignmentStatusById(
+export async function overrideTicketStatusById(
   id: string,
   status: string,
-): Promise<AssignmentDetail> {
+): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/assignments/${id}/status-override`,
+    `/api/tickets/${id}/status-override`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -109,21 +109,21 @@ export async function overrideAssignmentStatusById(
     throw new Error(payload?.error || `HTTP ${response.status}`);
   }
 
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
 /**
- * Set the assignee on a project-scoped assignment via the dedicated
+ * Set the assignee on a project-scoped ticket via the dedicated
  * assignee endpoint. Body content stays untouched — only the
  * frontmatter `assignee:` field changes.
  */
-export async function claimAssignment(args: {
+export async function claimTicket(args: {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   assignee: string | null;
-}): Promise<AssignmentDetail> {
+}): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/projects/${args.projectSlug}/assignments/${args.assignmentSlug}/assignee`,
+    `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/assignee`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -134,15 +134,15 @@ export async function claimAssignment(args: {
   if (!response.ok) {
     throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
   }
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
-/** Standalone-assignment variant of {@link claimAssignment}. */
-export async function claimAssignmentById(args: {
+/** Standalone-ticket variant of {@link claimTicket}. */
+export async function claimTicketById(args: {
   id: string;
   assignee: string | null;
-}): Promise<AssignmentDetail> {
-  const response = await fetch(`/api/assignments/${args.id}/assignee`, {
+}): Promise<TicketDetail> {
+  const response = await fetch(`/api/tickets/${args.id}/assignee`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ assignee: args.assignee }),
@@ -151,16 +151,16 @@ export async function claimAssignmentById(args: {
   if (!response.ok) {
     throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
   }
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
-export async function updateAssignmentTitle(args: {
+export async function updateTicketTitle(args: {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   title: string;
-}): Promise<AssignmentDetail> {
+}): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/projects/${args.projectSlug}/assignments/${args.assignmentSlug}/title`,
+    `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/title`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -171,14 +171,14 @@ export async function updateAssignmentTitle(args: {
   if (!response.ok) {
     throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
   }
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
-export async function updateAssignmentTitleById(args: {
+export async function updateTicketTitleById(args: {
   id: string;
   title: string;
-}): Promise<AssignmentDetail> {
-  const response = await fetch(`/api/assignments/${args.id}/title`, {
+}): Promise<TicketDetail> {
+  const response = await fetch(`/api/tickets/${args.id}/title`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ title: args.title }),
@@ -187,30 +187,30 @@ export async function updateAssignmentTitleById(args: {
   if (!response.ok) {
     throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
   }
-  return (payload as { assignment: AssignmentDetail }).assignment;
+  return (payload as { ticket: TicketDetail }).ticket;
 }
 
 export type QuickCommentType = 'question' | 'note' | 'feedback';
 
 /**
  * Post a single quick comment to a project-scoped or standalone
- * assignment. Wraps the existing /comments endpoints.
+ * ticket. Wraps the existing /comments endpoints.
  */
 export async function postQuickComment(args: {
   projectSlug: string | null;
-  assignmentSlug?: string;
+  ticketSlug?: string;
   id?: string;
   body: string;
   type?: QuickCommentType;
   author?: string;
 }): Promise<void> {
   let url: string;
-  if (args.projectSlug && args.assignmentSlug) {
-    url = `/api/projects/${args.projectSlug}/assignments/${args.assignmentSlug}/comments`;
+  if (args.projectSlug && args.ticketSlug) {
+    url = `/api/projects/${args.projectSlug}/tickets/${args.ticketSlug}/comments`;
   } else if (args.id) {
-    url = `/api/assignments/${args.id}/comments`;
+    url = `/api/tickets/${args.id}/comments`;
   } else {
-    throw new Error('postQuickComment requires either (projectSlug + assignmentSlug) or id');
+    throw new Error('postQuickComment requires either (projectSlug + ticketSlug) or id');
   }
 
   const response = await fetch(url, {
@@ -231,7 +231,7 @@ export async function postQuickComment(args: {
 
 /**
  * Read/write the dashboard-side "claim as" identity used by
- * {@link claimAssignment}. There is no "current agent" in the browser, so we
+ * {@link claimTicket}. There is no "current agent" in the browser, so we
  * persist the user's preferred value in localStorage with `'human'` as
  * default. The first-use flow opens a dialog; subsequent claims are
  * one-click. Hold Shift on the claim button to re-open the dialog.
@@ -275,7 +275,7 @@ export function hasStoredClaimAs(): boolean {
 export interface RepositoryCandidate {
   path: string;
   source: 'project' | 'sibling';
-  sourceAssignmentSlug: string | null;
+  sourceTicketSlug: string | null;
 }
 
 export interface CreateWorktreePayload {
@@ -316,10 +316,10 @@ export async function getProjectRepositoryCandidates(
   return (body as { candidates: RepositoryCandidate[] }).candidates;
 }
 
-export async function getAssignmentRepositoryCandidatesById(
+export async function getTicketRepositoryCandidatesById(
   id: string,
 ): Promise<RepositoryCandidate[]> {
-  const response = await fetch(`/api/assignments/${id}/repository-candidates`);
+  const response = await fetch(`/api/tickets/${id}/repository-candidates`);
   const body = await response.json().catch(() => null);
   if (!response.ok) {
     throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
@@ -327,13 +327,13 @@ export async function getAssignmentRepositoryCandidatesById(
   return (body as { candidates: RepositoryCandidate[] }).candidates;
 }
 
-export async function createAssignmentWorktree(
+export async function createTicketWorktree(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   payload: CreateWorktreePayload,
-): Promise<AssignmentDetail> {
+): Promise<TicketDetail> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/worktree`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}/worktree`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -344,14 +344,14 @@ export async function createAssignmentWorktree(
     throw await readError(response);
   }
   const body = await response.json();
-  return (body as { assignment: AssignmentDetail }).assignment;
+  return (body as { ticket: TicketDetail }).ticket;
 }
 
-export async function createAssignmentWorktreeById(
+export async function createTicketWorktreeById(
   id: string,
   payload: CreateWorktreePayload,
-): Promise<AssignmentDetail> {
-  const response = await fetch(`/api/assignments/${id}/worktree`, {
+): Promise<TicketDetail> {
+  const response = await fetch(`/api/tickets/${id}/worktree`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -360,7 +360,7 @@ export async function createAssignmentWorktreeById(
     throw await readError(response);
   }
   const body = await response.json();
-  return (body as { assignment: AssignmentDetail }).assignment;
+  return (body as { ticket: TicketDetail }).ticket;
 }
 
 export interface RecreateWorktreeResult {
@@ -404,8 +404,8 @@ export interface RepositoryBranches {
   defaultBranch: string | null;
 }
 
-export interface SourceAssignment {
-  /** Stable unique identifier (the assignment UUID) — use as React key / <option> value. */
+export interface SourceTicket {
+  /** Stable unique identifier (the ticket UUID) — use as React key / <option> value. */
   id: string;
   slug: string;
   title: string;
@@ -423,11 +423,11 @@ async function readJsonOrThrow<T>(response: Response): Promise<T> {
 
 export async function getRepositoryBranches(
   projectSlug: string,
-  assignmentSlug: string,
+  ticketSlug: string,
   repo: string,
 ): Promise<RepositoryBranches> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/repository-branches?repo=${encodeURIComponent(repo)}`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}/repository-branches?repo=${encodeURIComponent(repo)}`,
   );
   return readJsonOrThrow<RepositoryBranches>(response);
 }
@@ -437,24 +437,24 @@ export async function getRepositoryBranchesById(
   repo: string,
 ): Promise<RepositoryBranches> {
   const response = await fetch(
-    `/api/assignments/${id}/repository-branches?repo=${encodeURIComponent(repo)}`,
+    `/api/tickets/${id}/repository-branches?repo=${encodeURIComponent(repo)}`,
   );
   return readJsonOrThrow<RepositoryBranches>(response);
 }
 
-export async function getProjectSourceAssignments(
+export async function getProjectSourceTickets(
   projectSlug: string,
-  assignmentSlug: string,
-): Promise<SourceAssignment[]> {
+  ticketSlug: string,
+): Promise<SourceTicket[]> {
   const response = await fetch(
-    `/api/projects/${projectSlug}/assignments/${assignmentSlug}/source-assignments`,
+    `/api/projects/${projectSlug}/tickets/${ticketSlug}/source-tickets`,
   );
-  const body = await readJsonOrThrow<{ sourceAssignments: SourceAssignment[] }>(response);
-  return body.sourceAssignments;
+  const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
+  return body.sourceTickets;
 }
 
-export async function getSourceAssignmentsById(id: string): Promise<SourceAssignment[]> {
-  const response = await fetch(`/api/assignments/${id}/source-assignments`);
-  const body = await readJsonOrThrow<{ sourceAssignments: SourceAssignment[] }>(response);
-  return body.sourceAssignments;
+export async function getSourceTicketsById(id: string): Promise<SourceTicket[]> {
+  const response = await fetch(`/api/tickets/${id}/source-tickets`);
+  const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
+  return body.sourceTickets;
 }

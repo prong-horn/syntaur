@@ -2,10 +2,10 @@ import { Coins } from 'lucide-react';
 import { SectionCard } from './SectionCard';
 import { EmptyState } from './EmptyState';
 import { formatTokens, formatCost, formatDay } from '../lib/format';
-import type { AssignmentUsageSummary } from '../hooks/useProjects';
+import type { TicketUsageSummary } from '../hooks/useProjects';
 
-interface AssignmentUsageSectionProps {
-  summary: AssignmentUsageSummary | undefined;
+interface TicketUsageSectionProps {
+  summary: TicketUsageSummary | undefined;
   loading: boolean;
   error: string | null;
 }
@@ -13,9 +13,9 @@ interface AssignmentUsageSectionProps {
 const TITLE = 'Cost / Usage';
 
 /**
- * Per-assignment cost + token usage, rendered on the assignment detail pages.
+ * Per-ticket cost + token usage, rendered on the ticket detail pages.
  * Data is pulled live from the usage DB via the usage API — never persisted to
- * `assignment.md`.
+ * `ticket.md`.
  *
  * State handling mirrors `AgentSessionsSection`, with two refinements:
  *  - Because the usage endpoint always returns a `summary` object on success,
@@ -29,7 +29,7 @@ const TITLE = 'Cost / Usage';
  *    legitimately carry cost with zero tokens, and a real (even zero-valued)
  *    row should show "$0.00 / 0 tokens", not "No usage recorded yet".
  */
-export function AssignmentUsageSection({ summary, error }: AssignmentUsageSectionProps) {
+export function TicketUsageSection({ summary, error }: TicketUsageSectionProps) {
   // `loading` is intentionally not consulted: gating on it would flash the empty
   // state, since `useFetch` reports `loading === false` while its URL is null.
   if (error && !summary) {
@@ -47,7 +47,7 @@ export function AssignmentUsageSection({ summary, error }: AssignmentUsageSectio
       <SectionCard title={TITLE}>
         <EmptyState
           title="No usage recorded yet"
-          description="Cost and token totals appear here once the usage collector records activity for this assignment."
+          description="Cost and token totals appear here once the usage collector records activity for this ticket."
         />
       </SectionCard>
     );

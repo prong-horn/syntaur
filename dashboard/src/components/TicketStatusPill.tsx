@@ -1,38 +1,38 @@
 import { useEffect, useState } from 'react';
 import { StatusPillPicker } from './StatusPillPicker';
-import { AssignmentTransitionDialog } from './AssignmentTransitionDialog';
+import { TicketTransitionDialog } from './TicketTransitionDialog';
 import { Toaster, useToast } from './Toast';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { overrideTargetsForStatus, isTerminalStatus } from '../lib/statusMeta';
 import {
-  runAssignmentTransition,
-  runAssignmentTransitionById,
-  overrideAssignmentStatus,
-  overrideAssignmentStatusById,
+  runTicketTransition,
+  runTicketTransitionById,
+  overrideTicketStatus,
+  overrideTicketStatusById,
   transitionNeedsReason,
-} from '../lib/assignments';
-import type { AssignmentTransitionAction, AssignmentDetail } from '../hooks/useProjects';
+} from '../lib/tickets';
+import type { TicketTransitionAction, TicketDetail } from '../hooks/useProjects';
 
-interface AssignmentStatusPillProps {
+interface TicketStatusPillProps {
   id?: string;
   slug?: string;
   projectSlug?: string | null;
   status: string;
   title?: string;
-  availableTransitions?: AssignmentTransitionAction[];
+  availableTransitions?: TicketTransitionAction[];
   progress?: { checked: number; total: number };
-  onChange?: (updated: AssignmentDetail) => void;
+  onChange?: (updated: TicketDetail) => void;
   disabled?: boolean;
   className?: string;
   // Delegated mode (board): when BOTH are provided, the component forwards
   // selections instead of mutating.
-  onSelectAction?: (action: AssignmentTransitionAction) => void;
+  onSelectAction?: (action: TicketTransitionAction) => void;
   onSelectOverride?: (statusId: string) => void;
 }
 
 /**
  * Self-contained interactive status pill. Drops in anywhere a read-only
- * `StatusBadge` renders a mutable assignment status. It owns its own override
+ * `StatusBadge` renders a mutable ticket status. It owns its own override
  * targets, routes the correct API call (by-id vs by-slug), does an optimistic
  * update + rollback, surfaces toasts, and pops the reason dialog when a
  * transition requires one.
@@ -43,9 +43,9 @@ interface AssignmentStatusPillProps {
  * optimistic-update, or render a dialog.
  *
  * This is a refactor of the board's `applyMove`/`handleMove`/`handleOverride`
- * (`AssignmentsPage.tsx`) into a reusable component.
+ * (`TicketsPage.tsx`) into a reusable component.
  */
-export function AssignmentStatusPill({
+export function TicketStatusPill({
   id,
   slug,
   projectSlug,
@@ -58,20 +58,20 @@ export function AssignmentStatusPill({
   className,
   onSelectAction,
   onSelectOverride,
-}: AssignmentStatusPillProps) {
+}: TicketStatusPillProps) {
   const config = useStatusConfig();
   const { toast, showToast, dismissToast } = useToast();
 
   // Prop-derived state: seed from props and re-sync when the prop changes, so an
   // external truth update (parent re-render) re-seeds the optimistic view. Same
-  // synchronizing-effect pattern used elsewhere (e.g. AssignmentTransitionDialog).
+  // synchronizing-effect pattern used elsewhere (e.g. TicketTransitionDialog).
   const [displayStatus, setDisplayStatus] = useState(status);
   useEffect(() => {
     setDisplayStatus(status);
   }, [status]);
 
   const [availableTransitionsState, setAvailableTransitionsState] = useState<
-    AssignmentTransitionAction[]
+    TicketTransitionAction[]
   >(availableTransitions ?? []);
   useEffect(() => {
     setAvailableTransitionsState(availableTransitions ?? []);
@@ -79,7 +79,7 @@ export function AssignmentStatusPill({
 
   const [transitioning, setTransitioning] = useState(false);
   // The action awaiting a reason. Non-null ⇒ the reason dialog is open.
-  const [pending, setPending] = useState<AssignmentTransitionAction | null>(null);
+  const [pending, setPending] = useState<TicketTransitionAction | null>(null);
 
   // Delegated only when BOTH delegates are provided (mixed mode is not supported).
   const delegated = Boolean(onSelectAction && onSelectOverride);
@@ -94,11 +94,11 @@ export function AssignmentStatusPill({
    */
   function ensureIdentifiers(): boolean {
     if (projectSlug == null && !id) {
-      showToast('Cannot update status: assignment id is missing.', 'error');
+      showToast('Cannot update status: ticket id is missing.', 'error');
       return false;
     }
     if (projectSlug != null && !slug) {
-      showToast('Cannot update status: assignment slug is missing.', 'error');
+      showToast('Cannot update status: ticket slug is missing.', 'error');
       return false;
     }
     return true;
@@ -113,7 +113,7 @@ export function AssignmentStatusPill({
    */
   async function runMutation(
     targetStatus: string,
-    perform: () => Promise<AssignmentDetail>,
+    perform: () => Promise<TicketDetail>,
   ): Promise<boolean> {
     const previous = { status: displayStatus, transitions: availableTransitionsState };
 
@@ -137,25 +137,25 @@ export function AssignmentStatusPill({
     }
   }
 
-  function runTransition(action: AssignmentTransitionAction, reason?: string): Promise<boolean> {
+  function runTransition(action: TicketTransitionAction, reason?: string): Promise<boolean> {
     return runMutation(action.targetStatus, () =>
       projectSlug == null
         ? // by-id route — `ensureIdentifiers` guarantees `id` here.
-          runAssignmentTransitionById(id as string, action, reason)
+          runTicketTransitionById(id as string, action, reason)
         : // by-slug route — `ensureIdentifiers` guarantees `slug` here.
-          runAssignmentTransition(projectSlug, slug as string, action, reason),
+          runTicketTransition(projectSlug, slug as string, action, reason),
     );
   }
 
   function runOverride(statusId: string): Promise<boolean> {
     return runMutation(statusId, () =>
       projectSlug == null
-        ? overrideAssignmentStatusById(id as string, statusId)
-        : overrideAssignmentStatus(projectSlug, slug as string, statusId),
+        ? overrideTicketStatusById(id as string, statusId)
+        : overrideTicketStatus(projectSlug, slug as string, statusId),
     );
   }
 
-  function handleSelect(action: AssignmentTransitionAction) {
+  function handleSelect(action: TicketTransitionAction) {
     // 1. Disabled actions never POST — the picker calls onSelect directly without
     //    disabling transition buttons, so this guard is the only thing keeping a
     //    disabled action safe (mirrors handleMove's guard).
@@ -226,10 +226,10 @@ export function AssignmentStatusPill({
           delegated mode the parent owns all of that. */}
       {!delegated ? (
         <>
-          <AssignmentTransitionDialog
+          <TicketTransitionDialog
             open={pending !== null}
             action={pending}
-            assignmentTitle={title ?? slug ?? displayStatus}
+            ticketTitle={title ?? slug ?? displayStatus}
             loading={transitioning}
             onConfirm={async (reason) => {
               if (!pending) return;

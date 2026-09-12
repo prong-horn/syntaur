@@ -81,11 +81,11 @@ export function TopBar({
           {projectSlug ? (
             <Link
               className="shell-action"
-              to={`/projects/${projectSlug}/create/assignment`}
-              aria-label="New Assignment"
+              to={`/projects/${projectSlug}/create/ticket`}
+              aria-label="New Ticket"
             >
               <Plus className="h-4 w-4" />
-              <span className="hidden sm:inline">New Assignment</span>
+              <span className="hidden sm:inline">New Ticket</span>
             </Link>
           ) : null}
           <button type="button" onClick={toggleTheme} className="shell-action" aria-label="Toggle theme">

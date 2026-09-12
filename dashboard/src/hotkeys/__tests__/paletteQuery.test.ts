@@ -6,18 +6,18 @@ const split = (q: string) => splitPaletteQuery(q);
 
 describe('splitPaletteQuery — alias expansion', () => {
   it('bare alias → kind atom, no fuzzy', () => {
-    expect(split('a:')).toEqual({ aqlExpr: 'kind:assignment', fuzzy: '' });
+    expect(split('t:')).toEqual({ aqlExpr: 'kind:ticket', fuzzy: '' });
     expect(split('p:')).toEqual({ aqlExpr: 'kind:project', fuzzy: '' });
     expect(split('pb:')).toEqual({ aqlExpr: 'kind:playbook', fuzzy: '' });
   });
 
   it('glued alias value → kind atom + free text', () => {
-    expect(split('a:payment')).toEqual({ aqlExpr: 'kind:assignment', fuzzy: 'payment' });
+    expect(split('t:payment')).toEqual({ aqlExpr: 'kind:ticket', fuzzy: 'payment' });
   });
 
   it('alias + atom + free text', () => {
-    expect(split('a: jira:ABC payment')).toEqual({
-      aqlExpr: 'kind:assignment jira:ABC',
+    expect(split('t: jirt:ABC payment')).toEqual({
+      aqlExpr: 'kind:ticket jirt:ABC',
       fuzzy: 'payment',
     });
   });
@@ -60,7 +60,7 @@ describe('splitPaletteQuery — atom vs free text', () => {
   });
 
   it('quoted value with hyphen/digit is a single atom', () => {
-    expect(split('jira:"123-ABC"')).toEqual({ aqlExpr: 'jira:"123-ABC"', fuzzy: '' });
+    expect(split('jirt:"123-ABC"')).toEqual({ aqlExpr: 'jirt:"123-ABC"', fuzzy: '' });
   });
 });
 
@@ -97,19 +97,19 @@ describe('splitPaletteQuery — robustness', () => {
 
   it('never emits an aqlExpr that fails compileQuery', () => {
     const queries = [
-      'a:',
-      'a:payment',
+      't:',
+      't:payment',
       'status:done',
-      'a: jira:ABC payment',
+      't: jirt:ABC payment',
       'status:(done, blocked)',
       '-status:done',
       'NOT status:done',
-      'jira:"123-ABC"',
+      'jirt:"123-ABC"',
       'status:done OR status:blocked',
-      '-a:',
-      'NOT a:',
-      'a: OR p:',
-      '(a:)',
+      '-t:',
+      'NOT t:',
+      't: OR p:',
+      '(t:)',
       'status:()',
       'status:(done blocked)',
       'status>done',
@@ -139,7 +139,7 @@ describe('splitPaletteQuery — malformed atoms degrade to free text (aqlExpr al
   });
 
   it('a good atom survives a sibling malformed atom', () => {
-    expect(split('a: status:()')).toEqual({ aqlExpr: 'kind:assignment', fuzzy: 'status:()' });
+    expect(split('t: status:()')).toEqual({ aqlExpr: 'kind:ticket', fuzzy: 'status:()' });
   });
 });
 
@@ -148,26 +148,26 @@ describe('splitPaletteQuery — whitespace + negated aliases', () => {
     expect(split('payment   flow')).toEqual({ aqlExpr: '', fuzzy: 'payment flow' });
   });
 
-  it('-a: → -kind:assignment', () => {
-    expect(split('-a:')).toEqual({ aqlExpr: '-kind:assignment', fuzzy: '' });
+  it('-t: → -kind:ticket', () => {
+    expect(split('-t:')).toEqual({ aqlExpr: '-kind:ticket', fuzzy: '' });
   });
 
-  it('NOT a: → NOT kind:assignment', () => {
-    expect(split('NOT a:')).toEqual({ aqlExpr: 'NOT kind:assignment', fuzzy: '' });
+  it('NOT t: → NOT kind:ticket', () => {
+    expect(split('NOT t:')).toEqual({ aqlExpr: 'NOT kind:ticket', fuzzy: '' });
   });
 });
 
 describe('splitPaletteQuery — alias expansion in explicit-boolean mode', () => {
-  it('a: OR p: → kind:assignment OR kind:project', () => {
-    expect(split('a: OR p:')).toEqual({ aqlExpr: 'kind:assignment OR kind:project', fuzzy: '' });
+  it('t: OR p: → kind:ticket OR kind:project', () => {
+    expect(split('t: OR p:')).toEqual({ aqlExpr: 'kind:ticket OR kind:project', fuzzy: '' });
   });
 
-  it('(a:) gates as kind:assignment (compiles + filters)', () => {
-    const { aqlExpr, fuzzy } = split('(a:)');
+  it('(t:) gates as kind:ticket (compiles + filters)', () => {
+    const { aqlExpr, fuzzy } = split('(t:)');
     expect(fuzzy).toBe('');
     const r = compileQuery(aqlExpr, PALETTE_FIELDS);
     expect(r.query).not.toBeNull();
-    expect(r.query!.predicate({ type: 'assignment' }, { now: 0 })).toBe(true);
+    expect(r.query!.predicate({ type: 'ticket' }, { now: 0 })).toBe(true);
     expect(r.query!.predicate({ type: 'project' }, { now: 0 })).toBe(false);
   });
 });
@@ -180,8 +180,8 @@ describe('PALETTE_FIELDS semantics', () => {
   };
 
   it('kind enum reads entry.type', () => {
-    expect(matches('kind:assignment', { type: 'assignment' })).toBe(true);
-    expect(matches('kind:assignment', { type: 'project' })).toBe(false);
+    expect(matches('kind:ticket', { type: 'ticket' })).toBe(true);
+    expect(matches('kind:ticket', { type: 'project' })).toBe(false);
   });
 
   it('status enum equality; missing field → false', () => {
@@ -194,11 +194,11 @@ describe('PALETTE_FIELDS semantics', () => {
     expect(matches('tag:frontend', { tags: ['backend'] })).toBe(false);
   });
 
-  it('type reads assignmentType, distinct from the entity kind', () => {
-    const item = { type: 'assignment', assignmentType: 'feature' };
+  it('type reads ticketType, distinct from the entity kind', () => {
+    const item = { type: 'ticket', ticketType: 'feature' };
     expect(matches('type:feature', item)).toBe(true);
-    // Would be true if `type` wrongly read entry.type === 'assignment'.
-    expect(matches('type:assignment', item)).toBe(false);
+    // Would be true if `type` wrongly read entry.type === 'ticket'.
+    expect(matches('type:ticket', item)).toBe(false);
   });
 
   it('assignee/project noneSentinel matches null but NOT entities lacking the field', () => {
@@ -207,15 +207,15 @@ describe('PALETTE_FIELDS semantics', () => {
     // A page/playbook entry has no `assignee` key at all → must NOT match `:none`
     // (otherwise every page/playbook would leak into `assignee:none`).
     expect(matches('assignee:none', { type: 'page' })).toBe(false);
-    expect(matches('project:none', { project: null })).toBe(true); // standalone assignment
+    expect(matches('project:none', { project: null })).toBe(true); // standalone ticket
     expect(matches('project:none', { type: 'playbook' })).toBe(false); // no project key
   });
 
   it('jira substring with case-insensitive system selection', () => {
     const item = { externalIds: [{ system: 'JIRA', id: 'PROJ-123', url: null }] };
-    expect(matches('jira:PROJ-123', item)).toBe(true);
-    expect(matches('jira:proj', item)).toBe(true); // substring + case-insensitive
-    expect(matches('jira:NOPE', item)).toBe(false);
+    expect(matches('jirt:PROJ-123', item)).toBe(true);
+    expect(matches('jirt:proj', item)).toBe(true); // substring + case-insensitive
+    expect(matches('jirt:NOPE', item)).toBe(false);
   });
 
   it('externalid flattened "system:id" haystack', () => {
@@ -227,26 +227,26 @@ describe('PALETTE_FIELDS semantics', () => {
   it('negation of a missing field includes field-less entities (AQL parity)', () => {
     // -status:done on a page (no status) → NOT(false) → true. Documented behavior.
     expect(matches('-status:done', { type: 'page' })).toBe(true);
-    expect(matches('-status:done', { type: 'assignment', status: 'done' })).toBe(false);
+    expect(matches('-status:done', { type: 'ticket', status: 'done' })).toBe(false);
   });
 });
 
 describe('splitPaletteQuery — config-driven aliases', () => {
-  const aliases = { x: 'assignment', proj: 'project' } as const;
+  const aliases = { x: 'ticket', proj: 'project' } as const;
 
   it('uses a custom alias map', () => {
-    expect(splitPaletteQuery('x:', aliases)).toEqual({ aqlExpr: 'kind:assignment', fuzzy: '' });
+    expect(splitPaletteQuery('x:', aliases)).toEqual({ aqlExpr: 'kind:ticket', fuzzy: '' });
     expect(splitPaletteQuery('proj:', aliases)).toEqual({ aqlExpr: 'kind:project', fuzzy: '' });
   });
 
   it('built-in aliases no longer apply when a custom map is supplied', () => {
-    // 'a' is not in the custom map → stays free text, not kind:assignment.
-    expect(splitPaletteQuery('a:', aliases)).toEqual({ aqlExpr: '', fuzzy: 'a:' });
+    // 't' is not in the custom map → stays free text, not kind:ticket.
+    expect(splitPaletteQuery('t:', aliases)).toEqual({ aqlExpr: '', fuzzy: 't:' });
   });
 });
 
 describe('splitPaletteQuery — default-scope injection', () => {
-  const scope = (q: string, defaultScope: 'all' | 'project' | 'assignment') =>
+  const scope = (q: string, defaultScope: 'all' | 'project' | 'ticket') =>
     splitPaletteQuery(q, undefined, { defaultScope });
 
   it('injects kind:<scope> when the box has no explicit prefix', () => {
@@ -258,8 +258,8 @@ describe('splitPaletteQuery — default-scope injection', () => {
   });
 
   it('an explicit prefix overrides the default scope (no double-gate)', () => {
-    expect(scope('a: payment', 'project')).toEqual({
-      aqlExpr: 'kind:assignment',
+    expect(scope('t: payment', 'project')).toEqual({
+      aqlExpr: 'kind:ticket',
       fuzzy: 'payment',
     });
     expect(scope('kind:playbook', 'project')).toEqual({ aqlExpr: 'kind:playbook', fuzzy: '' });
@@ -272,7 +272,7 @@ describe('splitPaletteQuery — default-scope injection', () => {
 
   it('a leading all: escape searches everything regardless of scope', () => {
     expect(scope('all: payment', 'project')).toEqual({ aqlExpr: '', fuzzy: 'payment' });
-    expect(scope('all:', 'assignment')).toEqual({ aqlExpr: '', fuzzy: '' });
+    expect(scope('all:', 'ticket')).toEqual({ aqlExpr: '', fuzzy: '' });
   });
 
   it('defaultScope=all never injects', () => {
@@ -284,7 +284,7 @@ describe('splitPaletteQuery — default-scope injection', () => {
     const r = compileQuery(aqlExpr, PALETTE_FIELDS);
     expect(r.query).not.toBeNull();
     expect(r.query!.predicate({ type: 'project', status: 'open' }, { now: 0 })).toBe(true);
-    expect(r.query!.predicate({ type: 'assignment', status: 'open' }, { now: 0 })).toBe(false);
+    expect(r.query!.predicate({ type: 'ticket', status: 'open' }, { now: 0 })).toBe(false);
   });
 
   it('an explicit-boolean base is parenthesized so scope ANDs correctly', () => {
@@ -295,6 +295,6 @@ describe('splitPaletteQuery — default-scope injection', () => {
     const r = compileQuery(aqlExpr, PALETTE_FIELDS);
     expect(r.query).not.toBeNull();
     expect(r.query!.predicate({ type: 'project', status: 'done' }, { now: 0 })).toBe(true);
-    expect(r.query!.predicate({ type: 'assignment', status: 'done' }, { now: 0 })).toBe(false);
+    expect(r.query!.predicate({ type: 'ticket', status: 'done' }, { now: 0 })).toBe(false);
   });
 });

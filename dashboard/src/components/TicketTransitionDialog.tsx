@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { AssignmentTransitionAction } from '../hooks/useProjects';
+import type { TicketTransitionAction } from '../hooks/useProjects';
 import {
   Dialog,
   DialogContent,
@@ -9,23 +9,23 @@ import {
   DialogTitle,
 } from './ui/dialog';
 
-interface AssignmentTransitionDialogProps {
+interface TicketTransitionDialogProps {
   open: boolean;
-  action: AssignmentTransitionAction | null;
-  assignmentTitle: string;
+  action: TicketTransitionAction | null;
+  ticketTitle: string;
   loading?: boolean;
   onConfirm: (reason?: string) => Promise<void> | void;
   onOpenChange: (open: boolean) => void;
 }
 
-export function AssignmentTransitionDialog({
+export function TicketTransitionDialog({
   open,
   action,
-  assignmentTitle,
+  ticketTitle,
   loading = false,
   onConfirm,
   onOpenChange,
-}: AssignmentTransitionDialogProps) {
+}: TicketTransitionDialogProps) {
   const [reason, setReason] = useState('');
 
   useEffect(() => {
@@ -46,7 +46,7 @@ export function AssignmentTransitionDialog({
     return null;
   }
 
-  const title = `${action.label} "${assignmentTitle}"`;
+  const title = `${action.label} "${ticketTitle}"`;
   const submitLabel = loading ? 'Applying...' : action.label;
   const nextReason = reason.trim() || undefined;
 
@@ -83,7 +83,7 @@ export function AssignmentTransitionDialog({
               autoFocus
               rows={4}
               disabled={loading}
-              placeholder="Optional context for why this assignment is blocked."
+              placeholder="Optional context for why this ticket is blocked."
               className="editor-textarea min-h-[120px] bg-background/95 font-sans"
             />
             <p className="text-xs text-muted-foreground">

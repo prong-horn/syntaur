@@ -1,20 +1,20 @@
 /**
- * Chip-based filtering helpers retained for ProjectDetail's local assignment list.
+ * Chip-based filtering helpers retained for ProjectDetail's local ticket list.
  *
  * Board-level and saved-view widget AQL filtering now lives in
- * `dashboard/src/lib/queryFilter.ts` (`filterBoardItems`). AssignmentsPage and
+ * `dashboard/src/lib/queryFilter.ts` (`filterBoardItems`). TicketsPage and
  * SavedViewResults route all filtering through the shared AQL evaluator.
  * This module is NOT the source of truth for board/widget filtering — only for
- * ProjectDetail's chip-only local filter (`filterAssignment`).
+ * ProjectDetail's chip-only local filter (`filterTicket`).
  */
 import { toFilterValues, type FilterValue, type DateRangeFilter } from '@shared/view-prefs-schema';
-import type { AssignmentBoardItem } from '../hooks/useProjects';
+import type { TicketBoardItem } from '../hooks/useProjects';
 
-// Structural minimum that `filterAssignment` reads. `AssignmentBoardItem`
-// satisfies it fully; ProjectDetail's `AssignmentSummary` satisfies it too — the
+// Structural minimum that `filterTicket` reads. `TicketBoardItem`
+// satisfies it fully; ProjectDetail's `TicketSummary` satisfies it too — the
 // project / workspace / search-only fields are optional and only read when the
 // matching criteria/options are set, which ProjectDetail never triggers.
-export interface AssignmentFilterItem {
+export interface TicketFilterItem {
   status: string;
   priority: string;
   assignee: string | null;
@@ -31,7 +31,7 @@ export interface AssignmentFilterItem {
 
 // Multi-select: each field is a single value (legacy) or an array; `toFilterValues`
 // normalizes to a deduped set where empty === "no constraint".
-export interface AssignmentFilterCriteria {
+export interface TicketFilterCriteria {
   status?: FilterValue;
   priority?: FilterValue;
   type?: FilterValue;
@@ -42,13 +42,13 @@ export interface AssignmentFilterCriteria {
   dateRange?: DateRangeFilter;
 }
 
-export interface AssignmentFilterOptions {
+export interface TicketFilterOptions {
   search?: string;
   /** Archived items are excluded from normal views by default; only the Archive page opts in. */
   includeArchived?: boolean;
 }
 
-export function isAssignmentStale(updated: string): boolean {
+export function isTicketStale(updated: string): boolean {
   const timestamp = Date.parse(updated);
   if (Number.isNaN(timestamp)) return false;
   return Date.now() - timestamp > 7 * 24 * 60 * 60 * 1000;
@@ -101,20 +101,20 @@ export function matchesDateRange(
   return true;
 }
 
-// Mirrors AssignmentsPage's filter semantics exactly so saved-view widgets
+// Mirrors TicketsPage's filter semantics exactly so saved-view widgets
 // produce the same items as the source surface. Multi-value: an item matches a
 // field when its value is in the selected set (OR within a field); fields are
 // AND-ed; an empty set means "no constraint". Sentinels handled:
 // - assignee '__unassigned__' matches items with assignee === null
 // - project '__standalone__' matches items with projectSlug === null
-export function filterAssignment(
-  item: AssignmentFilterItem,
-  criteria: AssignmentFilterCriteria,
-  options: AssignmentFilterOptions = {},
+export function filterTicket(
+  item: TicketFilterItem,
+  criteria: TicketFilterCriteria,
+  options: TicketFilterOptions = {},
 ): boolean {
   const { search, includeArchived } = options;
   // Default-exclude archived from every normal view (defense-in-depth: ProjectDetail's
-  // assignments come from getProjectDetail, which still includes archived items).
+  // tickets come from getProjectDetail, which still includes archived items).
   if (item.archived === true && !includeArchived) return false;
   const statuses = toFilterValues(criteria.status);
   const priorities = toFilterValues(criteria.priority);
@@ -127,8 +127,8 @@ export function filterAssignment(
   if (statuses.length && !statuses.includes(item.status)) return false;
   if (priorities.length && !priorities.includes(item.priority)) return false;
   if (types.length && !types.includes(item.type ?? '')) return false;
-  if (activity === 'stale' && !isAssignmentStale(item.updated)) return false;
-  if (activity === 'fresh' && isAssignmentStale(item.updated)) return false;
+  if (activity === 'stale' && !isTicketStale(item.updated)) return false;
+  if (activity === 'fresh' && isTicketStale(item.updated)) return false;
   if (assignees.length) {
     const val = item.assignee ?? '__unassigned__';
     if (!assignees.includes(val)) return false;
@@ -157,9 +157,9 @@ export function filterAssignment(
   return true;
 }
 
-export function assignmentDetailHref(item: AssignmentBoardItem): string {
+export function ticketDetailHref(item: TicketBoardItem): string {
   if (item.projectSlug === null) {
-    return `/assignments/${item.id}`;
+    return `/tickets/${item.id}`;
   }
-  return `/projects/${item.projectSlug}/assignments/${item.slug}`;
+  return `/projects/${item.projectSlug}/tickets/${item.slug}`;
 }

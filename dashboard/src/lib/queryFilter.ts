@@ -6,7 +6,7 @@
  * expression.
  */
 
-import type { AssignmentBoardItem } from '../hooks/useProjects';
+import type { TicketBoardItem } from '../hooks/useProjects';
 import type { CompiledQuery, EvalContext, QueryItem } from '@shared/query';
 
 // ── boardItemToQueryItem ──────────────────────────────────────────────────────
@@ -20,12 +20,12 @@ import type { CompiledQuery, EvalContext, QueryItem } from '@shared/query';
  *   mapping for built-ins like `completedAt`/`statusAge`/`phaseAge`).
  *
  * `searchText` is the dashboard haystack: title + slug + projectTitle + projectSlug,
- * matching the existing `filterAssignment` search logic at assignmentFilter.ts:153.
+ * matching the existing `filterTicket` search logic at ticketFilter.ts:153.
  * The `search` field in the registry reads `item['searchText'] ?? item['title']`
  * so populating `searchText` on the item is sufficient.
  */
-export function boardItemToQueryItem(item: AssignmentBoardItem): QueryItem {
-  // Build search haystack exactly as assignmentFilter.ts:153 does:
+export function boardItemToQueryItem(item: TicketBoardItem): QueryItem {
+  // Build search haystack exactly as ticketFilter.ts:153 does:
   //   `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`
   const searchText = `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`;
 
@@ -87,7 +87,7 @@ export interface FilterBoardItemsOptions {
  * Apply archived-exclude pre-filters (page options), then evaluate the compiled
  * AQL predicate against each remaining item.
  *
- * The pre-filter logic mirrors `assignmentFilter.ts` exactly:
+ * The pre-filter logic mirrors `ticketFilter.ts` exactly:
  *   - archived excluded by default unless `includeArchived` is true.
  *
  * `now` is threaded into `EvalContext` so timestamp/duration predicates
@@ -100,10 +100,10 @@ export interface FilterBoardItemsOptions {
  * scoping still holds.
  */
 export function filterBoardItems(
-  items: AssignmentBoardItem[],
+  items: TicketBoardItem[],
   compiled: CompiledQuery | null,
   opts: FilterBoardItemsOptions = {},
-): AssignmentBoardItem[] {
+): TicketBoardItem[] {
   const { includeArchived = false, now = Date.now() } = opts;
 
   const ctx: EvalContext = { now };

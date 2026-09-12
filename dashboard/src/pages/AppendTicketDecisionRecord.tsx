@@ -1,18 +1,18 @@
 import { useParams } from 'react-router-dom';
 import { AppendEntryPage } from '../components/AppendEntryPage';
 
-export function AppendAssignmentDecisionRecord() {
+export function AppendTicketDecisionRecord() {
   const { slug, aslug, id } = useParams<{ slug?: string; aslug?: string; id?: string }>();
   const isStandalone = Boolean(id);
   const loadUrl = isStandalone
-    ? `/api/assignments/${id}/decision-record/edit`
-    : `/api/projects/${slug}/assignments/${aslug}/decision-record/edit`;
+    ? `/api/tickets/${id}/decision-record/edit`
+    : `/api/projects/${slug}/tickets/${aslug}/decision-record/edit`;
   const saveUrl = isStandalone
-    ? `/api/assignments/${id}/decision-record/entries`
-    : `/api/projects/${slug}/assignments/${aslug}/decision-record/entries`;
+    ? `/api/tickets/${id}/decision-record/entries`
+    : `/api/projects/${slug}/tickets/${aslug}/decision-record/entries`;
   const redirectTo = isStandalone
-    ? `/assignments/${id}?tab=decisions`
-    : `/projects/${slug}/assignments/${aslug}?tab=decisions`;
+    ? `/tickets/${id}?tab=decisions`
+    : `/projects/${slug}/tickets/${aslug}?tab=decisions`;
 
   return (
     <AppendEntryPage

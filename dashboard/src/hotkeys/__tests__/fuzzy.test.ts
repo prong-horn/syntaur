@@ -4,9 +4,9 @@ import { rankAll, scoreField } from '../fuzzy';
 const entry = (type: string, title: string) => ({ type, title });
 
 describe('fuzzy.rankAll (R5c)', () => {
-  it('"ass" prefers Assignments over Decision Record', () => {
-    const r = rankAll('ass', [entry('page', 'Assignments'), entry('page', 'Decision Record')]);
-    expect(r[0].title).toBe('Assignments');
+  it('"ass" prefers Tickets over Decision Record', () => {
+    const r = rankAll('ass', [entry('page', 'Tickets'), entry('page', 'Decision Record')]);
+    expect(r[0].title).toBe('Tickets');
   });
 
   it('"dr" prefers Draft over Decision Record', () => {
@@ -44,8 +44,8 @@ describe('fuzzy.rankAll (R5c)', () => {
   it('matches an external ID folded into keywords (bare PROJ-123)', () => {
     // buildIndex folds external IDs into `keywords`, so a prefixless ID query
     // finds the item even though the title/subtitle do not contain it.
-    const withId = { type: 'assignment', title: 'Payment flow', keywords: ['PROJ-123', 'jira:PROJ-123'] };
-    const without = { type: 'assignment', title: 'Refund logic', keywords: [] as string[] };
+    const withId = { type: 'ticket', title: 'Payment flow', keywords: ['PROJ-123', 'jira:PROJ-123'] };
+    const without = { type: 'ticket', title: 'Refund logic', keywords: [] as string[] };
     const r = rankAll('PROJ-123', [withId, without]);
     expect(r).toHaveLength(1);
     expect(r[0].title).toBe('Payment flow');

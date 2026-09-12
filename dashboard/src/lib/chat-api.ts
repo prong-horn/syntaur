@@ -1,5 +1,5 @@
 /**
- * REST wrappers for the assignment chat, plus the pure reducer the hook drives.
+ * REST wrappers for the ticket chat, plus the pure reducer the hook drives.
  *
  * The reducer lives here rather than inside the hook so it unit-tests under the
  * node-env dashboard vitest config (no jsdom, no React) — the same split
@@ -27,7 +27,7 @@ import type {
   Participants,
 } from './chat-types';
 
-/** The author sentinels the server stamps on assignment-scope rows. */
+/** The author sentinels the server stamps on ticket-scope rows. */
 export const HUMAN_AGENT_ID = 'human';
 export const SYSTEM_AGENT_ID = 'system';
 
@@ -56,7 +56,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function fetchChatItems(
-  assignmentId: string,
+  ticketId: string,
   opts: { before?: number; limit?: number } = {},
 ): Promise<ChatItemsPage> {
   const params = new URLSearchParams();
@@ -64,17 +64,17 @@ export function fetchChatItems(
   if (typeof opts.limit === 'number') params.set('limit', String(opts.limit));
   const query = params.toString();
   return request<ChatItemsPage>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/items${query ? `?${query}` : ''}`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/items${query ? `?${query}` : ''}`,
   );
 }
 
 export function fetchChatSession(
-  assignmentId: string,
+  ticketId: string,
   agentId?: string | null,
 ): Promise<{ session: ChatSessionSummary | null }> {
   const query = agentId ? `?agent=${encodeURIComponent(agentId)}` : '';
   return request<{ session: ChatSessionSummary | null }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/session${query}`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/session${query}`,
   );
 }
 
@@ -137,24 +137,24 @@ export interface ChatParticipantsPayload {
   agents: ChatAgentSummary[];
 }
 
-export function fetchChatParticipants(assignmentId: string): Promise<ChatParticipantsPayload> {
+export function fetchChatParticipants(ticketId: string): Promise<ChatParticipantsPayload> {
   return request<ChatParticipantsPayload>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/participants`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/participants`,
   );
 }
 
 export function putChatParticipants(
-  assignmentId: string,
+  ticketId: string,
   next: Participants,
 ): Promise<ChatParticipantsPayload> {
   return request<ChatParticipantsPayload>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/participants`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/participants`,
     { method: 'PUT', body: JSON.stringify(next) },
   );
 }
 
 export function sendChatMessage(
-  assignmentId: string,
+  ticketId: string,
   text: string,
   agentId?: string | null,
   opts?: {
@@ -163,7 +163,7 @@ export function sendChatMessage(
   },
 ): Promise<{ messageId: string }> {
   return request<{ messageId: string }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/messages`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/messages`,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -184,12 +184,12 @@ export interface UploadedChatAttachment {
 }
 
 export async function uploadChatAttachment(
-  assignmentId: string,
+  ticketId: string,
   blob: Blob,
   name: string,
   mimeType: string,
 ): Promise<UploadedChatAttachment> {
-  const res = await fetch(`/api/assignments/${encodeURIComponent(assignmentId)}/chat/attachments`, {
+  const res = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/chat/attachments`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/octet-stream',
@@ -211,28 +211,28 @@ export async function uploadChatAttachment(
   return (await res.json()) as UploadedChatAttachment;
 }
 
-export function withdrawChatMessage(assignmentId: string, messageId: string): Promise<{ withdrawn: boolean }> {
+export function withdrawChatMessage(ticketId: string, messageId: string): Promise<{ withdrawn: boolean }> {
   return request<{ withdrawn: boolean }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/messages/${encodeURIComponent(messageId)}`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/messages/${encodeURIComponent(messageId)}`,
     { method: 'DELETE' },
   );
 }
 
-export function cancelChatTurn(assignmentId: string, agentId?: string | null): Promise<{ cancelled: boolean }> {
+export function cancelChatTurn(ticketId: string, agentId?: string | null): Promise<{ cancelled: boolean }> {
   return request<{ cancelled: boolean }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/cancel`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/cancel`,
     { method: 'POST', body: JSON.stringify(agentId ? { agentId } : {}) },
   );
 }
 
 export function answerChatPermission(
-  assignmentId: string,
+  ticketId: string,
   requestId: string,
   optionId: string,
   opts?: { allowAllSession?: boolean },
 ): Promise<{ answered: boolean }> {
   return request<{ answered: boolean }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/permissions/${encodeURIComponent(requestId)}`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/permissions/${encodeURIComponent(requestId)}`,
     {
       method: 'POST',
       body: JSON.stringify({
@@ -244,23 +244,23 @@ export function answerChatPermission(
 }
 
 export function answerChatQuestion(
-  assignmentId: string,
+  ticketId: string,
   requestId: string,
   answer: { optionId?: string; text?: string },
 ): Promise<{ answered: boolean }> {
   return request<{ answered: boolean }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/questions/${encodeURIComponent(requestId)}`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/questions/${encodeURIComponent(requestId)}`,
     { method: 'POST', body: JSON.stringify(answer) },
   );
 }
 
 export function fileChatRecord(
-  assignmentId: string,
+  ticketId: string,
   itemId: string,
   input: FileChatRecordInput,
 ): Promise<{ record: FiledChatRecord }> {
   return request<{ record: FiledChatRecord }>(
-    `/api/assignments/${encodeURIComponent(assignmentId)}/chat/items/${encodeURIComponent(itemId)}/file`,
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/items/${encodeURIComponent(itemId)}/file`,
     { method: 'POST', body: JSON.stringify(input) },
   );
 }
@@ -331,12 +331,12 @@ export function mergePage(state: ChatState, page: ChatItemsPage, limit: number):
 }
 
 /**
- * Fold a WS frame into the state, ignoring anything for another assignment —
+ * Fold a WS frame into the state, ignoring anything for another ticket —
  * the `/ws` broadcast is a flat fan-out with no topics (Decision 3).
  */
 export function applyFrame(
   state: ChatState,
-  assignmentId: string,
+  ticketId: string,
   type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents',
   payload: unknown,
 ): ChatState {
@@ -349,7 +349,7 @@ export function applyFrame(
   }
 
   const frame = payload as Partial<ChatItemFrame & ChatSessionFrame & ChatParticipantsFrame>;
-  if (frame.assignmentId !== assignmentId) return state;
+  if (frame.ticketId !== ticketId) return state;
 
   if (type === 'chat-item' && frame.patch) return applyPatch(state, frame.patch);
   if (type === 'chat-session' && frame.session && frame.agentId) {

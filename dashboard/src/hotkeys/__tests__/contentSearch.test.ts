@@ -3,10 +3,10 @@ import { contentHitsToEntries } from '../paletteIndex';
 import type { ContentHit } from '../../hooks/useContentSearch';
 
 const nestedHit: ContentHit = {
-  path: '/p/acme/assignments/login/comments.md',
+  path: '/p/acme/tickets/login/comments.md',
   projectSlug: 'acme',
-  assignmentSlug: 'login',
-  assignmentId: 'a-1',
+  ticketSlug: 'login',
+  ticketId: 'a-1',
   standalone: false,
   fileKind: 'comments',
   title: 'Fix login',
@@ -15,14 +15,14 @@ const nestedHit: ContentHit = {
   matches: [{ start: 4, end: 8 }],
   line: 12,
   section: 'Auth',
-  route: '/projects/acme/assignments/login?tab=comments#auth',
+  route: '/projects/acme/tickets/login?tab=comments#auth',
 };
 
 const standaloneHit: ContentHit = {
-  path: '/assignments/uuid-9/plan.md',
+  path: '/tickets/uuid-9/plan.md',
   projectSlug: null,
-  assignmentSlug: 'oneoff',
-  assignmentId: 'uuid-9',
+  ticketSlug: 'oneoff',
+  ticketId: 'uuid-9',
   standalone: true,
   fileKind: 'plan',
   title: 'One off task',
@@ -30,14 +30,14 @@ const standaloneHit: ContentHit = {
   snippet: 'step one is to set up the repo',
   matches: [{ start: 0, end: 4 }],
   line: 3,
-  route: '/assignments/uuid-9?tab=plan',
+  route: '/tickets/uuid-9?tab=plan',
 };
 
 const nestedPlanHit: ContentHit = {
-  path: '/p/acme/assignments/login/plan.md',
+  path: '/p/acme/tickets/login/plan.md',
   projectSlug: 'acme',
-  assignmentSlug: 'login',
-  assignmentId: 'a-1',
+  ticketSlug: 'login',
+  ticketId: 'a-1',
   standalone: false,
   fileKind: 'plan',
   title: 'Fix login',
@@ -45,7 +45,7 @@ const nestedPlanHit: ContentHit = {
   snippet: 'always branch from main',
   matches: [{ start: 7, end: 13 }],
   line: 1,
-  route: '/projects/acme/assignments/login?tab=plan',
+  route: '/projects/acme/tickets/login?tab=plan',
 };
 
 describe('contentHitsToEntries', () => {
@@ -56,9 +56,9 @@ describe('contentHitsToEntries', () => {
     for (const e of entries) expect(e.type).toBe('content');
   });
 
-  it('uses the hit route verbatim for project-nested assignment-pane hits', () => {
+  it('uses the hit route verbatim for project-nested ticket-pane hits', () => {
     const e = entries[0];
-    expect(e.route).toBe('/projects/acme/assignments/login?tab=comments#auth');
+    expect(e.route).toBe('/projects/acme/tickets/login?tab=comments#auth');
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 
@@ -70,7 +70,7 @@ describe('contentHitsToEntries', () => {
 
   it('leaves a nested plan hit UNPREFIXED', () => {
     const e = entries[2];
-    expect(e.route).toBe('/projects/acme/assignments/login?tab=plan');
+    expect(e.route).toBe('/projects/acme/tickets/login?tab=plan');
     expect(e.route.startsWith('/w/')).toBe(false);
   });
 

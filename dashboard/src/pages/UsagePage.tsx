@@ -26,7 +26,7 @@ interface UsageDailyRow {
 
 interface UsageSummaryRow {
   projectSlug: string;
-  assignmentSlug: string;
+  ticketSlug: string;
   totalTokens: number;
   totalCost: number;
   lastEventDay: string;
@@ -37,7 +37,7 @@ interface UsageResponse {
   summary: UsageSummaryRow[];
 }
 
-type GroupBy = 'project' | 'assignment';
+type GroupBy = 'project' | 'ticket';
 
 const WINDOW_LABEL: Record<UsageWindow, string> = {
   '7d': '7 days',
@@ -61,7 +61,7 @@ export function UsagePage() {
   const [sp, setSp] = useSearchParams();
   const filters = parseFilters(sp);
   const window: UsageWindow = filters.window ?? '30d';
-  const groupBy: GroupBy = sp.get('groupBy') === 'assignment' ? 'assignment' : 'project';
+  const groupBy: GroupBy = sp.get('groupBy') === 'ticket' ? 'ticket' : 'project';
 
   const { data: projects } = useProjects();
   const { data: facets } = useUsageFacets();
@@ -77,7 +77,7 @@ export function UsagePage() {
   useEffect(() => {
     if (!sp.get('window')) {
       const next = serializeFilters({ window: '30d', ...filters });
-      if (groupBy === 'assignment') next.set('groupBy', 'assignment');
+      if (groupBy === 'ticket') next.set('groupBy', 'ticket');
       setSp(next, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,7 +113,7 @@ export function UsagePage() {
   /** Push a new filter set (and groupBy) into the URL. */
   function update(next: UsageWidgetFilters, nextGroupBy: GroupBy = groupBy) {
     const params = serializeFilters(next);
-    if (nextGroupBy === 'assignment') params.set('groupBy', 'assignment');
+    if (nextGroupBy === 'ticket') params.set('groupBy', 'ticket');
     setSp(params);
   }
 
@@ -213,7 +213,7 @@ export function UsagePage() {
             className={inputClass}
           >
             <option value="project">Project</option>
-            <option value="assignment">Assignment</option>
+            <option value="ticket">Ticket</option>
           </select>
         </label>
       </div>
@@ -245,7 +245,7 @@ export function UsagePage() {
                 <thead className="bg-muted/50 text-muted-foreground">
                   <tr>
                     <th className="text-left px-3 py-2">Project</th>
-                    {groupBy === 'assignment' && <th className="text-left px-3 py-2">Assignment</th>}
+                    {groupBy === 'ticket' && <th className="text-left px-3 py-2">Ticket</th>}
                     <th className="text-right px-3 py-2">Tokens</th>
                     <th className="text-right px-3 py-2">Cost</th>
                     <th className="text-left px-3 py-2">Last event</th>
@@ -255,8 +255,8 @@ export function UsagePage() {
                   {data.summary.map((r, i) => (
                     <tr key={i} className="border-t border-border/60">
                       <td className="px-3 py-2">{r.projectSlug || '(unattributed)'}</td>
-                      {groupBy === 'assignment' && (
-                        <td className="px-3 py-2">{r.assignmentSlug || '(unattributed)'}</td>
+                      {groupBy === 'ticket' && (
+                        <td className="px-3 py-2">{r.ticketSlug || '(unattributed)'}</td>
                       )}
                       <td className="px-3 py-2 text-right tabular-nums">{formatTokens(r.totalTokens)}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatCost(r.totalCost)}</td>
@@ -280,7 +280,7 @@ export function UsagePage() {
                     <th className="text-left px-3 py-2">Tool</th>
                     <th className="text-left px-3 py-2">Model</th>
                     <th className="text-left px-3 py-2">Project</th>
-                    <th className="text-left px-3 py-2">Assignment</th>
+                    <th className="text-left px-3 py-2">Ticket</th>
                     <th className="text-right px-3 py-2">Tokens</th>
                     <th className="text-right px-3 py-2">Cost</th>
                   </tr>

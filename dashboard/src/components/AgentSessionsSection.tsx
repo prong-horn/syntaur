@@ -18,7 +18,7 @@ interface AgentSessionsSectionProps {
 }
 
 /**
- * Per-assignment list of agent sessions, rendered on assignment detail pages.
+ * Per-ticket list of agent sessions, rendered on ticket detail pages.
  *
  * Mirrors the per-row affordances of the standalone /sessions page —
  * Resume / Fork / Mark-stopped — by mounting `<SessionActionButtons>` on
@@ -52,7 +52,7 @@ export function AgentSessionsSection({ sessions, loading, error, onError }: Agen
       <SectionCard title="Agent Sessions">
         <EmptyState
           title="No agent sessions yet"
-          description="Sessions appear here when an agent registers one via /grab-assignment or syntaur track-session."
+          description="Sessions appear here when an agent registers one via /grab-ticket or syntaur track-session."
         />
       </SectionCard>
     );

@@ -45,10 +45,10 @@ export type StatusResolution =
   | { id: string; mode: 'remap'; target: string }
   | { id: string; mode: 'delete' };
 
-export interface AffectedAssignmentSummary {
+export interface AffectedTicketSummary {
   display: string;
   projectSlug: string | null;
-  assignmentSlug: string;
+  ticketSlug: string;
   status: string;
 }
 
@@ -56,7 +56,7 @@ export interface AffectedResponse {
   id: string;
   count: number;
   truncated: boolean;
-  assignments: AffectedAssignmentSummary[];
+  tickets: AffectedTicketSummary[];
 }
 
 export interface StatusConfigSaveResponse extends StatusConfigResponse {

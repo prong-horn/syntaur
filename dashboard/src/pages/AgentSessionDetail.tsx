@@ -4,7 +4,7 @@
 // live daemon-hosted session and rendered `SessionTerminal` over the
 // `/ws/agent-sessions/<short>/pty` bridge. The daemon and that bridge went in
 // phase 4 (Decision 5), so the page is what the plan said would be left of it —
-// the session's own facts, its rolled-up spend, and a link to the assignment it
+// the session's own facts, its rolled-up spend, and a link to the ticket it
 // worked, whose Chat tab is where an agent is now driven.
 
 import { Link, useParams } from 'react-router-dom';
@@ -25,9 +25,9 @@ export function AgentSessionDetail(): JSX.Element {
   if (error) return <ErrorState error={error} onRetry={refetch} />;
   if (!session) return <ErrorState error="Session not found." />;
 
-  const assignmentHref =
-    session.projectSlug && session.assignmentSlug
-      ? `/projects/${encodeURIComponent(session.projectSlug)}/assignments/${encodeURIComponent(session.assignmentSlug)}?tab=chat`
+  const ticketHref =
+    session.projectSlug && session.ticketSlug
+      ? `/projects/${encodeURIComponent(session.projectSlug)}/tickets/${encodeURIComponent(session.ticketSlug)}?tab=chat`
       : null;
 
   return (
@@ -74,18 +74,18 @@ export function AgentSessionDetail(): JSX.Element {
         )}
       </SectionCard>
 
-      <SectionCard title="Assignment">
-        {assignmentHref ? (
+      <SectionCard title="Ticket">
+        {ticketHref ? (
           <p className="text-sm">
-            <Link className="underline underline-offset-2" to={assignmentHref}>
-              {session.projectSlug}/{session.assignmentSlug}
+            <Link className="underline underline-offset-2" to={ticketHref}>
+              {session.projectSlug}/{session.ticketSlug}
             </Link>{' '}
             <span className="text-muted-foreground">— open its Chat tab to work with an agent.</span>
           </p>
         ) : (
           <EmptyState
-            title="Not bound to an assignment"
-            description="This session has no engagement linking it to an assignment."
+            title="Not bound to an ticket"
+            description="This session has no engagement linking it to an ticket."
           />
         )}
       </SectionCard>

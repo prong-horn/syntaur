@@ -5,7 +5,7 @@ import type { AgentSessionWithLiveness } from '../../types';
 function makeSession(overrides: Partial<AgentSessionWithLiveness> = {}): AgentSessionWithLiveness {
   return {
     projectSlug: null,
-    assignmentSlug: null,
+    ticketSlug: null,
     agent: 'codex',
     sessionId: 'test-session',
     started: '2026-06-01T00:00:00Z',

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { suggestPalette, type SuggestContext } from '../paletteSuggest';
 
 const ctx: SuggestContext = {
-  aliases: { a: 'assignment', p: 'project', pb: 'playbook' },
+  aliases: { t: 'ticket', p: 'project', pb: 'playbook' },
   fields: [
     'kind',
     'status',
@@ -35,7 +35,7 @@ const ctxNoExt: SuggestContext = {
 describe('suggestPalette — prefix / field category', () => {
   it('empty input offers alias prefixes + field names at the caret', () => {
     const s = suggestPalette('', 0, ctx);
-    expect(s.some((x) => x.kind === 'prefix' && x.insert === 'a:')).toBe(true);
+    expect(s.some((x) => x.kind === 'prefix' && x.insert === 't:')).toBe(true);
     expect(s.some((x) => x.kind === 'field' && x.insert === 'status:')).toBe(true);
     expect(s.every((x) => x.replace[0] === 0 && x.replace[1] === 0)).toBe(true);
   });
@@ -48,7 +48,7 @@ describe('suggestPalette — prefix / field category', () => {
 
   it('a fragment matches both an alias prefix and a field', () => {
     const s = suggestPalette('a', 1, ctx);
-    expect(s.some((x) => x.kind === 'prefix' && x.insert === 'a:')).toBe(true);
+    expect(s.some((x) => x.kind === 'prefix' && x.insert === 't:')).toBe(true);
     expect(s.some((x) => x.kind === 'field' && x.insert === 'assignee:')).toBe(true);
     expect(s.every((x) => x.replace[0] === 0 && x.replace[1] === 1)).toBe(true);
   });
@@ -120,13 +120,13 @@ describe('suggestPalette — value category', () => {
 
 describe('suggestPalette — replace-span fidelity', () => {
   it('completing a value mid-query never corrupts the rest', () => {
-    const input = 'a: status:op';
+    const input = 't: status:op';
     const s = suggestPalette(input, input.length, ctx);
     expect(s).toEqual([{ label: 'open', insert: 'open', replace: [10, 12], kind: 'value' }]);
     // Apply the splice exactly as CommandPalette will.
     const { replace, insert } = s[0];
     const next = input.slice(0, replace[0]) + insert + input.slice(replace[1]);
-    expect(next).toBe('a: status:open');
+    expect(next).toBe('t: status:open');
   });
 
   it('completing right after a colon preserves trailing text', () => {

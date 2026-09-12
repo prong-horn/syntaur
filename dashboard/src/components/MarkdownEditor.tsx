@@ -5,7 +5,7 @@ import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { deriveStatusOptions } from '../lib/statusMeta';
 import {
   normalizeEditorContent,
-  parseAssignmentEditorState,
+  parseTicketEditorState,
   parseProjectEditorState,
   parsePlanEditorState,
   parsePlaybookEditorState,
@@ -232,7 +232,7 @@ function StructuredEditor({
   onChange: (content: string) => void;
   allowSlugEdit: boolean;
 }) {
-  // Drive the assignment Status <select> from the live status config so every
+  // Drive the ticket Status <select> from the live status config so every
   // configured status (built-in AND custom) is selectable, in configured order.
   const statusConfig = useStatusConfig();
 
@@ -292,14 +292,14 @@ function StructuredEditor({
     );
   }
 
-  if (documentType === 'assignment') {
-    const state = parseAssignmentEditorState(content);
+  if (documentType === 'ticket') {
+    const state = parseTicketEditorState(content);
     const statusOptions = deriveStatusOptions(statusConfig);
     const savedStatusMissing = !statusOptions.some((option) => option.id === state.status);
     return (
       <div className="space-y-3">
         <FormGrid>
-          <Field label="Assignment title">
+          <Field label="Ticket title">
             <input
               value={state.title}
               onChange={(event) => {
@@ -323,8 +323,8 @@ function StructuredEditor({
               />
               <p className="text-xs leading-5 text-muted-foreground">
                 {allowSlugEdit
-                  ? 'The slug becomes the assignment folder name and URL. It is auto-generated from the title until you change it, and it cannot be renamed after creation.'
-                  : 'The slug is locked after creation because assignment paths and dependency references use it as a stable identifier.'}
+                  ? 'The slug becomes the ticket folder name and URL. It is auto-generated from the title until you change it, and it cannot be renamed after creation.'
+                  : 'The slug is locked after creation because ticket paths and dependency references use it as a stable identifier.'}
               </p>
             </div>
           </Field>
@@ -370,7 +370,7 @@ function StructuredEditor({
             <input
               value={state.dependsOn}
               onChange={(event) => onChange(normalizeEditorContent(documentType, content, { dependsOn: event.target.value }))}
-              placeholder="Comma-separated assignment slugs"
+              placeholder="Comma-separated ticket slugs"
               className="editor-input"
             />
           </Field>
@@ -378,7 +378,7 @@ function StructuredEditor({
             <input
               value={state.links}
               onChange={(event) => onChange(normalizeEditorContent(documentType, content, { links: event.target.value }))}
-              placeholder="Comma-separated: projectSlug/assignmentSlug"
+              placeholder="Comma-separated: projectSlug/ticketSlug"
               className="editor-input"
             />
           </Field>
@@ -388,7 +388,7 @@ function StructuredEditor({
               onChange={(event) =>
                 onChange(normalizeEditorContent(documentType, content, { blockedReason: event.target.value }))
               }
-              placeholder="Read-only unless the assignment is actually blocked"
+              placeholder="Read-only unless the ticket is actually blocked"
               className="editor-input"
             />
           </Field>
@@ -402,7 +402,7 @@ function StructuredEditor({
           </Field>
         </FormGrid>
 
-        <Field label="Assignment body">
+        <Field label="Ticket body">
           <textarea
             value={state.body}
             onChange={(event) => onChange(normalizeEditorContent(documentType, content, { body: event.target.value }))}
@@ -419,8 +419,8 @@ function StructuredEditor({
     return (
       <div className="space-y-3">
         <FormGrid>
-          <Field label="Assignment">
-            <input value={state.assignment} disabled className="editor-input editor-input-disabled" />
+          <Field label="Ticket">
+            <input value={state.ticket} disabled className="editor-input editor-input-disabled" />
           </Field>
           <Field label="Plan status">
             <select
@@ -452,8 +452,8 @@ function StructuredEditor({
     return (
       <div className="space-y-3">
         <FormGrid>
-          <Field label="Assignment">
-            <input value={state.assignment} disabled className="editor-input editor-input-disabled" />
+          <Field label="Ticket">
+            <input value={state.ticket} disabled className="editor-input editor-input-disabled" />
           </Field>
         </FormGrid>
         <Field label="Scratchpad body">
@@ -568,8 +568,8 @@ function getBodyContent(
   switch (documentType) {
     case 'project':
       return parseProjectEditorState(content).body;
-    case 'assignment':
-      return parseAssignmentEditorState(content).body;
+    case 'ticket':
+      return parseTicketEditorState(content).body;
     case 'plan':
       return parsePlanEditorState(content).body;
     case 'scratchpad':
@@ -592,21 +592,21 @@ function getValidationErrors(
         state.slug.trim() && !isValidSlug(state.slug) ? 'Project slug must be lowercase letters, numbers, and hyphens only.' : null,
       ].filter((value): value is string => Boolean(value));
     }
-    case 'assignment': {
-      const state = parseAssignmentEditorState(content);
+    case 'ticket': {
+      const state = parseTicketEditorState(content);
       return [
-        !state.title.trim() ? 'Assignment title is required.' : null,
-        !state.slug.trim() ? 'Assignment slug is required.' : null,
-        state.slug.trim() && !isValidSlug(state.slug) ? 'Assignment slug must be lowercase letters, numbers, and hyphens only.' : null,
+        !state.title.trim() ? 'Ticket title is required.' : null,
+        !state.slug.trim() ? 'Ticket slug is required.' : null,
+        state.slug.trim() && !isValidSlug(state.slug) ? 'Ticket slug must be lowercase letters, numbers, and hyphens only.' : null,
       ].filter((value): value is string => Boolean(value));
     }
     case 'plan': {
       const state = parsePlanEditorState(content);
-      return !state.assignment.trim() ? ['Plan assignment is required.'] : [];
+      return !state.ticket.trim() ? ['Plan ticket is required.'] : [];
     }
     case 'scratchpad': {
       const state = parseScratchpadEditorState(content);
-      return !state.assignment.trim() ? ['Scratchpad assignment is required.'] : [];
+      return !state.ticket.trim() ? ['Scratchpad ticket is required.'] : [];
     }
     case 'playbook': {
       const state = parsePlaybookEditorState(content);

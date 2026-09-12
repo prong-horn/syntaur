@@ -1,6 +1,6 @@
 /**
  * Pure client-side filter / sort / limit engine for agent sessions.
- * Mirrors the assignment board pattern (filterBoardItems + sortAssignments).
+ * Mirrors the ticket board pattern (filterBoardItems + sortTickets).
  * No React imports — testable under Node/vitest.
  */
 

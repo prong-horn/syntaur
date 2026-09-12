@@ -6,23 +6,23 @@ import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
 import { buildWorkflowLanes } from '../lib/workflow-board';
 import { cn } from '../lib/utils';
 import {
-  useAssignmentsBoard,
-  type AssignmentBoardItem,
-  type AssignmentTransitionAction,
+  useTicketsBoard,
+  type TicketBoardItem,
+  type TicketTransitionAction,
 } from '../hooks/useProjects';
 import {
-  runAssignmentTransition,
-  runAssignmentTransitionById,
-  overrideAssignmentStatus,
-  overrideAssignmentStatusById,
-  updateAssignmentTitle,
-  updateAssignmentTitleById,
-} from '../lib/assignments';
+  runTicketTransition,
+  runTicketTransitionById,
+  overrideTicketStatus,
+  overrideTicketStatusById,
+  updateTicketTitle,
+  updateTicketTitleById,
+} from '../lib/tickets';
 import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
-import { getAssignmentColumns } from '../lib/kanban';
-import { sortAssignments } from '../lib/sortAssignments';
+import { getTicketColumns } from '../lib/kanban';
+import { sortTickets } from '../lib/sortTickets';
 import { formatDate } from '../lib/format';
-import { assignmentDetailHref } from '../lib/assignmentFilter';
+import { ticketDetailHref } from '../lib/ticketFilter';
 import { SearchInput } from '../components/SearchInput';
 import { FilterBar } from '../components/FilterBar';
 import { ViewToggle } from '../components/ViewToggle';
@@ -32,17 +32,17 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
-import { AssignmentTransitionDialog } from '../components/AssignmentTransitionDialog';
+import { TicketTransitionDialog } from '../components/TicketTransitionDialog';
 import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { TypeChip } from '../components/TypeChip';
-import { AssignmentStatusPill } from '../components/AssignmentStatusPill';
+import { TicketStatusPill } from '../components/TicketStatusPill';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
 import { useBodyClickNavigation } from '../hooks/useBodyClickNavigation';
 import { useToast, Toaster } from '../components/Toast';
-import { transitionNeedsReason } from '../lib/assignments';
+import { transitionNeedsReason } from '../lib/tickets';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
@@ -72,10 +72,10 @@ import { compileQuery } from '@shared/query';
 import { viewFiltersToQuery, queryToViewFilters } from '@shared/view-filters-query';
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
 
-interface PendingAssignmentMove {
-  item: AssignmentBoardItem;
+interface PendingTicketMove {
+  item: TicketBoardItem;
   toColumnId: string;
-  action: AssignmentTransitionAction;
+  action: TicketTransitionAction;
 }
 
 function normalizeActivityFilter(value: string | null): ActivityFilter {
@@ -94,11 +94,11 @@ function areSearchParamsEqual(left: URLSearchParams, right: URLSearchParams): bo
   return left.toString() === right.toString();
 }
 
-export function AssignmentsPage() {
+export function TicketsPage() {
   const navigate = useNavigate();
   const searchRef = useRef<HTMLInputElement>(null);
-  useHotkeyScope('list:assignments');
-  const { data, loading, error, refetch } = useAssignmentsBoard();
+  useHotkeyScope('list:tickets');
+  const { data, loading, error, refetch } = useTicketsBoard();
   const statusConfig = useStatusConfig();
   const typesConfig = useTypesConfig();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -109,7 +109,7 @@ export function AssignmentsPage() {
   // Reset implicitly when `scope` changes (we re-bootstrap for the new scope).
   const bootstrappedScopeRef = useRef<string | null | undefined>(undefined);
 
-  const COLUMNS = useMemo(() => getAssignmentColumns(statusConfig.order), [statusConfig]);
+  const COLUMNS = useMemo(() => getTicketColumns(statusConfig.order), [statusConfig]);
   const COLUMN_LABELS = useMemo(() => {
     const labels: Record<string, string> = {};
     for (const id of COLUMNS) {
@@ -223,20 +223,20 @@ export function AssignmentsPage() {
   // serializable `listSectionVisibility` from this set, and applyConfig seeds it
   // back. New / unknown group IDs default to expanded.
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(() => new Set());
-  const [boardItems, setBoardItems] = useState<AssignmentBoardItem[]>([]);
+  const [boardItems, setBoardItems] = useState<TicketBoardItem[]>([]);
   const { toast, showToast, dismissToast } = useToast();
   const [transitioningId, setTransitioningId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dropTargetStatus, setDropTargetStatus] = useState<string | null>(null);
-  const [pendingMove, setPendingMove] = useState<PendingAssignmentMove | null>(null);
+  const [pendingMove, setPendingMove] = useState<PendingTicketMove | null>(null);
   const [contextMenu, setContextMenu] = useState<{
-    item: AssignmentBoardItem;
+    item: TicketBoardItem;
     anchor: { x: number; y: number };
   } | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AssignmentBoardItem | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<TicketBoardItem | null>(null);
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
   useEffect(() => {
-    setBoardItems(data?.assignments ?? []);
+    setBoardItems(data?.tickets ?? []);
   }, [data]);
 
   // Track the URL params we last reacted to, so we can tell a genuine URL-driven
@@ -334,7 +334,7 @@ export function AssignmentsPage() {
   // for status / activity from the server prefs. Once done, marks the ref
   // with the current scope on next microtask so the state->URL effect unlocks.
   // Re-runs when scope changes (react-router may reuse the component across
-  // /w/:workspace/assignments navigations).
+  // /w/:workspace/tickets navigations).
   useEffect(() => {
     if (bootstrappedScopeRef.current === scope) return;
     let cancelled = false;
@@ -439,9 +439,9 @@ export function AssignmentsPage() {
   // Refs mirror the current chip state so the assemble helper reads fresh values
   // synchronously inside an event handler (a setX call does not update the
   // closed-over state variable until the next render).
-  // Single source of truth: the per-render assignment below is canonical.
+  // Single source of truth: the per-render ticket below is canonical.
   // useRef is initialised with null! (typed placeholder) so there is no
-  // duplicate field-list to drift out of sync with the reassignment.
+  // duplicate field-list to drift out of sync with the reticket.
   const chipStateRef = useRef<{
     status: string[];
     priority: string[];
@@ -662,7 +662,7 @@ export function AssignmentsPage() {
     [boardItems],
   );
 
-  // Client AQL field registry: built-in assignment vocabulary + any custom-fact
+  // Client AQL field registry: built-in ticket vocabulary + any custom-fact
   // declarations from status config. One registry per declarations change so the
   // compile cache stays warm.
   const registry = useMemo(
@@ -688,7 +688,7 @@ export function AssignmentsPage() {
   );
 
   const sortedItems = useMemo(
-    () => sortAssignments(filteredItems, sortField, sortDirection),
+    () => sortTickets(filteredItems, sortField, sortDirection),
     [filteredItems, sortField, sortDirection],
   );
 
@@ -699,10 +699,10 @@ export function AssignmentsPage() {
   // the active sort field/direction, matching the table and kanban views.
   const listGroups = useMemo(() => {
     if (grouping === 'none') {
-      return [{ id: '__all__', label: 'All assignments', items: sortedItems }];
+      return [{ id: '__all__', label: 'All tickets', items: sortedItems }];
     }
     if (grouping === 'type') {
-      const groups: { id: string; label: string; items: AssignmentBoardItem[] }[] = typesConfig.definitions.map((def) => ({
+      const groups: { id: string; label: string; items: TicketBoardItem[] }[] = typesConfig.definitions.map((def) => ({
         id: def.id,
         label: getTypeLabel(typesConfig, def.id),
         items: sortedItems.filter((it) => it.type === def.id),
@@ -715,7 +715,7 @@ export function AssignmentsPage() {
       return groups;
     }
     if (grouping === 'priority') {
-      const order: AssignmentBoardItem['priority'][] = ['critical', 'high', 'medium', 'low'];
+      const order: TicketBoardItem['priority'][] = ['critical', 'high', 'medium', 'low'];
       return order.map((p) => ({
         id: p,
         label: p.charAt(0).toUpperCase() + p.slice(1),
@@ -768,14 +768,14 @@ export function AssignmentsPage() {
 
   // Add an "Other" column to the type kanban when any filtered item has a null
   // / unrecognized type slug. Mirrors the list-view bucketing so the same
-  // assignment doesn't move between buckets when the user switches views.
+  // ticket doesn't move between buckets when the user switches views.
   const TYPE_KANBAN_COLUMNS_WITH_FALLBACK: KanbanColumn[] = useMemo(() => {
     const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
     const hasUnknown = filteredItems.some((it) => !it.type || !knownIds.has(it.type));
     return hasUnknown
       ? [
           ...TYPE_KANBAN_COLUMNS,
-          { id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Assignments with no recognized type.' },
+          { id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Tickets with no recognized type.' },
         ]
       : TYPE_KANBAN_COLUMNS;
   }, [TYPE_KANBAN_COLUMNS, typesConfig, filteredItems]);
@@ -786,7 +786,7 @@ export function AssignmentsPage() {
   // listGroups can iterate by priority/assignee/project, which would disagree
   // with the kanban renderer when the persisted grouping is unsupported by kanban.
   const { visibleItems, visibleIndexByKey } = useMemo(() => {
-    let items: AssignmentBoardItem[];
+    let items: TicketBoardItem[];
     if (view === 'table') {
       items = sortedItems;
     } else if (view === 'kanban') {
@@ -809,35 +809,35 @@ export function AssignmentsPage() {
       items = listGroups.flatMap((g) => g.items);
     }
     const byKey = new Map<string, number>();
-    items.forEach((it, i) => byKey.set(getAssignmentKey(it), i));
+    items.forEach((it, i) => byKey.set(getTicketKey(it), i));
     return { visibleItems: items, visibleIndexByKey: byKey };
   }, [view, sortedItems, listGroups, effectiveKanbanGrouping, typesConfig, filteredItems, COLUMNS]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
-    scope: 'list:assignments',
-    onOpen: (assignment) => {
-      navigate(assignmentDetailHref(assignment));
+    scope: 'list:tickets',
+    onOpen: (ticket) => {
+      navigate(ticketDetailHref(ticket));
     },
   });
   useHotkey({
     keys: '/',
-    scope: 'list:assignments',
+    scope: 'list:tickets',
     description: 'Focus filter',
     handler: () => searchRef.current?.focus(),
   });
   useHotkey({
     keys: 'r',
-    scope: 'list:assignments',
+    scope: 'list:tickets',
     description: 'Refresh',
     handler: () => refetch(),
   });
 
   if (loading) {
-    return <LoadingState label="Loading assignments board…" />;
+    return <LoadingState label="Loading tickets board…" />;
   }
 
   if (error || !data) {
-    return <ErrorState error={error || 'Assignments board is unavailable.'} onRetry={refetch} />;
+    return <ErrorState error={error || 'Tickets board is unavailable.'} onRetry={refetch} />;
   }
 
   async function applyMove({
@@ -846,9 +846,9 @@ export function AssignmentsPage() {
     action,
     reason,
   }: {
-    item: AssignmentBoardItem;
+    item: TicketBoardItem;
     toColumnId: string;
-    action?: AssignmentTransitionAction;
+    action?: TicketTransitionAction;
     reason?: string;
   }) {
     // A direct status change (no transition action) goes through the override
@@ -866,12 +866,12 @@ export function AssignmentsPage() {
       }
     }
 
-    setTransitioningId(getAssignmentKey(item));
+    setTransitioningId(getTicketKey(item));
 
     const previous = boardItems;
     setBoardItems((current) =>
       current.map((candidate) =>
-        getAssignmentKey(candidate) === getAssignmentKey(item)
+        getTicketKey(candidate) === getTicketKey(item)
           ? {
               ...candidate,
               status: toColumnId,
@@ -882,19 +882,19 @@ export function AssignmentsPage() {
     );
 
     try {
-      // Project assignments use slug-based routes; standalone use by-id routes.
+      // Project tickets use slug-based routes; standalone use by-id routes.
       // Both support transitions (with action) AND direct override (no action).
       const updated = item.projectSlug === null
         ? action
-          ? await runAssignmentTransitionById(item.id, action, reason)
-          : await overrideAssignmentStatusById(item.id, toColumnId)
+          ? await runTicketTransitionById(item.id, action, reason)
+          : await overrideTicketStatusById(item.id, toColumnId)
         : action
-          ? await runAssignmentTransition(item.projectSlug, item.slug, action, reason)
-          : await overrideAssignmentStatus(item.projectSlug, item.slug, toColumnId);
+          ? await runTicketTransition(item.projectSlug, item.slug, action, reason)
+          : await overrideTicketStatus(item.projectSlug, item.slug, toColumnId);
 
       setBoardItems((current) =>
         current.map((candidate) =>
-          getAssignmentKey(candidate) === getAssignmentKey(item)
+          getTicketKey(candidate) === getTicketKey(item)
             ? {
                 ...candidate,
                 status: updated.status,
@@ -922,7 +922,7 @@ export function AssignmentsPage() {
     toColumnId,
     action: providedAction,
   }: {
-    item: AssignmentBoardItem;
+    item: TicketBoardItem;
     toColumnId: string;
     /**
      * The chosen transition action when the call originated from the inline
@@ -930,15 +930,15 @@ export function AssignmentsPage() {
      * status. Passing it through preserves `command` / `requiresReason` when
      * multiple commands share a target status.
      */
-    action?: AssignmentTransitionAction;
+    action?: TicketTransitionAction;
   }) {
     if (item.status === toColumnId) {
       return;
     }
 
-    const action = providedAction ?? getAssignmentAction(item, toColumnId);
+    const action = providedAction ?? getTicketAction(item, toColumnId);
     if (action?.disabled) {
-      showToast(action.disabledReason || `Cannot move this assignment to ${toColumnId}.`, 'error');
+      showToast(action.disabledReason || `Cannot move this ticket to ${toColumnId}.`, 'error');
       return;
     }
 
@@ -953,30 +953,30 @@ export function AssignmentsPage() {
   // A picker "Override → X" click is just a direct move to X with no chosen
   // transition; handleMove re-derives a transition when one exists (e.g. terminal
   // targets) and otherwise routes through the override path in applyMove.
-  function handleOverride(item: AssignmentBoardItem, statusId: string) {
+  function handleOverride(item: TicketBoardItem, statusId: string) {
     void handleMove({ item, toColumnId: statusId });
   }
 
-  async function handleRenameTitle(item: AssignmentBoardItem, newTitle: string): Promise<void> {
+  async function handleRenameTitle(item: TicketBoardItem, newTitle: string): Promise<void> {
     if (newTitle === item.title) return;
 
-    const key = getAssignmentKey(item);
+    const key = getTicketKey(item);
     const previous = boardItems;
     setBoardItems((current) =>
       current.map((candidate) =>
-        getAssignmentKey(candidate) === key ? { ...candidate, title: newTitle } : candidate,
+        getTicketKey(candidate) === key ? { ...candidate, title: newTitle } : candidate,
       ),
     );
     setTransitioningId(key);
 
     try {
       const updated = item.projectSlug === null
-        ? await updateAssignmentTitleById({ id: item.id, title: newTitle })
-        : await updateAssignmentTitle({ projectSlug: item.projectSlug, assignmentSlug: item.slug, title: newTitle });
+        ? await updateTicketTitleById({ id: item.id, title: newTitle })
+        : await updateTicketTitle({ projectSlug: item.projectSlug, ticketSlug: item.slug, title: newTitle });
 
       setBoardItems((current) =>
         current.map((candidate) =>
-          getAssignmentKey(candidate) === key
+          getTicketKey(candidate) === key
             ? { ...candidate, title: updated.title, updated: updated.updated }
             : candidate,
         ),
@@ -1014,7 +1014,7 @@ export function AssignmentsPage() {
   }
 
   const draggedItem = draggedId
-    ? boardItems.find((item) => getAssignmentKey(item) === draggedId) ?? null
+    ? boardItems.find((item) => getTicketKey(item) === draggedId) ?? null
     : null;
 
   function handleDragStart(event: DragEvent<HTMLDivElement>, itemId: string) {
@@ -1030,7 +1030,7 @@ export function AssignmentsPage() {
 
   function handleDragOver(event: DragEvent<HTMLElement>, status: string) {
     if (!draggedItem) return;
-    const action = getAssignmentAction(draggedItem, status);
+    const action = getTicketAction(draggedItem, status);
     if (draggedItem.status === status || action?.disabled) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
@@ -1079,11 +1079,11 @@ export function AssignmentsPage() {
     <div className="space-y-5" data-density={prefs.density}>
       <div className="flex items-center justify-end">
         <Link
-          to={`/assignments/new`}
+          to={`/tickets/new`}
           className="inline-flex h-9 items-center gap-2 rounded-md bg-foreground px-3 text-sm font-medium text-background transition hover:bg-foreground/90"
         >
           <Plus className="h-4 w-4" />
-          New Assignment
+          New Ticket
         </Link>
       </div>
 
@@ -1117,7 +1117,7 @@ export function AssignmentsPage() {
           ref={searchRef}
           value={search}
           onChange={chipsRepresentable ? handleSetSearch : () => {}}
-          placeholder="Search assignments or projects"
+          placeholder="Search tickets or projects"
         />
         <MultiSelect
           ariaLabel="Status filter"
@@ -1220,10 +1220,10 @@ export function AssignmentsPage() {
         ) : null}
       </FilterBar>
 
-      {data.assignments.length === 0 ? (
+      {data.tickets.length === 0 ? (
         <EmptyState
-          title="No assignments yet"
-          description="Assignments appear here once projects contain concrete work items."
+          title="No tickets yet"
+          description="Tickets appear here once projects contain concrete work items."
           actions={
             <Link className="shell-action shell-action--cta" to={`/projects`}>
               <FolderKanban className="h-4 w-4" />
@@ -1233,8 +1233,8 @@ export function AssignmentsPage() {
         />
       ) : filteredItems.length === 0 ? (
         <EmptyState
-          title="No assignments match these filters"
-          description="Adjust the search term or filters to show assignments across all projects again."
+          title="No tickets match these filters"
+          description="Adjust the search term or filters to show tickets across all projects again."
           actions={
             <button
               type="button"
@@ -1252,15 +1252,15 @@ export function AssignmentsPage() {
           // `title` is non-hideable in the picker (TableColumnPicker.tsx:NON_HIDEABLE).
           // Defensively force-show it here so a persisted view with `hidden: ['title']`
           // (from an older version, a malformed payload, etc.) does not leave the table
-          // without assignment links and no way to restore them via the picker.
+          // without ticket links and no way to restore them via the picker.
           const showCol = (id: TableColumnId) => id === 'title' || !hiddenCols.has(id);
           return (
-        <SectionCard title={`${sortedItems.length} assignment${sortedItems.length === 1 ? '' : 's'}`}>
+        <SectionCard title={`${sortedItems.length} ticket${sortedItems.length === 1 ? '' : 's'}`}>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border/60 text-muted-foreground">
-                  {showCol('title') ? <SortHeader field="title">Assignment</SortHeader> : null}
+                  {showCol('title') ? <SortHeader field="title">Ticket</SortHeader> : null}
                   {showCol('status') ? <SortHeader field="status">Status</SortHeader> : null}
                   <th className="py-2 pr-4 text-xs font-medium uppercase tracking-wider">Type</th>
                   {showCol('priority') ? <SortHeader field="priority">Priority</SortHeader> : null}
@@ -1271,56 +1271,56 @@ export function AssignmentsPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortedItems.map((assignment, i) => (
+                {sortedItems.map((ticket, i) => (
                   <ClickableTableRow
-                    key={getAssignmentKey(assignment)}
-                    detailHref={assignmentDetailHref(assignment)}
+                    key={getTicketKey(ticket)}
+                    detailHref={ticketDetailHref(ticket)}
                     className="cursor-pointer border-b border-border/50 transition hover:bg-muted/40 last:border-0"
                     {...hotkeyRowProps(i)}
                   >
                     {showCol('title') ? (
                     <td className="py-4 pr-4">
                       <InlineTitleEditor
-                        title={assignment.title}
-                        detailHref={assignmentDetailHref(assignment)}
-                        onSave={(next) => handleRenameTitle(assignment, next)}
-                        disabled={transitioningId === getAssignmentKey(assignment)}
+                        title={ticket.title}
+                        detailHref={ticketDetailHref(ticket)}
+                        onSave={(next) => handleRenameTitle(ticket, next)}
+                        disabled={transitioningId === getTicketKey(ticket)}
                       />
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {assignment.projectTitle ?? (
+                        {ticket.projectTitle ?? (
                           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
                             Standalone
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id}>
-                        {assignment.id.slice(0, 8)}
-                        <CopyButton value={assignment.id} />
+                      <p className="mt-0.5 inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={ticket.id}>
+                        {ticket.id.slice(0, 8)}
+                        <CopyButton value={ticket.id} />
                       </p>
                     </td>
                     ) : null}
                     {showCol('status') ? (
                     <td className="py-4 pr-4">
                       <select
-                        value={assignment.status}
-                        disabled={transitioningId === getAssignmentKey(assignment)}
+                        value={ticket.status}
+                        disabled={transitioningId === getTicketKey(ticket)}
                         onChange={(e) =>
-                          handleMove({ item: assignment, toColumnId: e.target.value })
+                          handleMove({ item: ticket, toColumnId: e.target.value })
                         }
                         className={cn(
                           'appearance-none rounded-full border px-2.5 py-0.5 text-xs font-semibold tracking-wide outline-none',
                           'cursor-pointer bg-[length:12px] bg-[right_6px_center] bg-no-repeat pr-6',
                           "bg-[url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='currentColor'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z'/%3E%3C/svg%3E\")]",
-                          resolveStatusAppearance(statusConfig.statuses, assignment.status).className,
-                          transitioningId === getAssignmentKey(assignment) && 'animate-pulse opacity-60',
+                          resolveStatusAppearance(statusConfig.statuses, ticket.status).className,
+                          transitioningId === getTicketKey(ticket) && 'animate-pulse opacity-60',
                         )}
-                        style={resolveStatusAppearance(statusConfig.statuses, assignment.status).style}
+                        style={resolveStatusAppearance(statusConfig.statuses, ticket.status).style}
                       >
                         {COLUMNS.map((targetStatus) => {
-                          const isCurrent = assignment.status === targetStatus;
+                          const isCurrent = ticket.status === targetStatus;
                           const action = isCurrent
                             ? undefined
-                            : getAssignmentAction(assignment, targetStatus);
+                            : getTicketAction(ticket, targetStatus);
                           // Terminal targets can't be reached via override; disable
                           // them unless a transition exists (mirrors the picker).
                           const targetDef = statusConfig.statuses.find((s) => s.id === targetStatus);
@@ -1345,13 +1345,13 @@ export function AssignmentsPage() {
                     </td>
                     ) : null}
                     <td className="py-4 pr-4">
-                      <TypeChip type={assignment.type} compact />
+                      <TypeChip type={ticket.type} compact />
                     </td>
-                    {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{assignment.priority}</td> : null}
-                    {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.assignee ?? 'Unassigned'}</td> : null}
-                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{assignment.dependsOn.length}</td> : null}
-                    {showCol('created') ? <td className="py-4 pr-4 text-muted-foreground">{formatDate(assignment.created)}</td> : null}
-                    {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(assignment.updated)}</td> : null}
+                    {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{ticket.priority}</td> : null}
+                    {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{ticket.assignee ?? 'Unassigned'}</td> : null}
+                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{ticket.dependsOn.length}</td> : null}
+                    {showCol('created') ? <td className="py-4 pr-4 text-muted-foreground">{formatDate(ticket.created)}</td> : null}
+                    {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.updated)}</td> : null}
                   </ClickableTableRow>
                 ))}
               </tbody>
@@ -1368,7 +1368,7 @@ export function AssignmentsPage() {
             const isStatusGroup = grouping === 'status';
             const isValidTarget =
               isStatusGroup && draggedItem
-                ? draggedItem.status !== groupId && !getAssignmentAction(draggedItem, groupId)?.disabled
+                ? draggedItem.status !== groupId && !getTicketAction(draggedItem, groupId)?.disabled
                 : false;
             const isInvalidTarget =
               isStatusGroup && draggedItem ? draggedItem.status !== groupId && !isValidTarget : false;
@@ -1403,7 +1403,7 @@ export function AssignmentsPage() {
                 {expanded && items.length > 0 && (
                   <div className="space-y-3 px-4 pb-4">
                     {items.map((item) => {
-                      const itemKey = getAssignmentKey(item);
+                      const itemKey = getTicketKey(item);
                       const isDragging = draggedId === itemKey;
                       const flatIdx = visibleIndexByKey.get(itemKey) ?? -1;
                       const dragEnabled = isStatusGroup;
@@ -1420,8 +1420,8 @@ export function AssignmentsPage() {
                             isDragging && 'scale-[0.98] opacity-50',
                           )}
                         >
-                          <AssignmentBoardCard
-                            assignment={item}
+                          <TicketBoardCard
+                            ticket={item}
                             dragging={isDragging}
                             transitioning={transitioningId === itemKey}
                             onPillSelect={(action) =>
@@ -1442,15 +1442,15 @@ export function AssignmentsPage() {
       ) : effectiveKanbanGrouping === 'workflow' ? (
         <WorkflowSwimlanes
           items={filteredItems}
-          getItemId={getAssignmentKey}
+          getItemId={getTicketKey}
           renderCard={(item, { dragging }) => {
-            const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
+            const flatIdx = visibleIndexByKey.get(getTicketKey(item)) ?? -1;
             return (
               <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
-                <AssignmentBoardCard
-                  assignment={item}
+                <TicketBoardCard
+                  ticket={item}
                   dragging={dragging}
-                  transitioning={transitioningId === getAssignmentKey(item)}
+                  transitioning={transitioningId === getTicketKey(item)}
                   onPillSelect={(action) =>
                     void handleMove({ item, toColumnId: action.targetStatus, action })
                   }
@@ -1460,13 +1460,13 @@ export function AssignmentsPage() {
               </div>
             );
           }}
-          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
         />
       ) : (
         <KanbanBoard
           columns={effectiveKanbanGrouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
           items={filteredItems}
-          getItemId={getAssignmentKey}
+          getItemId={getTicketKey}
           getColumnId={(item) =>
             effectiveKanbanGrouping === 'type'
               ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
@@ -1479,7 +1479,7 @@ export function AssignmentsPage() {
               return { allowed: true };
             }
 
-            const action = getAssignmentAction(item, toColumnId);
+            const action = getTicketAction(item, toColumnId);
             if (action?.disabled) {
               return { allowed: false, reason: action.disabledReason || action.description };
             }
@@ -1497,7 +1497,7 @@ export function AssignmentsPage() {
             event.preventDefault();
             setContextMenu({ item, anchor: { x: event.clientX, y: event.clientY } });
           }}
-          emptyMessage={(column) => `No ${column.title.toLowerCase()} assignments.`}
+          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
           hiddenColumnIds={kanbanColumnVisibility.hidden}
           onHideColumn={(columnId) =>
             setKanbanColumnVisibility((current) => {
@@ -1510,13 +1510,13 @@ export function AssignmentsPage() {
             })
           }
           renderCard={(item, { dragging }) => {
-            const flatIdx = visibleIndexByKey.get(getAssignmentKey(item)) ?? -1;
+            const flatIdx = visibleIndexByKey.get(getTicketKey(item)) ?? -1;
             return (
               <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
-                <AssignmentBoardCard
-                  assignment={item}
+                <TicketBoardCard
+                  ticket={item}
                   dragging={dragging}
-                  transitioning={transitioningId === getAssignmentKey(item)}
+                  transitioning={transitioningId === getTicketKey(item)}
                   onPillSelect={(action) =>
                     void handleMove({ item, toColumnId: action.targetStatus, action })
                   }
@@ -1531,11 +1531,11 @@ export function AssignmentsPage() {
 
       <Toaster toast={toast} onDismiss={dismissToast} />
 
-      <AssignmentTransitionDialog
+      <TicketTransitionDialog
         open={pendingMove !== null}
         action={pendingMove?.action ?? null}
-        assignmentTitle={pendingMove?.item.title ?? 'Assignment'}
-        loading={transitioningId === (pendingMove ? getAssignmentKey(pendingMove.item) : null)}
+        ticketTitle={pendingMove?.item.title ?? 'Ticket'}
+        loading={transitioningId === (pendingMove ? getTicketKey(pendingMove.item) : null)}
         onOpenChange={(open) => {
           if (!open) {
             setPendingMove(null);
@@ -1562,8 +1562,8 @@ export function AssignmentsPage() {
 
       <ContextMenuPopover
         anchor={contextMenu?.anchor ?? null}
-        items={contextMenu ? buildAssignmentContextMenu(contextMenu.item, {
-          onEdit: () => navigate(assignmentDetailHref(contextMenu.item)),
+        items={contextMenu ? buildTicketContextMenu(contextMenu.item, {
+          onEdit: () => navigate(ticketDetailHref(contextMenu.item)),
           onDelete: () => setDeleteTarget(contextMenu.item),
         }) : []}
         onClose={() => setContextMenu(null)}
@@ -1571,7 +1571,7 @@ export function AssignmentsPage() {
 
       <ConfirmDialog
         open={deleteTarget !== null}
-        title="Delete assignment?"
+        title="Delete ticket?"
         description={
           deleteTarget
             ? `"${deleteTarget.title}" will be permanently removed. This cannot be undone.`
@@ -1588,22 +1588,22 @@ export function AssignmentsPage() {
             setDeleteTarget(null);
             return;
           }
-          const key = getAssignmentKey(deleteTarget);
+          const key = getTicketKey(deleteTarget);
           setDeletingKey(key);
           try {
             const res = await fetch(
-              `/api/projects/${encodeURIComponent(deleteTarget.projectSlug)}/assignments/${encodeURIComponent(deleteTarget.slug)}`,
+              `/api/projects/${encodeURIComponent(deleteTarget.projectSlug)}/tickets/${encodeURIComponent(deleteTarget.slug)}`,
               { method: 'DELETE' },
             );
             if (!res.ok) {
               const body = await res.json().catch(() => ({}));
-              throw new Error(body.error || 'Failed to delete assignment');
+              throw new Error(body.error || 'Failed to delete ticket');
             }
             setDeleteTarget(null);
             refetch();
-            showToast('Assignment deleted', 'success');
+            showToast('Ticket deleted', 'success');
           } catch (err) {
-            showToast(err instanceof Error ? err.message : 'Failed to delete assignment', 'error');
+            showToast(err instanceof Error ? err.message : 'Failed to delete ticket', 'error');
           } finally {
             setDeletingKey(null);
           }
@@ -1614,8 +1614,8 @@ export function AssignmentsPage() {
   );
 }
 
-function buildAssignmentContextMenu(
-  item: AssignmentBoardItem,
+function buildTicketContextMenu(
+  item: TicketBoardItem,
   handlers: { onEdit: () => void; onDelete: () => void },
 ): OverflowMenuItem[] {
   const items: OverflowMenuItem[] = [
@@ -1634,7 +1634,7 @@ function buildAssignmentContextMenu(
 }
 
 /**
- * A table row whose body navigates to the assignment detail page on click,
+ * A table row whose body navigates to the ticket detail page on click,
  * reusing the same suppression rules as the kanban/list card (don't navigate
  * when dismissing a menu, committing an inline edit, or clicking an interactive
  * control). The hook must live in a component, so the per-row `<tr>` is wrapped
@@ -1662,29 +1662,29 @@ function ClickableTableRow({
   );
 }
 
-function AssignmentBoardCard({
-  assignment,
+function TicketBoardCard({
+  ticket,
   dragging,
   transitioning,
   onPillSelect,
   onOverride,
   onRenameTitle,
 }: {
-  assignment: AssignmentBoardItem;
+  ticket: TicketBoardItem;
   dragging: boolean;
   transitioning: boolean;
   /** Present in the kanban & list render-sites; absent → read-only card. */
-  onPillSelect?: (action: AssignmentTransitionAction) => void;
+  onPillSelect?: (action: TicketTransitionAction) => void;
   /** Direct-set handler for the status pill's "Override → status" entries. */
   onOverride?: (statusId: string) => void;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
   // Canonical per-item deep link: handles standalone vs project-nested and the
-  // assignment's OWN workspace prefix (not the current page's), matching the
+  // ticket's OWN workspace prefix (not the current page's), matching the
   // keyboard onOpen path and dashboard widgets. Body-click, the title editor's
   // external-link icon, and the read-only title <Link> all navigate through this.
-  const detailHref = assignmentDetailHref(assignment);
+  const detailHref = ticketDetailHref(ticket);
   // Body-click navigation + inline edit are enabled wherever the render-site
   // passes onPillSelect + onRenameTitle (kanban and list). Without them the card
   // is read-only (plain title <Link> + StatusBadge, no body navigation).
@@ -1707,82 +1707,82 @@ function AssignmentBoardCard({
         <div className="min-w-0 flex-1 space-y-1">
           {inlineEditEnabled ? (
             <InlineTitleEditor
-              title={assignment.title}
+              title={ticket.title}
               detailHref={detailHref}
               onSave={onRenameTitle!}
               disabled={transitioning}
             />
           ) : (
             <Link to={detailHref} className="text-base font-semibold text-foreground hover:text-primary">
-              {assignment.title}
+              {ticket.title}
             </Link>
           )}
           <p className="text-sm text-muted-foreground">
-            {assignment.projectTitle ?? (
+            {ticket.projectTitle ?? (
               <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] uppercase text-muted-foreground">
                 Standalone
               </span>
             )}
           </p>
-          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={assignment.id ?? ''}>
-            {assignment.id?.slice(0, 8)}
-            {assignment.id && <CopyButton value={assignment.id} />}
+          <p className="inline-flex items-center gap-1.5 font-mono text-xs text-muted-foreground/70" title={ticket.id ?? ''}>
+            {ticket.id?.slice(0, 8)}
+            {ticket.id && <CopyButton value={ticket.id} />}
           </p>
         </div>
         {inlineEditEnabled ? (
-          <AssignmentStatusPill
-            id={assignment.id}
-            slug={assignment.slug}
-            projectSlug={assignment.projectSlug}
-            status={assignment.status}
-            availableTransitions={assignment.availableTransitions}
-            title={assignment.title}
+          <TicketStatusPill
+            id={ticket.id}
+            slug={ticket.slug}
+            projectSlug={ticket.projectSlug}
+            status={ticket.status}
+            availableTransitions={ticket.availableTransitions}
+            title={ticket.title}
             disabled={transitioning}
             className="max-w-[150px]"
             onSelectAction={onPillSelect}
             onSelectOverride={onOverride}
           />
         ) : (
-          <StatusBadge status={assignment.status} className="max-w-[150px]" />
+          <StatusBadge status={ticket.status} className="max-w-[150px]" />
         )}
       </div>
 
-      {assignment.blockedReason ? (
+      {ticket.blockedReason ? (
         <p className="mt-3 rounded-md border border-warning-foreground/30 bg-warning px-3 py-2 text-sm text-warning-foreground">
-          {assignment.blockedReason}
+          {ticket.blockedReason}
         </p>
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <TypeChip type={assignment.type} />
+        <TypeChip type={ticket.type} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
-          {assignment.priority}
+          {ticket.priority}
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {assignment.assignee ?? 'Unassigned'}
+          {ticket.assignee ?? 'Unassigned'}
         </span>
-        {assignment.dependsOn.length > 0 ? (
+        {ticket.dependsOn.length > 0 ? (
           <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-            {assignment.dependsOn.length} {assignment.dependsOn.length === 1 ? 'dependency' : 'dependencies'}
+            {ticket.dependsOn.length} {ticket.dependsOn.length === 1 ? 'dependency' : 'dependencies'}
           </span>
         ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3 text-xs uppercase tracking-[0.08em] text-muted-foreground">
         <span>{transitioning ? 'Updating' : dragging ? 'Dragging' : 'Source-first'}</span>
-        <span>{formatDate(assignment.updated)}</span>
+        <span>{formatDate(ticket.updated)}</span>
       </div>
     </div>
   );
 }
 
-function getAssignmentAction(
-  assignment: AssignmentBoardItem,
+function getTicketAction(
+  ticket: TicketBoardItem,
   targetStatus: string,
-): AssignmentTransitionAction | undefined {
-  return assignment.availableTransitions.find((action) => action.targetStatus === targetStatus);
+): TicketTransitionAction | undefined {
+  return ticket.availableTransitions.find((action) => action.targetStatus === targetStatus);
 }
 
-function getAssignmentKey(assignment: Pick<AssignmentBoardItem, 'id' | 'slug'>): string {
-  return assignment.id || assignment.slug || 'unknown';
+function getTicketKey(ticket: Pick<TicketBoardItem, 'id' | 'slug'>): string {
+  return ticket.id || ticket.slug || 'unknown';
 }

@@ -16,7 +16,7 @@ const SIDEBAR_SECTIONS = [
   '/inbox',
   '/projects',
   '/archive',
-  '/assignments',
+  '/tickets',
   '/agents',
   '/usage',
   '/agent-sessions',
@@ -48,14 +48,14 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
   }
 
   if (normalized.startsWith('/projects')) {
-    if (/^\/projects\/[^/]+\/assignments\//.test(normalized)) {
-      return '/assignments';
+    if (/^\/projects\/[^/]+\/tickets\//.test(normalized)) {
+      return '/tickets';
     }
     return '/projects';
   }
 
-  if (normalized.startsWith('/assignments')) {
-    return '/assignments';
+  if (normalized.startsWith('/tickets')) {
+    return '/tickets';
   }
 
   if (normalized.startsWith('/agents')) {
@@ -120,17 +120,17 @@ export function buildShellMeta(pathname: string): ShellMeta {
 
     if (parts[2] === 'edit') {
       title = 'Edit Project';
-    } else if (parts[2] === 'create' && parts[3] === 'assignment') {
-      title = 'Create Assignment';
-    } else if (parts[2] === 'assignments' && parts[3]) {
+    } else if (parts[2] === 'create' && parts[3] === 'ticket') {
+      title = 'Create Ticket';
+    } else if (parts[2] === 'tickets' && parts[3]) {
       breadcrumbs.push({
         label: toTitleCase(parts[3]),
-        path: `/projects/${parts[1]}/assignments/${parts[3]}`,
+        path: `/projects/${parts[1]}/tickets/${parts[3]}`,
       });
       title = toTitleCase(parts[3]);
 
       if (parts[4] === 'edit') {
-        title = 'Edit Assignment';
+        title = 'Edit Ticket';
       } else if (parts[4] === 'plan' && parts[5] === 'edit') {
         title = 'Edit Plan';
       } else if (parts[4] === 'scratchpad' && parts[5] === 'edit') {
@@ -156,9 +156,9 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'agent-sessions') {
     title = 'Agent Sessions';
     breadcrumbs.push({ label: 'Agent Sessions', path: '/agent-sessions' });
-  } else if (parts[0] === 'assignments') {
-    title = 'Assignments';
-    breadcrumbs.push({ label: 'Assignments', path: '/assignments' });
+  } else if (parts[0] === 'tickets') {
+    title = 'Tickets';
+    breadcrumbs.push({ label: 'Tickets', path: '/tickets' });
   } else if (parts[0] === 'archive') {
     title = 'Archive';
     breadcrumbs.push({ label: 'Archive', path: '/archive' });

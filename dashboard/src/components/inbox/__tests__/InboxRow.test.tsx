@@ -7,14 +7,14 @@ import type { InboxItem } from '../../../lib/inbox';
 function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): InboxItem {
   return {
     project: 'demo',
-    assignmentSlug: 'task',
-    assignmentId: 'uuid-1',
+    ticketSlug: 'task',
+    ticketId: 'uuid-1',
     title: 'Task',
     since: '2026-06-16T00:00:00Z',
     ageMs: 60_000,
     summary: 'summary',
     action: { verb: 'Open chat', command: 'http://localhost/chat' },
-    assignmentUpdated: '',
+    ticketUpdated: '',
     ...overrides,
   };
 }

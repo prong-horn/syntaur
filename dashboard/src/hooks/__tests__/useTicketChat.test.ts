@@ -20,18 +20,18 @@ import type {
 } from '../../lib/chat-types';
 
 /**
- * Task 8 — the pure reducer behind `useAssignmentChat`. It lives in
+ * Task 8 — the pure reducer behind `useTicketChat`. It lives in
  * `lib/chat-api.ts` precisely so it runs under the node-env dashboard vitest
  * config (no jsdom, no React), the same split `wsManager.ts` uses.
  *
  * Run with: npx vitest run -c vitest.dashboard.config.ts
  */
 
-const ASSIGNMENT = 'assignment-1';
+const ASSIGNMENT = 'ticket-1';
 
 function item(overrides: Partial<ChatItem> & { itemId: string }): ChatItem {
   return {
-    assignmentId: ASSIGNMENT,
+    ticketId: ASSIGNMENT,
     turnId: 't1',
     agentId: 'claude',
     type: 'system',
@@ -94,7 +94,7 @@ describe('applyPatch', () => {
 
 describe('applyFrame', () => {
   const session: ChatSessionSummary = {
-    assignmentId: ASSIGNMENT,
+    ticketId: ASSIGNMENT,
     agentId: 'claude',
     harness: 'claude',
     acpSessionId: 'acp-1',
@@ -111,26 +111,26 @@ describe('applyFrame', () => {
     commandsSource: null,
   };
 
-  it('applies a chat-item patch for this assignment', () => {
+  it('applies a chat-item patch for this ticket', () => {
     const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-item', {
-      assignmentId: ASSIGNMENT,
+      ticketId: ASSIGNMENT,
       patch: upsert(item({ itemId: 't1:0' })),
     });
     expect(state.items.size).toBe(1);
   });
 
-  it('ignores frames for another assignment — /ws has no topics', () => {
+  it('ignores frames for another ticket — /ws has no topics', () => {
     const before = emptyChatState();
     const after = applyFrame(before, ASSIGNMENT, 'chat-item', {
-      assignmentId: 'someone-else',
-      patch: upsert(item({ itemId: 't1:0', assignmentId: 'someone-else' })),
+      ticketId: 'someone-else',
+      patch: upsert(item({ itemId: 't1:0', ticketId: 'someone-else' })),
     });
     expect(after).toBe(before);
   });
 
   it('upserts a chat-session frame by agent id', () => {
     const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
-      assignmentId: ASSIGNMENT,
+      ticketId: ASSIGNMENT,
       agentId: 'claude',
       session,
     });
@@ -139,12 +139,12 @@ describe('applyFrame', () => {
 
   it('keeps one session per agent — a second agent does not evict the first', () => {
     let state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-session', {
-      assignmentId: ASSIGNMENT,
+      ticketId: ASSIGNMENT,
       agentId: 'planner',
       session: { ...session, agentId: 'planner' },
     });
     state = applyFrame(state, ASSIGNMENT, 'chat-session', {
-      assignmentId: ASSIGNMENT,
+      ticketId: ASSIGNMENT,
       agentId: 'implementer',
       session: { ...session, agentId: 'implementer', state: 'idle' },
     });
@@ -174,7 +174,7 @@ describe('applyFrame', () => {
       },
     ];
     const state = applyFrame(emptyChatState(), ASSIGNMENT, 'chat-participants', {
-      assignmentId: ASSIGNMENT,
+      ticketId: ASSIGNMENT,
       participants: { agents: ['planner'], defaultAgent: 'planner', hopBudget: 3 },
       agents,
     });
@@ -186,7 +186,7 @@ describe('applyFrame', () => {
     const before = emptyChatState();
     expect(applyFrame(before, ASSIGNMENT, 'chat-item', undefined)).toBe(before);
     expect(applyFrame(before, ASSIGNMENT, 'chat-item', 'nonsense')).toBe(before);
-    expect(applyFrame(before, ASSIGNMENT, 'chat-item', { assignmentId: ASSIGNMENT })).toBe(before);
+    expect(applyFrame(before, ASSIGNMENT, 'chat-item', { ticketId: ASSIGNMENT })).toBe(before);
   });
 });
 

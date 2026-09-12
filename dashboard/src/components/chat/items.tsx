@@ -164,13 +164,13 @@ export function UserMessageBubble({
             {item.attachments.map((att) => (
               <a
                 key={att.id}
-                href={chatAttachmentUrl(item.assignmentId, att.id)}
+                href={chatAttachmentUrl(item.ticketId, att.id)}
                 target="_blank"
                 rel="noreferrer"
                 className="block"
               >
                 <img
-                  src={chatAttachmentUrl(item.assignmentId, att.id)}
+                  src={chatAttachmentUrl(item.ticketId, att.id)}
                   alt={att.name}
                   className="max-h-40 rounded object-contain"
                 />
