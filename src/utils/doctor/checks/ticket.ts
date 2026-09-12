@@ -396,7 +396,7 @@ const draftMissingObjective: Check = {
         affected: [path],
         remediation: {
           kind: 'manual',
-          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.ticketSlug}' to transition to ready_for_planning`,
+          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.ticketId ?? a.ticketSlug}' to transition to ready_for_planning`,
           command: null,
         },
         autoFixable: false,

@@ -13,5 +13,5 @@ export function parseTicketFolderName(
 }
 
 export function folderNameForTicketId(folderName: string, id: string): boolean {
-  return folderName === id || folderName.startsWith(`${id}-`);
+  return parseTicketFolderName(folderName)?.id === id;
 }

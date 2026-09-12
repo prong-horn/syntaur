@@ -37,22 +37,28 @@ afterEach(async () => {
 });
 
 describe('runArchive / runRestore', () => {
-  it('archives + restores a project-scoped ticket, preserving status', async () => {
+  it('archives + restores a project-scoped ticket by id, preserving status', async () => {
     const path = resolve(projectsDir, 'p', 'tickets', 'PA-1-a1', 'ticket.md');
 
-    const archived = await runArchive('a1', { project: 'p', dir: projectsDir, reason: 'stale' });
+    const archived = await runArchive('PA-1', { project: 'p', dir: projectsDir, reason: 'stale' });
     expect(archived.success).toBe(true);
     let fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(true);
     expect(fm.archivedReason).toBe('stale');
     expect(fm.status).toBe('in_progress'); // status untouched
 
-    const restored = await runRestore('a1', { project: 'p', dir: projectsDir });
+    const restored = await runRestore('PA-1', { project: 'p', dir: projectsDir });
     expect(restored.success).toBe(true);
     fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
     expect(fm.archived).toBe(false);
     expect(fm.archivedAt).toBeNull();
     expect(fm.status).toBe('in_progress'); // prior status preserved
+  });
+
+  it('rejects slug targets with --project', async () => {
+    await expect(runArchive('a1', { project: 'p', dir: projectsDir })).rejects.toThrow(
+      /Invalid ticket id/,
+    );
   });
 
   it('archives a ticket resolved by id', async () => {

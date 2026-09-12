@@ -31,29 +31,29 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur assign',
     description: 'Set the assignee for a ticket before work begins.',
-    example: 'syntaur assign implement-overview --project ui-overhaul --agent codex-1',
+    example: 'syntaur assign UI-1 --project ui-overhaul --agent codex-1',
   },
 
   // --- Lifecycle transitions ---
   {
     command: 'syntaur start',
     description: 'Transition a ticket to in_progress.',
-    example: 'syntaur start implement-overview --project ui-overhaul',
+    example: 'syntaur start UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur shape',
     description: 'Transition a draft ticket to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
-    example: 'syntaur shape implement-overview --project ui-overhaul',
+    example: 'syntaur shape UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur plan-ready',
     description: 'Transition a ready_for_planning ticket to ready_to_implement once a plan has been written and approved.',
-    example: 'syntaur plan-ready implement-overview --project ui-overhaul',
+    example: 'syntaur plan-ready UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur implement',
     description: 'Transition a ready_to_implement ticket to in_progress when coding begins.',
-    example: 'syntaur implement implement-overview --project ui-overhaul',
+    example: 'syntaur implement UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur migrate-statuses',
@@ -63,17 +63,17 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur review',
     description: 'Move active work into review once implementation is ready for inspection.',
-    example: 'syntaur review implement-overview --project ui-overhaul',
+    example: 'syntaur review UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur complete',
     description: 'Mark a ticket completed after review or direct completion.',
-    example: 'syntaur complete implement-overview --project ui-overhaul',
+    example: 'syntaur complete UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur block',
     description: 'Mark a ticket blocked and record the explicit reason.',
-    example: 'syntaur block implement-overview --project ui-overhaul --reason "Waiting on API spec"',
+    example: 'syntaur block UI-1 --project ui-overhaul --reason "Waiting on API spec"',
   },
   {
     command: 'syntaur unblock',

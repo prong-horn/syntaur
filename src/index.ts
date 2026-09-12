@@ -222,8 +222,8 @@ program
 program
   .command('archive')
   .description('Archive a ticket or a project (hidden from normal views; restorable)')
-  .argument('<target>', 'Ticket slug/UUID, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as a ticket within this project')
+  .argument('<target>', 'Ticket id, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as a ticket id within this project')
   .option('--reason <text>', 'Optional reason recorded with the archive')
   .option('--dir <path>', 'Override default project directory')
   .action(
@@ -235,8 +235,8 @@ program
 program
   .command('restore')
   .description('Restore an archived ticket or project (preserves prior status)')
-  .argument('<target>', 'Ticket slug/UUID, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as a ticket within this project')
+  .argument('<target>', 'Ticket id, or a project slug')
+  .option('--project <slug>', 'Resolve <target> as a ticket id within this project')
   .option('--dir <path>', 'Override default project directory')
   .action(
     runCommand(async (target, options) => {
@@ -662,7 +662,7 @@ program
   .description('Generate adapter instruction files for a framework in the current directory')
   .argument('<framework>', 'Target framework: built-in ids cursor, codex, opencode, pi, openclaw, hermes (plus any user descriptor with an instructions adapter in ~/.syntaur/targets/)')
   .option('--project <slug>', 'Target project slug (required)')
-  .option('--ticket <slug>', 'Target ticket slug (required)')
+  .option('--ticket <id>', 'Target ticket id (required)')
   .option('--force', 'Overwrite existing adapter files')
   .option('--dir <path>', 'Override default project directory')
   .action(
@@ -675,7 +675,7 @@ program
   .command('track-session')
   .description('Register an agent session (optionally linked to a project/ticket)')
   .option('--project <slug>', 'Target project slug')
-  .option('--ticket <slug>', 'Ticket slug')
+  .option('--ticket <id>', 'Ticket id')
   .option('--agent <name>', 'Agent name, e.g. claude, codex, cursor (required)')
   .option(
     '--session-id <id>',

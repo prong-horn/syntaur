@@ -4,9 +4,10 @@ import { expandHome } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
+import { isTicketId } from '../utils/ticket-ids.js';
 import { updateTicketFile, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveTicketById, resolveTicketSlugInProject } from '../utils/ticket-resolver.js';
+import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
 
 export interface ArchiveOptions {
@@ -40,20 +41,24 @@ async function resolveTarget(target: string, options: ArchiveOptions): Promise<R
   const config = await readConfig();
   const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
-  // 1. Project-scoped ticket via --project.
+  // 1. Project-scoped ticket via --project + ticket id.
   if (options.project) {
     if (!isValidSlug(options.project)) {
       throw new Error(`Invalid project slug "${options.project}".`);
     }
-    if (!isValidSlug(target)) {
-      throw new Error(`Invalid ticket slug "${target}".`);
+    if (!isTicketId(target)) {
+      throw new Error(`Invalid ticket id "${target}". Use a ticket id such as SCR-1.`);
     }
-    const resolved = await resolveTicketSlugInProject(baseDir, options.project, target);
-    if (!resolved) {
+    const resolved = await resolveTicketById(baseDir, target);
+    if (!resolved || resolved.projectSlug !== options.project) {
       throw new Error(`Ticket "${target}" not found in project "${options.project}".`);
     }
     const ticketMd = resolve(resolved.ticketDir, 'ticket.md');
-    return { kind: 'ticket', filePath: ticketMd, label: `ticket "${options.project}/${target}"` };
+    return {
+      kind: 'ticket',
+      filePath: ticketMd,
+      label: `ticket "${options.project}/${resolved.id}"`,
+    };
   }
 
   // 2. Ticket by UUID (standalone or project-nested).
