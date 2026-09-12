@@ -22,7 +22,7 @@ freely; nothing on disk changes.
 
 - Cross-ticket handoff to a downstream ticket — that's `complete-ticket`
   (writes `handoff.md`).
-- First-time grab of an ticket — use `/grab-ticket` instead; this skill
+- First-time grab of a ticket — use `/grab-ticket` instead; this skill
   assumes context already exists.
 
 ## Step 1: Verify there is an active ticket

@@ -265,7 +265,7 @@ export function resolveCommentEndpoint(
 }
 
 /**
- * Build the SPA jump-href to an ticket's detail page, optionally targeting a
+ * Build the SPA jump-href to a ticket's detail page, optionally targeting a
  * tab (`plan` for plan-approval, `comments` for questions).
  */
 export function ticketHref(

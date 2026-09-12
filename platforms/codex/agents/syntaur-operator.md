@@ -102,7 +102,7 @@ Use these commands directly when needed:
 
 ## Standard Workflows
 
-### Claim an ticket
+### Claim a ticket
 
 1. Discover the project and pending tssignments.
 2. Run `syntaur assign ... --agent codex`.
@@ -113,7 +113,7 @@ Use these commands directly when needed:
 7. Register the session: `syntaur track-session --project <slug> --ticket <slug> --agent codex --session-id <id> --transcript-path <path> --path "$(pwd)" --pid "$$"` (passing `--pid "$$"` lets the dashboard show Resume disabled while this session is still running).
 8. If needed, run `syntaur setup-adapter codex --project <slug> --ticket <slug>`.
 
-### Plan an ticket
+### Plan a ticket
 
 1. Read the ticket, project instructions, and any dependency handoffs.
 2. Explore the workspace.
@@ -121,7 +121,7 @@ Use these commands directly when needed:
 4. Write the plan file with standard frontmatter (`ticket`, `status: draft`, `created`, `updated`) and body.
 5. Keep `ticket.md` in sync with what is now known.
 
-### Complete an ticket
+### Complete a ticket
 
 1. Re-check every acceptance criterion.
 2. Update any missing checkboxes in `ticket.md`.
@@ -135,9 +135,9 @@ Use these commands directly when needed:
 
 - If the user asks for the "next" ticket, choose from `pending` tickets only.
 - If multiple pending tssignments exist, present the options unless there is an obvious single best candidate.
-- If dependencies are unmet, do not try to force an ticket into `in_progress`.
+- If dependencies are unmet, do not try to force a ticket into `in_progress`.
 - If acceptance criteria are incomplete, prefer transition to `review` over `completed`.
-- If workspace metadata is missing tnd code changes are expected, set the workspace to the current working directory before implementation.
+- If workspace metadata is missing and code changes are expected, set the workspace to the current working directory before implementation.
 
 ## References
 

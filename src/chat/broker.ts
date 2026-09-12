@@ -473,7 +473,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const constructing = new Map<string, Promise<Session>>();
   /**
    * One `ChatLog` per ticket DIRECTORY, not per session (finding 4). Every
-   * agent on an ticket appends to the same `events.jsonl`, and each log
+   * agent on a ticket appends to the same `events.jsonl`, and each log
    * instance owns its own `seq` counter and append chain — two instances would
    * hand out duplicate `seq` values and interleave torn lines. The promise is
    * cached (not the resolved log) so concurrent `ensureSession` calls await the

@@ -1,8 +1,8 @@
 ---
 name: "Workspace Before Code"
 slug: workspace-before-code
-description: "Set workspace fields in ticket.md before writing tny implementation code"
-when_to_use: "Before writing tny implementation code for an ticket"
+description: "Set workspace fields in ticket.md before writing any implementation code"
+when_to_use: "Before writing any implementation code for a ticket"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-04-02T00:00:00Z"
 tags:
@@ -12,7 +12,7 @@ tags:
 
 # Workspace Before Code
 
-Before writing tny implementation code, you MUST set the workspace fields in ticket.md frontmatter:
+Before writing any implementation code, you MUST set the workspace fields in ticket.md frontmatter:
 
 ```yaml
 workspace:

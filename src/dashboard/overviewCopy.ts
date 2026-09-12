@@ -94,7 +94,7 @@ export const SEGMENT_TITLE: Record<SegmentId, string> = {
 /** Dialog + button copy used across Overview components. */
 export const DIALOG_COPY = {
   claimAsTitle: 'Claim tickets as',
-  claimAsHint: 'Used when you claim an ticket from this dashboard. You can change it later in settings.',
+  claimAsHint: 'Used when you claim a ticket from this dashboard. You can change it later in settings.',
   claimAsSubmit: 'Save',
   claimAsRemember: 'Remember this choice',
   quickCommentTitle: 'Add a quick note',

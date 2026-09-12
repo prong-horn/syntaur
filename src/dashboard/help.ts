@@ -30,14 +30,14 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur assign',
-    description: 'Set the assignee for an ticket before work begins.',
+    description: 'Set the assignee for a ticket before work begins.',
     example: 'syntaur assign implement-overview --project ui-overhaul --agent codex-1',
   },
 
   // --- Lifecycle transitions ---
   {
     command: 'syntaur start',
-    description: 'Transition an ticket to in_progress.',
+    description: 'Transition a ticket to in_progress.',
     example: 'syntaur start implement-overview --project ui-overhaul',
   },
   {
@@ -67,12 +67,12 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur complete',
-    description: 'Mark an ticket completed after review or direct completion.',
+    description: 'Mark a ticket completed after review or direct completion.',
     example: 'syntaur complete implement-overview --project ui-overhaul',
   },
   {
     command: 'syntaur block',
-    description: 'Mark an ticket blocked and record the explicit reason.',
+    description: 'Mark a ticket blocked and record the explicit reason.',
     example: 'syntaur block implement-overview --project ui-overhaul --reason "Waiting on API spec"',
   },
   {
@@ -82,7 +82,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur fail',
-    description: 'Mark an ticket failed when it cannot be completed as planned.',
+    description: 'Mark a ticket failed when it cannot be completed as planned.',
     example: 'syntaur fail implement-overview --project ui-overhaul',
   },
   {
@@ -269,7 +269,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Ticket',
         description:
-          'An ticket is a concrete unit of execution. Ticket frontmatter is the source of truth for status, priority, assignee, and dependencies.',
+          'A ticket is a concrete unit of execution. Ticket frontmatter is the source of truth for status, priority, assignee, and dependencies.',
       },
       {
         term: 'Manifest',
@@ -299,7 +299,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Workspace',
         description:
-          'The repository context for an ticket, including the repository path, worktree path, branch, and parent branch. Workspace fields connect an ticket to the code being worked on and define write boundaries.',
+          'The repository context for a ticket, including the repository path, worktree path, branch, and parent branch. Workspace fields connect a ticket to the code being worked on and define write boundaries.',
       },
       {
         term: 'Agent Session',
@@ -390,12 +390,12 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'Underscore-prefixed files are derived projections that can be rebuilt from canonical markdown sources. Editing them would create drift, so the UI treats them as read-only.',
       },
       {
-        question: 'Why can an ticket be pending even when nothing looks broken?',
+        question: 'Why can a ticket be pending even when nothing looks broken?',
         answer:
           'Pending often just means the work has not started yet or it is waiting on declared dependencies. Blocked is reserved for exceptional runtime obstacles that need intervention.',
       },
       {
-        question: 'How do I change an ticket\'s status?',
+        question: 'How do I change a ticket\'s status?',
         answer:
           'Use lifecycle CLI commands (syntaur start, syntaur complete, etc.), drag cards on the kanban board, or use the Override Status dropdown on the ticket page. Any status can be set from any other status.',
       },
@@ -417,7 +417,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'How does agent session tracking work?',
         answer:
-          'When an AI agent starts working on an ticket, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked tickets and duration.',
+          'When an AI agent starts working on a ticket, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked tickets and duration.',
       },
     ],
     firstProjectChecklist: [

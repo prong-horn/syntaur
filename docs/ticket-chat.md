@@ -5,11 +5,11 @@ real coding tgent in the ticket's worktree and renders its work as a
 conversation — streaming replies, tool cards with diffs and command output, a
 plan checklist, and inline permission prompts.
 
-An ticket can have several agents in one chat: `@mention` the one you want,
+A ticket can have several agents in one chat: `@mention` the one you want,
 or let the default answer, and agents can hand the conversation to each other.
 See [Several agents in one chat](#several-agents-in-one-chat).
 
-This is how an ticket is worked. Nothing opens a terminal, nothing scans a
+This is how a ticket is worked. Nothing opens a terminal, nothing scans a
 transcript afterwards: the dashboard server *is* the agent's client, speaking the
 [Agent Client Protocol](https://agentclientprotocol.com) over stdio to an adapter
 it owns. The terminal-launch stack it replaced — the `syntaur://` deep link,
@@ -89,7 +89,7 @@ The **Agents** page (`/agents`) is a validated editor over the same file format
 above. Creating or saving writes `~/.syntaur/agents/<id>.md`; deleting tn
 override file restores the builtin with that id. Exactly one agent may be marked
 `default: true` — saving t new default clears the flag on other file-backed
-definitions, and you cannot unset the current default without making tnother
+definitions, and you cannot unset the current default without making another
 agent default first.
 
 Model and effort pickers show the values each adapter last advertised in
@@ -167,7 +167,7 @@ status row.
 | Plan checklist | The agent's todo list; pinned above the composer while its turn runs |
 | Permission card | The agent wants to do something that needs approval — answer inline, or click **Allow all this session** to stop the cards until that agent's session closes (after ten minutes idle, when the adapter exits, or when its harness changes); `permissions: auto` on the agent definition is the durable setting |
 | Question card | Cursor asked a multiple-choice question — pick an option inline |
-| Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking tnd full tool detail |
+| Thin status row | "Planner · 3m 02s · 41.2k tokens · $0.19 · end_turn", with an **Activity** disclosure holding that turn's thinking and full tool detail |
 | Thin grey row | Session lifecycle, mode/config changes, adapter notices, **Filed …** (a message filed as a decision, progress entry or comment), **Auto-approved: `<command>`** (the agent's `permissions: auto`, or **Allow all this session**) |
 
 A permission or Cursor question card left unanswered for about 30 seconds files a `question` in the ticket's comments and a row in your **Needs me** inbox; the row clears when you answer the card (or it times out or is cancelled). The five-minute permission timeout still applies and files its own denial question if nobody answered in time.
@@ -183,7 +183,7 @@ Four sources appear in the queue:
 1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. **Clears when** you send a message to that agent from the row (or from Chat).
 2. **Permission cards.** A card still pending tfter ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. **Clears when** you allow or deny from the row (including **Allow all this session** or `permissions: auto`); if a card times out, its grace row is resolved first, so only the denial question remains.
 3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and its choices. **Clears when** you pick an option or type an answer from the row.
-4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or an ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
+4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or a ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
 
 The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting t question to its current resolved state returns success without error.
 
@@ -218,7 +218,7 @@ up in your Inbox. Auto-approved requests never wait.
   index** for paging. `chat_sessions.standing_fingerprint` records the sha256 of
   the roster lines and system prompt last sent as standing context, so a restart
   can tell when that block needs to be re-sent. `POST /api/tickets/:id/chat/reindex`
-  replays the log tnd reproduces it exactly.
+  replays the log and reproduces it exactly.
 
 A chat session also registers as a normal agent session, keyed by its ACP session
 id — which *is* the underlying Claude Code transcript id or codex rollout id — so
@@ -316,7 +316,7 @@ for a durable bypass. `--yolo` does nothing under ACP.
 
 ## Several agents in one chat
 
-An ticket's chat can hold more than one agent. Who a message is for is
+A ticket's chat can hold more than one agent. Who a message is for is
 decided by Syntaur, in code — never by asking t model to work it out.
 
 ### Who is in the room
@@ -427,7 +427,7 @@ working timer on Syntaur's own clock, and how many messages are queued for it.
 
 The chat column stays a conversation: messages, hand-off rows, work cards
 collapsed to one line, plan cards, permission cards, turn status and system rows.
-Thinking tnd the full tool detail — diffs, terminal output, raw I/O — sit behind
+Thinking and the full tool detail — diffs, terminal output, raw I/O — sit behind
 an **Activity** disclosure on each turn's status row.
 
 ## Slash commands

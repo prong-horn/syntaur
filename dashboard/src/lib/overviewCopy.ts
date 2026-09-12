@@ -87,7 +87,7 @@ export const SEGMENT_TITLE: Record<SegmentId, string> = {
 
 export const DIALOG_COPY = {
   claimAsTitle: 'Claim tickets as',
-  claimAsHint: 'Used when you claim an ticket from this dashboard. You can change it later.',
+  claimAsHint: 'Used when you claim a ticket from this dashboard. You can change it later.',
   claimAsSubmit: 'Save',
   quickCommentTitle: 'Add a quick note',
   quickCommentPlaceholder: 'Note…',

@@ -1,7 +1,7 @@
 interface:
   display_name: "Syntaur"
   short_description: "Project and ticket workflows for Codex"
-  default_prompt: "Use Syntaur to create projects and tickets, claim work, plan an ticket, or complete a handoff in the current workspace."
+  default_prompt: "Use Syntaur to create projects and tickets, claim work, plan a ticket, or complete a handoff in the current workspace."
 
 policy:
   allow_implicit_invocation: true

@@ -420,7 +420,7 @@ export function CreateWorktreeButton({
                     onChange={(e) => handleSourceSelect(e.target.value)}
                     disabled={submitting || sourceTickets === null}
                   >
-                    <option value="">— select an ticket —</option>
+                    <option value="">— select a ticket —</option>
                     {(sourceTickets ?? []).map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.title} ({s.branch})

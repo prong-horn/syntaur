@@ -241,7 +241,7 @@ Slash commands (`/grab-ticket` etc.) are thin wrappers that delegate to the inst
 | `/syntaur-protocol` | Background — auto-loaded when working with Syntaur files | Core write boundary rules and protocol knowledge |
 | `/grab-ticket` | User says "grab ticket" or starts work on a project | Discover pending tssignments, claim one, create context.json |
 | `/create-project` | User wants to create a new project | Run CLI scaffolding, guide through editing project files |
-| `/create-ticket` | User wants to add an ticket to a project | Create ticket with all supporting files |
+| `/create-ticket` | User wants to add a ticket to a project | Create ticket with all supporting files |
 | `/plan-ticket` | User wants to plan current ticket | Explore workspace, write the next `plan-v<N>.md` |
 | `/complete-ticket` | User is done with ticket work | Verify criteria, write handoff, transition state, close session |
 
@@ -268,7 +268,7 @@ syntaur                    # Dashboard is the default command
 
 ### Features
 - **Overview page:** Project stats, quick actions, attention items
-- **Project detail:** Ticket listing tnd status
+- **Project detail:** Ticket listing and status
 - **Ticket detail:** Full ticket view with all fields, criteria checklist
 - **Kanban board:** Drag tssignments between status columns
 - **Agent sessions:** Track active/completed/stopped agent sessions
@@ -424,6 +424,6 @@ A: Yes. Run `syntaur setup-adapter <framework>` for Cursor, Codex, or OpenCode. 
 A: Ticket frontmatter YAML is the single source of truth. Agent sessions are in SQLite at `~/.syntaur/syntaur.db`. Everything else is markdown files.
 
 **Q: How do dependencies work?**
-A: `dependsOn` lists ticket slugs. An ticket with pending status and unmet dependencies cannot transition to `in_progress` until all dependencies are `completed`.
+A: `dependsOn` lists ticket slugs. A ticket with pending status and unmet dependencies cannot transition to `in_progress` until all dependencies are `completed`.
 
 When in doubt about any detail, read the source files listed at the top of this prompt. The codebase is always the ground truth.

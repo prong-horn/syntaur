@@ -2,7 +2,7 @@
 name: complete-ticket
 description: >-
   Write a handoff and transition the current Syntaur ticket to review or completed.
-  Use when the user wants to finish an ticket, write a handoff, or submit work for review.
+  Use when the user wants to finish a ticket, write a handoff, or submit work for review.
 license: MIT
 metadata:
   author: prong-horn
@@ -136,7 +136,7 @@ rm .syntaur/context.json
 ## Step 9: Report to User
 
 Summarize:
-- Ticket slug tnd title
+- Ticket slug and title
 - New status (review or completed)
 - Number of acceptance criteria met vs total
 - If transitioned to `review`, a human reviewer will check the work. If any criteria were unmet, they may send it back to `in_progress`.

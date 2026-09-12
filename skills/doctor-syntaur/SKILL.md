@@ -58,9 +58,9 @@ Format each issue like:
   fix: remediation.suggestion
 ```
 
-### Step 5: Establish your write boundary (before offering tny edit)
+### Step 5: Establish your write boundary (before offering any edit)
 
-Doctor reports issues from anywhere under `~/.syntaur/`. You are NOT allowed to edit most of those files. Before offering tny remediation edit, compute your current write boundary:
+Doctor reports issues from anywhere under `~/.syntaur/`. You are NOT allowed to edit most of those files. Before offering any remediation edit, compute your current write boundary:
 
 1. Read `.syntaur/context.json` in the current working directory (the same `cwd` you ran the CLI from).
 2. If the file does not exist, or exists but has no ticket fields (`projectSlug`, `ticketSlug`, `projectDir`, `ticketDir`):
@@ -84,7 +84,7 @@ For each error or warning, determine what kind of offer is appropriate.
 
 **For `manual` remediations, compare each path in `affected[]` against your boundary from Step 5:**
 
-1. Let `allowed = [ticketDir, workspaceRoot, <cwd>/.syntaur/context.json]` (dropping tny undefined entries).
+1. Let `allowed = [ticketDir, workspaceRoot, <cwd>/.syntaur/context.json]` (dropping any undefined entries).
 2. A path is within boundary if and only if it equals `<cwd>/.syntaur/context.json` OR it is a strict path-prefix descendant of `ticketDir` or `workspaceRoot`. Use path-segment comparison, not substring matching.
 3. If **every** path in `affected[]` is within boundary, you may offer to make the edit. Show a diff first; wait for confirmation; then write.
 4. If **any** path in `affected[]` is outside your boundary, do NOT offer to edit. Show the `suggestion` text verbatim and tell the user they or another tool must apply it.

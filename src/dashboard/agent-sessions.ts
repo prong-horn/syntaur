@@ -924,7 +924,7 @@ export async function deleteSessions(sessionIds: string[]): Promise<number> {
 const DONE_TICKET_STATUSES = new Set(['completed', 'failed', 'review']);
 
 /**
- * Read the status field from an ticket.md frontmatter without full parsing.
+ * Read the status field from a ticket.md frontmatter without full parsing.
  */
 async function readTicketStatusFromPath(
   ticketMdPath: string,
@@ -955,7 +955,7 @@ async function readTicketStatus(
  * The dashboard tick's session-maintenance pass: reconcile, THEN sweep.
  *
  * The order is load-bearing and is why this is one function rather than two
- * calls at the call site. A session bound to an ticket that has finished
+ * calls at the call site. A session bound to a ticket that has finished
  * must be reconciled to `completed` (or `stopped`, for a failed ticket)
  * from the ticket's own status; only a session nobody can account for that
  * way is a candidate for the time-based stale sweep. Run the other way round, a

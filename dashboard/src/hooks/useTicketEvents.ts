@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocket, type WsMessage } from './useWebSocket';
 
 /**
- * One audit-timeline event for an ticket. Local to the SPA — the dashboard
+ * One audit-timeline event for a ticket. Local to the SPA — the dashboard
  * is a separate TS project and cannot import backend `src/` types. Mirrors the
  * `EventRow` shape from `src/db/events-db.ts` with `details` already parsed from
  * its stored JSON string into an object (or null).

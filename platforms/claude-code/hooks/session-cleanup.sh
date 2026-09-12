@@ -30,7 +30,7 @@ syntaur_bounded_stop() {
 }
 syntaur_bounded_stop || true
 
-# Keep derived status fresh on session end so an ticket doesn't sit stale
+# Keep derived status fresh on session end so a ticket doesn't sit stale
 # after the agent walks away. Best-effort, bounded (~3s, no `timeout` on macOS),
 # and migration-gated (`--if-migrated`) so it can't re-derive pre-migration
 # tickets during rollout. Resolves the ticket from the ending session's

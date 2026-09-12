@@ -259,7 +259,7 @@ function buildTicketSummary(
   const totals = summarize(rows, 'ticket')[0];
   const windows: WindowCostResult = ticketWindowCost(costKey);
   // When the ticket has NO computable engagement window (e.g. usage attributed
-  // by slug to an ticket that never registered an agent session), the window
+  // by slug to a ticket that never registered an agent session), the window
   // ledger has nothing to attribute and `windows.cost` is 0 — but `byModel` still
   // sums the cumulative `usage_daily` cost. Showing $0 over a non-zero breakdown is
   // the reconciliation bug. With no window to split, the cumulative daily cost is
@@ -311,7 +311,7 @@ function summarize(
  * the UNION of (the `usage_daily` ticket keys) ∪ (the tickets that have
  * a closed engagement snapshot window) — because in an A-then-B same-model
  * session the cumulative `usage_events` row attributes only to the latest
- * ticket, so an ticket with a real window but no `usage_daily` row would
+ * ticket, so a ticket with a real window but no `usage_daily` row would
  * otherwise be MISSING entirely. Each row's `totalCost` is the snapshot-window
  * cost (the per-ticket source of truth); tokens stay from `usage_daily`.
  */

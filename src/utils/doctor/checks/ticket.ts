@@ -64,7 +64,7 @@ function projectDirFor(a: TicketEntry): string | null {
 const requiredFiles: Check = {
   id: 'ticket.required-files',
   category: CATEGORY,
-  title: 'Each ticket folder has an ticket.md',
+  title: 'Each ticket folder has a ticket.md',
   async run(ctx) {
     const { withTicketMd } = await listTickets(ctx);
     if (withTicketMd.length === 0) {
@@ -97,7 +97,7 @@ const orphanedFolder: Check = {
       affected: [o.ticketDir],
       remediation: {
         kind: 'manual' as const,
-        suggestion: 'Either create an ticket.md inside the folder or delete it',
+        suggestion: 'Either create a ticket.md inside the folder or delete it',
         command: null,
       },
       autoFixable: false,

@@ -35,7 +35,7 @@ export async function recreateForTarget(
 ): Promise<RecreateOutcome> {
   const t = await resolveRecreateTarget(deps, target);
   if (!t) return { status: 'not-found' };
-  // An ticket can validly have a repository but no worktree path; that is
+  // A ticket can validly have a repository but no worktree path; that is
   // not a recreate case (nothing recorded to rebuild).
   if (t.worktreePath === '') return { status: 'no-path' };
   // Idempotent: another concurrent click already rebuilt it. The re-fired

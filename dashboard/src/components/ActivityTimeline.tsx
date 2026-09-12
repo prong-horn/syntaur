@@ -111,7 +111,7 @@ function EventGist({ event }: { event: ActivityEvent }) {
 }
 
 /**
- * Renders an ticket's audit-timeline events newest-first. Each row shows the
+ * Renders a ticket's audit-timeline events newest-first. Each row shows the
  * event time (relative + absolute on hover), actor, a human label for the type,
  * and a `from → to` / details gist. All values render as React nodes — never
  * `dangerouslySetInnerHTML`. Empty-state when there are no events.

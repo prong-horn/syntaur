@@ -411,7 +411,7 @@ export const scenarios: Scenario[] = [
       ctx.note(`text=${JSON.stringify(h.agentText(r.updates).slice(-200))}`);
       const statuses = [...finalStatus.values()];
       // codex-acp offers `reject_once` only as codex's "cancel" decision (no "decline" in the command decision
-      // set), and codex ends the turn as `cancelled` when the client picks it; claude keeps going tnd ends the
+      // set), and codex ends the turn as `cancelled` when the client picks it; claude keeps going and ends the
       // turn itself. Both are clean refusals, so either stop reason passes when it matches the option taken.
       const rejectedWith = h.permissions[1]?.response?.outcome;
       const rejectedOptionId = rejectedWith?.outcome === 'selected' ? rejectedWith.optionId : undefined;
@@ -465,7 +465,7 @@ export const scenarios: Scenario[] = [
         }
         ctx.metric('perMode', perMode);
         // read-only must not write silently (asks the client); agent writes, with Guardian rather than the client
-        // reviewing the escalation; full access writes without asking tnyone
+        // reviewing the escalation; full access writes without asking anyone
         partC =
           (!perMode['read-only'].written || perMode['read-only'].requests > 0) &&
           perMode['agent'].written &&

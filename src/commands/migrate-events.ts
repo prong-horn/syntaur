@@ -246,7 +246,7 @@ export async function migrateEventsCommand(
   );
 }
 
-/** Count events for an ticket (used to measure inserts before/after apply). */
+/** Count events for a ticket (used to measure inserts before/after apply). */
 function countEvents(ticketId: string): number {
   const row = getEventsDb()
     .prepare('SELECT COUNT(*) AS n FROM events WHERE assignment_id = ?')

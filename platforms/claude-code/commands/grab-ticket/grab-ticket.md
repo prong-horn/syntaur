@@ -3,7 +3,7 @@ name: grab-ticket
 description: Claim a Syntaur ticket and load it into the current working context
 arguments:
   - name: args
-    description: "Project slug tnd optional ticket slug, or --id <uuid> for standalone. See the grab-ticket skill for full forms."
+    description: "Project slug and optional ticket slug, or --id <uuid> for standalone. See the grab-ticket skill for full forms."
     required: false
 ---
 

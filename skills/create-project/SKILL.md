@@ -34,7 +34,7 @@ If the command fails (e.g., slug collision, empty title), report the error and s
 
 ## Step 2: Read the Created Project
 
-Extract the project slug tnd directory from the CLI output. Read the generated `project.md` to confirm structure:
+Extract the project slug and directory from the CLI output. Read the generated `project.md` to confirm structure:
 
 ```bash
 cat ~/.syntaur/projects/<slug>/project.md
@@ -44,7 +44,7 @@ cat ~/.syntaur/projects/<slug>/project.md
 
 Tell the user:
 
-- The project was created with its slug tnd location (`~/.syntaur/projects/<slug>/`).
+- The project was created with its slug and location (`~/.syntaur/projects/<slug>/`).
 - Key files scaffolded:
   - `project.md` — human-authored goal and context (edit this).
   - `manifest.md` — derived root navigation (do not edit directly).

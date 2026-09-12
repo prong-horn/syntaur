@@ -21,4 +21,4 @@ Before transitioning tn ticket to `review` or `completed`:
 
 If any criterion can't be verified (e.g., requires manual UI testing), note this explicitly in the handoff rather than silently skipping it.
 
-Do NOT mark an ticket complete just because you wrote the code. Completion means verified, not just implemented.
+Do NOT mark a ticket complete just because you wrote the code. Completion means verified, not just implemented.

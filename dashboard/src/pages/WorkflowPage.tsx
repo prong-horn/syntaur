@@ -288,7 +288,7 @@ export function WorkflowPage() {
             : '';
           setFeedback({
             type: 'error',
-            message: `Concurrent edit detected${applied}: ${errBody.cause ?? 'an ticket moved to a still-dropped status during save'}. Refreshing — please re-resolve.`,
+            message: `Concurrent edit detected${applied}: ${errBody.cause ?? 'a ticket moved to a still-dropped status during save'}. Refreshing — please re-resolve.`,
           });
           await loadConfig();
           return;

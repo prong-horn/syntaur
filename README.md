@@ -147,7 +147,7 @@ syntaur setup \
 
 ## Working tn ticket
 
-Open the dashboard, open an ticket, and use its **Chat** tab. Sending t
+Open the dashboard, open a ticket, and use its **Chat** tab. Sending t
 message there spawns a real coding tgent in the ticket's worktree — the
 dashboard server speaks the Agent Client Protocol to a `claude-agent-acp` or
 `codex-acp` adapter it owns — and renders the work as a conversation: streaming
@@ -205,7 +205,7 @@ See [`docs/cli.md`](docs/cli.md) for the full reference.
 `syntaur timeline <ticket>` shows the per-ticket audit event log — a chronological who/what/when/from→to record of every tracked change (status-change, assignee-change, priority-change, archived/restored, plan-approval, fact-set, attestation, comment-added, comment-resolved), newest first. The same events appear live on the dashboard **Activity** tab.
 
 ```bash
-# Show the event log for an ticket
+# Show the event log for a ticket
 syntaur timeline add-oauth --project my-api
 
 # Filter to status changes since a date, return JSON

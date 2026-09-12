@@ -2,7 +2,7 @@
 name: create-ticket
 description: >-
   Create a new Syntaur ticket within a project (or as a standalone one-off).
-  Use when the user wants to add a task, create an ticket, or break down
+  Use when the user wants to add a task, create a ticket, or break down
   work within a Syntaur project.
 license: MIT
 metadata:

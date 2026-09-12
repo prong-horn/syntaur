@@ -52,7 +52,7 @@ describe('GET /api/config/search', () => {
 });
 
 describe('POST /api/config/search', () => {
-  it('persists a valid config tnd reports custom=true', async () => {
+  it('persists a valid config and reports custom=true', async () => {
     const payload = {
       defaultScope: 'project',
       aliases: { t: 'ticket', pb: 'playbook' },

@@ -14,7 +14,7 @@ interface SessionActivityTimelineProps {
 }
 
 /**
- * Per-session stage attribution for an ticket: each engagement interval
+ * Per-session stage attribution for a ticket: each engagement interval
  * shows which agent/session worked it, in which **stage** (plan/implement/
  * review — the engagement's own stage, NOT the derived ticket phase), and
  * when (started/ended + duration). Open intervals (`endedAt == null`) render an

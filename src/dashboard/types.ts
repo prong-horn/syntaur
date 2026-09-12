@@ -72,7 +72,7 @@ export interface TicketSummary {
   /**
    * Loader-derived (NOT stored). The `at` of the transition into the current
    * status iff that status is terminal (lifecycle `completed`/`failed`), else
-   * null — so an ticket reopened after completion reports null. Sourced from
+   * null — so a ticket reopened after completion reports null. Sourced from
    * `statusHistory`. See `deriveStatusVirtuals` in api.ts.
    */
   completedAt: string | null;
@@ -285,7 +285,7 @@ export interface TicketDetail {
 }
 
 /**
- * Reverse link: an ticket that mentions the current one in its Todos, comments,
+ * Reverse link: a ticket that mentions the current one in its Todos, comments,
  * progress, or handoff body. Populated by the dashboard when returning TicketDetail.
  */
 export interface TicketReference {
@@ -609,7 +609,7 @@ export type AgentSessionStatus = 'active' | 'completed' | 'stopped';
 /**
  * Who hosts a tracked session's process (`sessions.hosted_by`).
  *
- * `'acp'` — and, since schema v11, nothing else — is an ticket-chat session
+ * `'acp'` — and, since schema v11, nothing else — is a ticket-chat session
  * hosted by the dashboard's own ACP client. The broker owns those rows'
  * `active`/`stopped` transitions outright, which is why the stale sweep exempts
  * them (Decision 1). Every other row is `null`: a hook-registered terminal

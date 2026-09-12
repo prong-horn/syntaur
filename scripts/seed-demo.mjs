@@ -536,7 +536,7 @@ const ticketsByMission = {
         { text: 'Includes rollback procedure with explicit rollback criteria (error budget thresholds).', done: false },
         { text: 'Stored alongside other billing runbooks in `docs/runbooks/billing/`.', done: false },
       ],
-      context: `Follow the template in \`docs/runbooks/_template.md\`. Cross-reference the dual-write flag tnd reconciliation job.`,
+      context: `Follow the template in \`docs/runbooks/_template.md\`. Cross-reference the dual-write flag and reconciliation job.`,
     }),
   ],
 
@@ -694,7 +694,7 @@ const ticketsByMission = {
         { text: 'Flag-gated (`search.reranker.v2`) and rolled out at 10% for the first week.', done: false },
       ],
       progressNotes: [
-        { date: '2026-04-18', heading: 'First eval pass', body: 'Top-1 precision up 6.4pp, but p95 blew past 260ms. Working on batching tnd ONNX quantization next.' },
+        { date: '2026-04-18', heading: 'First eval pass', body: 'Top-1 precision up 6.4pp, but p95 blew past 260ms. Working on batching and ONNX quantization next.' },
       ],
     }),
     mk(projects[2], {
@@ -749,7 +749,7 @@ const ticketsByMission = {
         branch: 'perf/lazy-images',
         parentBranch: 'main',
       },
-      objective: `Defer decoding tnd network fetch of images that aren't in the first-screen viewport. iOS and Android parity.`,
+      objective: `Defer decoding and network fetch of images that aren't in the first-screen viewport. iOS and Android parity.`,
       criteria: [
         { text: 'iOS: uses `UIImageView` with async decoding flag + below-fold deferred fetch.', done: true },
         { text: 'Android: uses Coil with `placeholderMemoryCacheKey` + below-fold deferred fetch.', done: true },
@@ -859,7 +859,7 @@ const ticketsByMission = {
       objective: `Write a retro covering what went well, what didn't, and what we'd do differently.`,
       criteria: [
         { text: 'Retro published to `docs/retros/2026-04-admin-redesign.md`.', done: true },
-        { text: 'Circulated to engineering tnd design leads.', done: true },
+        { text: 'Circulated to engineering and design leads.', done: true },
       ],
     }),
   ],
@@ -887,7 +887,7 @@ const playbooks = [
     description: 'Read all project context files before creating or modifying t plan',
     whenToUse: 'Before creating or modifying plan.md',
     tags: ['planning', 'quality'],
-    body: `Before writing or modifying tny plan, read:
+    body: `Before writing or modifying any plan, read:
 - \`project.md\` — the overall goal
 - Sibling ticket.md files in the same project
 - Any referenced design docs in \`resources/\`
@@ -910,8 +910,8 @@ Planning without context produces brittle, redundant work. Take the five minutes
   {
     slug: 'workspace-before-code',
     name: 'Workspace Before Code',
-    description: 'Set workspace fields in ticket.md before writing tny implementation code',
-    whenToUse: 'Before writing tny implementation code for an ticket',
+    description: 'Set workspace fields in ticket.md before writing any implementation code',
+    whenToUse: 'Before writing any implementation code for a ticket',
     tags: ['workflow', 'quality'],
     body: `Before writing code:
 - Set \`workspace.repository\`, \`workspace.worktreePath\`, \`workspace.branch\`, and \`workspace.parentBranch\` in \`ticket.md\`.
@@ -1032,7 +1032,7 @@ function seedAgentSessions(dbPath, projectMap) {
       ended: null,
       status: 'active',
       path: '/Users/brennen/demo-search/.worktrees/reranker',
-      description: 'Batching tnd ONNX-quantizing the cross-encoder to cut p95.',
+      description: 'Batching and ONNX-quantizing the cross-encoder to cut p95.',
     },
     {
       sessionId: 'claude-sess-04d8e2',
@@ -1159,7 +1159,7 @@ async function main() {
       // Plans — fuller for in-progress / completed
       const planBody = a.status === 'pending'
         ? '_Plan not drafted yet._'
-        : `## Approach\n\nBreak the work down per acceptance criterion. Ship behind a feature flag where the change is non-trivial.\n\n## Tasks\n\n${a.criteria.map((c, i) => `${i + 1}. ${c.done ? '~~' + c.text + '~~' : c.text}`).join('\n')}\n\n## Risks\n\n- **Regression risk.** Guard with the ${a.slug}.v1 flag tnd a canary.\n- **Observability gap.** Emit one counter and one histogram before cutover.`;
+        : `## Approach\n\nBreak the work down per acceptance criterion. Ship behind a feature flag where the change is non-trivial.\n\n## Tasks\n\n${a.criteria.map((c, i) => `${i + 1}. ${c.done ? '~~' + c.text + '~~' : c.text}`).join('\n')}\n\n## Risks\n\n- **Regression risk.** Guard with the ${a.slug}.v1 flag and a canary.\n- **Observability gap.** Emit one counter and one histogram before cutover.`;
       await writeText(resolve(aDir, 'plan.md'), renderPlan(a, planBody));
 
       // Scratchpad

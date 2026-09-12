@@ -9,7 +9,7 @@ updated: "2026-03-18T14:30:00Z"
 
 ## 2026-03-18T14:30:00Z
 
-Implemented role-based route guard middleware (`requireRole`). Working on the refresh token endpoint next. The token generation and basic validation middleware are working tnd passing manual tests. Need to wire up the refresh token rotation logic using the `token_family` pattern from the schema design.
+Implemented role-based route guard middleware (`requireRole`). Working on the refresh token endpoint next. The token generation and basic validation middleware are working and passing manual tests. Need to wire up the refresh token rotation logic using the `token_family` pattern from the schema design.
 
 ## 2026-03-18T10:00:00Z
 

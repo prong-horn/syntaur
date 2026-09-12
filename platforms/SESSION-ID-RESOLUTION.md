@@ -29,7 +29,7 @@ question, and since v0.80 there are exactly three ways it happens:
   dashboard needed). Every session registers — standalone ones included. A
   rate-limited `syntaur session touch --from-hook` on PostToolUse and
   UserPromptSubmit keeps the row's `updated_at` moving while it works.
-- **The chat broker**: an ticket-chat session registers itself under its ACP
+- **The chat broker**: a ticket-chat session registers itself under its ACP
   session id with `hosted_by = 'acp'`, and the broker writes `active` /
   `stopped` itself.
 - **`syntaur track-session`**: explicit registration, for anything else.

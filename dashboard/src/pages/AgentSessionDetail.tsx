@@ -83,8 +83,8 @@ export function AgentSessionDetail(): JSX.Element {
           </p>
         ) : (
           <EmptyState
-            title="Not bound to an ticket"
-            description="This session has no engagement linking it to an ticket."
+            title="Not bound to a ticket"
+            description="This session has no engagement linking it to a ticket."
           />
         )}
       </SectionCard>

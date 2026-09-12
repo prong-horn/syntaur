@@ -73,7 +73,7 @@ Protocol version: **2.0**
 3. **Derived files** (underscore-prefixed, plus `manifest.md`) are never edited manually.
 4. **Slugs** are lowercase, hyphen-separated.
 5. **Dependencies** are declared via `dependsOn` in ticket frontmatter. Only valid within the same project — standalone tickets cannot declare `dependsOn`.
-6. An ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
+6. A ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read them before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do NOT add a `## Progress` section to `ticket.md` — protocol v2.0 moved progress to its own file.
 9. **Comments** are appended to `comments.md` via `syntaur comment <slug> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag toggled in the dashboard.

@@ -110,7 +110,7 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur start <slug> --project <project>\` -- pending -> in_progress
 - \`syntaur review <slug> --project <project>\` -- in_progress -> review
 - \`syntaur complete <slug> --project <project>\` -- in_progress/review -> completed
-- \`syntaur block <slug> --project <project> --reason <text>\` -- block an ticket
+- \`syntaur block <slug> --project <project> --reason <text>\` -- block a ticket
 - \`syntaur unblock <slug> --project <project>\` -- unblock
 - \`syntaur fail <slug> --project <project>\` -- mark as failed
 - \`syntaur new "Title" [--type <type>] [--project <slug> | --one-off]\` -- create project-nested or standalone ticket

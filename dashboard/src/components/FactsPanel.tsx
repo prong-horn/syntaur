@@ -19,7 +19,7 @@ interface FactsPanelProps {
 }
 
 /**
- * Current materialized state of an ticket's custom facts and review
+ * Current materialized state of a ticket's custom facts and review
  * attestations (server-derived; display-only). Renders nothing when there are
  * no facts or attestations — i.e. for zero-config users and terminal
  * tickets (derived: null). Lives inside the Activity tab, above the

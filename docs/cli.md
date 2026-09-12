@@ -54,7 +54,7 @@ Define or drop a custom transition.
 
 ## `syntaur workspace set`
 
-Set the four `workspace.*` frontmatter fields on an ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing tnd re-validates **after**, restoring the original on failure, and bumps `updated`.
+Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
 
 ```
 syntaur workspace set \
@@ -74,7 +74,7 @@ syntaur progress log "<text>" [--ticket <slug> [--project <slug>]]
 
 ## `syntaur unassign <ticket>`
 
-Clear the assignee on an ticket (the inverse of `syntaur assign`) and bump `updated`.
+Clear the assignee on a ticket (the inverse of `syntaur assign`) and bump `updated`.
 
 ```
 syntaur unassign <ticket> [--project <slug>] [--dir <path>]
@@ -92,7 +92,7 @@ Manage git worktrees bound to tickets.
 
 ## `syntaur plan`
 
-Manage plan files for an ticket.
+Manage plan files for a ticket.
 
 - `syntaur plan create [--ticket <slug> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
 - `syntaur plan version [--ticket <slug> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
@@ -105,7 +105,7 @@ Show the chronological audit event log for one ticket — who changed what, when
 syntaur timeline <ticket> [options]
 ```
 
-`<ticket>` is an ticket slug (paired with `--project`) or a standalone UUID.
+`<ticket>` is a ticket slug (paired with `--project`) or a standalone UUID.
 
 ### Options
 
@@ -150,7 +150,7 @@ The same events are surfaced live in the dashboard's **Activity** tab for the ti
 ### Examples
 
 ```bash
-# Show the full event log for an ticket
+# Show the full event log for a ticket
 syntaur timeline add-oauth --project my-api
 
 # Only status-change events since a specific date
@@ -191,7 +191,7 @@ syntaur migrate-events --apply --dir /path/to/my-projects
 
 ## `syntaur search <query>`
 
-Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by an ticket and returns ranked results with a snippet and location.
+Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by a ticket and returns ranked results with a snippet and location.
 
 ```
 syntaur search <query> [options]
@@ -348,12 +348,12 @@ syntaur inbox --max-age 14
 syntaur inbox --show-snoozed
 ```
 
-The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever an ticket changes.
+The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever a ticket changes.
 
 ## Working tn ticket
 
 Agents are worked in the dashboard's **Chat** tab, not in a terminal Syntaur
-opens for you. Open an ticket, send a message, and the dashboard server
+opens for you. Open a ticket, send a message, and the dashboard server
 speaks the Agent Client Protocol to a `claude-agent-acp` or `codex-acp` adapter
 running in the ticket's worktree. See
 [ticket-chat.md](./ticket-chat.md).
@@ -362,7 +362,7 @@ running in the ticket's worktree. See
 syntaur open <ticket>
 ```
 
-`open` still opens a plain terminal (and your editor) at an ticket's
+`open` still opens a plain terminal (and your editor) at a ticket's
 worktree. It reads an optional `terminal:` scalar from `~/.syntaur/config.md`
 (`terminal-app` | `iterm` | `ghostty` | `alacritty` | `warp` | `kitty` |
 `cmux`) and falls back to the platform default.

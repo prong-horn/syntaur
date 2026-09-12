@@ -67,7 +67,7 @@ export interface UseTicketChatResult {
 }
 
 /**
- * Load an ticket's chat and keep it live.
+ * Load a ticket's chat and keep it live.
  *
  * History comes from REST; everything after that arrives as `chat-item`,
  * `chat-session` and `chat-participants` frames on the shared `/ws` connection.

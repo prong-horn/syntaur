@@ -67,7 +67,7 @@ generated: "2026-03-18T15:00:00Z"
 
 The project overview containing the goal, context, and success criteria. This file contains **no computed or derived content**. All status rollups, ticket listings, dependency graphs, and session information live in `_status.md` and the various index files.
 
-**Relationship to `_status.md`:** The only lifecycle state stored in `project.md` is the `archived` flag. When a human sets `archived: true`, the rebuild script projects this as `status: archived` in `_status.md`, overriding tny computed status. All other project status is derived from ticket states and lives exclusively in `_status.md`.
+**Relationship to `_status.md`:** The only lifecycle state stored in `project.md` is the `archived` flag. When a human sets `archived: true`, the rebuild script projects this as `status: archived` in `_status.md`, overriding any computed status. All other project status is derived from ticket states and lives exclusively in `_status.md`.
 
 ### Frontmatter Schema
 
@@ -190,7 +190,7 @@ The core unit of work and the **single source of truth** for ticket state. This 
 
 **Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
 
-**Standalone tickets:** An ticket may live outside any project at `~/.syntaur/tickets/<uuid>/` (created via `syntaur new --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone tickets. Resolve standalone tickets by `id` via `resolveTicketById`.
+**Standalone tickets:** A ticket may live outside any project at `~/.syntaur/tickets/<uuid>/` (created via `syntaur new --one-off`). In that case the folder is named by `id` (the UUID), `project` is `null`, and the `slug` is display-only — it is not guaranteed unique across standalone tickets. Resolve standalone tickets by `id` via `resolveTicketById`.
 
 **Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the ticket file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
@@ -265,7 +265,7 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 
 Zero or more implementation plan files per ticket. Plans are **not scaffolded** — they are created on demand by `/plan-ticket`.
 
-**Filename versioning:** The first plan for an ticket is `plan.md`. Subsequent plans use `plan-v2.md`, `plan-v3.md`, etc. — the smallest unused `plan-v<N>.md` where `N >= 2`. When requirements shift, create a new versioned plan file instead of rewriting the old one.
+**Filename versioning:** The first plan for a ticket is `plan.md`. Subsequent plans use `plan-v2.md`, `plan-v3.md`, etc. — the smallest unused `plan-v<N>.md` where `N >= 2`. When requirements shift, create a new versioned plan file instead of rewriting the old one.
 
 Each plan has its own status independent of the ticket status.
 
@@ -1118,7 +1118,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `onboarding.completed` | boolean | `true`, `false` | optional | `false` | Whether the first-run onboarding flow has completed. |
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
-| `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets an ticket with no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
+| `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets a ticket with no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
 | `terminal` | string (enum) or null | `terminal-app`, `iterm`, `ghostty`, `alacritty`, `warp`, `kitty`, `cmux` | optional | `null` (platform default) | Which terminal `syntaur open` opens at a worktree. |
 | `session.idleSweepHours` | number | > 0 | optional | `6` | How long tn `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
 | `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
@@ -1133,7 +1133,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `types.definitions` | array of `{id, label, icon?}` objects | Allowed type ids for the `type` field on `ticket.md`. |
 | `types.default` | string | Default type id used when none is specified on create. |
 
-Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `research`, `chore`, with default `feature`. Doctor warns when an ticket's `type` is not in the configured definitions.
+Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `research`, `chore`, with default `feature`. Doctor warns when a ticket's `type` is not in the configured definitions.
 
 The `agents:` and `agentDiscovery:` blocks were REMOVED in v0.80 along with the
 terminal-launch stack they configured — Syntaur no longer opens a terminal for
@@ -1222,5 +1222,5 @@ Before transitioning tn ticket to `review` or `completed`:
 2. **Check every acceptance criterion.** Go through them one by one.
 3. **Build the project.** If there's a build step, run it. No build errors allowed.
 
-Do NOT mark an ticket complete just because you wrote the code.
+Do NOT mark a ticket complete just because you wrote the code.
 ```

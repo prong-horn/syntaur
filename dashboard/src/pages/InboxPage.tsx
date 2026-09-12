@@ -146,7 +146,7 @@ export function InboxPage() {
     const emptyDescription =
       inboxWindow === '14d'
         ? 'Older reviews and plan approvals are hidden. Switch to All to see the full queue, or snooze rows you are not ready to act on.'
-        : 'When an agent asks a question, a permission card goes unanswered, a plan needs approval, or an ticket awaits your review, it appears here so you can reply in place.';
+        : 'When an agent asks a question, a permission card goes unanswered, a plan needs approval, or a ticket awaits your review, it appears here so you can reply in place.';
 
     return (
       <div className="space-y-4">

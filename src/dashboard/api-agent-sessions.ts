@@ -688,7 +688,7 @@ export function createAgentSessionsRouter(
         }
       }
 
-      // L gate (2) + M1: when the POST BINDS to an ticket, the ticket
+      // L gate (2) + M1: when the POST BINDS to a ticket, the ticket
       // must exist (else this opens/mis-attributes a window for a phantom
       // ticket). Resolve once: `.exists` gates the bind, `.id` is stored as
       // the engagement's `assignment_id` so a later stage assertion won't split

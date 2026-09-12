@@ -169,7 +169,7 @@ await runScenario('09-ask-question', 'ask_question extension', async (h) => {
   await h.setMode(s.sessionId, 'agent');
   const promptP = h.prompt(
     s.sessionId,
-    'Before doing tnything, ask me which option I prefer: A or B. Use your ask_question tool. Do not proceed until I answer.',
+    'Before doing anything, ask me which option I prefer: A or B. Use your ask_question tool. Do not proceed until I answer.',
   );
   // Wait for ask_question, answer with first option
   await new Promise<void>((resolve) => {

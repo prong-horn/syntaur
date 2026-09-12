@@ -1048,7 +1048,7 @@ export async function getEditableDocument(
 }
 
 /**
- * Resolve an ticket by UUID (standalone or project-nested) and return its
+ * Resolve a ticket by UUID (standalone or project-nested) and return its
  * editable document payload for the given type.
  */
 export async function getEditableDocumentById(
@@ -1545,7 +1545,7 @@ function escapeRegExpLocal(value: string): string {
 }
 
 /**
- * Resolve an ticket by UUID (standalone or project-nested) and return its full detail payload.
+ * Resolve a ticket by UUID (standalone or project-nested) and return its full detail payload.
  * GET /api/tickets/:id
  */
 export async function getTicketDetailById(
@@ -1905,7 +1905,7 @@ async function buildProjectRollup(
  * Derive the loader-only virtual fields from a ticket's `statusHistory`
  * (never stored on disk). `completedAt` is the `at` of the LAST transition into
  * the current status, but only when that status is terminal (lifecycle
- * `completed`/`failed`) — so an ticket reopened after completion reports null,
+ * `completed`/`failed`) — so a ticket reopened after completion reports null,
  * because its current status is no longer terminal. `statusAge` is the elapsed
  * milliseconds since the last entry (time in current status), null when there is
  * no history or the timestamp is unparseable.

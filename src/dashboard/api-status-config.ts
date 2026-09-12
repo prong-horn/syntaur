@@ -548,7 +548,7 @@ export function createStatusConfigRouter(
         throw err;
       }
 
-      // Step A.5: final drift check. Catches the case where an ticket
+      // Step A.5: final drift check. Catches the case where a ticket
       // moved from one dropped id to another between scan and apply (the
       // intra-resolution TOCTOU guard misses this). If anything still
       // references a dropped id, abort before config write so the user can
@@ -594,7 +594,7 @@ export function createStatusConfigRouter(
       // Step C: cache + return. Use per-resolution counts from `applied.byId`
       // (which already account for TOCTOU skips) rather than scan-time list
       // lengths — otherwise the user sees inflated counts when a concurrent
-      // writer moved an ticket out of scope.
+      // writer moved a ticket out of scope.
       clearStatusConfigCache();
       const config = await getStatusConfig(workflowId);
       const byId: Record<string, { mode: 'remap' | 'delete'; count: number; target?: string }> = {};

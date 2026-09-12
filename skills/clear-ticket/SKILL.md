@@ -34,13 +34,13 @@ Optional flags from the user:
 
 The active ticket is resolved from the session's open engagement. Run `syntaur session resume --json` to read it.
 
-- If there is no open engagement, tell the user: "No active ticket is bound to this session — nothing to clear." and stop. (`.syntaur/context.json` is only a workspace marker; its presence does not mean an ticket is bound.)
+- If there is no open engagement, tell the user: "No active ticket is bound to this session — nothing to clear." and stop. (`.syntaur/context.json` is only a workspace marker; its presence does not mean a ticket is bound.)
 
 From the resolved engagement, note: `projectSlug`, `ticketSlug`, `ticketDir`, `title`.
 
 ## Step 2: Confirm with the User
 
-Show the user what is about to be cleared and confirm before touching tnything:
+Show the user what is about to be cleared and confirm before touching anything:
 
 > About to clear active ticket context:
 > - Ticket: `<ticketSlug>` — <title>
