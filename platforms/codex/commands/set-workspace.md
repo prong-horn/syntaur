@@ -4,7 +4,7 @@ description: Populate the four workspace.* fields in the active ticket.md per th
 
 # /set-workspace
 
-Write `repository`, `worktreePath`, `branch`, `parentBranch` into the ticket.md frontmatter. Validates the file via `syntaur doctor --ticket <path> --json` before writing — refuses to touch a malformed file.
+Write `repository`, `worktree`, `branch`, `parentBranch` into the ticket.md frontmatter. Validates the file via `syntaur doctor --ticket <path> --json` before writing — refuses to touch a malformed file.
 
 Follow the `set-workspace` skill in full. Summary:
 

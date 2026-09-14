@@ -30,8 +30,8 @@ implementation code until workspace fields are set.
   first; if all four fields match the intended values, do nothing.
 - You want to create the worktree itself — use `/syntaur-worktree`, which
   composes worktree creation AND workspace field updates in one move.
-- The ticket is in a terminal status (`completed`, `failed`,
-  `cancelled`). Reopen it first if you really need to change workspace.
+- The ticket is in a terminal stage (`done` or `dropped`). Reopen it first if
+  you really need to change workspace.
 
 ## Step 1: Resolve the ticket file
 

@@ -49,29 +49,40 @@ Protocol version: **2.0**
 
 ## Ticket Lifecycle
 
-| Status | Meaning |
-|--------|---------|
-| `pending` | Not yet started |
+Run `syntaur show <id>` (or `syntaur show` with an open engagement) at the start of work and after every lifecycle verb. Follow **Stage** and **Next**.
+
+### Stages
+
+| Stage | Meaning |
+|-------|---------|
+| `backlog` | Not yet started; may be waiting on dependencies |
+| `planning` | Shaping work and writing the plan |
+| `ready` | Plan approved; ready to implement |
 | `in_progress` | Actively being worked on |
-| `blocked` | Manually blocked (requires `blockedReason`) |
 | `review` | Work complete, awaiting review |
-| `completed` | Done |
-| `failed` | Could not be completed |
+| `done` | Finished successfully |
+| `dropped` | Abandoned or could not be completed |
 
-## Valid State Transitions
+### Flags (reason strings; stage unchanged)
 
-| From | Command | To |
-|------|---------|-----|
-| pending | start | in_progress |
-| pending | block | blocked |
-| in_progress | block | blocked |
-| in_progress | review | review |
-| in_progress | complete | completed |
-| in_progress | fail | failed |
-| blocked | unblock | in_progress |
-| review | start | in_progress |
-| review | complete | completed |
-| review | fail | failed |
+| Field | Meaning |
+|-------|---------|
+| `blocked: "<reason>"` | Runtime obstacle requiring intervention |
+| `parked: "<reason>"` | Intentionally paused |
+
+### Lifecycle verbs
+
+| Verb | Typical effect |
+|------|----------------|
+| `syntaur plan create` | Scaffold plan file; move toward `planning` |
+| `syntaur approve` | `planning` → `ready` when gates pass |
+| `syntaur start` | → `in_progress` |
+| `syntaur review` | → `review` |
+| `syntaur done` | → `done` |
+| `syntaur drop` | → `dropped` |
+| `syntaur reopen` | Reopen toward an earlier stage per template |
+| `syntaur block` / `syntaur unblock` | Set or clear the `blocked` reason |
+| `syntaur park` / `syntaur unpark` | Set or clear the `parked` reason |
 
 ## Key Rules
 
@@ -79,9 +90,10 @@ Protocol version: **2.0**
 2. **Project-nested tickets** live at `projects/<slug>/tickets/<aslug>/` (folder name = slug). **Standalone tickets** live at `tickets/<uuid>/` (folder name = UUID, `project: null`, slug display-only).
 3. **Derived files** (underscore-prefixed) are never edited manually.
 4. **Slugs** are lowercase, hyphen-separated.
-5. **Dependencies** are declared via `dependsOn` in ticket frontmatter. Only valid within the same project — standalone tickets cannot declare `dependsOn`.
-6. A ticket cannot transition from `pending` to `in_progress` while any dependency is not `completed`.
+5. **Dependencies** are declared via `depends_on` in ticket frontmatter. Only valid within the same project — standalone tickets cannot declare `depends_on`.
+6. A ticket cannot `start` while any dependency is not `done`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `ticket.md`.
 9. **Comments** are appended to `comments.md` via `syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
 10. On resume, read any open `handoff.md` (ticket-level cross-ticket outbound) plus `ticket.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.
+11. **Workspace** paths live under `workspace.repository` and `workspace.worktree` in ticket frontmatter.

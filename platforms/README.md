@@ -108,7 +108,7 @@ All adapters embed equivalent protocol knowledge:
 - **Directory structure** of `~/.syntaur/`
 - **Write boundary rules** (which files the agent can and cannot modify)
 - **Ticket lifecycle states** and valid transitions
-- **CLI commands** for state transitions (`syntaur start`, `syntaur complete`, etc.)
+- **CLI commands** for lifecycle verbs (`syntaur plan create`, `syntaur start`, `syntaur review`, `syntaur done`, etc.)
 - **Reading order** for project and ticket files
 - **Current ticket context** (project slug, ticket slug, paths)
 

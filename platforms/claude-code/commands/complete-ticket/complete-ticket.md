@@ -1,6 +1,6 @@
 ---
 name: complete-ticket
-description: Append a progress entry + handoff and transition the current Syntaur ticket to review or completed
+description: Append a progress entry + handoff and transition the current Syntaur ticket to review or done
 arguments:
   - name: args
     description: "Optional — see the complete-ticket skill for supported flags"
@@ -9,7 +9,7 @@ arguments:
 
 # /complete-ticket
 
-Thin wrapper that invokes the `complete-ticket` skill. The skill lives in `~/.claude/skills/complete-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying acceptance criteria, appending a progress.md entry, writing a handoff.md section, and calling `syntaur review` or `syntaur complete`.
+Thin wrapper that invokes the `complete-ticket` skill. The skill lives in `~/.claude/skills/complete-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — verifying acceptance criteria, appending a progress.md entry, writing a handoff.md section, and calling `syntaur review` or `syntaur done`.
 
 ## Instructions
 

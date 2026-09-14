@@ -110,44 +110,50 @@ Only the assigned agent may write to its own ticket folder.
 
 ## Ticket Lifecycle
 
-### States
-| Status | Meaning |
-|--------|---------|
-| `pending` | Not yet started; may be waiting on dependencies |
-| `in_progress` | Actively being worked on |
-| `blocked` | Runtime obstacle (requires `blockedReason`) |
-| `review` | Work complete, awaiting review |
-| `completed` | Done |
-| `failed` | Could not be completed |
+Run `syntaur show <id>` at the start of work and after every lifecycle verb. Follow **Stage** and **Next**.
 
-### Valid Transitions
-| From | Command | To |
-|------|---------|-----|
-| pending | start | in_progress |
-| pending | block | blocked |
-| in_progress | block | blocked |
-| in_progress | review | review |
-| in_progress | complete | completed |
-| in_progress | fail | failed |
-| blocked | unblock | in_progress |
-| review | start | in_progress |
-| review | complete | completed |
-| review | fail | failed |
-| completed | reopen | in_progress |
-| failed | reopen | in_progress |
+### Stages
+| Stage | Meaning |
+|-------|---------|
+| `backlog` | Not yet started; may be waiting on dependencies |
+| `planning` | Shaping work and writing the plan |
+| `ready` | Plan approved; ready to implement |
+| `in_progress` | Actively being worked on |
+| `review` | Work complete, awaiting review |
+| `done` | Finished successfully |
+| `dropped` | Abandoned or could not be completed |
+
+### Flags (reason strings; stage unchanged)
+| Field | Meaning |
+|-------|---------|
+| `blocked: "<reason>"` | Runtime obstacle requiring intervention |
+| `parked: "<reason>"` | Intentionally paused |
+
+### Lifecycle verbs
+| Verb | Typical effect |
+|------|----------------|
+| `syntaur plan create` | Scaffold plan file; move toward `planning` |
+| `syntaur approve` | `planning` → `ready` when gates pass |
+| `syntaur start` | → `in_progress` |
+| `syntaur review` | → `review` |
+| `syntaur done` | → `done` |
+| `syntaur drop` | → `dropped` |
+| `syntaur reopen` | Reopen toward an earlier stage per template |
+| `syntaur block` / `syntaur unblock` | Set or clear the `blocked` reason |
+| `syntaur park` / `syntaur unpark` | Set or clear the `parked` reason |
 
 ### Dependency Semantics
-- `dependsOn` field lists ticket slugs that must be `completed` before this ticket can start
-- `pending` + unmet dependencies = structural wait (automatic, no action needed)
-- `blocked` = runtime obstacle requiring human intervention (must set `blockedReason`)
+- `depends_on` lists ticket slugs that must be `done` before this ticket can `start`
+- `backlog` + unmet `depends_on` = structural wait (automatic, no action needed)
+- `blocked` = runtime obstacle requiring human intervention (set via `syntaur block --reason`)
 
 ### Project Status Rollup (computed, first-match-wins)
 1. `archived: true` in project.md → `archived`
-2. ALL tickets `completed` → `completed`
+2. ALL tickets `done` → `completed`
 3. ANY `in_progress` or `review` → `active`
-4. ANY `failed` → `failed`
-5. ANY `blocked` → `blocked`
-6. ALL `pending` → `pending`
+4. ANY `dropped` → `failed`
+5. ANY `blocked` flag set → `blocked`
+6. ALL tickets `backlog` → `pending`
 7. Otherwise → `active`
 
 ---
@@ -175,17 +181,21 @@ Only the assigned agent may write to its own ticket folder.
 |---------|-------------|
 | `syntaur comment <ticket-id> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
 
-### State Transitions
+### Lifecycle verbs
 | Command | Description |
 |---------|-------------|
-| `syntaur assign <id> --agent <name> --project <project>` | Set assignee |
-| `syntaur start <id> --project <project>` | pending → in_progress |
-| `syntaur review <id> --project <project>` | in_progress → review |
-| `syntaur complete <id> --project <project>` | in_progress/review → completed |
-| `syntaur block <id> --project <project> --reason <text>` | → blocked |
-| `syntaur unblock <id> --project <project>` | blocked → in_progress |
-| `syntaur fail <id> --project <project>` | → failed |
-| `syntaur reopen <id> --project <project>` | completed/failed → in_progress |
+| `syntaur show [<id>]` | Protocol entry point — stage, files, next steps |
+| `syntaur plan create <id> --project <project>` | Scaffold plan; move toward `planning` |
+| `syntaur approve <id> --project <project>` | `planning` → `ready` when gates pass |
+| `syntaur start <id> --project <project>` | → `in_progress` |
+| `syntaur review <id> --project <project>` | → `review` |
+| `syntaur done <id> --project <project>` | → `done` |
+| `syntaur drop <id> --project <project> [--reason <text>]` | → `dropped` |
+| `syntaur reopen <id> --project <project>` | Reopen toward earlier stage per template |
+| `syntaur block <id> --project <project> --reason <text>` | Set `blocked` reason (stage unchanged) |
+| `syntaur unblock <id> --project <project>` | Clear `blocked` reason |
+| `syntaur park <id> --project <project> --reason <text>` | Set `parked` reason (stage unchanged) |
+| `syntaur unpark <id> --project <project>` | Clear `parked` reason |
 
 ### Session Tracking
 | Command | Description |
@@ -273,7 +283,7 @@ syntaur                    # Dashboard is the default command
 - **Agent sessions:** Track active/completed/stopped agent sessions
 - **Real-time updates:** WebSocket pushes file changes to the browser
 - **Markdown editing:** Edit project.md, ticket.md, plan files, scratchpad.md in-browser
-- **Attention queue:** Highlights blocked, failed, and review-pending items
+- **Attention queue:** Highlights `blocked` flags, `dropped` tickets, and `review`-stage items
 
 ### API Endpoints
 - `GET /api/overview` — Dashboard summary stats
@@ -320,7 +330,7 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 ### Frontmatter Fields by File Type
 
-**ticket.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, dependsOn, blockedReason, workspace (repository, worktreePath, branch, parentBranch), tags
+**ticket.md:** id, slug, title, **project (slug or null)**, **type (string or null)**, status, priority, created, updated, assignee, externalIds, depends_on, blocked, parked, workspace (repository, worktree, branch, parentBranch), tags
 
 **plan files (plan.md, plan-v2.md, ...):** ticket, status (draft/approved/in_progress/completed), created, updated — zero or more per ticket
 
@@ -336,7 +346,7 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 **manifest.md:** version, project, generated
 
-**_status.md:** project, generated, status, progress (total/completed/in_progress/blocked/pending/review/failed), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every ticket's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
+**_status.md:** project, generated, status, progress (per-stage counts: backlog/planning/ready/in_progress/review/done/dropped), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every ticket's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
 
 ### Conventions
 - **Timestamps:** RFC 3339 / ISO 8601 with UTC: `2026-03-18T14:30:00Z`
@@ -367,7 +377,7 @@ syntaur dashboard
 ### Agent Workflow
 ```bash
 # In Claude Code, use skills:
-/grab-ticket my-first-project       # Claim a pending ticket
+/grab-ticket my-first-project       # Claim a backlog ticket
 /plan-ticket                         # Write implementation plan
 # ... do the work ...
 /complete-ticket                     # Handoff and complete
@@ -400,13 +410,13 @@ Read by `/plan-ticket` and `/complete-ticket` to determine what the current agen
 ## Common Questions
 
 **Q: How do I see what tickets are available?**
-A: Use `/grab-ticket <project-slug>` — it lists pending tickets. Or check the dashboard, or read `_index-tickets.md`.
+A: Use `/grab-ticket <project-slug>` — it lists backlog tickets. Or check the dashboard, or read `_index-tickets.md`.
 
 **Q: Can two agents work on the same ticket?**
 A: No. Single-writer guarantee — one agent per ticket folder. Use separate tickets for parallel work.
 
 **Q: What if I need to ask the human a question?**
-A: Run `syntaur comment <id> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT set status to `blocked` for questions — `blocked` is for runtime obstacles only.
+A: Run `syntaur comment <id> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT use `syntaur block` for questions — `blocked` is for runtime obstacles only.
 
 **Q: What goes in `progress.md` vs `handoff.md`?**
 A: Two distinct artifacts.
@@ -423,6 +433,6 @@ A: Yes. Run `syntaur setup-adapter <framework>` for Cursor, Codex, or OpenCode. 
 A: Ticket frontmatter YAML is the single source of truth. Agent sessions are in SQLite at `~/.syntaur/syntaur.db`. Everything else is markdown files.
 
 **Q: How do dependencies work?**
-A: `dependsOn` lists ticket slugs. A ticket with pending status and unmet dependencies cannot transition to `in_progress` until all dependencies are `completed`.
+A: `depends_on` lists ticket slugs. A ticket in `backlog` with unmet dependencies cannot `start` until all dependencies are `done`.
 
 When in doubt about any detail, read the source files listed at the top of this prompt. The codebase is always the ground truth.

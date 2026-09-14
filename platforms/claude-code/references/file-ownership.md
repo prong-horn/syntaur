@@ -55,6 +55,6 @@ All files prefixed with `_` are derived and rebuilt by tooling:
 
 When working on code (not protocol files), you may write to files within
 the workspace defined in your ticket frontmatter:
-- `workspace.worktreePath` or `workspace.repository` defines your project root
+- `workspace.worktree` or `workspace.repository` defines your project root
 - You may create and edit source code files within that workspace
 - The `.syntaur/context.json` context file in your working directory is also writable
