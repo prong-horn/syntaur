@@ -31,6 +31,8 @@ import {
 import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
 import { resolvePlanReadPath, planFileFor } from '../ticket-templates/roles.js';
 import { buildShow, type ShowModel } from '../ticket-templates/show.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
+import { markdownBody } from '../ticket-templates/content.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { invalidateIndex } from '../search/index.js';
 
@@ -77,6 +79,8 @@ import type {
   PlaybookSummary,
   PlaybookDetail,
   EngagementInfo,
+  TicketTemplateBlock,
+  TicketTemplateFileDetail,
 } from './types.js';
 import { listAllSessions, getSessionById } from './agent-sessions.js';
 import { getEngagementsByTicketId } from '../db/engagement-db.js';
@@ -1085,6 +1089,60 @@ function buildTicketEngagements(ticketId: string): EngagementInfo[] {
   }));
 }
 
+async function buildTicketTemplateBlock(
+  ticketDir: string,
+  ticket: ReturnType<typeof parseTicketFull>,
+): Promise<TicketTemplateBlock> {
+  const root = syntaurRoot();
+  const show = await buildShow(root, ticketDir);
+  const manifest = await loadTemplate(root, resolveTemplateForTicket(ticket));
+  const files: TicketTemplateFileDetail[] = [];
+
+  for (const entry of manifest.files) {
+    const showFile = show.files.find((f) => f.path === entry.path);
+    const filePath = resolve(ticketDir, entry.path);
+    const exists = await fileExists(filePath);
+    let body: string | null = null;
+    let logEntries: TicketTemplateFileDetail['logEntries'];
+    let planStatus: string | null = null;
+
+    if (exists) {
+      const content = await readFile(filePath, 'utf-8');
+      if (entry.role === 'log') {
+        logEntries = parseLogEntries(content).map((e) => ({
+          timestamp: e.timestamp,
+          type: e.type,
+          author: e.author,
+          firstLine: e.firstLine,
+          body: e.body,
+        }));
+        body = content;
+      } else if (entry.role === 'plan') {
+        const parsed = parsePlan(content);
+        planStatus = parsed.status;
+        body = parsed.body;
+      } else {
+        body = markdownBody(content);
+      }
+    }
+
+    files.push({
+      path: entry.path,
+      role: entry.role ?? 'plain',
+      writer: entry.writer,
+      description: entry.description,
+      state: showFile?.state ?? 'missing',
+      exists,
+      createOn: entry.createOn,
+      body,
+      ...(logEntries ? { logEntries } : {}),
+      ...(planStatus ? { planStatus } : {}),
+    });
+  }
+
+  return { id: show.ticket.template, files };
+}
+
 /**
  * Get full ticket detail with plan, scratchpad, handoff, and decision record
  * (served through GET /api/tickets/:id).
@@ -1226,6 +1284,7 @@ export async function getTicketDetail(
       ticketSlug,
       ticket,
     ),
+    templateBlock: await buildTicketTemplateBlock(ticketDir, ticket),
   };
 
   // Compute reverse links and enrich all links

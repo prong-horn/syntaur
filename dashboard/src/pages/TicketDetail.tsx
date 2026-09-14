@@ -46,6 +46,9 @@ import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
 import { ChatTab } from '../components/chat/ChatTab';
+import { buildTicketTabs, templateFileEditSection } from '../lib/ticketTabs';
+import type { TicketTabSpec } from '../lib/ticketTabs';
+import type { TicketTemplateFileDetail } from '../hooks/useProjects';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
@@ -234,6 +237,184 @@ export function TicketDetail() {
     () => (ticket ? splitTicketSummary(ticket.body) : { acceptanceCriteria: [], summaryBody: '' }),
     [ticket],
   );
+
+  const tabItems = useMemo(() => {
+    if (!ticket || !id) return [];
+    const renderFileTab = (file: TicketTemplateFileDetail) => {
+      if (!file.exists) {
+        return (
+          <EmptyState
+            title="Not created yet"
+            description={`createOn: ${file.createOn}`}
+          />
+        );
+      }
+      const editSection = templateFileEditSection(file.path);
+      const editAction = editSection ? (
+        <Link className="shell-action" to={ticketEditHref(id, editSection)}>
+          <NotebookPen className="h-4 w-4" />
+          <span>Edit</span>
+        </Link>
+      ) : undefined;
+
+      if (file.path === 'comments.md' && ticket.comments) {
+        return (
+          <CommentsThread ticketId={id} entries={ticket.comments.entries} />
+        );
+      }
+
+      if (file.role === 'log' && file.logEntries && file.logEntries.length > 0) {
+        return (
+          <SectionCard title={file.path} description={`${file.state} · ${file.description}`}>
+            <ol className="space-y-4">
+              {file.logEntries.map((entry, idx) => (
+                <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
+                  <div className="text-xs font-mono text-muted-foreground">
+                    {entry.timestamp}
+                    {entry.author ? ` · ${entry.author}` : ''}
+                    {entry.type ? ` · ${entry.type}` : ''}
+                  </div>
+                  <MarkdownRenderer content={entry.body} />
+                </li>
+              ))}
+            </ol>
+          </SectionCard>
+        );
+      }
+
+      if (file.role === 'plan') {
+        return (
+          <SectionCard title="Plan" description={file.description} actions={editAction}>
+            {file.planStatus ? (
+              <div className="mb-4">
+                <StatusBadge status={file.planStatus} />
+                <span className="ml-2 text-xs text-muted-foreground">{file.state}</span>
+              </div>
+            ) : null}
+            <MarkdownRenderer content={file.body ?? ''} emptyState="No plan content yet." />
+          </SectionCard>
+        );
+      }
+
+      return (
+        <SectionCard title={file.path} description={file.description} actions={editAction}>
+          <MarkdownRenderer content={file.body ?? ''} emptyState="No content yet." />
+        </SectionCard>
+      );
+    };
+
+    return buildTicketTabs(ticket).map((spec: TicketTabSpec) => {
+      if (spec.kind === 'summary') {
+        return {
+          value: spec.value,
+          label: spec.label,
+          content: (
+            <div className="space-y-5">
+              {summarySections.acceptanceCriteria.length > 0 ? (
+                <SectionCard
+                  title="Acceptance Criteria"
+                  description="These checkboxes update the source ticket markdown."
+                >
+                  <div className="space-y-3">
+                    {criteriaError ? (
+                      <p className="rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
+                        {criteriaError}
+                      </p>
+                    ) : null}
+                    {summarySections.acceptanceCriteria.map((criterion, index) => {
+                      const disabled = savingCriterionIndex !== null;
+                      const effectiveChecked =
+                        index in optimisticChecks
+                          ? optimisticChecks[index]
+                          : criterion.checked;
+                      return (
+                        <label
+                          key={`${index}-${criterion.text}`}
+                          className="flex items-start gap-3 rounded-md border border-border/60 bg-background/80 px-3 py-3"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={effectiveChecked}
+                            disabled={disabled}
+                            onChange={(event) => toggleAcceptanceCriterion(index, event.target.checked)}
+                            className="mt-1 h-4 w-4 rounded border-border text-primary"
+                          />
+                          <span
+                            className="criterion-label text-sm leading-6"
+                            data-checked={effectiveChecked}
+                          >
+                            {criterion.text}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </SectionCard>
+              ) : null}
+              <SectionCard title="Ticket Summary">
+                <MarkdownRenderer
+                  content={summarySections.summaryBody}
+                  emptyState={
+                    summarySections.acceptanceCriteria.length > 0
+                      ? 'No additional summary markdown beyond the acceptance criteria.'
+                      : 'This ticket does not have summary markdown yet.'
+                  }
+                />
+              </SectionCard>
+            </div>
+          ),
+        };
+      }
+      if (spec.kind === 'chat') {
+        return { value: spec.value, label: spec.label, content: <ChatTab ticketId={ticket.id} /> };
+      }
+      if (spec.kind === 'template-file' && spec.file) {
+        return {
+          value: spec.value,
+          label: spec.label,
+          count: spec.count,
+          content: renderFileTab(spec.file),
+        };
+      }
+      if (spec.kind === 'activity') {
+        return {
+          value: spec.value,
+          label: spec.label,
+          count: events.length,
+          content: (
+            <div className="space-y-5">
+              <FactsPanel
+                customFacts={ticket.derived?.customFacts}
+                attestations={ticket.derived?.attestations}
+              />
+              <ActivityTimeline
+                events={events}
+                loading={eventsLoading}
+                error={eventsError}
+              />
+            </div>
+          ),
+        };
+      }
+      return {
+        value: spec.value,
+        label: spec.label,
+        count: spec.count,
+        content: <SessionActivityTimeline engagements={ticket.engagements} />,
+      };
+    });
+  }, [
+    ticket,
+    id,
+    summarySections,
+    criteriaError,
+    savingCriterionIndex,
+    optimisticChecks,
+    events,
+    eventsLoading,
+    eventsError,
+  ]);
+
   // Fresh server data is authoritative — drop any optimistic overlay so the
   // checkboxes reflect the canonical ticket body again.
   useEffect(() => {
@@ -606,242 +787,7 @@ export function TicketDetail() {
           <ContentTabs
             value={tab}
             onValueChange={(value) => setSearchParams({ tab: value })}
-            items={[
-              {
-                value: 'summary',
-                label: 'Summary',
-                content: (
-                  <div className="space-y-5">
-                    {summarySections.acceptanceCriteria.length > 0 ? (
-                      <SectionCard
-                        title="Acceptance Criteria"
-                        description="These checkboxes update the source ticket markdown."
-                      >
-                        <div className="space-y-3">
-                          {criteriaError ? (
-                            <p className="rounded-md border border-error-foreground/30 bg-error px-4 py-3 text-sm text-error-foreground">
-                              {criteriaError}
-                            </p>
-                          ) : null}
-                          {summarySections.acceptanceCriteria.map((criterion, index) => {
-                            const disabled = savingCriterionIndex !== null;
-                            const effectiveChecked =
-                              index in optimisticChecks
-                                ? optimisticChecks[index]
-                                : criterion.checked;
-                            return (
-                              <label
-                                key={`${index}-${criterion.text}`}
-                                className="flex items-start gap-3 rounded-md border border-border/60 bg-background/80 px-3 py-3"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={effectiveChecked}
-                                  disabled={disabled}
-                                  onChange={(event) => toggleAcceptanceCriterion(index, event.target.checked)}
-                                  className="mt-1 h-4 w-4 rounded border-border text-primary"
-                                />
-                                <span
-                                  className="criterion-label text-sm leading-6"
-                                  data-checked={effectiveChecked}
-                                >
-                                  {criterion.text}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </SectionCard>
-                    ) : null}
-
-                    <SectionCard title="Ticket Summary">
-                      <MarkdownRenderer
-                        content={summarySections.summaryBody}
-                        emptyState={
-                          summarySections.acceptanceCriteria.length > 0
-                            ? 'No additional summary markdown beyond the acceptance criteria.'
-                            : 'This ticket does not have summary markdown yet.'
-                        }
-                      />
-                    </SectionCard>
-                  </div>
-                ),
-              },
-              {
-                // Phase 2 keeps `summary` as the default tab; §5.7's "arguably
-                // the new default" is left for Brennen to call.
-                value: 'chat',
-                label: 'Chat',
-                content: <ChatTab ticketId={ticket.id} />,
-              },
-              {
-                value: 'plan',
-                label: 'Plan',
-                count: ticket.plan ? 1 : 0,
-                content: ticket.plan ? (
-                  <div className="space-y-5">
-                    <SectionCard
-                      title="Plan"
-                      description="Shows plan.md only. Versioned plans (plan-v2.md, ...) are not yet rendered here — open them from the filesystem."
-                      actions={
-                        <Link className="shell-action" to={ticketEditHref(id, 'plan')}>
-                          <NotebookPen className="h-4 w-4" />
-                          <span>Edit Plan</span>
-                        </Link>
-                      }
-                    >
-                      <div className="mb-4">
-                        <StatusBadge status={ticket.plan.status} />
-                      </div>
-                      <MarkdownRenderer content={ticket.plan.body} emptyState="No plan content yet." />
-                    </SectionCard>
-                  </div>
-                ) : (
-                  <EmptyState
-                    title="No plan yet"
-                    description="Plan files are optional and versioned. Run /plan-ticket to create plan.md (or plan-v2.md, ...)."
-                  />
-                ),
-              },
-              {
-                value: 'scratchpad',
-                label: 'Scratchpad',
-                count: ticket.scratchpad ? 1 : 0,
-                content: ticket.scratchpad ? (
-                  <SectionCard
-                    title="Scratchpad"
-                    actions={
-                      <Link className="shell-action" to={ticketEditHref(id, 'scratchpad')}>
-                        <NotebookPen className="h-4 w-4" />
-                        <span>Edit Scratchpad</span>
-                      </Link>
-                    }
-                  >
-                    <MarkdownRenderer content={ticket.scratchpad.body} emptyState="Scratchpad is empty." />
-                  </SectionCard>
-                ) : (
-                  <EmptyState
-                    title="No scratchpad yet"
-                    description="Scratchpad notes appear here when you use the Edit Scratchpad action."
-                  />
-                ),
-              },
-              {
-                value: 'handoff',
-                label: 'Handoff',
-                count: ticket.handoff?.handoffCount ?? 0,
-                content: (
-                  <div className="space-y-5">
-                    {ticket.handoff ? (
-                      <SectionCard>
-                        <MarkdownRenderer content={ticket.handoff.body} emptyState="No handoff history yet." />
-                      </SectionCard>
-                    ) : (
-                      <EmptyState
-                        title="No handoff log yet"
-                        description="Handoffs appear here when an agent runs /complete-ticket or you append one manually."
-                      />
-                    )}
-                  </div>
-                ),
-              },
-              {
-                value: 'progress',
-                label: 'Progress',
-                count: ticket.progress?.entryCount ?? 0,
-                content: (
-                  <div className="space-y-5">
-                    {ticket.progress && ticket.progress.entries.length > 0 ? (
-                      <SectionCard
-                        title="Progress"
-                        description="Reverse-chronological log of work done on this ticket. Agents append entries via progress.md."
-                      >
-                        <ol className="space-y-4">
-                          {ticket.progress.entries.map((entry, idx) => (
-                            <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
-                              <div className="text-xs font-mono text-muted-foreground">{entry.timestamp}</div>
-                              <MarkdownRenderer content={entry.body} />
-                            </li>
-                          ))}
-                        </ol>
-                      </SectionCard>
-                    ) : (
-                      <EmptyState
-                        title="No progress entries yet"
-                        description="Progress entries appear here as the agent appends them to progress.md."
-                      />
-                    )}
-                  </div>
-                ),
-              },
-              {
-                value: 'comments',
-                label: 'Comments',
-                count: ticket.comments?.entryCount ?? 0,
-                content: (
-                  <div className="space-y-5">
-                    {ticket.comments && ticket.comments.entries.length > 0 ? (
-                      <CommentsThread
-                        ticketId={id}
-                        entries={ticket.comments.entries}
-                      />
-                    ) : (
-                      <EmptyState
-                        title="No comments yet"
-                        description="Comments appear here when agents or humans post via `syntaur comment` or the dashboard."
-                      />
-                    )}
-                  </div>
-                ),
-              },
-              {
-                value: 'decisions',
-                label: 'Decisions',
-                count: ticket.decisionRecord?.decisionCount ?? 0,
-                content: (
-                  <div className="space-y-5">
-                    {ticket.decisionRecord ? (
-                      <SectionCard>
-                        <MarkdownRenderer content={ticket.decisionRecord.body} emptyState="No decision history yet." />
-                      </SectionCard>
-                    ) : (
-                      <EmptyState
-                        title="No decision record yet"
-                        description="Decision records appear here when you append one via the Append Decision action."
-                      />
-                    )}
-                  </div>
-                ),
-              },
-              {
-                value: 'activity',
-                label: 'Activity',
-                count: events.length,
-                content: (
-                  <div className="space-y-5">
-                    <FactsPanel
-                      customFacts={ticket.derived?.customFacts}
-                      attestations={ticket.derived?.attestations}
-                    />
-                    <ActivityTimeline
-                      events={events}
-                      loading={eventsLoading}
-                      error={eventsError}
-                    />
-                  </div>
-                ),
-              },
-              {
-                value: 'session-activity',
-                label: 'Session Activity',
-                count: ticket.engagements.length,
-                content: (
-                  <SessionActivityTimeline
-                    engagements={ticket.engagements}
-                  />
-                ),
-              },
-            ]}
+            items={tabItems}
           />
         </div>
 
@@ -852,7 +798,7 @@ export function TicketDetail() {
               <DetailRow label="Priority" value={ticket.priority} />
               {ticket.assignee && <DetailRow label="Assignee" value={ticket.assignee} />}
               {ticket.template && (
-                <DetailNodeRow label="Type">
+                <DetailNodeRow label="Template">
                   <TemplateChip template={ticket.template} compact />
                 </DetailNodeRow>
               )}

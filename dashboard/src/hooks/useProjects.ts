@@ -185,6 +185,32 @@ export interface EngagementInfo {
   endedAt: string | null;
 }
 
+export interface TicketLogEntryDetail {
+  timestamp: string;
+  type: string;
+  author: string | null;
+  firstLine: string;
+  body: string;
+}
+
+export interface TicketTemplateFileDetail {
+  path: string;
+  role: string;
+  writer: string;
+  description: string;
+  state: string;
+  exists: boolean;
+  createOn: string;
+  body: string | null;
+  logEntries?: TicketLogEntryDetail[];
+  planStatus?: string | null;
+}
+
+export interface TicketTemplateBlock {
+  id: string;
+  files: TicketTemplateFileDetail[];
+}
+
 export interface TicketDetail {
   id: string;
   projectSlug: string | null;
@@ -226,6 +252,7 @@ export interface TicketDetail {
   /** Full per-session stage-attribution history (oldest first); empty when the server's session DB is uninitialized. */
   engagements: EngagementInfo[];
   availableTransitions: TicketTransitionAction[];
+  templateBlock: TicketTemplateBlock;
   // ── derived-status v3 (server-materialized; may be absent on old servers) ──
   /** Cached phase dimension (null pre-migration). */
   phase?: string | null;

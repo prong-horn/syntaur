@@ -52,7 +52,9 @@ export const TICKET_FIELDS: FieldRegistry = {
   // ── core fields ──────────────────────────────────────────────────────────
   status: { kind: 'enum' },
   priority: { kind: 'ordinal', order: PRIORITY_ORDER },
-  type: { kind: 'enum' },
+  template: { kind: 'enum' },
+  /** @deprecated Use `template` — reads the same value for saved-view compat. */
+  type: { kind: 'enum', get: (i) => i['template'] },
   assignee: { kind: 'string', noneSentinel: true },
   project: { kind: 'string', noneSentinel: true },
   // Resolved lifecycle workflow (multi-workflow). Reads the effective

@@ -18,7 +18,7 @@ export interface TicketFilterItem {
   status: string;
   priority: string;
   assignee: string | null;
-  type?: string | null;
+  template?: string | null;
   tags?: string[];
   created?: string;
   updated: string;
@@ -34,7 +34,7 @@ export interface TicketFilterItem {
 export interface TicketFilterCriteria {
   status?: FilterValue;
   priority?: FilterValue;
-  type?: FilterValue;
+  template?: FilterValue;
   assignee?: FilterValue;
   project?: FilterValue;
   tags?: FilterValue;
@@ -118,7 +118,7 @@ export function filterTicket(
   if (item.archived === true && !includeArchived) return false;
   const statuses = toFilterValues(criteria.status);
   const priorities = toFilterValues(criteria.priority);
-  const types = toFilterValues(criteria.type);
+  const templates = toFilterValues(criteria.template);
   const assignees = toFilterValues(criteria.assignee);
   const projects = toFilterValues(criteria.project);
   const tags = toFilterValues(criteria.tags);
@@ -126,7 +126,7 @@ export function filterTicket(
 
   if (statuses.length && !statuses.includes(item.status)) return false;
   if (priorities.length && !priorities.includes(item.priority)) return false;
-  if (types.length && !types.includes(item.type ?? '')) return false;
+  if (templates.length && !templates.includes(item.template ?? '')) return false;
   if (activity === 'stale' && !isTicketStale(item.updated)) return false;
   if (activity === 'fresh' && isTicketStale(item.updated)) return false;
   if (assignees.length) {

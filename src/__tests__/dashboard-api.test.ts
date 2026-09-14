@@ -383,6 +383,25 @@ First entry.
     expect(result!.comments).toBeNull();
   });
 
+  it('includes the template block with manifest file metadata', async () => {
+    const { seedMissingBuiltins } = await import('../ticket-templates/builtins.js');
+    if (process.env.SYNTAUR_HOME) {
+      await seedMissingBuiltins(process.env.SYNTAUR_HOME);
+    }
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-ticket', ticketMd: TICKET_MD, planMd: PLAN_MD },
+    ]);
+    const result = await getTicketDetail(testDir, 'test-project', 'test-ticket');
+    expect(result).not.toBeNull();
+    expect(result!.templateBlock.id).toBe('feature');
+    expect(result!.templateBlock.files.some((f) => f.path === 'journal.md' && f.role === 'log')).toBe(
+      true,
+    );
+    expect(result!.templateBlock.files.some((f) => f.path === 'plan.md' && f.role === 'plan')).toBe(
+      true,
+    );
+  });
+
 });
 
 describe('listTicketsBoard id-slug folder support', () => {

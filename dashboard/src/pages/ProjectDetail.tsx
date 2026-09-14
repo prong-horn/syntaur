@@ -295,7 +295,7 @@ export function ProjectDetail() {
     filterTicket(ticket, {
       status: statusFilter,
       priority: priorityFilter,
-      type: typeFilter,
+      template: typeFilter,
       assignee: assigneeFilter,
       tags: tagsFilter,
       dateRange: minimizeDateRange(dateRange),

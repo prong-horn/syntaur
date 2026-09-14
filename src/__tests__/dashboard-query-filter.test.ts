@@ -35,7 +35,7 @@ function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
     slug: `slug-${idSeq}`,
     title: `Item ${idSeq}`,
     status: 'in_progress',
-    type: 'feature',
+    template: 'feature',
     priority: 'high',
     assignee: 'claude',
     depends_on: [],

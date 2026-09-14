@@ -97,7 +97,7 @@ interface Item {
   status: string;
   priority: string;
   assignee: string | null;
-  type?: string | null;
+  template?: string | null;
   tags?: string[];
   created?: string;
   title?: string;
@@ -110,7 +110,7 @@ function item(p: Partial<Item> = {}): Item {
     status: 'in_progress',
     priority: 'high',
     assignee: 'claude',
-    type: 'feature',
+    template: 'feature',
     updated: FRESH,
     projectSlug: 'alpha',
     ...p,
@@ -134,9 +134,9 @@ describe('filterTicket — multi-value membership', () => {
     expect(filterTicket(item({ status: 'in_progress', priority: 'critical' }), crit)).toBe(true);
     expect(filterTicket(item({ status: 'in_progress', priority: 'low' }), crit)).toBe(false);
   });
-  it('honors the type field (null type → "")', () => {
-    expect(filterTicket(item({ type: 'bug' }), { type: ['bug', 'feature'] })).toBe(true);
-    expect(filterTicket(item({ type: null }), { type: ['feature'] })).toBe(false);
+  it('honors the template field (null template → "")', () => {
+    expect(filterTicket(item({ template: 'bug' }), { template: ['bug', 'feature'] })).toBe(true);
+    expect(filterTicket(item({ template: null }), { template: ['feature'] })).toBe(false);
   });
   it('__unassigned__ matches null assignee inside an array', () => {
     expect(filterTicket(item({ assignee: null }), { assignee: ['__unassigned__', 'bob'] })).toBe(true);
