@@ -318,15 +318,15 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Ticket working files',
-        files: ['ticket.md', 'plan*.md (optional, versioned)', 'scratchpad.md'],
+        files: ['the files syntaur show lists'],
         description:
-          'These are agent-writable files. The dashboard lets you edit the source markdown while preserving unsupported frontmatter keys.',
+          'Run syntaur show on a ticket to see which files exist for its template. The dashboard edits source markdown for files the API exposes.',
       },
       {
         label: 'Append-only logs',
-        files: ['handoff.md', 'decision-record.md'],
+        files: ['the files syntaur show lists with log or append roles'],
         description:
-          'These logs preserve history. The dashboard appends new entries instead of rewriting previous ones.',
+          'Log and append-only files preserve history. The dashboard appends new entries instead of rewriting previous ones.',
       },
       {
         label: 'Derived files',
@@ -439,7 +439,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         title: 'Use the ticket workspace for execution',
-        detail: 'Keep the objective and acceptance criteria in ticket.md, implementation plans in optional versioned plan files (plan.md, plan-v2.md, ...), and transient notes in scratchpad.md.',
+        detail: 'Run syntaur show on the ticket and edit only the files it lists with writer agent; use the Commands line for CLI-mediated files.',
         href: '/projects',
       },
       {

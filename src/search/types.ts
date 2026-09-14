@@ -101,7 +101,7 @@ export interface SearchHit {
 export interface SearchQuery {
   query: string;
   project?: string;
-  type?: string[];
+  template?: string[];
   status?: string[];
   in?: FileKind[];
 }

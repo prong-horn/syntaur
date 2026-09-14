@@ -12,7 +12,7 @@ import {
 /** Parsed `syntaur search` options (commander populates these from the flags). */
 export interface SearchOptions {
   project?: string;
-  type?: string[];
+  template?: string[];
   status?: string[];
   /** Raw `--in` string; parsed to `FileKind[]` inside the command's try/catch. */
   in?: string;
@@ -65,7 +65,7 @@ export async function runSearch(query: string, options: SearchOptions): Promise<
     {
       query,
       project: options.project,
-      type: options.type,
+      template: options.template,
       status: options.status,
       in: inKinds,
     },
@@ -173,7 +173,7 @@ export const searchCommand = new Command('search')
   )
   .argument('<query>', 'Search query')
   .option('--project <slug>', 'Restrict to one project')
-  .option('--type <list>', 'Comma-separated ticket type filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
+  .option('--template <list>', 'Comma-separated ticket template filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
   .option('--status <list>', 'Comma-separated ticket status filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
   .option(
     '--in <fileKinds>',

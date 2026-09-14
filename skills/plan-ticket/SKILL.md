@@ -50,7 +50,7 @@ Read these files to understand the ticket:
 
 Per-project `agent.md` / `claude.md` were removed in protocol v2.0. Agent-level conventions now live at the repo root (`CLAUDE.md` / `AGENTS.md`) and in `~/.syntaur/playbooks/` (already loaded in Step 2).
 
-If the ticket has dependencies (`dependsOn` in frontmatter), read each dependency's `handoff.md` AND `decision-record.md` for integration context and upstream decisions.
+If the ticket has dependencies (`depends_on` in frontmatter), read each dependency's `handoff.md` AND `decision-record.md` for integration context and upstream decisions.
 
 ## Step 4: Explore Workspace (if set)
 

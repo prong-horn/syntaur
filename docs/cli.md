@@ -163,7 +163,7 @@ syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
 Two steps, recorded in the `v2-migrated` marker ledger:
 
 1. **`rename-ids`** — Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
-2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames `dependsOn` → `depends_on`; migrates `planApproval` → `plan:` block; drops `type`. Status mapping is deferred to `lifecycle-verbs`.
+2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`. Status mapping is deferred to `lifecycle-verbs`.
 
 Dry-run / apply transcript lines (representative):
 
@@ -299,7 +299,7 @@ syntaur timeline API-3 --project my-api --json --limit 10
 
 ## `syntaur migrate-events`
 
-One-time backfill that synthesizes audit events from existing `statusHistory` and `planApproval` fields already present in `ticket.md` files. Dry-run by default; pass `--apply` to write.
+One-time backfill that synthesizes audit events from existing `statusHistory` and legacy plan-approval frontmatter already present in `ticket.md` files. Dry-run by default; pass `--apply` to write.
 
 ```
 syntaur migrate-events [options]
@@ -348,7 +348,7 @@ syntaur search <query> [options]
 ### Options
 
 - `--project <slug>` — Restrict results to one project.
-- `--type <list>` — Comma-separated ticket type filter.
+- `--template <list>` — Comma-separated ticket template filter.
 - `--status <list>` — Comma-separated ticket status filter.
 - `--in <fileKinds>` — Comma-separated file-kind filter. Accepts singular or plural names (e.g. `--in comment,plans` or `--in comments,plan`).
 - `--all` — Include archived tickets and projects (excluded by default).

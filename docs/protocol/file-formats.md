@@ -168,7 +168,7 @@ The core unit of work and the **single source of truth** for ticket state. This 
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item. |
 | `depends_on` | array of strings | ticket ids | optional | `[]` | Ticket ids (`<PREFIX>-<n>`) this depends on. |
 | `links` | array of strings | ticket ids | optional | `[]` | Related ticket ids (non-blocking cross-references). |
-| `plan` | object | see sub-fields | optional | see below | Plan-role approval state. Replaces the deprecated `planApproval` block. |
+| `plan` | object | see sub-fields | optional | see below | Plan-role approval state. Replaces the deprecated v1 plan-approval block. |
 | `plan.file` | string or null | filename | optional | `null` | Active plan file (e.g. `plan.md`, `plan-v2.md`). |
 | `plan.approvedDigest` | string or null | content hash | optional | `null` | Digest of the approved plan revision. |
 | `plan.approvedAt` | string (RFC 3339) or null | RFC 3339 datetime | optional | `null` | When the plan was approved. |
@@ -1218,16 +1218,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
 | `integrations.codexPluginDir` | string or null | absolute path | optional | `null` | Override location of the Codex plugin directory. |
 | `integrations.codexMarketplacePath` | string or null | absolute path | optional | `null` | Override path to a Codex marketplace manifest. |
-| `types` | object or null | see below | optional | `null` (system defaults apply) | Ticket type taxonomy. |
-
-**`types` structure** (nested via dot-notation in frontmatter):
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `types.definitions` | array of `{id, label, icon?}` objects | Allowed type ids for the `type` field on `ticket.md`. |
-| `types.default` | string | Default type id used when none is specified on create. |
-
-Built-in defaults apply when `types` is absent: `feature`, `bug`, `refactor`, `research`, `chore`, with default `feature`. Doctor warns when a ticket's `type` is not in the configured definitions.
+The v1 `types` config block was removed in the templates protocol. Ticket manifests live under `~/.syntaur/templates/<id>/template.md`; per-project defaults use `defaultTemplate` in `project.md`.
 
 The `agents:` and `agentDiscovery:` blocks were REMOVED in v0.80 along with the
 terminal-launch stack they configured — Syntaur no longer opens a terminal for

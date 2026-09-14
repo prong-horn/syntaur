@@ -60,7 +60,7 @@ export function createContentSearchRouter(projectsDir: string): Router {
       }
 
       const project = asString(req.query.project);
-      const type = asCsv(req.query.type);
+      const template = asCsv(req.query.template);
       const status = asCsv(req.query.status);
 
       let inKinds: FileKind[] | undefined;
@@ -88,7 +88,7 @@ export function createContentSearchRouter(projectsDir: string): Router {
       const provider = resolveProvider();
       await provider.index(docs);
 
-      const searchQuery: SearchQuery = { query: q, project, type, status, in: inKinds };
+      const searchQuery: SearchQuery = { query: q, project, template, status, in: inKinds };
       const hits = await provider.query(searchQuery, limit);
 
       res.json({ hits });

@@ -74,9 +74,9 @@ If either command fails, report the error and stop.
 
 ## Step 4: Read Ticket Context and Backfill Workspace
 
-Read the full ticket file. Also read `comments.md` if present (inherited questions / notes). For each `dependsOn` entry, read the dependency's `handoff.md` AND `decision-record.md` so upstream decisions carry forward.
+Read the full ticket file. Also read `comments.md` if present (inherited questions / notes). For each `depends_on` entry, read the dependency's `handoff.md` AND `decision-record.md` so upstream decisions carry forward.
 
-From the ticket frontmatter extract: `title`, `workspace.repository`, `workspace.worktreePath`, `workspace.branch`, `dependsOn`, `priority`.
+From the ticket frontmatter extract: `title`, `workspace.repository`, `workspace.worktreePath`, `workspace.branch`, `depends_on`, `priority`.
 
 If `workspace.repository` and `workspace.worktreePath` are both null, set them to the current working directory. Write boundaries use this path, so it must never be null while an agent is writing code.
 

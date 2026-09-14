@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir, symlink, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -146,17 +146,17 @@ describe('installSkills', () => {
     }
   });
 
-  it('copies nested files (references/) for syntaur-protocol', async () => {
+  it('installs syntaur-protocol as a single SKILL.md (no references bundle)', async () => {
     await installSkills({
       target: 'claude',
       sourceDir: realSourceDir,
       targetDir,
     });
 
-    const references = join(targetDir, 'syntaur-protocol', 'references');
-    const files = await readdir(references);
-    expect(files).toContain('file-ownership.md');
-    expect(files).toContain('protocol-summary.md');
+    const skillPath = join(targetDir, 'syntaur-protocol', 'SKILL.md');
+    const content = await readFile(skillPath, 'utf-8');
+    expect(content).toContain('syntaur show');
+    await expect(access(join(targetDir, 'syntaur-protocol', 'references'))).rejects.toThrow();
   });
 
   it('discovers extra skills in the source dir beyond the pinned list', async () => {

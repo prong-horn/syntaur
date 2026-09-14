@@ -22,7 +22,7 @@ Expects arguments from the user:
 - `--project <slug>` (optional): the project to add the ticket to. When omitted, `syntaur new` allocates an id in `projects/scratch/` (`SCR-<n>`).
 - `--slug <slug>` (optional): override the auto-generated display slug (folder becomes `<ID>-<slug>`)
 - `--priority <level>` (optional): `low`, `medium` (default), `high`, or `critical`
-- `--type <type>` (optional): classification such as `feature`, `bug`, `refactor`, `research`, `chore`. Defaults to `feature`. When `~/.syntaur/config.md` defines `types.definitions`, the CLI validates against that list.
+- `-t, --template <id>` (optional): ticket template such as `feature`, `bug`, `spike`, or `quick`. Defaults to the project's `defaultTemplate` (usually `feature`).
 - `--depends-on <ids>` (optional): comma-separated list of ticket ids (`<PREFIX>-<n>`) this depends on
 - `--links <ids>` (optional): comma-separated linked ticket ids
 - `--dir <path>` (optional): override the default project directory
@@ -38,10 +38,10 @@ If there is no open engagement and no project flag, ask the user which project t
 Build the command from the parsed arguments:
 
 ```bash
-syntaur new "<title>" [--project <slug>] [--slug <slug>] [--priority <level>] [--type <type>] [--depends-on <ids>] [--links <ids>] [--dir <path>]
+syntaur new "<title>" [--project <slug>] [--slug <slug>] [--priority <level>] [-t|--template <id>] [--depends-on <ids>] [--links <ids>] [--dir <path>]
 ```
 
-If the command fails (e.g., project not found, slug collision, invalid type), report the error and suggest fixes.
+If the command fails (e.g., project not found, slug collision, unknown template), report the error and suggest fixes.
 
 ## Step 2: Read the Created Ticket
 
@@ -54,7 +54,7 @@ cat ~/.syntaur/projects/<project-slug>/tickets/<ID>-<slug>/ticket.md
 ## Step 3: Guide Next Steps
 
 Tell the user:
-- The ticket was created with its id (`<PREFIX>-<n>`), slug, priority, type, and location under `tickets/<ID>-<slug>/`.
+- The ticket was created with its id (`<PREFIX>-<n>`), slug, priority, template, and location under `tickets/<ID>-<slug>/`.
 - Files created: `ticket.md`, `progress.md`, `comments.md`, `scratchpad.md`, `handoff.md`, `decision-record.md`. **`plan.md` is NOT scaffolded** — plan files are optional and created on demand by the `plan-ticket` skill.
 - Remind the user: `progress.md` is where timestamped progress entries go (NOT `ticket.md`), and `comments.md` is CLI-mediated — write only via `syntaur comment <id> "body" --type question|note|feedback [--reply-to <id>]`.
 - Suggest editing `ticket.md` to fill in the objective, acceptance criteria, and context.

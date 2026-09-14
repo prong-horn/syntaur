@@ -199,7 +199,7 @@ syntaur search "stripe webhook" --project my-api --in plans,handoff
 syntaur search "authentication flow" --json --limit 5
 ```
 
-Key flags: `--project <slug>`, `--type <list>`, `--status <list>`, `--in <fileKinds>` (singular or plural names accepted), `--all`, `--limit <n>` (default 20), `--semantic`, `--json`.
+Key flags: `--project <slug>`, `--template <list>`, `--status <list>`, `--in <fileKinds>` (singular or plural names accepted), `--all`, `--limit <n>` (default 20), `--semantic`, `--json`.
 
 The dashboard command palette runs the same search and deep-links results to the matching ticket's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag activates the semantic provider when available; v1 falls back to full-text search via fuse.js.
 
@@ -242,7 +242,7 @@ The dashboard **Needs me** page is the live reply queue — tiered order (live c
 
 ### Migrate events (one-time backfill)
 
-`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and `planApproval` data already in your `ticket.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.
+`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and legacy plan-approval frontmatter already in your `ticket.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.
 
 ```bash
 # Preview the backfill (dry-run)

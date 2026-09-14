@@ -320,7 +320,7 @@ The current protocol version is **`"2.0"`**.
 
 ### Changes in 2.0
 
-- **`project` and `type` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone) and `type: string | null` provides a free-form classification validated against `config.md` `types.definitions` when present.
+- **`project` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone). Ticket classification moved to `template:` (see Templates section).
 - **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `ticket.md`. See sections 3 and 4.
 - **Standalone tickets** at `~/.syntaur/tickets/<uuid>/` — tickets that don't belong to any project. Folder is named by UUID.
 - **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, now computed from `comments.md` (question entries with `resolved !== true`).

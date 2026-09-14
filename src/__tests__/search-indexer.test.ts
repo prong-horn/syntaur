@@ -191,9 +191,9 @@ describe('FuseProvider.query', () => {
     expect(hits.some((h) => h.projectSlug === 'zeta')).toBe(false);
   });
 
-  it('respects the type[] filter', async () => {
+  it('respects the template[] filter', async () => {
     const p = await provider();
-    const hits = p.query({ query: 'task', type: ['chore'] }, 20);
+    const hits = p.query({ query: 'task', template: ['chore'] }, 20);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.every((h) => h.ticketId !== null)).toBe(true);
     for (const h of hits) {

@@ -33,7 +33,7 @@ async function seedHome(root: string): Promise<void> {
   await mkdir(aDir, { recursive: true });
   await writeFile(
     join(aDir, 'ticket.md'),
-    `---\nid: WID-1\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget ticket body.\n`,
+    `---\nid: WID-1\nslug: build-widget\ntitle: Build Widget\ntemplate: feature\nstatus: in_progress\n---\n# Build Widget\n\nThe widget ticket body.\n`,
   );
   await writeFile(
     join(aDir, 'comments.md'),
@@ -50,7 +50,7 @@ async function seedHome(root: string): Promise<void> {
   await mkdir(oDir, { recursive: true });
   await writeFile(
     join(oDir, 'ticket.md'),
-    `---\nid: WID-2\nslug: other-widget\ntitle: Other Widget\ntype: chore\nstatus: pending\n---\n# Other Widget\n\nAnother widget mention.\n`,
+    `---\nid: WID-2\nslug: other-widget\ntitle: Other Widget\ntemplate: chore\nstatus: pending\n---\n# Other Widget\n\nAnother widget mention.\n`,
   );
 }
 
