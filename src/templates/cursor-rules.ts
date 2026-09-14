@@ -121,12 +121,11 @@ Follow the rules in each playbook. They take precedence over default conventions
 
 ## Conventions
 
-- Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
+- Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`template\` names the ticket template.
 - Ticket folders are \`<ID>-<slug>\`. Slugs are lowercase, hyphen-separated and may be renamed with \`syntaur rename\`.
 - \`depends_on\` and \`links\` hold ticket ids, not slugs.
-- Always read \`project.md\` at the project level (when project-nested) before starting work.
-- Append timestamped entries to \`progress.md\` (never to \`ticket.md\`).
-- Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly.
+- Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow Stage and Next.
+- Edit only \`ticket.md\` and files listed by \`show\` with writer \`agent\`; use the Commands line for CLI-mediated files.
 - Commit frequently with messages referencing the ticket slug.
 `;
 }
@@ -145,28 +144,12 @@ alwaysApply: true
 - **Project directory:** ${params.projectDir}
 - **Ticket directory:** ${params.ticketDir}
 
-## Reading Order
+## Working the ticket
 
-Before starting work, read these files in order:
-1. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested tickets only)
-2. \`${params.ticketDir}/ticket.md\` -- your ticket details, acceptance criteria, current status. Frontmatter includes \`id: <PREFIX>-<n>\`, \`project: <slug>\`, and \`type: <classification> | null\`.
-3. any \`${params.ticketDir}/plan*.md\` files (may be 0, 1, or many — pick the newest version)
-4. \`${params.ticketDir}/progress.md\` -- reverse-chron progress log (if present)
-5. \`${params.ticketDir}/comments.md\` -- threaded questions/notes/feedback (if present)
-6. \`${params.ticketDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this ticket off)
+Run \`syntaur show\` (or \`syntaur show <id> --project ${params.projectSlug}\`) at the start of work and after every lifecycle verb. Follow **Stage** and **Next**.
 
-## Your Writable Files
+Edit only \`ticket.md\` and the files \`show\` lists with writer \`agent\`. Use the **Commands** line for CLI-mediated files. Never edit files \`show\` does not list.
 
-You may write directly to these files inside your ticket folder:
-- \`${params.ticketDir}/ticket.md\`
-- \`${params.ticketDir}/plan*.md\` (0 or more versioned plan files, e.g., \`plan.md\`, \`plan-v2.md\`)
-- \`${params.ticketDir}/progress.md\` (append timestamped entries, newest first)
-- \`${params.ticketDir}/scratchpad.md\`
-- \`${params.ticketDir}/handoff.md\`
-- \`${params.ticketDir}/decision-record.md\`
-
-Do NOT edit \`${params.ticketDir}/comments.md\` directly — use \`syntaur comment\`. Do NOT edit other tickets' files.
-
-And source code files in your workspace. Read the \`workspace\` field from your ticket's frontmatter to determine the exact boundary. If not set, the current working directory is your workspace.
+Read \`${params.projectDir}/project.md\` when you need project context. Workspace source code stays inside the ticket's configured worktree (or the current working directory when unset).
 `;
 }

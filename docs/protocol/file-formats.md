@@ -156,7 +156,7 @@ The core unit of work and the **single source of truth** for ticket state. This 
 | `slug` | string | lowercase, hyphen-separated | required | — | Human-readable identifier. Forms the suffix of the folder name (`<ID>-<slug>`). Rename with `syntaur rename`. |
 | `title` | string | any | required | — | Display title for the ticket. |
 | `project` | string | project slug | required | — | The containing project's slug (e.g. `build-auth-system` or `scratch`). |
-| `type` | string or null | see `config.md` `types.definitions` | optional | `null` | Free-form classification (e.g., `feature`, `bug`, `chore`). Validated against `config.md` when `types.definitions` is present. |
+| `template` | string | installed template id | required | — | Ticket template (e.g. `feature`, `bug`, `legacy`). Replaces the deprecated `type` field. |
 | `status` | string (enum) | `pending`, `in_progress`, `blocked`, `review`, `completed`, `failed` | required | — | Current state of the ticket. See dependency semantics below. |
 | `priority` | string (enum) | `low`, `medium`, `high`, `critical` | required | — | Priority level. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the ticket was created. |
@@ -166,8 +166,13 @@ The core unit of work and the **single source of truth** for ticket state. This 
 | `externalIds[].system` | string | any | required (per entry) | — | Name of the external system. |
 | `externalIds[].id` | string | any | required (per entry) | — | Identifier in the external system. |
 | `externalIds[].url` | string or null | URL | optional (per entry) | `null` | Direct link to the item. |
-| `dependsOn` | array of strings | ticket ids | optional | `[]` | Ticket ids (`<PREFIX>-<n>`) this depends on. |
+| `depends_on` | array of strings | ticket ids | optional | `[]` | Ticket ids (`<PREFIX>-<n>`) this depends on. |
 | `links` | array of strings | ticket ids | optional | `[]` | Related ticket ids (non-blocking cross-references). |
+| `plan` | object | see sub-fields | optional | see below | Plan-role approval state. Replaces the deprecated `planApproval` block. |
+| `plan.file` | string or null | filename | optional | `null` | Active plan file (e.g. `plan.md`, `plan-v2.md`). |
+| `plan.approvedDigest` | string or null | content hash | optional | `null` | Digest of the approved plan revision. |
+| `plan.approvedAt` | string (RFC 3339) or null | RFC 3339 datetime | optional | `null` | When the plan was approved. |
+| `plan.approvedBy` | string or null | agent name or `"human"` | optional | `null` | Who approved the plan. |
 | `blockedReason` | string or null | any | conditional | `null` | **Required** when `status` is `blocked`. Explains the manual/runtime block. |
 | `workspace` | object | see sub-fields | optional | `null` | Code workspace information. |
 | `workspace.repository` | string or null | repo path or URL | optional | `null` | The repository this ticket works in. |
@@ -180,7 +185,7 @@ The core unit of work and the **single source of truth** for ticket state. This 
 
 ### Dependency Semantics
 
-- **`pending` with unmet `dependsOn`:** The ticket is waiting for its dependencies to reach `completed` status. The lifecycle engine prevents it from transitioning to `in_progress`. This is the normal state for tickets whose prerequisites are not yet done.
+- **`pending` with unmet `depends_on`:** The ticket is waiting for its dependencies to reach `completed` status. The lifecycle engine prevents it from transitioning to `in_progress`. This is the normal state for tickets whose prerequisites are not yet done.
 - **`blocked`:** A manual or runtime block unrelated to dependencies. The agent encountered an obstacle (e.g., waiting for human input, external service down, unclear requirements). `blockedReason` is **required** when status is `blocked`.
 - Key distinction: `pending` with dependencies = structural wait (automated). `blocked` = runtime obstacle (requires human intervention).
 
@@ -207,7 +212,7 @@ id: BAS-2
 slug: implement-jwt-middleware
 title: Implement JWT Authentication Middleware
 project: build-auth-system
-type: feature
+template: feature
 status: in_progress
 priority: high
 created: "2026-03-16T10:00:00Z"
@@ -217,9 +222,14 @@ externalIds:
   - system: jira
     id: AUTH-44
     url: https://mycompany.atlassian.net/browse/AUTH-44
-dependsOn:
+depends_on:
   - BAS-1
 links: []
+plan:
+  file: plan.md
+  approvedDigest: sha256:abc123
+  approvedAt: "2026-03-17T16:00:00Z"
+  approvedBy: human
 blockedReason: null
 workspace:
   repository: /Users/brennen/projects/myapp
@@ -265,9 +275,11 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 
 ---
 
-## 4. plan\*.md (`plan.md`, `plan-v2.md`, ...)
+## 4. plan\*.md (`plan.md`, `plan-v2.md`, ...) — legacy-template
 
 **Ownership:** Agent-writable
+
+> **Note:** This section describes the v1 sidecar layout preserved by the `legacy` template. Modern templates (e.g. `feature`) declare plan files in `template.md` with the same role semantics; use `syntaur show` for the authoritative file list on a given ticket.
 
 Zero or more implementation plan files per ticket. Plans are **not scaffolded** — they are created on demand by `/plan-ticket`.
 
@@ -332,9 +344,11 @@ Follow the schema from design-auth-schema for key storage.
 
 ---
 
-## 5. scratchpad.md
+## 5. scratchpad.md — legacy-template
 
 **Ownership:** Agent-writable
+
+> **Note:** Preserved by the `legacy` template. Other templates may omit scratchpad or declare a different notes file in `template.md`.
 
 Unstructured working memory for the agent. The agent uses this as scratch space during work. No required body format -- this is the agent's private workspace within the ticket. Created as an empty template by scaffolding, optional until first use.
 
@@ -378,9 +392,11 @@ Refresh token: opaque string, stored as SHA-256 hash in DB.
 
 ---
 
-## 6. handoff.md
+## 6. handoff.md — legacy-template
 
 **Ownership:** Agent-writable, append-only
+
+> **Note:** Preserved by the `legacy` template. Modern templates may route handoffs through a unified log file (`journal.md`) instead.
 
 The **ticket-level cross-ticket outbound** doc. Written at completion (via the `complete-ticket` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
 
@@ -445,9 +461,11 @@ rationale. The connection pooling findings are documented in the project memory
 
 ---
 
-## 7. decision-record.md
+## 7. decision-record.md — legacy-template
 
 **Ownership:** Agent-writable, append-only
+
+> **Note:** Preserved by the `legacy` template. Modern templates may record decisions in a unified log file instead.
 
 A structured log of decisions made during the ticket. Each decision is a numbered entry with required fields. The `decisionCount` in frontmatter enables indexing without body parsing. Created as an empty template by scaffolding, optional until first use.
 
@@ -507,9 +525,11 @@ since only the public key needs to be distributed.
 
 ---
 
-## 8. progress.md
+## 8. progress.md — legacy-template
 
 **Ownership:** Agent-writable, append-only
+
+> **Note:** The `legacy` template uses `progress.md` as its log role. Modern templates use `journal.md` (or another path declared in `template.md`). `syntaur progress log` writes to whichever log role the ticket's template declares.
 
 A reverse-chronological log of work the agent has done on the ticket. This replaces the old `## Progress` body section that used to live inside `ticket.md`. The agent writes entries directly (no CLI mediation). Created as an empty template by scaffolding, optional until first use.
 
@@ -551,9 +571,11 @@ worktree and branch. Reviewed the auth schema from the dependency ticket.
 
 ---
 
-## 9. comments.md
+## 9. comments.md — legacy-template
 
 **Ownership:** CLI-mediated shared-writable (humans and other agents append via `syntaur comment`)
+
+> **Note:** Preserved by the `legacy` template. Modern templates may route questions and feedback through a unified log file or chat instead.
 
 A threaded log of questions, notes, and feedback on the ticket. This replaces the old `## Questions & Answers` body section that used to live inside `ticket.md`. Comments may have a type (`question`, `note`, `feedback`), may reply to another comment, and questions carry a `resolved` flag.
 
@@ -1108,6 +1130,72 @@ especially the JWT middleware refresh endpoint which will see high concurrency.
 
 ---
 
+
+## 17. template.md
+
+**Ownership:** Human-authored (built-ins seeded from the package; never overwritten on upgrade unless reset)
+
+Each installed template is a directory under `~/.syntaur/templates/<id>/` with a `template.md` manifest. The manifest's YAML frontmatter declares stages, file roles, gates, and defaults; the markdown body is human notes (often a single line for built-ins).
+
+### Frontmatter Schema
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `id` | string | required | Template id. Must match the directory name. |
+| `version` | number | required | Manifest schema version (currently `1`). |
+| `builtin` | string | optional | Shipped stamp (e.g. `feature@1`). Present on built-ins; removed when copied to a custom template. |
+| `description` | string | required | One-line summary for `syntaur template list`. |
+| `whenToUse` | string | required | Guidance for humans choosing a template. |
+| `workspace` | enum | required | `required`, `optional`, or `none`. |
+| `defaultPriority` | enum | required | Default priority for `syntaur new` (`low` \| `medium` \| `high` \| `critical`). |
+| `playbooks` | string[] | optional | Playbook slugs injected at grab/plan time. |
+| `stages` | array | required | Fixed stage ids (`backlog`, `planning`, `ready`, `in_progress`, `review`, `done`) with `label`, `instructions`, and optional `agent`/`reviewer`/`auto`. |
+| `files` | array | required | Declared ticket files. Each entry has `path`, `writer` (`agent` \| `cli` \| `human`), `createOn`, `description`, and optional `role` (`plan` \| `log` \| `notes` \| `deliverable`) and `entryTypes` (for log roles). |
+| `gates` | object | required | Gate ids required per lifecycle verb (`plan`, `approve`, `start`, `review`, `done`). |
+
+### Rules
+
+- **Built-ins:** `feature`, `bug`, `spike`, `quick`, `legacy`. Seeded by `syntaur init` and the `migrate v2` templates step. `syntaur template reset <id>` restores shipped files; `syntaur template reset --missing` seeds only absent built-ins.
+- **Custom templates:** `syntaur template new <id> --from <builtin>` copies a built-in and strips the `builtin:` stamp.
+- **Validation:** `syntaur template check [id]` enforces manifest rules (stage ids, file paths, gate references). `syntaur template check --builtins` reports drift (`current`, `modified`, `outdated`, `missing`).
+- **Ticket binding:** `ticket.md` `template:` names the manifest. `syntaur show` and chat standing context render from the resolved manifest — agents edit only files `show` lists with `writer: agent`.
+- **Do not use `legacy` for new tickets.** It exists so migrated v1 tickets keep their sidecar files without rewriting.
+
+### Example (abbreviated)
+
+```markdown
+---
+id: feature
+version: 1
+builtin: feature@1
+description: Full development cycle with plan approval, workspace, implementation, and review.
+whenToUse: Default for feature work and multi-step implementation.
+workspace: required
+defaultPriority: medium
+stages:
+  - id: backlog
+    label: Backlog
+    instructions: Ticket is queued. Run syntaur plan when ready to write the plan.
+files:
+  - path: plan.md
+    role: plan
+    writer: agent
+    createOn: planning
+    description: Implementation plan; requires human approval before start.
+  - path: journal.md
+    role: log
+    writer: cli
+    createOn: ticket-creation
+    description: Append-only log for progress, decisions, handoffs, and reviews.
+    entryTypes: [progress, decision, handoff, note, question, answer, review]
+gates:
+  approve: [plan-exists]
+  start: [plan-approved, deps-done, workspace-set]
+  done: [criteria-checked, handoff-logged, review-clean]
+---
+```
+
+---
 
 ## 19. config.md
 

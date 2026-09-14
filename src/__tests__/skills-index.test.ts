@@ -81,35 +81,22 @@ describe('build-skills-index generator', () => {
     expect(new Set(names).size).toBe(names.length); // no dupes
   });
 
-  it('classifies syntaur-protocol (multi-file) as archive and single-file skills as skill-md', async () => {
+  it('classifies syntaur-protocol as skill-md after references removal', async () => {
     const protocol = index.skills.find((s) => s.name === 'syntaur-protocol');
-    expect(protocol?.type).toBe('archive');
-    // Spot-check a couple of single-file skills.
+    expect(protocol?.type).toBe('skill-md');
     for (const name of ['log-progress', 'grab-ticket']) {
       expect(index.skills.find((s) => s.name === name)?.type).toBe('skill-md');
     }
   });
 
-  it('regenerates deterministically (byte-identical index.json + archive)', async () => {
+  it('regenerates deterministically (byte-identical index.json)', async () => {
     const a = await mkdtemp(join(tmpdir(), 'syntaur-skills-det-a-'));
     const b = await mkdtemp(join(tmpdir(), 'syntaur-skills-det-b-'));
     await buildSkillsIndex({ skillsDir: SKILLS_DIR, outDir: a });
     await buildSkillsIndex({ skillsDir: SKILLS_DIR, outDir: b });
     expect(await readFile(join(a, 'index.json'))).toEqual(await readFile(join(b, 'index.json')));
-    expect(await readFile(join(a, 'syntaur-protocol.tar.gz'))).toEqual(
-      await readFile(join(b, 'syntaur-protocol.tar.gz')),
-    );
     await rm(a, { recursive: true, force: true });
     await rm(b, { recursive: true, force: true });
-  });
-
-  it('produces a standard tar.gz with a root SKILL.md extractable by system tar', async () => {
-    const extractDir = await mkdtemp(join(tmpdir(), 'syntaur-skills-extract-'));
-    execFileSync('tar', ['-xzf', join(outDir, 'syntaur-protocol.tar.gz'), '-C', extractDir]);
-    const top = await readdir(extractDir);
-    expect(top).toContain('SKILL.md'); // root SKILL.md is required by skills.sh
-    expect(top).toContain('references');
-    await rm(extractDir, { recursive: true, force: true });
   });
 });
 

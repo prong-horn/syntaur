@@ -73,7 +73,7 @@ If you're already globally installed and later run a newer `npx syntaur@latest`,
 
 The first time you run `syntaur` or `npx syntaur@latest`, it walks through:
 
-1. Initialize `~/.syntaur/` (config, SQLite session registry, playbooks dir)
+1. Initialize `~/.syntaur/` (config, SQLite session registry, playbooks dir, built-in ticket templates under `templates/`)
 2. Offer to install the Claude Code plugin (copies vendored protocol skills into `~/.claude/skills/` too)
 3. Offer to install the Codex plugin (copies vendored protocol skills into `~/.codex/skills/` too)
 4. Ask where those plugins should live, with sensible defaults based on your machine
@@ -102,7 +102,7 @@ A full install (CLI + both plugins + skills) touches the following locations:
 
 | Location | What lives there | Managed by |
 |---|---|---|
-| `~/.syntaur/` | Your data: `projects/<slug>/tickets/<ID>-<slug>/`, `playbooks/`, `config.md`, `syntaur.db`. One-off tickets live in `projects/scratch/` (prefix `SCR`). Run `syntaur migrate v2` to upgrade from the legacy standalone `tickets/` tree. | You (via CLI). Never deleted by `syntaur uninstall` unless `--all` is passed. |
+| `~/.syntaur/` | Your data: `projects/<slug>/tickets/<ID>-<slug>/`, `templates/` (five built-in ticket templates), `playbooks/`, `config.md`, `syntaur.db`. One-off tickets live in `projects/scratch/` (prefix `SCR`). Run `syntaur migrate v2` to upgrade from the legacy standalone `tickets/` tree. | You (via CLI). Never deleted by `syntaur uninstall` unless `--all` is passed. |
 | `~/.syntaur/npx-install.json` | Remembers your answer to the "install globally?" prompt | CLI |
 | `~/.npm/_npx/<hash>/` | npx-cached copy of the `syntaur` package | npm |
 | `$(npm root -g)/syntaur/` | Globally-installed copy of the `syntaur` package | `npm install -g` |
@@ -154,6 +154,11 @@ dashboard server speaks the Agent Client Protocol to a `claude-agent-acp` or
 replies, tool cards with diffs and command output, a plan checklist, inline
 permission prompts, and per-turn cost. Several agents can share one chat and
 hand work to each other by `@mention`.
+
+Before coding (or from a terminal), run `syntaur show <id>` — it is the agent
+guide: stage instructions, which files to edit, the **Next** lifecycle step, and
+CLI commands. Chat injects the full rendered `show` text as standing context on
+the first turn.
 
 ```bash
 syntaur dashboard

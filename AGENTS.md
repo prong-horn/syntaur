@@ -24,6 +24,10 @@ Three install paths, one source (`<repo>/skills/`):
 
 When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
 
+## Ticket files
+
+Do not hardcode ticket sidecar filenames (`progress.md`, `journal.md`, `plan.md`, etc.). Run `syntaur show <id>` (or `syntaur show` with an open engagement) and follow the **Files**, **Stage**, and **Next** lines — edit only paths listed with `writer: agent`.
+
 ## Codex + Syntaur
 
 - When the task is about Syntaur missions, tickets, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-ticket`, `grab-ticket`, `plan-ticket`, `complete-ticket`, `track-session`.

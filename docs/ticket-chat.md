@@ -22,8 +22,8 @@ daemon — was deleted in v0.80.
 2. On the first message the server spawns the adapter (`claude-agent-acp`,
    `codex-acp`, or `cursor-agent acp`) with `cwd` set to the ticket's worktree,
    runs `initialize` and `session/new`, and sends the **standing context** — the agent definition's
-   system prompt, plus `ticket.md`, the current plan and the newest entries
-   of `progress.md` as embedded file attachments.
+   system prompt, plus the full rendered `syntaur show` text for the ticket,
+   then `ticket.md` and the current plan file as embedded attachments when they exist.
 3. Later messages carry only your text; the standing context is sent once per
    agent session.
 4. Everything the agent streams back is appended to

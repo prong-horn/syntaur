@@ -88,26 +88,12 @@ describe('renderCursorTicket', () => {
     expect(out).toContain(TEST_PARAMS.ticketDir);
   });
 
-  it('contains reading order', () => {
+  it('directs agents to syntaur show for file guidance', () => {
     const out = renderCursorTicket(TEST_PARAMS);
-    expect(out).toContain('project.md');
-    expect(out).toContain('ticket.md');
-    expect(out).toContain('plan*.md');
-    expect(out).toContain('progress.md');
-    expect(out).toContain('comments.md');
-    expect(out).toContain('handoff.md');
-  });
-
-  it('lists writable files', () => {
-    const out = renderCursorTicket(TEST_PARAMS);
-    expect(out).toContain('scratchpad.md');
-    expect(out).toContain('decision-record.md');
-    expect(out).toContain('progress.md');
-  });
-
-  it('flags comments.md as CLI-mediated', () => {
-    const out = renderCursorTicket(TEST_PARAMS);
-    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur show');
+    expect(out).toContain('Stage');
+    expect(out).toContain('Commands');
+    expect(out).toContain('writer `agent`');
   });
 });
 
@@ -180,15 +166,11 @@ describe('renderCodexAgents', () => {
     );
   });
 
-  it('includes the manifest in reading order', () => {
+  it('directs agents to syntaur show for file guidance', () => {
     const out = renderCodexAgents(TEST_PARAMS);
-    expect(out).toContain(`${TEST_PARAMS.projectDir}/manifest.md`);
-  });
-
-  it('references v2.0 protocol files', () => {
-    const out = renderCodexAgents(TEST_PARAMS);
-    expect(out).toContain('progress.md');
-    expect(out).toContain('comments.md');
+    expect(out).toContain('syntaur show');
+    expect(out).toContain('Stage');
+    expect(out).toContain('Commands');
   });
 
   it('documents scratch project and id-prefixed folders', () => {
@@ -198,9 +180,9 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('no standalone');
   });
 
-  it('mentions --type flag for new', () => {
+  it('mentions template in conventions', () => {
     const out = renderCodexAgents(TEST_PARAMS);
-    expect(out).toContain('--type');
+    expect(out).toContain('`template`');
   });
 });
 
@@ -229,12 +211,11 @@ describe('renderOpenCodeConfig', () => {
     expect(out).toContain(TEST_PARAMS.projectDir);
   });
 
-  it('references v2.0 protocol files and CLIs', () => {
+  it('references syntaur show and comment CLI', () => {
     const out = renderOpenCodeConfig({
       projectDir: TEST_PARAMS.projectDir,
     });
-    expect(out).toContain('progress.md');
-    expect(out).toContain('comments.md');
+    expect(out).toContain('syntaur show');
     expect(out).toContain('syntaur comment');
   });
 

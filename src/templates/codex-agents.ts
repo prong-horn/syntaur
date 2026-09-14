@@ -38,16 +38,11 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 
 If the plugin is unavailable, follow the same workflow manually with the \`syntaur\` CLI and keep the protocol files current yourself.
 
-## Reading Order
+## Working the ticket
 
-Before starting work, read these files in order:
-1. \`${params.projectDir}/manifest.md\` -- root navigation entry point (project-nested tickets only)
-2. \`${params.projectDir}/project.md\` -- project overview and goals (project-nested tickets only)
-3. \`${params.ticketDir}/ticket.md\` -- your ticket details, acceptance criteria, current status. Frontmatter includes \`id: <PREFIX>-<n>\`, \`project: <slug>\`, and \`type: <classification> | null\`.
-4. any \`${params.ticketDir}/plan*.md\` files (may be 0, 1, or many — pick the newest version)
-5. \`${params.ticketDir}/progress.md\` -- reverse-chron progress log (if present)
-6. \`${params.ticketDir}/comments.md\` -- threaded questions/notes/feedback (if present)
-7. \`${params.ticketDir}/handoff.md\` -- cross-ticket outbound history (entries from prior agents/humans handing this ticket off)
+Run \`syntaur show\` (or \`syntaur show <id> --project ${params.projectSlug}\`) at the start of work and after every lifecycle verb. Follow **Stage** and **Next**.
+
+Edit only \`ticket.md\` and files \`show\` lists with writer \`agent\`. Use the **Commands** line for CLI-mediated files. Never edit files \`show\` does not list.
 
 ## Context File
 
@@ -162,11 +157,11 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 
 ## Conventions
 
-- Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
+- Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`template\` names the ticket template.
 - Ticket folders are \`<ID>-<slug>\`. Slugs are lowercase, hyphen-separated and may be renamed with \`syntaur rename\`.
 - \`depends_on\` and \`links\` hold ticket ids, not slugs.
-- Always read \`project.md\` at the project level (when project-nested) before starting work.
-- Keep \`ticket.md\` acceptance criteria updated as work lands; append timestamped entries to \`progress.md\` (never to \`ticket.md\`).
+- Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow Stage and Next.
+- Keep \`ticket.md\` acceptance criteria updated as work lands; use the Commands line from \`show\` for log and comment writes.
 - Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-ticket\`) at the cross-ticket boundary.
 - When requirements shift, write a new versioned plan file instead of rewriting the old one.
 - Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).

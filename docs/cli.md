@@ -78,9 +78,11 @@ syntaur project list
 Create a ticket and allocate the next `<PREFIX>-<n>` id from the target project's counter. Defaults to the **scratch** project (`projects/scratch/`, prefix `SCR`) when `--project` is omitted.
 
 ```
-syntaur new <title> [--project <slug>] [--slug <slug>] [--type <type>] \
+syntaur new <title> [--project <slug>] [--slug <slug>] [-t, --template <id>] \
   [--priority <level>] [--depends-on <ids>] [--links <ids>] [--dir <path>]
 ```
+
+`-t, --template` selects the ticket template (defaults to the project's `defaultTemplate`, usually `feature`). Scaffolds template-declared files (`plan.md`, `journal.md`, etc.) per the manifest.
 
 `--depends-on` and `--links` take comma-separated ticket ids (e.g. `SCR-1,BAS-2`). The ticket folder is created as `tickets/<ID>-<slug>/`.
 
@@ -106,6 +108,50 @@ syntaur rename <id> <new-slug> [--dir <path>]
 syntaur rename BAS-2 implement-jwt-auth
 ```
 
+## `syntaur show [ticket]`
+
+Render the agent guide for a ticket — objective, acceptance, workspace, dependencies, declared files with roles and state, log tail, stage instructions, **Next**, and **Commands**. Defaults to the session's open engagement when no ticket id is given.
+
+```
+syntaur show [ticket] [--project <slug>] [--json] [--log] [-t, --type <type>]
+```
+
+- `--json` — emit the structured show model.
+- `--log` — print log entries only (falls back to chat notes when the template has no log role).
+- `-t, --type` — filter log entries by entry type (with `--log`).
+
+Chat standing context and adapter rules use this rendered text (not a hardcoded file list). Run at the start of work and after every lifecycle verb.
+
+### Examples
+
+```bash
+syntaur show BAS-2
+syntaur show BAS-2 --json
+syntaur show BAS-2 --log -t progress
+```
+
+## `syntaur template`
+
+Manage ticket template manifests under `~/.syntaur/templates/`.
+
+```
+syntaur template list [--json]
+syntaur template new <id> --from <builtin>
+syntaur template check [id] [--builtins] [--json]
+syntaur template reset <builtin-id>
+syntaur template reset --missing
+```
+
+Built-ins: `feature`, `bug`, `spike`, `quick`, `legacy`. `list` shows drift status for built-ins. `new` copies a built-in and strips the `builtin:` stamp. `check --builtins` reports `current` / `modified` / `outdated` / `missing`. `reset` restores shipped files for one built-in; `--missing` seeds only absent built-ins.
+
+## `syntaur retemplate <ticket> <template>`
+
+Switch a ticket to another template and scaffold any missing declared files. Updates `template:` in `ticket.md`, resets the `plan:` block when a new plan file is written, and records a `retemplated` audit event. Does not delete existing files.
+
+```
+syntaur retemplate <ticket> <template> [--project <slug>]
+```
+
 ## `syntaur migrate v2`
 
 One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dry-run by default; pass `--apply` to write. Creates a `.bak-v2-*` backup before applying.
@@ -114,15 +160,23 @@ One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dr
 syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
 ```
 
-What it does:
+Two steps, recorded in the `v2-migrated` marker ledger:
 
-- Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present
-- Assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`
-- Moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`
-- Rewrites `dependsOn` / `links` and re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`)
-- Writes a `v2-migrated` marker on success
+1. **`rename-ids`** — Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
+2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames `dependsOn` → `depends_on`; migrates `planApproval` → `plan:` block; drops `type`. Status mapping is deferred to `lifecycle-verbs`.
 
-`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`).
+Dry-run / apply transcript lines (representative):
+
+```
+[dry-run] templates: seeded feature, bug, spike, quick, legacy
+[dry-run] template legacy: 12 tickets
+[dry-run] depends_on: 8 renamed
+[dry-run] plan block: 5 tickets (3 approvals carried, 1 superseded approvals dropped)
+[dry-run] dropped type: 12
+[dry-run] status mapping deferred to lifecycle-verbs
+```
+
+`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step.
 
 ### Examples
 
@@ -148,7 +202,7 @@ Targets the active ticket from `.syntaur/context.json` unless `--ticket` is give
 
 ## `syntaur progress log <text>`
 
-Append a timestamped entry to the active ticket's `progress.md`: newest first (right after the `# Progress` H1), replacing the `No progress yet.` placeholder, incrementing `entryCount`, bumping `updated`, and preserving `ticket`/`generated`.
+Append a progress entry to the ticket's template log-role file. For modern templates this is usually `journal.md` (`## <timestamp> · progress · <author>` entries). The `legacy` template still uses `progress.md` with reverse-chronological `# Progress` entries — the CLI help text still says `progress.md` for that path. Templates with no log role error out (use chat instead).
 
 ```
 syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
