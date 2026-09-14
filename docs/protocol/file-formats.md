@@ -264,14 +264,6 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
   user table schema and key storage approach
 - See [auth-requirements](../../resources/auth-requirements.md) for product specs
 - JWT library: `jose` (chosen in Decision 1)
-
-## Links
-
-- [Progress](./progress.md)
-- [Comments](./comments.md)
-- [Scratchpad](./scratchpad.md)
-- [Handoff](./handoff.md)
-- [Decision Record](./decision-record.md)
 ```
 
 ---

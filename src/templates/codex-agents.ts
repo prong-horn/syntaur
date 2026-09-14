@@ -27,12 +27,12 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`create-ticket\` -- create a new ticket (use \`-t|--template <id>\`; defaults to the scratch project and allocates a \`<PREFIX>-<n>\` id)
 - \`grab-ticket\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-ticket\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
-- \`complete-ticket\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
+- \`complete-ticket\` -- record the cross-ticket handoff and a final progress entry in the files \`syntaur show\` lists, close the session, and transition state
 - \`resume-session\` -- re-orient on the active ticket from \`.syntaur/context.json\` and any open handoff so a fresh session picks up without re-reading the transcript
 - \`replan\` -- bump the active ticket to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
 - \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
 - \`list-tickets\` -- cross-project listing with filters by status, project, tag, age (scriptable output for automation)
-- \`log-progress\` -- append a timestamped entry to the active \`progress.md\` and bump frontmatter (Keep Records Updated playbook)
+- \`log-progress\` -- append a timestamped progress entry to the template's log file via \`syntaur progress log\` (Keep Records Updated playbook)
 - \`set-workspace\` -- populate the four \`workspace.*\` fields in \`ticket.md\`; validates via \`syntaur doctor --ticket --json\` before writing
 - \`track-session\` -- register an agent session with the dashboard
 
@@ -157,7 +157,7 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 - \`depends_on\` and \`links\` hold ticket ids, not slugs.
 - Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow Stage and Next.
 - Keep \`ticket.md\` acceptance criteria updated as work lands; use the Commands line from \`show\` for log and comment writes.
-- Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-ticket\`) at the cross-ticket boundary.
+- Keep active plan file(s) current after planning changes. Record the cross-ticket handoff (via \`complete-ticket\`) at the cross-ticket boundary.
 - When requirements shift, write a new versioned plan file instead of rewriting the old one.
 - Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).
 - Commit frequently with messages referencing the ticket slug.
