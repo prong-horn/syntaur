@@ -227,7 +227,7 @@ export function validateTemplate(
         issues.push({ rule: 'gates-id', message: `unknown gate id "${g}" on ${verb}` });
       }
     }
-    // gates.<verb> target stage must exist, except plan/approve file-only case
+    // gates.<verb> target stage must exist, except plan and approve file-only cases
     const planRole = planRoleFile(manifest);
     const hasPlanningOrReady = ids.includes('planning') || ids.includes('ready');
     if (verb === 'plan' && planRole && !hasPlanningOrReady) {
