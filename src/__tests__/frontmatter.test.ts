@@ -18,7 +18,7 @@ assignee: null
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -50,7 +50,7 @@ depends_on:
 links:
   - other-project/some-ticket
   - my-project/another-task
-blockedReason: null
+blocked: null
 workspace:
   repository: /Users/brennen/projects/auth-service
   worktreePath: /Users/brennen/projects/auth-service-worktrees/complex-task
@@ -78,7 +78,7 @@ describe('parseTicketFrontmatter', () => {
     expect(fm.externalIds).toEqual([]);
     expect(fm.depends_on).toEqual([]);
     expect(fm.links).toEqual([]);
-    expect(fm.blockedReason).toBeNull();
+    expect(fm.blocked).toBeNull();
     expect(fm.workspace.repository).toBeNull();
     expect(fm.workspace.worktreePath).toBeNull();
     expect(fm.workspace.branch).toBeNull();
@@ -125,7 +125,7 @@ externalIds:
     url: https://jira.example.com/browse/PROJ-99
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -174,7 +174,7 @@ externalIds:
     url:
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -226,21 +226,21 @@ describe('updateTicketFile', () => {
     expect(result).not.toContain('assignee: claude-1');
   });
 
-  it('updates blockedReason to a string value', () => {
+  it('updates blocked to a string value', () => {
     const result = updateTicketFile(SIMPLE_TICKET, {
-      blockedReason: 'Waiting for API key',
+      blocked: 'Waiting for API key',
     });
-    expect(result).toContain('blockedReason: Waiting for API key');
+    expect(result).toContain('blocked: Waiting for API key');
   });
 
-  it('updates blockedReason back to null', () => {
+  it('updates blocked back to null', () => {
     const withReason = updateTicketFile(SIMPLE_TICKET, {
-      blockedReason: 'some reason',
+      blocked: 'some reason',
     });
     const result = updateTicketFile(withReason, {
-      blockedReason: null,
+      blocked: null,
     });
-    expect(result).toContain('blockedReason: null');
+    expect(result).toContain('blocked: null');
   });
 
   it('updates timestamp with quotes', () => {
@@ -262,36 +262,36 @@ describe('updateTicketFile', () => {
 
   it('updates multiple fields at once', () => {
     const result = updateTicketFile(SIMPLE_TICKET, {
-      status: 'blocked',
-      blockedReason: 'Need API key',
+      status: 'in_progress',
+      blocked: 'Need API key',
       updated: '2026-03-18T16:00:00Z',
     });
-    expect(result).toContain('status: blocked');
-    expect(result).toContain('blockedReason: Need API key');
+    expect(result).toContain('status: in_progress');
+    expect(result).toContain('blocked: Need API key');
     expect(result).toContain('updated: "2026-03-18T16:00:00Z"');
   });
 
   // AC2: formatYamlValue must quote a scalar that is itself wrapped in quote
   // chars, else parseSimpleValue strips the literal quotes on read.
-  it('round-trips a blockedReason whose value is wrapped in double quotes (AC2)', () => {
+  it('round-trips a blocked value wrapped in double quotes (AC2)', () => {
     const result = updateTicketFile(SIMPLE_TICKET, {
-      blockedReason: '"connection refused"',
+      blocked: '"connection refused"',
     });
-    expect(parseTicketFrontmatter(result).blockedReason).toBe('"connection refused"');
+    expect(parseTicketFrontmatter(result).blocked).toBe('"connection refused"');
   });
 
-  it('round-trips a blockedReason wrapped in single quotes (AC2)', () => {
+  it('round-trips a blocked value wrapped in single quotes (AC2)', () => {
     const result = updateTicketFile(SIMPLE_TICKET, {
-      blockedReason: "'singlequoted'",
+      blocked: "'singlequoted'",
     });
-    expect(parseTicketFrontmatter(result).blockedReason).toBe("'singlequoted'");
+    expect(parseTicketFrontmatter(result).blocked).toBe("'singlequoted'");
   });
 
-  it('still round-trips a value with only interior quotes (AC2 over-trigger guard)', () => {
+  it('still round-trips a blocked value with only interior quotes (AC2 over-trigger guard)', () => {
     const result = updateTicketFile(SIMPLE_TICKET, {
-      blockedReason: 'say "hello" now',
+      blocked: 'say "hello" now',
     });
-    expect(parseTicketFrontmatter(result).blockedReason).toBe('say "hello" now');
+    expect(parseTicketFrontmatter(result).blocked).toBe('say "hello" now');
   });
 });
 
@@ -319,7 +319,7 @@ statusHistory:
     reason: waiting on API
 depends_on: []
 links: []
-blockedReason: waiting on API
+blocked: waiting on API
 workspace:
   repository: null
   worktreePath: null
@@ -384,7 +384,7 @@ statusHistory:
     by: null
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -416,7 +416,7 @@ assignee: null
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -502,7 +502,7 @@ describe('appendStatusHistoryEntry', () => {
     const fm = parseTicketFrontmatter(appended);
     expect(fm.id).toBe('h-1');
     expect(fm.assignee).toBe('claude-1');
-    expect(fm.blockedReason).toBe('waiting on API');
+    expect(fm.blocked).toBe('waiting on API');
     expect(fm.status).toBe('blocked');
     expect(fm.depends_on).toEqual([]);
     expect(fm.tags).toEqual([]);
@@ -554,7 +554,7 @@ statusHistory:
     by: claude
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktreePath: null
@@ -751,7 +751,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     expect(parsed.plan.file).toBeNull();
     expect(parsed.plan.approvedDigest).toBeNull();
     expect(parsed.override).toBeNull();
-    expect(parsed.parked).toBe(false);
+    expect(parsed.parked).toBeNull();
     expect(parsed.reviewRequested).toBe(false);
     expect(parsed.reworkRequested).toBe(false);
     expect(parsed.implementationStarted).toBe(false);
@@ -799,7 +799,7 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     const content = updateTicketFile(SIMPLE_TICKET, {
       phase: 'planning',
       disposition: 'active',
-      parked: false,
+      parked: null,
       reviewRequested: true,
       reworkRequested: true,
       implementationStarted: true,

@@ -92,20 +92,26 @@ tags: []
 id: ${TICKET_ID}
 slug: test-ticket
 title: Test Ticket
-status: pending
+status: backlog
 priority: medium
+blocked: null
+parked: null
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
-externalIds: []
 depends_on: []
-blockedReason: null
+links: []
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
 ---
 
 # Test Ticket`, 'utf-8');

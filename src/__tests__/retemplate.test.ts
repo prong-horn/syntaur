@@ -17,7 +17,7 @@ slug: quick-one
 title: Quick One
 project: p
 template: quick
-status: draft
+status: backlog
 priority: low
 created: "2026-04-20T12:00:00Z"
 updated: "2026-04-20T12:00:00Z"
@@ -70,7 +70,7 @@ describe('retemplate', () => {
   it('feature at in_progress adds plan.md', async () => {
     await retemplateCommand('RT-1', 'feature', { project: 'p' });
     const inProgress = QUICK_TICKET.replace('template: quick', 'template: feature').replace(
-      'status: draft',
+      'status: backlog',
       'status: in_progress',
     );
     await writeFile(resolve(ticketDir, 'ticket.md'), inProgress, 'utf-8');

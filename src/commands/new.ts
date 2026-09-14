@@ -22,6 +22,7 @@ import {
 import { parseProject } from '../dashboard/parser.js';
 import { renderTicket } from '../templates/index.js';
 import { updatePlanBlock } from '../lifecycle/frontmatter.js';
+import { emitCreated, resolveActor } from '../lifecycle/event-emit.js';
 
 export interface NewTicketOptions {
   project?: string;
@@ -31,9 +32,7 @@ export interface NewTicketOptions {
   links?: string;
   dir?: string;
   template?: string;
-  workflow?: string;
   silent?: boolean;
-  ready?: boolean;
   acceptanceCriteria?: string[];
 }
 
@@ -155,6 +154,8 @@ export async function newCommand(
 
   await ensureDir(ticketDir);
 
+  const initialStatus = manifest.stages[0]?.id ?? 'backlog';
+
   let ticketContent = renderTicket({
     id,
     slug: ticketSlug,
@@ -165,8 +166,8 @@ export async function newCommand(
     links,
     project: projectSlug,
     template: templateId,
-    workflow: options.workflow ?? null,
-    status: options.ready ? 'ready_for_planning' : 'draft',
+    workflow: null,
+    status: initialStatus,
     acceptanceCriteria: options.acceptanceCriteria,
   });
 
@@ -191,6 +192,13 @@ export async function newCommand(
   }
 
   await writeFileForce(resolve(ticketDir, 'ticket.md'), ticketContent);
+
+  emitCreated({
+    ticketId: id,
+    projectSlug,
+    actor: resolveActor('human'),
+    at: timestamp,
+  });
 
   const allWritten = ['ticket.md', ...written];
 

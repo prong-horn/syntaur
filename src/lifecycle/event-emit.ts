@@ -4,9 +4,7 @@
  *
  *  1. A module-level `suppressEvents` switch so migrations (which replay
  *     statusHistory writes) do NOT fire live events.
- *  2. A `recordStatusEvent` wrapper carrying the `from !== to` self-guard (R5),
- *     so same-status writes (the recompute fact/attestation audit entry) emit
- *     no `status-change` event.
+ *  2. Typed emit helpers for v2 lifecycle events (`moved`, `flagged`, …).
  *
  * Every emit ultimately goes through `recordEvent` (R3) — nothing here touches
  * the private `insertEvent`. `recordEvent` is best-effort and never throws, so
@@ -38,7 +36,6 @@ export function withSuppressedEvents<T>(fn: () => T): T {
   try {
     const result = fn();
     if (result instanceof Promise) {
-      // Restore only after the async work settles.
       return result.finally(() => {
         suppressEvents = prior;
       }) as unknown as T;
@@ -62,22 +59,15 @@ export function resolveActor(by: string | null | undefined): string {
 export interface RecordStatusEventInput {
   ticketId: string;
   projectSlug?: string | null;
-  /** UTC ISO 8601; defaults to now inside recordEvent when omitted. */
   at?: string;
-  /** Already-resolved actor string (pass through resolveActor at the site). */
   actor: string;
   from: string;
   to: string;
-  /** The transition command/cause recorded on the statusHistory entry. */
   command: string;
 }
 
 /**
- * Emit a `status-change` event after a verified status write. Self-guards:
- *   - suppression on → no-op (migrations);
- *   - `from === to` → no event (R5; same-status audit entries are covered by
- *     the underlying fact-set/attestation event).
- * Delegates to `recordEvent` (best-effort, never throws).
+ * @deprecated v2 uses `emitMoved` with type `moved`. Kept for transitional callers.
  */
 export function recordStatusEvent(input: RecordStatusEventInput): void {
   if (suppressEvents) return;
@@ -92,12 +82,142 @@ export function recordStatusEvent(input: RecordStatusEventInput): void {
   });
 }
 
+export interface EmitMovedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  from: string;
+  to: string;
+  verb: string;
+  by: string;
+  forced?: boolean;
+  reason?: string;
+}
+
+export function emitMoved(input: EmitMovedInput): void {
+  if (suppressEvents) return;
+  if (input.from === input.to) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'moved',
+    actor: input.by,
+    at: input.at,
+    details: {
+      from: input.from,
+      to: input.to,
+      verb: input.verb,
+      by: input.by,
+      forced: input.forced ?? false,
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+    },
+  });
+}
+
+export interface EmitFlaggedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+  flag: 'blocked' | 'parked';
+  reason: string;
+}
+
+export function emitFlagged(input: EmitFlaggedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'flagged',
+    actor: input.actor,
+    at: input.at,
+    details: { flag: input.flag, reason: input.reason },
+  });
+}
+
+export interface EmitUnflaggedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+  flag: 'blocked' | 'parked';
+}
+
+export function emitUnflagged(input: EmitUnflaggedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'unflagged',
+    actor: input.actor,
+    at: input.at,
+    details: { flag: input.flag },
+  });
+}
+
+export interface EmitPlanApprovedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+  file: string;
+  digest: string;
+}
+
+export function emitPlanApproved(input: EmitPlanApprovedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'plan-approved',
+    actor: input.actor,
+    at: input.at,
+    details: { file: input.file, digest: input.digest },
+  });
+}
+
+export interface EmitPlanVersionedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+  file: string;
+}
+
+export function emitPlanVersioned(input: EmitPlanVersionedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'plan-versioned',
+    actor: input.actor,
+    at: input.at,
+    details: { file: input.file },
+  });
+}
+
+export interface EmitCreatedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+}
+
+export function emitCreated(input: EmitCreatedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'created',
+    actor: input.actor,
+    at: input.at,
+    details: {},
+  });
+}
+
 /**
  * Suppression-aware non-status emit. A thin wrapper over `recordEvent` that
- * gates on `suppressEvents` so migrations don't emit. Use for every non-status
- * tracked event (assignee-change, priority-change, archived, restored,
- * plan-approval, fact-set, fact-clear, attestation, comment-added,
- * comment-resolved). `recordEvent` is best-effort and never throws.
+ * gates on `suppressEvents` so migrations don't emit.
  */
 export function emitEvent(input: RecordEventInput): void {
   if (suppressEvents) return;

@@ -2,8 +2,6 @@ import { type DragEvent, useEffect, useMemo, useRef, useState, useCallback } fro
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronDown, ChevronUp, FilterX, FolderKanban, Pencil, Trash2 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
-import { buildWorkflowLanes } from '../lib/workflow-board';
 import { cn } from '../lib/utils';
 import {
   useTicketsBoard,
@@ -11,8 +9,7 @@ import {
   type TicketTransitionAction,
 } from '../hooks/useProjects';
 import {
-  runTicketTransition,
-  overrideTicketStatus,
+  runTicketVerb,
   updateTicketTitle,
 } from '../lib/tickets';
 import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
@@ -64,7 +61,7 @@ import { MultiSelect } from '../components/ui/MultiSelect';
 import { DateRangeControl } from '../components/ui/DateRangeControl';
 import { QueryInput } from '../components/QueryInput';
 import { filterBoardItems } from '../lib/queryFilter';
-import { buildQueryRegistry } from '@shared/fact-registry';
+import { buildQueryRegistry } from '@shared/query-registry';
 import { compileQuery } from '@shared/query';
 import { viewFiltersToQuery, queryToViewFilters } from '@shared/view-filters-query';
 const VALID_VIEWS: readonly ViewMode[] = VIEW_MODES;
@@ -213,8 +210,8 @@ export function TicketsPage() {
   // (set from list view) is rendered as status. The dropdown reflects this
   // coerced value when view === 'kanban' so the UI never disagrees with what
   // the board actually shows. Persisted value survives the view switch.
-  const effectiveKanbanGrouping: 'status' | 'type' | 'workflow' =
-    grouping === 'type' ? 'type' : grouping === 'workflow' ? 'workflow' : 'status';
+  const effectiveKanbanGrouping: 'status' | 'type' =
+    grouping === 'type' ? 'type' : 'status';
   // Tracks group IDs the user has explicitly collapsed, keyed by the active
   // grouping's group id. Persisted via saved views: buildViewState derives the
   // serializable `listSectionVisibility` from this set, and applyConfig seeds it
@@ -659,13 +656,7 @@ export function TicketsPage() {
     [boardItems],
   );
 
-  // Client AQL field registry: built-in ticket vocabulary + any custom-fact
-  // declarations from status config. One registry per declarations change so the
-  // compile cache stays warm.
-  const registry = useMemo(
-    () => buildQueryRegistry(statusConfig.factDeclarations),
-    [statusConfig.factDeclarations],
-  );
+  const registry = useMemo(() => buildQueryRegistry(), []);
 
   // Compile the canonical query against the registry. Empty OR invalid query →
   // null here, which the filter step treats as MATCH-ALL (a typo never blanks the
@@ -742,19 +733,6 @@ export function TicketsPage() {
           items: sortedItems.filter((it) => (it.projectSlug ?? '') === key),
         }));
     }
-    if (grouping === 'workflow') {
-      const seen = new Map<string, string>();
-      for (const it of sortedItems) {
-        if (!seen.has(it.resolvedWorkflow)) {
-          seen.set(it.resolvedWorkflow, it.workflowLabel || it.resolvedWorkflow);
-        }
-      }
-      return Array.from(seen.entries()).map(([key, label]) => ({
-        id: key,
-        label,
-        items: sortedItems.filter((it) => it.resolvedWorkflow === key),
-      }));
-    }
     // Default: status grouping
     return COLUMNS.map((status) => ({
       id: status,
@@ -793,12 +771,6 @@ export function TicketsPage() {
           ...templatesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.template === def.id)),
           ...filteredItems.filter((it) => !it.template || !knownIds.has(it.template)),
         ];
-      } else if (effectiveKanbanGrouping === 'workflow') {
-        // Mirror the swimlane render order (lane → column → within) so j/k
-        // traversal matches the board even for custom-workflow statuses.
-        items = buildWorkflowLanes(filteredItems).flatMap((lane) =>
-          lane.columns.flatMap((status) => lane.items.filter((it) => it.status === status)),
-        );
       } else {
         items = COLUMNS.flatMap((status) => filteredItems.filter((it) => it.status === status));
       }
@@ -848,19 +820,9 @@ export function TicketsPage() {
     action?: TicketTransitionAction;
     reason?: string;
   }) {
-    // A direct status change (no transition action) goes through the override
-    // endpoint, which REJECTS terminal statuses ("use the complete/fail
-    // transition"). Guard that path so a direct-set to a terminal status never
-    // POSTs and 400s — it must be reached via its transition instead.
     if (!action) {
-      const targetDef = statusConfig.statuses.find((s) => s.id === toColumnId);
-      if (isTerminalStatus(targetDef ?? { id: toColumnId })) {
-        showToast(
-          `Reach “${getStatusLabel(statusConfig, toColumnId)}” through its complete/fail transition.`,
-          'error',
-        );
-        return false;
-      }
+      showToast('No verb reaches that stage from here.', 'error');
+      return false;
     }
 
     setTransitioningId(getTicketKey(item));
@@ -879,11 +841,7 @@ export function TicketsPage() {
     );
 
     try {
-      // Project tickets use slug-based routes; standalone use by-id routes.
-      // Both support transitions (with action) AND direct override (no action).
-      const updated = action
-        ? await runTicketTransition(item.id, action, reason)
-        : await overrideTicketStatus(item.id, toColumnId);
+      const updated = await runTicketVerb(item.id, action.command, reason);
 
       setBoardItems((current) =>
         current.map((candidate) =>
@@ -892,7 +850,7 @@ export function TicketsPage() {
                 ...candidate,
                 status: updated.status,
                 blockedReason: updated.blockedReason,
-                availableTransitions: updated.availableTransitions,
+                availableVerbs: updated.availableVerbs,
                 updated: updated.updated,
               }
             : candidate,
@@ -941,13 +899,6 @@ export function TicketsPage() {
     }
 
     await applyMove({ item, toColumnId, action });
-  }
-
-  // A picker "Override → X" click is just a direct move to X with no chosen
-  // transition; handleMove re-derives a transition when one exists (e.g. terminal
-  // targets) and otherwise routes through the override path in applyMove.
-  function handleOverride(item: TicketBoardItem, statusId: string) {
-    void handleMove({ item, toColumnId: statusId });
   }
 
   async function handleRenameTitle(item: TicketBoardItem, newTitle: string): Promise<void> {
@@ -1076,7 +1027,6 @@ export function TicketsPage() {
           value={query}
           onChange={handleQueryChange}
           registry={registry}
-          declarations={statusConfig.factDeclarations}
           valueSources={{
             statuses: statusConfig.order,
             priorities: uniquePriorities,
@@ -1401,7 +1351,6 @@ export function TicketsPage() {
                             onPillSelect={(action) =>
                               void handleMove({ item, toColumnId: action.targetStatus, action })
                             }
-                            onOverride={(statusId) => handleOverride(item, statusId)}
                             onRenameTitle={(next) => handleRenameTitle(item, next)}
                           />
                         </div>
@@ -1413,29 +1362,6 @@ export function TicketsPage() {
             );
           })}
         </div>
-      ) : effectiveKanbanGrouping === 'workflow' ? (
-        <WorkflowSwimlanes
-          items={filteredItems}
-          getItemId={getTicketKey}
-          renderCard={(item, { dragging }) => {
-            const flatIdx = visibleIndexByKey.get(getTicketKey(item)) ?? -1;
-            return (
-              <div {...(flatIdx >= 0 ? hotkeyRowProps(flatIdx) : {})}>
-                <TicketBoardCard
-                  ticket={item}
-                  dragging={dragging}
-                  transitioning={transitioningId === getTicketKey(item)}
-                  onPillSelect={(action) =>
-                    void handleMove({ item, toColumnId: action.targetStatus, action })
-                  }
-                  onOverride={(statusId) => handleOverride(item, statusId)}
-                  onRenameTitle={(next) => handleRenameTitle(item, next)}
-                />
-              </div>
-            );
-          }}
-          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
-        />
       ) : (
         <KanbanBoard
           columns={effectiveKanbanGrouping === 'type' ? TYPE_KANBAN_COLUMNS_WITH_FALLBACK : KANBAN_COLUMNS}
@@ -1494,7 +1420,6 @@ export function TicketsPage() {
                   onPillSelect={(action) =>
                     void handleMove({ item, toColumnId: action.targetStatus, action })
                   }
-                  onOverride={(statusId) => handleOverride(item, statusId)}
                   onRenameTitle={(next) => handleRenameTitle(item, next)}
                 />
               </div>
@@ -1641,7 +1566,6 @@ function TicketBoardCard({
   dragging,
   transitioning,
   onPillSelect,
-  onOverride,
   onRenameTitle,
 }: {
   ticket: TicketBoardItem;
@@ -1649,8 +1573,6 @@ function TicketBoardCard({
   transitioning: boolean;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onPillSelect?: (action: TicketTransitionAction) => void;
-  /** Direct-set handler for the status pill's "Override → status" entries. */
-  onOverride?: (statusId: string) => void;
   /** Present in the kanban & list render-sites; absent → read-only card. */
   onRenameTitle?: (newTitle: string) => Promise<void>;
 }) {
@@ -1705,12 +1627,11 @@ function TicketBoardCard({
             slug={ticket.slug}
             projectSlug={ticket.projectSlug}
             status={ticket.status}
-            availableTransitions={ticket.availableTransitions}
+            availableVerbs={ticket.availableVerbs}
             title={ticket.title}
             disabled={transitioning}
             className="max-w-[150px]"
             onSelectAction={onPillSelect}
-            onSelectOverride={onOverride}
           />
         ) : (
           <StatusBadge status={ticket.status} className="max-w-[150px]" />
@@ -1750,7 +1671,7 @@ function getTicketAction(
   ticket: TicketBoardItem,
   targetStatus: string,
 ): TicketTransitionAction | undefined {
-  return ticket.availableTransitions.find((action) => action.targetStatus === targetStatus);
+  return ticket.availableVerbs.find((action) => action.targetStatus === targetStatus);
 }
 
 function getTicketKey(ticket: Pick<TicketBoardItem, 'id' | 'slug'>): string {

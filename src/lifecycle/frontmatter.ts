@@ -158,7 +158,7 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
     if ('phaseTo' in entry) result.phaseTo = entry['phaseTo'];
     if ('dispositionFrom' in entry) result.dispositionFrom = entry['dispositionFrom'];
     if ('dispositionTo' in entry) result.dispositionTo = entry['dispositionTo'];
-    // WS-2 stage-engine hop fields — present only on engine-written entries.
+    // WS-2 lifecycle-engine hop fields — present only on engine-written entries.
     if (entry['trigger'] != null) {
       result.trigger = entry['trigger'] as StatusHistoryEntry['trigger'];
     }
@@ -309,16 +309,29 @@ function parseAttestations(frontmatter: string): AttestationRecord[] {
 function parseWorkspace(frontmatter: string): Workspace {
   const defaults: Workspace = {
     repository: null,
+    worktree: null,
     worktreePath: null,
     branch: null,
     parentBranch: null,
   };
 
-  const fields = ['repository', 'worktreePath', 'branch', 'parentBranch'] as const;
+  const fields = ['repository', 'worktree', 'worktreePath', 'branch', 'parentBranch'] as const;
   for (const field of fields) {
     const match = frontmatter.match(new RegExp(`^\\s+${field}:\\s*(.*)$`, 'm'));
     if (match) {
-      defaults[field] = parseSimpleValue(match[1]);
+      const value = parseSimpleValue(match[1]);
+      if (field === 'worktree') {
+        defaults.worktree = value;
+      } else if (field === 'worktreePath') {
+        defaults.worktreePath = value;
+        if (!defaults.worktree) defaults.worktree = value;
+      } else if (field === 'repository') {
+        defaults.repository = value;
+      } else if (field === 'branch') {
+        defaults.branch = value;
+      } else if (field === 'parentBranch') {
+        defaults.parentBranch = value;
+      }
     }
   }
   return defaults;
@@ -339,7 +352,7 @@ function parseTags(frontmatter: string): string[] {
   return results;
 }
 
-// ── WS-2 stage-engine frontmatter blocks ─────────────────────────────────────
+// ── WS-2 lifecycle-engine frontmatter blocks ─────────────────────────────────────
 
 /**
  * Shared body scan for a multi-line list-of-mappings block. Returns one
@@ -475,7 +488,7 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     statusHistory: parseStatusHistory(frontmatter),
     depends_on: parseDependsOn(frontmatter),
     links: parseLinks(frontmatter),
-    blockedReason: getField('blockedReason'),
+    blocked: getField('blocked') ?? getField('blockedReason'),
     workspace: parseWorkspace(frontmatter),
     tags: parseTags(frontmatter),
     archived: getField('archived') === 'true',
@@ -484,7 +497,12 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     phase: getField('phase'),
     disposition: getField('disposition'),
     plan: parsePlanBlock(frontmatter),
-    parked: getField('parked') === 'true',
+    parked: (() => {
+      const raw = getField('parked');
+      if (raw === null || raw === 'false' || raw === 'null') return null;
+      if (raw === 'true') return 'parked';
+      return raw;
+    })(),
     reviewRequested: getField('reviewRequested') === 'true',
     reworkRequested: getField('reworkRequested') === 'true',
     implementationStarted: getField('implementationStarted') === 'true',
@@ -540,7 +558,7 @@ export function updateTicketFile(
       | 'template'
       | 'workflow'
       | 'assignee'
-      | 'blockedReason'
+      | 'blocked'
       | 'updated'
       | 'archived'
       | 'archivedAt'
@@ -738,7 +756,7 @@ function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
       lines.push(`    ${key}: ${formatYamlValue(entry[key] ?? null)}`);
     }
   }
-  // WS-2 stage-engine hop fields — rendered ONLY on engine-written entries, so a
+  // WS-2 lifecycle-engine hop fields — rendered ONLY on engine-written entries, so a
   // ladder/legacy entry stays byte-identical. `trigger` is a bare enum; the
   // structured fields (route/gateSnapshot/dissent) are JSON scalars (single-line,
   // round-tripped through the flat item parser + parseSimpleValue quote handling).
@@ -979,7 +997,7 @@ export function appendStatusHistoryEntry(
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
 }
 
-// ── WS-2 stage-engine block writers ──────────────────────────────────────────
+// ── WS-2 lifecycle-engine block writers ──────────────────────────────────────────
 
 /** Generic `findAttestationsBlock` — locate `header:` (block form). */
 function findListBlock(

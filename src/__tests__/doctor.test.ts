@@ -165,24 +165,24 @@ describe('syntaur doctor', () => {
     expect(report.summary.error).toBeGreaterThanOrEqual(1);
   });
 
-  it('does not flag workspace-missing for pending or completed tickets', async () => {
+  it('does not flag workspace-missing for backlog or done tickets', async () => {
     await initBaseline();
     const projectDir = await writeProjectScaffold('m1');
     const pendingDir = resolve(projectDir, 'tickets', 'p');
     const completedDir = resolve(projectDir, 'tickets', 'c');
     await mkdir(pendingDir, { recursive: true });
     await mkdir(completedDir, { recursive: true });
-    await writeFile(resolve(pendingDir, 'ticket.md'), ticketMd('pending'));
-    await writeFile(resolve(completedDir, 'ticket.md'), ticketMd('completed'));
+    await writeFile(resolve(pendingDir, 'ticket.md'), ticketMd('backlog'));
+    await writeFile(resolve(completedDir, 'ticket.md'), ticketMd('done'));
     const report = await runChecks();
     const issues = byId(report, 'ticket.workspace-missing').filter((c) => c.status !== 'pass');
     expect(issues.length).toBe(0);
   });
 
-  it('does not flag workspace-missing for draft, ready_for_planning, or ready_to_implement', async () => {
+  it('does not flag workspace-missing for backlog, planning, or ready', async () => {
     await initBaseline();
     const projectDir = await writeProjectScaffold('m1');
-    for (const status of ['draft', 'ready_for_planning', 'ready_to_implement']) {
+    for (const status of ['backlog', 'planning', 'ready']) {
       const dir = resolve(projectDir, 'tickets', status);
       await mkdir(dir, { recursive: true });
       await writeFile(resolve(dir, 'ticket.md'), ticketMd(status));
@@ -425,7 +425,7 @@ describe('syntaur doctor', () => {
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      `---\nid: TP-1\nslug: existing\ntitle: Existing\nstatus: pending\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n\n# Existing\n`,
+      `---\nid: TP-1\nslug: existing\ntitle: Existing\nstatus: backlog\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\n---\n\n# Existing\n`,
     );
 
     const dbPath = resolve(syntaurDir, 'syntaur.db');

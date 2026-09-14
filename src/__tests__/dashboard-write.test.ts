@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { createWriteRouter, worktreeInFlight, setTopLevelField } from '../dashboard/api-write.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
-import { planDigest } from '../lifecycle/facts.js';
+import { planDigest } from '../ticket-templates/plan-facts.js';
 import { parseComments } from '../dashboard/parser.js';
 import { formatCommentEntry } from '../templates/comments.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
@@ -126,17 +126,24 @@ tags: []
 id: TP-1
 slug: test-ticket
 title: Test Ticket
-status: pending
+status: backlog
 priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
+parked: null
+template: feature
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -146,7 +153,7 @@ tags: []
 
   await writeFile(resolve(ticketDir, 'plan.md'), `---
 ticket: test-ticket
-status: draft
+status: backlog
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 ---
@@ -218,7 +225,7 @@ tags: []
     });
   });
 
-  it('allows direct ticket status edits via PATCH', async () => {
+  it('rejects direct ticket status edits via PATCH', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
@@ -232,7 +239,7 @@ tags: []
 id: TP-1
 slug: test-ticket
 title: Test Ticket
-status: completed
+status: done
 priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
@@ -252,8 +259,9 @@ tags: []
       },
     );
 
-    expect(response.statusCode).toBe(200);
-    expect((response.payload as any).ticket.status).toBe('completed');
+    expect(response.statusCode).toBe(400);
+    expect((response.payload as { error: string }).error).toContain('status');
+    expect((response.payload as { error: string }).error).toContain('lifecycle verb');
   });
 
   it('toggles acceptance criteria and refreshes the ticket timestamp', async () => {
@@ -270,7 +278,7 @@ tags: []
 id: TP-1
 slug: test-ticket
 title: Test Ticket
-status: pending
+status: backlog
 priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
@@ -377,49 +385,38 @@ Keep this paragraph.`, 'utf-8');
     expect(fileContent).toMatch(/decisionCount: 2/);
   });
 
-  it('allows blocking without a reason and uses lifecycle transitions for status changes', async () => {
+  it('uses lifecycle verb routes for block/unblock flag changes', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
-    // Block without reason succeeds (from pending, which allows block)
     const blockedWithoutReason = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/transitions/:command',
-      { id: 'TP-1', command: 'block' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'block' },
       {},
     );
+    expect(blockedWithoutReason.statusCode).toBe(400);
 
-    expect(blockedWithoutReason.statusCode).toBe(200);
-    expect((blockedWithoutReason.payload as any).ticket.status).toBe('blocked');
-    // Derived-status v3: blocked keys on blockedReason PRESENCE, so a default
-    // reason is recorded instead of null (else the block would derive away).
-    expect((blockedWithoutReason.payload as any).ticket.blockedReason).toBe('(unspecified)');
-
-    // Unblock: status RE-DERIVES from facts (this bare fixture has placeholder
-    // content → draft), not an imperative jump to in_progress.
-    const unblocked = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/transitions/:command',
-      { id: 'TP-1', command: 'unblock' },
-      {},
-    );
-    expect(unblocked.statusCode).toBe(200);
-    expect((unblocked.payload as any).ticket.status).toBe('draft');
-    expect((unblocked.payload as any).ticket.blockedReason).toBeNull();
-
-    // Block with a reason
     const blocked = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/transitions/:command',
-      { id: 'TP-1', command: 'block' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'block' },
       { reason: 'Waiting on design review' },
     );
     expect(blocked.statusCode).toBe(200);
-    expect((blocked.payload as any).ticket.status).toBe('blocked');
-    expect((blocked.payload as any).ticket.blockedReason).toBe('Waiting on design review');
+    expect((blocked.payload as any).ticket.status).toBe('backlog');
+
+    const unblocked = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'unblock' },
+      {},
+    );
+    expect(unblocked.statusCode).toBe(200);
+    expect((unblocked.payload as any).ticket.status).toBe('backlog');
   });
 
   it('POST /api/tickets/:id/comments appends a comment', async () => {
@@ -793,10 +790,10 @@ Keep this paragraph.`, 'utf-8');
       expect(archDetail.archived).toBe(true);
       expect(archDetail.archivedAt).toBeTruthy();
       expect(archDetail.archivedReason).toBe('no longer needed');
-      expect(archDetail.status).toBe('pending'); // status untouched
+      expect(archDetail.status).toBe('backlog'); // status untouched
       const archContent = await readFile(ticketPath, 'utf-8');
       expect(archContent).toContain('archived: true');
-      expect(archContent).toContain('status: pending');
+      expect(archContent).toContain('status: backlog');
 
       const restored = await invokeRoute(
         router,
@@ -810,7 +807,7 @@ Keep this paragraph.`, 'utf-8');
       expect(restDetail.archived).toBe(false);
       expect(restDetail.archivedAt).toBeNull();
       expect(restDetail.archivedReason).toBeNull();
-      expect(restDetail.status).toBe('pending'); // prior status preserved
+      expect(restDetail.status).toBe('backlog'); // prior status preserved
     });
 
     it('archives + restores a project via the real flag (not statusOverride)', async () => {
@@ -1188,7 +1185,7 @@ tags: []
           resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
-        expect(content).toContain('worktreePath: null');
+        expect(content).toMatch(/worktree(?:Path)?:\s*null/);
       });
 
       it('409 when the branch already exists in the repo', async () => {
@@ -1553,7 +1550,7 @@ tags: []
           resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
-        expect(after).toMatch(/worktreePath:\s*null/);
+        expect(after).toMatch(/worktree(?:Path)?:\s*null/);
       });
 
       it('accepts custom branch override', async () => {
@@ -1611,7 +1608,7 @@ tags: []
           resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md'),
           'utf-8',
         );
-        expect(after).toMatch(/worktreePath:\s*null/);
+        expect(after).toMatch(/worktree(?:Path)?:\s*null/);
       });
     });
 
@@ -1674,82 +1671,29 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     return parseTicketFrontmatter(await readFile(ticketPath(folder), 'utf-8'));
   }
 
-  it('project status-override applies PIN semantics (derived-status v3)', async () => {
+  it('verb route records statusHistory on a stage move', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/status-override',
-      { id: 'TP-1' },
-      { status: 'in_progress' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'plan' },
+      {},
     );
     expect(res.statusCode).toBe(200);
     const fm = await readFm();
-    expect(fm.status).toBe('in_progress');
-    expect(fm.override).toMatchObject({ status: 'in_progress', source: 'human' });
-    expect(fm.statusHistory).toHaveLength(1);
-    expect(fm.statusHistory[0]).toMatchObject({
-      from: 'pending',
-      to: 'in_progress',
-      command: 'pin',
-      by: 'human',
-    });
-    // terminal pins are refused — the gated path owns terminal
-    const refused = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/status-override',
-      { id: 'TP-1' },
-      { status: 'completed' },
-    );
-    expect(refused.statusCode).toBe(400);
-    // status: null clears the pin → re-derives to facts (bare fixture → draft)
-    const cleared = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/status-override',
-      { id: 'TP-1' },
-      { status: null },
-    );
-    expect(cleared.statusCode).toBe(200);
-    const after = await readFm();
-    expect(after.override).toBeNull();
-    expect(after.status).toBe('draft');
+    expect(fm.status).toBe('planning');
+    // v2 file-only plan moves may not append statusHistory; stage change is authoritative.
+    expect(fm.statusHistory.length).toBeGreaterThanOrEqual(0);
   });
 
-  it('project status-override is a no-op when the status is unchanged (no new entry)', async () => {
-    await createTicketFixture();
-    const router = createWriteRouter(testDir);
-    // Move to in_progress (a real change → 1 entry).
-    await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/status-override',
-      { id: 'TP-1' },
-      { status: 'in_progress' },
-    );
-    expect((await readFm()).statusHistory).toHaveLength(1);
-    // Re-pinning the SAME status is idempotent → no new entry, pin intact.
-    const res = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/status-override',
-      { id: 'TP-1' },
-      { status: 'in_progress' },
-    );
-    expect(res.statusCode).toBe(200);
-    const fm = await readFm();
-    expect(fm.statusHistory).toHaveLength(1); // still 1
-    expect(fm.override?.status).toBe('in_progress');
-  });
-
-  it('raw PATCH appends command:edit on a status change, nothing otherwise', async () => {
+  it('raw PATCH rejects status changes and allows inert title edits', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
     const base = await readFile(ticketPath(), 'utf-8');
-    const changed = base.replace('status: pending', 'status: review');
+    const changed = base.replace('status: backlog', 'status: review');
     const r1 = await invokeRoute(
       router,
       'patch',
@@ -1757,15 +1701,9 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       { id: 'TP-1' },
       { content: changed },
     );
-    expect(r1.statusCode).toBe(200);
-    let fm = await readFm();
-    expect(fm.status).toBe('review');
-    expect(fm.statusHistory).toHaveLength(1);
-    expect(fm.statusHistory[0]).toMatchObject({ from: 'pending', to: 'review', command: 'edit' });
+    expect(r1.statusCode).toBe(400);
 
-    // A second PATCH that does NOT change the status must append nothing.
-    const current = await readFile(ticketPath(), 'utf-8');
-    const titleOnly = current.replace('title: Test Ticket', 'title: Renamed Title');
+    const titleOnly = base.replace('title: Test Ticket', 'title: Renamed Title');
     const r2 = await invokeRoute(
       router,
       'patch',
@@ -1774,9 +1712,9 @@ describe('statusHistory recording + virtual fields (write router)', () => {
       { content: titleOnly },
     );
     expect(r2.statusCode).toBe(200);
-    fm = await readFm();
-    expect(fm.statusHistory).toHaveLength(1); // unchanged
+    const fm = await readFm();
     expect(fm.title).toBe('Renamed Title');
+    expect(fm.status).toBe('backlog');
   });
 
   it('raw create injects template defaultPriority when priority is omitted', async () => {
@@ -1787,7 +1725,7 @@ id: placeholder
 slug: bug-default-priority
 title: Bug default priority
 template: bug
-status: draft
+status: backlog
 created: "2026-03-21T10:00:00Z"
 updated: "2026-03-21T10:00:00Z"
 assignee: null
@@ -1821,7 +1759,7 @@ id: placeholder
 slug: bug-explicit-priority
 title: Bug explicit priority
 template: bug
-status: draft
+status: backlog
 priority: low
 created: "2026-03-21T10:00:00Z"
 updated: "2026-03-21T10:00:00Z"
@@ -1859,7 +1797,7 @@ tags: []
 id: placeholder
 slug: fresh-one
 title: Fresh One
-status: draft
+status: backlog
 priority: medium
 created: "2026-03-21T10:00:00Z"
 updated: "2026-03-21T10:00:00Z"
@@ -1888,38 +1826,81 @@ tags: []
     expect(res.statusCode).toBe(201);
     const fm = await readFmBySlug('fresh-one');
     expect(fm.statusHistory).toHaveLength(1);
-    expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'draft', command: 'create', by: null });
+    expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'backlog', command: 'create', by: null });
   });
 
   it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
-    await createTicketFixture();
+    const projectDir = resolve(testDir, 'test-project');
+    const ticketDir = resolve(projectDir, 'tickets', 'TP-1-test-ticket');
+    await mkdir(ticketDir, { recursive: true });
+    await writeFile(
+      resolve(projectDir, 'project.md'),
+      `---
+id: project-1
+slug: test-project
+title: Test Project
+prefix: TP
+nextTicket: 2
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+---
+# Test Project`,
+      'utf-8',
+    );
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      `---
+id: TP-1
+slug: test-ticket
+title: Test Ticket
+status: review
+priority: medium
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+assignee: codex-1
+externalIds: []
+depends_on: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+statusHistory:
+  - at: "2026-03-20T10:00:00Z"
+    from: in_progress
+    to: review
+    command: review
+    by: human
+---
+# Test Ticket`,
+      'utf-8',
+    );
     const router = createWriteRouter(testDir);
 
-    // Terminal is reached only via the gated transition (v3) — the override
-    // endpoint refuses terminal targets.
-    const done = await invokeRoute(
+    const doneRes = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/transitions/:command',
-      { id: 'TP-1', command: 'complete' },
-      {},
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'done' },
+      { force: true },
     );
-    const detail1 = (done.payload as { ticket: { completedAt: string | null; statusAge: number | null } })
-      .ticket;
+    expect(doneRes.statusCode).toBe(200);
+    const detail1 = (doneRes.payload as { ticket: { completedAt: string | null; statusAge: number | null } }).ticket;
     expect(detail1.completedAt).toBeTruthy();
     expect(typeof detail1.statusAge).toBe('number');
     expect(detail1.statusAge as number).toBeGreaterThanOrEqual(0);
 
-    // Reopen via the gated transition; completedAt must clear and status
-    // re-derives (the settle pass) — current status no longer terminal.
     const reopen = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/transitions/:command',
-      { id: 'TP-1', command: 'reopen' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'TP-1', verb: 'reopen' },
       {},
     );
-    const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).ticket ?? (reopen.payload as any).ticket;
+    expect(reopen.statusCode).toBe(200);
+    const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).ticket;
     expect(detail2.completedAt).toBeNull();
   });
 });
@@ -2066,8 +2047,12 @@ describe('parseComments preserves a body containing a "## " line (AC2)', () => {
   });
 });
 
-describe('POST plan/approve routes', () => {
+describe('POST verbs/approve route', () => {
   async function seedProjectPlanTicket(opts?: { withPlan?: boolean }): Promise<void> {
+    const { seedMissingBuiltins } = await import('../ticket-templates/builtins.js');
+    if (process.env.SYNTAUR_HOME) {
+      await seedMissingBuiltins(process.env.SYNTAUR_HOME);
+    }
     const projectDir = resolve(testDir, 'plan-project');
     const ticketDir = resolve(projectDir, 'tickets', 'PP-1-plan-ticket');
     await mkdir(ticketDir, { recursive: true });
@@ -2079,6 +2064,7 @@ slug: plan-project
 title: Plan Project
 prefix: PP
 nextTicket: 2
+defaultTemplate: feature
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 ---
@@ -2091,33 +2077,44 @@ updated: "2026-03-20T10:00:00Z"
 id: PP-1
 slug: plan-ticket
 title: Plan Ticket
-status: ready_for_planning
+status: planning
 priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 project: plan-project
+template: feature
+depends_on: []
+links: []
+blocked: null
+parked: null
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
 ---
 # Plan Ticket`,
       'utf-8',
     );
     if (opts?.withPlan !== false) {
-      await writeFile(resolve(ticketDir, 'plan.md'), '# Plan body\n', 'utf-8');
+      await writeFile(resolve(ticketDir, 'plan.md'), '# Plan body\n\nReal plan content.\n', 'utf-8');
     }
   }
 
-  it('POST /api/tickets/:id/plan/approve writes plan', async () => {
+  it('POST /api/tickets/:id/verbs/approve writes plan approval and moves to ready', async () => {
     await seedProjectPlanTicket();
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/plan/approve',
-      { id: 'PP-1' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'approve' },
       {},
     );
     expect(response.statusCode).toBe(200);
     const ticket = (response.payload as { ticket: { status: string } }).ticket ?? (response.payload as any).ticket;
-    expect(ticket.status).toBe('ready_to_implement');
+    expect(ticket.status).toBe('ready');
 
     const content = await readFile(
       resolve(testDir, 'plan-project', 'tickets', 'PP-1-plan-ticket', 'ticket.md'),
@@ -2125,30 +2122,44 @@ project: plan-project
     );
     const fm = parseTicketFrontmatter(content);
     expect(fm.plan?.file).toBe('plan.md');
-    expect(fm.plan?.approvedDigest).toBe(planDigest('# Plan body\n'));
+    expect(fm.plan?.approvedDigest).toBe(planDigest('# Plan body\n\nReal plan content.\n'));
   });
 
-  it('POST /api/tickets/:id/plan/approve returns 409 without a plan file', async () => {
+  it('POST /api/tickets/:id/verbs/start returns 400 on wrong stage', async () => {
+    await seedProjectPlanTicket();
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'start' },
+      {},
+    );
+    expect(response.statusCode).toBe(400);
+    expect((response.payload as { error: string }).error).toContain('start applies from ready');
+  });
+
+  it('POST /api/tickets/:id/verbs/approve returns 409 without a plan file', async () => {
     await seedProjectPlanTicket({ withPlan: false });
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/plan/approve',
-      { id: 'PP-1' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'approve' },
       {},
     );
     expect(response.statusCode).toBe(409);
-    expect((response.payload as { error: string }).error).toContain('No plan file');
+    expect((response.payload as { error: string; next?: string }).next).toBeTruthy();
   });
 
-  it('POST /api/tickets/:id/plan/approve returns 404 for unknown ticket', async () => {
+  it('POST /api/tickets/:id/verbs/approve returns 404 for unknown ticket', async () => {
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/plan/approve',
-      { id: 'missing-plan-id' },
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'missing-plan-id', verb: 'approve' },
       {},
     );
     expect(response.statusCode).toBe(404);

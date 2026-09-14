@@ -1,58 +1,41 @@
 import type { TicketDetail, TicketTransitionAction } from '../hooks/useProjects';
 import { recreateRequest, type RecreateIdentity } from './recreate';
 
-interface TransitionResponse {
+interface VerbResponse {
   ticket: TicketDetail;
+  next: string | null;
 }
 
-export async function runTicketTransition(
+export async function runTicketVerb(
+  id: string,
+  verb: string,
+  reason?: string,
+): Promise<TicketDetail> {
+  const response = await fetch(`/api/tickets/${id}/verbs/${verb}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(reason ? { reason } : {}),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const next = (payload as { next?: string } | null)?.next;
+    const base = (payload as { error?: string } | null)?.error || `HTTP ${response.status}`;
+    throw new Error(next ? `${base} — Next: ${next}` : base);
+  }
+
+  return (payload as VerbResponse).ticket;
+}
+
+/** @deprecated Use {@link runTicketVerb} */
+export const runTicketTransition = (
   id: string,
   action: TicketTransitionAction,
   reason?: string,
-): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/tickets/${id}/transitions/${action.command}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(reason ? { reason } : {}),
-    },
-  );
+): Promise<TicketDetail> => runTicketVerb(id, action.command, reason);
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-
-  return (payload as TransitionResponse).ticket;
-}
-
-/** @deprecated Use {@link runTicketTransition} */
+/** @deprecated Use {@link runTicketVerb} */
 export const runTicketTransitionById = runTicketTransition;
-
-export async function overrideTicketStatus(
-  id: string,
-  status: string,
-): Promise<TicketDetail> {
-  const response = await fetch(
-    `/api/tickets/${id}/status-override`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
-    },
-  );
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
-
-  return (payload as { ticket: TicketDetail }).ticket;
-}
-
-/** @deprecated Use {@link overrideTicketStatus} */
-export const overrideTicketStatusById = overrideTicketStatus;
 
 export async function deleteTicket(id: string): Promise<void> {
   const response = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
@@ -63,8 +46,13 @@ export async function deleteTicket(id: string): Promise<void> {
   }
 }
 
+export function verbNeedsReason(verb: string): boolean {
+  return verb === 'block' || verb === 'park' || verb === 'drop';
+}
+
+/** @deprecated Use {@link verbNeedsReason} */
 export function transitionNeedsReason(action: TicketTransitionAction): boolean {
-  return action.requiresReason || action.command === 'block';
+  return verbNeedsReason(action.command) || action.requiresReason;
 }
 
 /**
@@ -134,13 +122,6 @@ export async function postQuickComment(args: {
   }
 }
 
-/**
- * Read/write the dashboard-side "claim as" identity used by
- * {@link claimTicket}. There is no "current agent" in the browser, so we
- * persist the user's preferred value in localStorage with `'human'` as
- * default. The first-use flow opens a dialog; subsequent claims are
- * one-click. Hold Shift on the claim button to re-open the dialog.
- */
 const CLAIM_AS_STORAGE_KEY = 'syntaur:dashboard:claimAs';
 const CLAIM_AS_DEFAULT = 'human';
 
@@ -149,7 +130,7 @@ export function readClaimAs(): string {
     const stored = window.localStorage.getItem(CLAIM_AS_STORAGE_KEY);
     if (stored && stored.trim().length > 0) return stored.trim();
   } catch {
-    // ignore — storage may be unavailable (private mode, etc.)
+    // ignore
   }
   return CLAIM_AS_DEFAULT;
 }
@@ -175,8 +156,6 @@ export function hasStoredClaimAs(): boolean {
   }
 }
 
-// --- Worktree creation + candidate discovery ---
-
 export interface RepositoryCandidate {
   path: string;
   source: 'project' | 'sibling';
@@ -189,11 +168,6 @@ export interface CreateWorktreePayload {
   parentBranch?: string;
 }
 
-/**
- * Mutation-side errors from the worktree create endpoint can carry the raw
- * git stderr. The dialog renders it in a `<pre>` so the user can see what
- * git actually said (e.g., "fatal: A branch named 'foo' already exists.").
- */
 export class CreateWorktreeError extends Error {
   constructor(message: string, public readonly stderr?: string) {
     super(message);
@@ -232,9 +206,6 @@ export async function getTicketRepositoryCandidates(
   return (body as { candidates: RepositoryCandidate[] }).candidates;
 }
 
-/** @deprecated Use {@link getTicketRepositoryCandidates} */
-export const getTicketRepositoryCandidatesById = getTicketRepositoryCandidates;
-
 export async function createTicketWorktree(
   id: string,
   payload: CreateWorktreePayload,
@@ -251,26 +222,13 @@ export async function createTicketWorktree(
   return (body as { ticket: TicketDetail }).ticket;
 }
 
-/** @deprecated Use {@link createTicketWorktree} */
-export const createTicketWorktreeById = createTicketWorktree;
-
 export interface RecreateWorktreeResult {
-  /** Branch name or base ref used to rebuild the worktree. */
   baseUsed: string;
-  /** True when the original branch/sha was restored exactly. */
   exact: boolean;
-  /** Resulting branch (null when recreated detached). */
   branch: string | null;
-  /** True when the directory already existed (idempotent no-op recreate). */
   alreadyExisted?: boolean;
 }
 
-/**
- * Rebuild a deleted worktree at its exact recorded path. The server derives the
- * path/repo/branch from persisted state keyed on the identity, so the request
- * body carries no path. Reuses {@link CreateWorktreeError} so callers can render
- * any git stderr.
- */
 export async function recreateWorktree(
   identity: RecreateIdentity,
 ): Promise<RecreateWorktreeResult> {
@@ -286,8 +244,6 @@ export async function recreateWorktree(
   return (await response.json()) as RecreateWorktreeResult;
 }
 
-// Shared branch-name validator (same rules the server enforces) for instant
-// inline feedback in the create-worktree modal.
 export { validateBranchName } from '@shared/branch-name';
 
 export interface RepositoryBranches {
@@ -296,7 +252,6 @@ export interface RepositoryBranches {
 }
 
 export interface SourceTicket {
-  /** Stable unique identifier (the ticket UUID) — use as React key / <option> value. */
   id: string;
   slug: string;
   title: string;
@@ -322,17 +277,8 @@ export async function getRepositoryBranches(
   return readJsonOrThrow<RepositoryBranches>(response);
 }
 
-/** @deprecated Use {@link getRepositoryBranches} */
-export const getRepositoryBranchesById = getRepositoryBranches;
-
 export async function getSourceTickets(id: string): Promise<SourceTicket[]> {
   const response = await fetch(`/api/tickets/${id}/source-tickets`);
   const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
   return body.sourceTickets;
 }
-
-/** @deprecated Use {@link getSourceTickets} */
-export const getProjectSourceTickets = getSourceTickets;
-
-/** @deprecated Use {@link getSourceTickets} */
-export const getSourceTicketsById = getSourceTickets;

@@ -11,19 +11,6 @@ describe('dashboard route helpers', () => {
     expect(isSidebarItemActive('/agent-sessions', '/agents')).toBe(false);
   });
 
-  it('maps the workflow route to the correct shell title and sidebar item', () => {
-    expect(buildShellMeta('/workflow').title).toBe('Workflow');
-    expect(getSidebarSection('/workflow')).toBe('/workflow');
-    expect(isSidebarItemActive('/workflow', '/workflow')).toBe(true);
-    expect(isSidebarItemActive('/workflow', '/settings')).toBe(false);
-  });
-
-  it('exposes the workflow page in the command palette index', () => {
-    const entry = STATIC_PAGES.find((page) => page.basePath === '/workflow');
-    expect(entry).toBeDefined();
-    expect(entry?.title).toBe('Workflow');
-  });
-
   it('exposes the agent sessions page in the command palette index', () => {
     const entry = STATIC_PAGES.find((page) => page.basePath === '/agent-sessions');
     expect(entry).toBeDefined();

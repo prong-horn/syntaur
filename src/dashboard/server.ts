@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { connect as netConnect } from 'node:net';
 import { resolve } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
-import { syntaurRoot, workflowsDir } from '../utils/paths.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
@@ -15,7 +15,6 @@ import {
   getOverview,
   getHelp,
   invalidateRecordsCache,
-  clearStatusConfigCache,
 } from './api.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { listSessionsByTicket, reconcileActiveSessions, withLiveness } from './agent-sessions.js';
@@ -61,7 +60,6 @@ import { createWriteRouter } from './api-write.js';
 import { createAgentSessionsRouter } from './api-agent-sessions.js';
 import { createSearchConfigRouter } from './api-search-config.js';
 import { createContentSearchRouter } from './api-search.js';
-import { createStatusConfigRouter, createWorkflowConfigRouter } from './api-status-config.js';
 import { createUsageRouter, getTicketUsageHandler } from './api-usage.js';
 import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
@@ -198,8 +196,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
-  app.use('/api/config/statuses', createStatusConfigRouter(projectsDir));
-  app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir));
 
   app.get('/api/ticket-templates', async (_req, res) => {
     try {
@@ -705,87 +701,12 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   return {
     async start(): Promise<void> {
-      // Derived-status recompute wiring (design v3, Piece 3 trigger set):
-      // watcher → per-ticket recompute (out-of-band edits re-derive);
-      // config.md → recompute-all (the rules changed); boot → reconciliation
-      // sweep (covers edits made while the server was down).
-      const { recomputeAndWrite, recomputeAll, resolveRecomputeContext, isDeriveMigrated } = await import(
-        '../lifecycle/recompute.js'
-      );
-      let warnedMigrationPending = false;
-      // WS-2 Decision 2: this sweep gate stays on `isDeriveMigrated()`, NOT
-      // `stages-migrated`. It gates whether IMPLICIT recompute runs at all;
-      // flipping it to the (WS-2-dormant) stages marker would freeze the live
-      // ladder board. The engine-vs-ladder choice is a branch INSIDE
-      // recomputeAndWrite, gated on `isStagesMigrated() && ctx.stageWorkflow`.
-      const migrationGate = async (): Promise<boolean> => {
-        if (await isDeriveMigrated()) return true;
-        if (!warnedMigrationPending) {
-          warnedMigrationPending = true;
-          console.log(
-            'derived-status: migration pending — implicit recomputes are dormant until `syntaur migrate-derive` runs.',
-          );
-        }
-        return false;
-      };
-      const recomputeOne = async (projectSlug: string | null, ticketSlug: string): Promise<void> => {
-        if (!(await migrationGate())) return;
-        if (!projectSlug) return;
-        try {
-          const { context, workflowResolver } = await resolveRecomputeContext();
-          const projectDir = resolve(projectsDir, projectSlug);
-          const path = resolve(projectDir, 'tickets', ticketSlug, 'ticket.md');
-          if (!(await fileExists(path))) return;
-          const result = await recomputeAndWrite(path, {
-            cause: 'derive',
-            by: 'system',
-            projectDir,
-            context,
-            workflowResolver,
-          });
-          if (result.warning) console.warn(result.warning);
-        } catch (err) {
-          console.error(`derive recompute failed for ${projectSlug ?? ''}/${ticketSlug}:`, err);
-        }
-      };
-      const sweepAll = async (cause: string): Promise<void> => {
-        if (!(await migrationGate())) return;
-        try {
-          const { context, workflowResolver } = await resolveRecomputeContext();
-          const summary = await recomputeAll(projectsDir, {
-            cause,
-            by: 'system',
-            context,
-            workflowResolver,
-          });
-          if (summary.changed > 0) {
-            console.log(`derive ${cause}: ${summary.changed}/${summary.scanned} ticket(s) re-derived.`);
-          }
-          for (const w of summary.warnings) console.warn(w);
-        } catch (err) {
-          console.error(`derive ${cause} sweep failed:`, err);
-        }
-      };
-
       watcherHandle = createWatcher({
         projectsDir,
         playbooksDir,
-        workflowsDir: workflowsDir(),
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
-        configPath: resolve(syntaurRoot(), 'config.md'),
         onMessage: broadcast,
-        onTicketChanged: (projectSlug, ticketSlug) => {
-          void recomputeOne(projectSlug, ticketSlug);
-        },
-        onConfigChanged: () => {
-          clearStatusConfigCache();
-          void sweepAll('config-change');
-        },
       });
-
-      // Startup reconciliation — non-blocking so the server is responsive
-      // immediately; the sweep converges derived state in the background.
-      void sweepAll('boot-reconcile');
 
       startMaintenanceLoop({
         projectsDir,
@@ -808,7 +729,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
         const { emitEvent } = await import('../lifecycle/event-emit.js');
         const stalenessSeen = new Set<string>();
         const watchdogTick = async (): Promise<void> => {
-          if (!(await migrationGate())) return;
           try {
             const candidates = await collectStaleCandidates(projectsDir);
             const summary = runStalenessWatchdogTick(candidates, stalenessSeen, (e) => {

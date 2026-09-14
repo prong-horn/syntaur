@@ -2,8 +2,9 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { recomputeTicketDir } from '../lifecycle/recompute.js';
 import { updatePlanBlock, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { emitPlanVersioned } from '../lifecycle/event-emit.js';
+import { GateFailedError, moveTicket, resolveVerbActor } from '../lifecycle/verbs.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -21,18 +22,19 @@ import {
 } from '../ticket-templates/roles.js';
 import { scaffoldFileContent, scaffoldTemplateFiles } from '../ticket-templates/scaffold.js';
 
-async function resolveTicketDir(opts: {
+async function resolveTicketContext(opts: {
   ticket?: string;
   project?: string;
+  dir?: string;
   cwd?: string;
-}): Promise<string> {
+}) {
   const cwd = opts.cwd ?? process.cwd();
   if (opts.ticket) {
-    const target = await resolveTicketTarget(opts.ticket, {
+    return resolveTicketTarget(opts.ticket, {
       project: opts.project,
+      dir: opts.dir,
       cwd,
     });
-    return target.ticketDir;
   }
   const { initSessionDb } = await import('../dashboard/session-db.js');
   initSessionDb();
@@ -40,12 +42,12 @@ async function resolveTicketDir(opts: {
   if (se) {
     assertMayMutate(se.session, { hasSelector: false });
   }
-  const target = await resolveTicketTarget(undefined, {
+  return resolveTicketTarget(undefined, {
     project: opts.project,
+    dir: opts.dir,
     cwd,
     resolveEngagement: async () => se?.open ?? null,
   });
-  return target.ticketDir;
 }
 
 function nextPlanFileName(stem: string, currentVersion: number): { fileName: string; version: number } {
@@ -149,11 +151,30 @@ async function resolvePlanRole(ticketDir: string): Promise<{
 interface PlanCreateOptions {
   ticket?: string;
   project?: string;
+  dir?: string;
   force?: boolean;
 }
 
+async function runPlanMove(
+  ticketId: string,
+  options: Pick<PlanCreateOptions, 'project' | 'dir'>,
+): Promise<void> {
+  try {
+    await moveTicket(ticketId, 'plan', {
+      project: options.project,
+      dir: options.dir,
+    });
+  } catch (error) {
+    if (error instanceof GateFailedError) {
+      throw new Error(error.message);
+    }
+    throw error;
+  }
+}
+
 async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
-  const ticketDir = await resolveTicketDir(options);
+  const target = await resolveTicketContext(options);
+  const ticketDir = target.ticketDir;
   if (!(await fileExists(ticketDir))) {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
@@ -197,17 +218,20 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   );
 
   console.log(`Created ${destPath}`);
-  await recomputeTicketDir(ticketDir, 'plan-create', null);
+  await runPlanMove(target.id, options);
 }
 
 interface PlanVersionOptions {
   ticket?: string;
   project?: string;
+  dir?: string;
+  agent?: string;
   force?: boolean;
 }
 
 async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
-  const ticketDir = await resolveTicketDir(options);
+  const target = await resolveTicketContext(options);
+  const ticketDir = target.ticketDir;
   if (!(await fileExists(ticketDir))) {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
@@ -248,7 +272,9 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   console.log(`Carried forward: ${carriedTodos.length} unchecked task(s).`);
 
   const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  const now = isoNow();
   const ticketContent = await readFile(ticketMdPath, 'utf-8');
+  const fm = parseTicketFrontmatter(ticketContent);
   await writeFileForce(
     ticketMdPath,
     updatePlanBlock(ticketContent, {
@@ -259,7 +285,16 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
     }),
   );
 
-  await recomputeTicketDir(ticketDir, 'plan-version', null);
+  const actor = await resolveVerbActor({ agent: options.agent, dir: options.dir });
+  emitPlanVersioned({
+    ticketId: fm.id,
+    projectSlug: fm.project,
+    actor,
+    file: next.fileName,
+    at: now,
+  });
+
+  await runPlanMove(target.id, options);
 }
 
 export const planCommand = new Command('plan')
@@ -268,12 +303,14 @@ export const planCommand = new Command('plan')
 planCommand
   .command('create')
   .description('Create the initial plan file for the ticket')
-  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
+  .argument('[ticket]', "Ticket id. Defaults to the session's open engagement")
+  .option('--ticket <id>', 'Alias for [ticket]')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
+  .option('--dir <path>', 'Override default project directory')
   .option('--force', 'Overwrite an existing plan file')
-  .action(async (options: PlanCreateOptions) => {
+  .action(async (ticket: string | undefined, options: PlanCreateOptions) => {
     try {
-      await runPlanCreate(options);
+      await runPlanCreate({ ...options, ticket: ticket ?? options.ticket });
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -283,12 +320,15 @@ planCommand
 planCommand
   .command('version')
   .description('Create the next plan revision and carry forward unchecked tasks')
-  .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
+  .argument('[ticket]', "Ticket id. Defaults to the session's open engagement")
+  .option('--ticket <id>', 'Alias for [ticket]')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
+  .option('--dir <path>', 'Override default project directory')
+  .option('--agent <name>', 'Acting agent id')
   .option('--force', 'Overwrite if the next revision already exists')
-  .action(async (options: PlanVersionOptions) => {
+  .action(async (ticket: string | undefined, options: PlanVersionOptions) => {
     try {
-      await runPlanVersion(options);
+      await runPlanVersion({ ...options, ticket: ticket ?? options.ticket });
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
@@ -299,43 +339,9 @@ export const _internal = {
   extractUncheckedTodos,
   nextPlanFileName,
   planRevisions,
-  resolveTicketDir,
+  resolveTicketContext,
   runPlanVersion,
   runPlanCreate,
   resolvePlanRole,
   latestPlanRevision,
 };
-
-import { planApproveCommand, planUnapproveCommand } from './derive-verbs.js';
-
-planCommand
-  .command('approve')
-  .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Acting agent id (default: bound session, else human)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(async (ticket, options) => {
-    try {
-      await planApproveCommand(ticket, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });
-
-planCommand
-  .command('unapprove')
-  .description('Clear plan approval; the phase regresses to planning-level facts')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .action(async (ticket, options) => {
-    try {
-      await planUnapproveCommand(ticket, options);
-    } catch (error) {
-      console.error('Error:', error instanceof Error ? error.message : String(error));
-      process.exit(1);
-    }
-  });

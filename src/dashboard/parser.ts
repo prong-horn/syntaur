@@ -293,6 +293,8 @@ export interface ParsedTicketFull {
   assignee: string | null;
   depends_on: string[];
   links: string[];
+  blocked: string | null;
+  /** @deprecated v1 — use {@link ParsedTicketFull.blocked}. */
   blockedReason: string | null;
   workspace: {
     repository: string | null;
@@ -312,7 +314,7 @@ export interface ParsedTicketFull {
   // ── derived-status v3 fields ─────────────────────────────────────────────
   phase: string | null;
   disposition: string | null;
-  parked: boolean;
+  parked: string | null;
   reviewRequested: boolean;
   reworkRequested: boolean;
   implementationStarted: boolean;
@@ -324,7 +326,7 @@ export interface ParsedTicketFull {
   facts: Record<string, string>;
   /** Attestation records (one per fact+actor). Absent block → []. */
   attestations: AttestationRecord[];
-  // ── stage-engine fields (WS-2; read-only mirror, dormant until migrated) ──
+  // ── lifecycle-engine fields (WS-2; read-only mirror, dormant until migrated) ──
   solicitations: Solicitation[];
   firedVerdicts: string[];
   frozenChecks: FrozenCheck[] | null;
@@ -506,7 +508,7 @@ function parseAttestations(frontmatter: string): AttestationRecord[] {
   return results;
 }
 
-// ── WS-2 stage-engine blocks (parity with lifecycle frontmatter.ts; keep in
+// ── WS-2 lifecycle-engine blocks (parity with lifecycle frontmatter.ts; keep in
 // sync). Read-only mirror for the dashboard payloads; parsed but only consumed
 // once the engine is active (Task 2.6 migrated display). ─────────────────────
 
@@ -601,6 +603,12 @@ export function parseTicketFull(fileContent: string): ParsedTicketFull {
     assignee: getField(fm, 'assignee'),
     depends_on: parseListField(fm, 'depends_on'),
     links: parseListField(fm, 'links'),
+    blocked: (() => {
+      const b = getField(fm, 'blocked');
+      if (b !== null) return b === 'null' ? null : b;
+      const legacy = getField(fm, 'blockedReason');
+      return legacy === 'null' ? null : legacy;
+    })(),
     blockedReason: getField(fm, 'blockedReason'),
     workspace: {
       repository: getNestedField(fm, 'workspace', 'repository'),
@@ -623,7 +631,13 @@ export function parseTicketFull(fileContent: string): ParsedTicketFull {
     // pause flags; consumers should migrate to `status` + the flags.
     phase: getField(fm, 'phase'),
     disposition: getField(fm, 'disposition'),
-    parked: getField(fm, 'parked') === 'true',
+    parked: (() => {
+      const raw = getField(fm, 'parked');
+      if (raw === null || raw === 'null') return null;
+      if (raw === 'true') return 'parked before v2 (no reason recorded)';
+      if (raw === 'false') return null;
+      return raw;
+    })(),
     // Retired session-stage facts (WS-3 T9): post-marker these stop being
     // asserted — review/rework standing derives from the stored stage + the
     // stage routes. The reads stay as the pre-marker fallback.

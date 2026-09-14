@@ -5,14 +5,10 @@ import { listTicketsBoard } from '../dashboard/api.js';
 import { defaultProjectDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
-import { computeFacts } from '../lifecycle/facts.js';
-import { buildQueryRegistry } from '../lifecycle/derive.js';
-import { resolveDeriveContext } from '../lifecycle/recompute.js';
-import { isStagesMigrated } from '../utils/stages-marker.js';
+import { buildQueryRegistry } from '../utils/query/registry.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
-import type { FactDeclaration } from '../utils/config.js';
+import { isTerminalStageId } from '../dashboard/stage-config.js';
 import type { TicketBoardItem } from '../dashboard/types.js';
-import { formatTicketFolderName } from '../utils/ticket-folder.js';
 
 interface LsOptions {
   status?: string;
@@ -50,12 +46,11 @@ function ticketMdPath(item: TicketBoardItem): string {
   if (!item.projectSlug) {
     throw new Error(`Ticket "${item.id}" has no project; expected a project-nested ticket.`);
   }
-  const folderName = formatTicketFolderName(item.id, item.slug);
   return resolve(
     defaultProjectDir(),
     item.projectSlug,
     'tickets',
-    folderName,
+    item.slug,
     'ticket.md',
   );
 }
@@ -108,34 +103,20 @@ export async function runLs(
   }
 
   if (options.query) {
-    // Resolve the derive context FIRST so the query compiles against the custom
-    // vocabulary (declared facts + attestation exports), then materialize each
-    // item with the same declarations so the spread carries those fields.
-    const context = await resolveDeriveContext();
-    const { query, errors, warnings } = compileQuery(
-      options.query,
-      buildQueryRegistry(context.factDeclarations),
-    );
+    const { query, errors, warnings } = compileQuery(options.query, buildQueryRegistry());
     if (!query) {
       throw new Error(
         `Invalid --query:\n${errors.map((e) => `  at ${e.pos}: ${e.message}`).join('\n')}`,
       );
     }
-    // WS-3 compat window: deprecated fields (pinned, phaseAge) still compile
-    // but surface a parse-time warning on stderr (design §4.5).
     for (const w of warnings) {
       console.error(`Warning: at ${w.pos}: ${w.message}`);
     }
     const now = Date.now();
-    // Post-migration the stage IS `status`: the `phase` alias must resolve to
-    // it, not the stale frontmatter mirror — preserved-terminal tickets keep
-    // e.g. `phase: review` verbatim forever (codex code-review r1). Pre-marker
-    // the ladder's cached `phase` remains the real value.
-    const stagesMigrated = await isStagesMigrated();
     const enriched = await Promise.all(
       items.map(async (item) => ({
         item,
-        q: await loadQueryItem(item, context.terminalStatuses, now, context.factDeclarations, stagesMigrated),
+        q: await loadQueryItem(item, now),
       })),
     );
     items = enriched.filter(({ q }) => q !== null && query.predicate(q, { now })).map(({ item }) => item);
@@ -151,39 +132,22 @@ export async function runLs(
  */
 async function loadQueryItem(
   item: TicketBoardItem,
-  terminalStatuses: ReadonlySet<string>,
   now: number,
-  declarations: FactDeclaration[],
-  stagesMigrated: boolean,
 ): Promise<QueryItem | null> {
   const path = ticketMdPath(item);
   if (!(await fileExists(path))) return null;
   try {
     const content = await readFile(path, 'utf-8');
     const fm = parseTicketFrontmatter(content);
-    const body = content.replace(/^---\n[\s\S]*?\n---/, '');
-    const ticketDir = dirname(path);
-    const projectDir = item.projectSlug ? resolve(defaultProjectDir(), item.projectSlug) : null;
-    const facts = await computeFacts({ ticketDir, frontmatter: fm, body, projectDir, terminalStatuses, declarations });
-
-    // history virtuals: completedAt (currently-terminal only) + statusAge
-    // (time since last HEADLINE change — dimension-only entries don't reset it)
-    const history = fm.statusHistory;
-    const lastHeadlineChange = [...history].reverse().find((e) => e.from !== e.to || e.from === null);
-    const statusAge = lastHeadlineChange ? now - Date.parse(lastHeadlineChange.at) : null;
-    const lastPhaseChange = [...history].reverse().find((e) => e.phaseTo !== undefined && e.phaseFrom !== e.phaseTo);
-    const phaseAge = lastPhaseChange ? now - Date.parse(lastPhaseChange.at) : null;
+    const updatedMs = Date.parse(fm.updated);
+    const statusAge = Number.isNaN(updatedMs) ? null : now - updatedMs;
     const completedAt =
-      terminalStatuses.has(fm.status) && lastHeadlineChange ? lastHeadlineChange.at : null;
+      isTerminalStageId(fm.status) && fm.status === 'done' && !Number.isNaN(updatedMs)
+        ? fm.updated
+        : null;
 
     return {
-      ...facts,
       status: fm.status,
-      // Post-marker the stage IS the status; the frontmatter `phase` is only a
-      // mirror (stale forever on preserved terminals). Pre-marker it is the
-      // ladder's real cached phase.
-      phase: stagesMigrated ? fm.status : fm.phase,
-      disposition: fm.disposition,
       priority: fm.priority,
       template: fm.template,
       assignee: fm.assignee,
@@ -195,12 +159,9 @@ async function loadQueryItem(
       updated: fm.updated,
       completedAt,
       statusAge,
-      // Post-marker `phaseTo` entries stop being written, so the frontmatter-
-      // derived phaseAge freezes — the deprecated alias falls to statusAge.
-      phaseAge: stagesMigrated ? statusAge : phaseAge,
-      // Mirror the dashboard haystack (queryFilter.ts boardItemToQueryItem) so
-      // `search:` behaves identically on the CLI and the dashboard. The shared
-      // `search` field reads `searchText ?? title`; `title:` stays title-only.
+      phaseAge: statusAge,
+      blocked: Boolean(fm.blocked),
+      parked: Boolean(fm.parked),
       searchText: `${item.title ?? ''} ${item.slug ?? ''} ${item.id ?? ''} ${item.projectTitle ?? ''} ${item.projectSlug ?? ''}`,
     };
   } catch {

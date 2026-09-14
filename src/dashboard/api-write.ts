@@ -2,8 +2,16 @@ import { Router, type Request, type Response } from 'express';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { executeTransition, unambiguousCommandTarget } from '../lifecycle/index.js';
 import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
+import {
+  moveTicket,
+  flagTicket,
+  VerbRefusedError,
+  GateFailedError,
+  type MoveVerb,
+  type FlagVerb,
+} from '../lifecycle/verbs.js';
+import { PROJECT_ROLLUP_STATUSES } from './stage-config.js';
 import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
 import { generateId } from '../utils/uuid.js';
@@ -39,14 +47,11 @@ import {
   getEditableDocument,
   getEditableDocumentById,
   getProjectDetail,
-  getStatusConfig,
   installRecordsInvalidation,
   resolveProjectPath,
 } from './api.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
-import { executeTransitionByDir } from '../lifecycle/index.js';
-import { runEngineTransition, runEngineOverride } from '../lifecycle/engine-transition.js';
 import {
   renderProject,
   renderManifest,
@@ -111,28 +116,9 @@ export function rawPatchMoverViolation(
 ): string | null {
   const j = (v: unknown): string => JSON.stringify(v ?? null);
   if (next.status !== current.status) return 'status';
-  if (next.disposition !== current.disposition) return 'disposition';
-  if (next.phase !== current.phase) return 'phase';
   if (next.parked !== current.parked) return 'parked';
-  if (next.blockedReason !== current.blockedReason) return 'blockedReason';
-  // WS-3 T9: the retired session-stage scalars stay rejected post-migration —
-  // they are ENGINE-FED (set/cleared inside the work-start CAS payload), so a
-  // raw edit would desync the compiled gates' `NOT reworkRequested:true` hold.
-  if (next.reviewRequested !== current.reviewRequested) return 'reviewRequested';
-  if (next.reworkRequested !== current.reworkRequested) return 'reworkRequested';
-  if (next.implementationStarted !== current.implementationStarted) return 'implementationStarted';
-  if (j(next.override) !== j(current.override)) return 'override';
+  if (next.blocked !== current.blocked) return 'blocked';
   if (j(next.plan) !== j(current.plan)) return 'plan';
-  if (j(next.facts) !== j(current.facts)) return 'facts';
-  if (j(next.attestations) !== j(current.attestations)) return 'attestations';
-  if (j(next.statusHistory) !== j(current.statusHistory)) return 'statusHistory';
-  // WS-2 stage-engine state (codex review blocker 1) — a raw edit must not
-  // pause/resume (`hold`) or rewrite any engine bookkeeping locklessly.
-  if (next.hold !== current.hold) return 'hold';
-  if (j(next.gateOverrides) !== j(current.gateOverrides)) return 'gateOverrides';
-  if (j(next.frozenChecks) !== j(current.frozenChecks)) return 'frozenChecks';
-  if (j(next.firedVerdicts) !== j(current.firedVerdicts)) return 'firedVerdicts';
-  if (j(next.solicitations) !== j(current.solicitations)) return 'solicitations';
   return null;
 }
 
@@ -763,112 +749,6 @@ export function createWriteRouter(projectsDir: string): Router {
   });
 
 
-  // Replace a project's workflow binding (defaultWorkflow scalar + workflowByType
-  // map). Both are validated against the workflow library; an empty/omitted
-  // value clears that part. Used by the ProjectDetail Workflow section (Task 13).
-  router.put('/api/projects/:slug/workflow-binding', async (req: Request, res: Response) => {
-    try {
-      const projectSlug = getParam(req.params.slug);
-      const projectDir = resolve(projectsDir, projectSlug);
-      if (!(await fileExists(resolve(projectDir, 'project.md')))) {
-        res.status(404).json({ error: 'Project not found' });
-        return;
-      }
-      const { readConfig } = await import('../utils/config.js');
-      const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
-      const { setProjectWorkflowBinding } = await import('../utils/project-binding.js');
-      const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
-
-      const body = req.body ?? {};
-      const defaultWorkflow =
-        body.defaultWorkflow === undefined || body.defaultWorkflow === null || body.defaultWorkflow === ''
-          ? null
-          : String(body.defaultWorkflow);
-      if (defaultWorkflow !== null && !known.has(defaultWorkflow)) {
-        res.status(400).json({ error: `Unknown workflow "${defaultWorkflow}"` });
-        return;
-      }
-      const workflowByType: Record<string, string> = {};
-      if (body.workflowByType && typeof body.workflowByType === 'object') {
-        for (const [type, wf] of Object.entries(body.workflowByType)) {
-          if (typeof wf !== 'string' || wf === '') continue;
-          if (!known.has(wf)) {
-            res.status(400).json({ error: `Unknown workflow "${wf}" for type "${type}"` });
-            return;
-          }
-          workflowByType[type] = wf;
-        }
-      }
-
-      await setProjectWorkflowBinding(projectDir, { defaultWorkflow, workflowByType });
-      const project = await getProjectDetail(projectsDir, projectSlug);
-      res.json({ project });
-    } catch (error) {
-      console.error('Error updating project workflow binding:', error);
-      res.status(500).json({ error: `Failed to update binding: ${(error as Error).message}` });
-    }
-  });
-
-  // Set (or clear) a single ticket's `workflow:` override, then re-derive
-  // against the newly-resolved workflow. Used by the TicketDetail workflow
-  // dropdown (Task 13). The field is written BEFORE recompute so the derive runs
-  // against the NEW workflow (recompute resolves the binding from disk).
-  router.put('/api/tickets/:id/workflow', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: `Ticket "${id}" not found` });
-        return;
-      }
-      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
-      if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Ticket not found' });
-        return;
-      }
-      const workflow = (req.body ?? {}).workflow;
-      const clearing = workflow === null || workflow === undefined || workflow === '';
-      if (!clearing) {
-        if (typeof workflow !== 'string') {
-          res.status(400).json({ error: 'workflow must be a string or null' });
-          return;
-        }
-        const { readConfig } = await import('../utils/config.js');
-        const { getWorkflowLibrary } = await import('../utils/workflow-resolve.js');
-        const known = new Set(Object.keys(getWorkflowLibrary(await readConfig())));
-        if (!known.has(workflow)) {
-          res.status(400).json({ error: `Unknown workflow "${workflow}"` });
-          return;
-        }
-      }
-
-      let content = await readFile(ticketPath, 'utf-8');
-      if (clearing) {
-        const closingIdx = content.indexOf('\n---', 4);
-        if (closingIdx !== -1) {
-          const fm = content.slice(0, closingIdx).replace(/^workflow:.*\n?/m, '');
-          content = fm + content.slice(closingIdx);
-        }
-      } else {
-        content = setTopLevelField(content, 'workflow', workflow as string);
-      }
-      content = setTopLevelField(content, 'updated', nowTimestamp());
-      await writeFileForce(ticketPath, content);
-
-      const { recomputeTicketDir } = await import('../lifecycle/recompute.js');
-      await recomputeTicketDir(resolve(ticketPath, '..'), 'workflow-change', 'human');
-
-      const ticket = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket });
-    } catch (error) {
-      console.error('Error setting ticket workflow:', error);
-      res.status(500).json({ error: `Failed to set workflow: ${(error as Error).message}` });
-    }
-  });
-
-
-
-
   // --- Comments Endpoints ---
 
 
@@ -1054,11 +934,15 @@ const id = getParam(req.params.id);
       }
 
       const { status } = req.body || {};
-      const config = await getStatusConfig();
-      // `archived` is no longer a status — use the dedicated /archive endpoints.
-      const validStatuses = ['active', ...config.statuses.map((s) => s.id)];
-      if (status !== null && (typeof status !== 'string' || !validStatuses.includes(status))) {
-        res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}, or null to clear.` });
+      const validStatuses = [...PROJECT_ROLLUP_STATUSES];
+      if (
+        status !== null &&
+        (typeof status !== 'string' ||
+          !(PROJECT_ROLLUP_STATUSES as readonly string[]).includes(status))
+      ) {
+        res.status(400).json({
+          error: `Invalid status. Must be one of: ${validStatuses.join(', ')}, or null to clear.`,
+        });
         return;
       }
 
@@ -1302,19 +1186,12 @@ const id = getParam(req.params.id);
         return;
       }
 
-      // WS-2: same engine-active-mover guard as the project raw PATCH (both
-      // routes; codex review blocker 4 — gate on a resolved workflow, not the
-      // marker alone).
-      const byIdProjectDir = resolve(resolved.ticketDir, '..', '..');
-      const { isEngineActiveForTicket } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForTicket(ticketPath, byIdProjectDir)) {
-        const violation = rawPatchMoverViolation(current, next);
-        if (violation) {
-          res.status(400).json({
-            error: `Field "${violation}" cannot be changed via a raw edit on a stage-managed ticket — use a move/transition.`,
-          });
-          return;
-        }
+      const violation = rawPatchMoverViolation(current, next);
+      if (violation) {
+        res.status(400).json({
+          error: `Field "${violation}" cannot be changed via a raw edit — use a lifecycle verb.`,
+        });
+        return;
       }
 
       // Restore id + project + slug frontmatter (immutable after create).
@@ -1324,10 +1201,6 @@ const id = getParam(req.params.id);
       if (current.slug) nextContent = setTopLevelField(nextContent, 'slug', current.slug);
 
       const now = nowTimestamp();
-
-      if (next.status !== current.status && current.status === 'blocked' && next.status !== 'blocked') {
-        nextContent = setTopLevelField(nextContent, 'blockedReason', null);
-      }
 
       nextContent = setTopLevelField(nextContent, 'updated', now);
 
@@ -1519,91 +1392,6 @@ const id = getParam(req.params.id);
     }
   });
 
-  router.post('/api/tickets/:id/status-override', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: `Ticket "${id}" not found` });
-        return;
-      }
-      const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
-      if (!(await fileExists(ticketPath))) {
-        res.status(404).json({ error: 'Ticket not found' });
-        return;
-      }
-      const { status } = req.body || {};
-      const clearing = status === null;
-      const projectDirForId = resolve(resolved.ticketDir, '..', '..');
-
-      // WS-2 (Decision 1): engine-active → `manual-override` engine move (parity
-      // with the project route). Try it BEFORE the legacy status-id validation —
-      // a valid stage id need not be a legacy status id (codex review major 5).
-      // `null` ⇒ not engine-active → the legacy pin path below.
-      if (clearing || typeof status === 'string') {
-        const engineOverride = await runEngineOverride({
-          ticketPath,
-          projectDir: projectDirForId,
-          status: clearing ? null : status,
-          by: 'human',
-        });
-        if (engineOverride) {
-          if (!engineOverride.ok) {
-            res.status(engineOverride.code).json({ error: engineOverride.message });
-            return;
-          }
-          const ticket = await getTicketDetailById(projectsDir, id);
-          res.json({ ticket });
-          return;
-        }
-      }
-
-      const config = await getStatusConfig();
-      const validStatuses = config.statuses.map((s) => s.id);
-      if (!clearing && (typeof status !== 'string' || !validStatuses.includes(status))) {
-        res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}.` });
-        return;
-      }
-      // Derived-status v3: PIN semantics, same contract as the project route
-      // (codex r2 finding 2 — the by-id route had been left imperative).
-      if (!clearing && config.terminalStatuses.has(status)) {
-        res.status(400).json({
-          error: `"${status}" is terminal — use the complete/fail transition (gated), not an override.`,
-        });
-        return;
-      }
-      const { recomputeAndWrite, resolveRecomputeContext } = await import('../lifecycle/recompute.js');
-      const { updateOverride } = await import('../lifecycle/frontmatter.js');
-      const { context, workflowResolver } = await resolveRecomputeContext();
-      const result = await recomputeAndWrite(ticketPath, {
-        cause: clearing ? 'unpin' : 'pin',
-        by: 'human',
-        projectDir: projectDirForId,
-        context,
-        workflowResolver,
-        mutate: (content) => {
-          if (clearing) return updateOverride(content, null);
-          const current = parseTicketFull(content);
-          if (current.override?.status === status) return content; // idempotent
-          return updateOverride(content, { status, source: 'human', reason: null, at: nowTimestamp() });
-        },
-      });
-      if (result.deferredTerminal) {
-        res.status(409).json({ error: 'Ticket is terminal — reopen it first.' });
-        return;
-      }
-      if (result.warning) {
-        res.status(503).json({ error: result.warning });
-        return;
-      }
-      const ticket = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket });
-    } catch (error) {
-      console.error('Error overriding standalone status:', error);
-      res.status(500).json({ error: `Failed to override status: ${(error as Error).message}` });
-    }
-  });
-
   router.patch('/api/tickets/:id/assignee', async (req: Request, res: Response) => {
     try {
 const id = getParam(req.params.id);
@@ -1708,180 +1496,58 @@ const id = getParam(req.params.id);
     }
   });
 
-  router.post('/api/tickets/:id/transitions/:command', async (req: Request, res: Response) => {
+  const MOVE_VERBS = new Set<string>([
+    'plan',
+    'approve',
+    'start',
+    'review',
+    'done',
+    'drop',
+    'reopen',
+  ]);
+  const FLAG_VERBS = new Set<string>(['block', 'unblock', 'park', 'unpark']);
+
+  router.post('/api/tickets/:id/verbs/:verb', async (req: Request, res: Response) => {
     try {
-const id = getParam(req.params.id);
-      const command = getParam(req.params.command);
+      const id = getParam(req.params.id);
+      const verb = getParam(req.params.verb);
       const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
 
-      const { reason } = req.body || {};
-      const config = await getStatusConfig();
-      // Parity with the project route (codex r3 finding 2): only configured
-      // commands are executable.
-      const validCommandsById = [...new Set(config.transitions.map((t) => t.command))];
-      if (!validCommandsById.includes(command)) {
-        res.status(400).json({ error: `Unsupported transition command "${command}"` });
-        return;
-      }
-      const { recomputeAndWrite, recomputeDependents, resolveRecomputeContext } = await import(
-        '../lifecycle/recompute.js'
-      );
-      const { context, workflowResolver } = await resolveRecomputeContext();
-      const byIdPath = resolve(resolved.ticketDir, 'ticket.md');
-      const byIdProjectDir = resolve(resolved.ticketDir, '..', '..');
-
-      // Same derived-status routing as the project route (codex r2 finding 2):
-      // block/unblock = fact mutations in-lock; terminal commands honor the
-      // custom target and settle; everything else settles after the transition.
-      if (command === 'block' || command === 'unblock') {
-        const { updateTicketFile } = await import('../lifecycle/frontmatter.js');
-        const result = await recomputeAndWrite(byIdPath, {
-          cause: command,
-          by: 'human',
-          projectDir: byIdProjectDir,
-          context,
-          workflowResolver,
-          reason: typeof reason === 'string' ? reason : undefined,
-          mutate: (content) =>
-            updateTicketFile(content, {
-              blockedReason:
-                command === 'block' ? (typeof reason === 'string' && reason ? reason : '(unspecified)') : null,
-            }),
-        });
-        if (result.deferredTerminal) {
-          res.status(409).json({ error: 'Ticket is terminal — reopen it first.' });
-          return;
-        }
-        if (result.warning) {
-          res.status(503).json({ error: result.warning });
-          return;
-        }
-        const detail = await getTicketDetailById(projectsDir, id);
-        res.json({ ticket: detail, warnings: [] });
-        return;
-      }
-
-      // WS-2 (Decision 1): migrated complete/fail/reopen → ENGINE move (parity
-      // with the project route and the CLI). `null` ⇒ ladder fall-through below.
-      const engineResult = await runEngineTransition({
-        ticketPath: byIdPath,
-        projectDir: byIdProjectDir,
-        command,
-        by: 'human',
-        reason: typeof reason === 'string' ? reason : undefined,
-      });
-      if (engineResult) {
-        if (!engineResult.success) {
-          res.status(400).json({ error: engineResult.message, fromStatus: engineResult.fromStatus });
-          return;
-        }
-        if (byIdProjectDir) {
-          await recomputeDependents(byIdProjectDir, resolved.ticketSlug, {
-            cause: 'dep-terminal',
-            by: 'system',
-            context,
-            workflowResolver,
-          });
-        }
-        const detail = await getTicketDetailById(projectsDir, id);
-        res.json({ ticket: detail, warnings: engineResult.warnings ?? [] });
-        return;
-      }
-
-      // WS-2 (codex review blocker 2): reject engine-active commands the engine
-      // didn't handle rather than falling through to the lockless legacy path.
-      const { isEngineActiveForTicket } = await import('../lifecycle/engine-transition.js');
-      if (await isEngineActiveForTicket(byIdPath, byIdProjectDir)) {
-        res.status(400).json({
-          error: `"${command}" is not available on a stage-managed ticket — use complete/fail/reopen, block/unblock, or a board move.`,
-        });
-        return;
-      }
-
-      const GATED_TERMINAL = new Set(['complete', 'fail', 'reopen']);
-      const gatedFallbackById = GATED_TERMINAL.has(command)
-        ? unambiguousCommandTarget(config.transitions, command)
-        : undefined;
-      const transitionResult = await executeTransitionByDir(
-        resolved.ticketDir,
-        command as any,
-        {
-          reason: typeof reason === 'string' ? reason : undefined,
-          // Dashboard click → audit actor 'human' (independent of assignee). FIX 1.
-          auditActor: 'human',
-          // Same resolution as the project route: from-specific mapping wins,
-          // unambiguous command target as guard-free fallback for gated
-          // terminal commands. NOTE: by-id historically ran guard-free for
-          // all commands; the custom from-table now applies only to gated
-          // commands' resolution (their fallback), keeping non-terminal by-id
-          // behavior guard-free as before.
-          commandTargets:
-            config.custom && gatedFallbackById ? new Map([[command, gatedFallbackById]]) : undefined,
-          transitionTable: config.custom && GATED_TERMINAL.has(command) ? config.transitionTable : undefined,
-          terminalStatuses: config.custom ? config.terminalStatuses : undefined,
-        },
-      );
-      if (!transitionResult.success) {
-        res.status(400).json({ error: transitionResult.message, fromStatus: transitionResult.fromStatus });
-        return;
-      }
-
-      // Settle BEFORE responding (incl. the reopen convergence event).
-      const settledById = await recomputeAndWrite(byIdPath, {
-        cause: command,
-        by: 'human',
-        projectDir: byIdProjectDir,
-        context,
-        workflowResolver,
-      });
-      if (settledById.warning) {
-        res.status(503).json({ error: settledById.warning });
-        return;
-      }
-      if (byIdProjectDir) {
-        const wasTerminal = config.terminalStatuses.has(transitionResult.fromStatus);
-        const isTerminal = transitionResult.toStatus
-          ? config.terminalStatuses.has(transitionResult.toStatus)
-          : false;
-        if (wasTerminal !== isTerminal) {
-          await recomputeDependents(byIdProjectDir, resolved.ticketSlug, {
-            cause: 'dep-terminal',
-            by: 'system',
-            context,
-            workflowResolver,
-          });
-        }
-      }
-
-      const detail = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket: detail, warnings: transitionResult.warnings ?? [] });
-    } catch (error) {
-      console.error('Error transitioning by id:', error);
-      res.status(500).json({ error: `Failed to transition: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/tickets/:id/plan/approve', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: 'Ticket not found' });
-        return;
-      }
-      const { planApproveCommand } = await import('../commands/derive-verbs.js');
-      await planApproveCommand(resolved.id, {
+      const body = req.body ?? {};
+      const reason = typeof body.reason === 'string' ? body.reason : undefined;
+      const force = Boolean(body.force);
+      const options = {
+        force,
+        reason,
         project: resolved.projectSlug ?? undefined,
-      });
+      };
+
+      if (MOVE_VERBS.has(verb)) {
+        await moveTicket(id, verb as MoveVerb, options);
+      } else if (FLAG_VERBS.has(verb)) {
+        await flagTicket(id, verb as FlagVerb, reason ?? null, options);
+      } else {
+        res.status(400).json({ error: `Unsupported verb "${verb}"` });
+        return;
+      }
+
       const ticket = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket });
+      res.json({ ticket, next: null });
     } catch (error) {
-      const message = (error as Error).message;
-      res.status(409).json({ error: message });
+      if (error instanceof GateFailedError) {
+        res.status(409).json({ error: error.message, next: error.next });
+        return;
+      }
+      if (error instanceof VerbRefusedError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      console.error('Error running verb:', error);
+      res.status(500).json({ error: `Failed to run verb: ${(error as Error).message}` });
     }
   });
 

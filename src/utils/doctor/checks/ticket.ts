@@ -2,23 +2,18 @@ import { resolve } from 'node:path';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseTicketFull } from '../../../dashboard/parser.js';
-import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
+import { STAGE_ORDER } from '../../../ticket-templates/stages.js';
+import { isTerminalStage } from '../../../ticket-templates/stages.js';
 import { syntaurRoot } from '../../paths.js';
 import { listTicketsByProject, type TicketEntry } from '../../ticket-walk.js';
-import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
 import { listTemplates, resolveTemplateForTicket } from '../../../ticket-templates/registry.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'ticket';
 
-const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'completed']);
+const STATUSES_REQUIRING_HANDOFF = new Set(['review', 'done']);
 
-const PRE_WORKSPACE_STATUSES = new Set([
-  'pending',
-  'draft',
-  'ready_for_planning',
-  'ready_to_implement',
-]);
+const PRE_WORKSPACE_STATUSES = new Set(['backlog', 'planning', 'ready']);
 
 const OBJECTIVE_PLACEHOLDER_PATTERNS = [
   /<!--\s*placeholder\s*-->/i,
@@ -50,10 +45,8 @@ async function listTickets(ctx: CheckContext): Promise<{
   return listTicketsByProject(ctx.config.defaultProjectDir);
 }
 
-function configuredStatuses(ctx: CheckContext): Set<string> {
-  const custom = ctx.config.statuses?.statuses?.map((s) => s.id) ?? [];
-  if (custom.length > 0) return new Set(custom);
-  return new Set(DEFAULT_STATUSES);
+function configuredStatuses(_ctx: CheckContext): Set<string> {
+  return new Set(STAGE_ORDER);
 }
 
 /** projectDir for a walked ticket entry — its project root for a nested
@@ -112,23 +105,19 @@ const invalidStatus: Check = {
   title: 'Ticket statuses are valid',
   async run(ctx) {
     const { withTicketMd } = await listTickets(ctx);
-    // Each ticket's status is validated against ITS OWN workflow's defined
-    // statuses (resolved via the ticket's binding), not one global set.
-    const resolver = makeWorkflowContextResolver(ctx.config);
+    const allowed = configuredStatuses(ctx);
     const results: CheckResult[] = [];
     for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      const wctx = await resolver.forTicket(parsed, projectDirFor(a));
-      const allowed = wctx.knownStatusIds;
       if (!allowed.has(parsed.status)) {
         results.push({
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.ticketSlug}: status "${parsed.status}" is not in workflow "${wctx.workflowId}" statuses (${[...allowed].join(', ')})`,
+          detail: `${a.projectSlug}/${a.ticketSlug}: status "${parsed.status}" is not a valid stage (${[...allowed].join(', ')})`,
           affected: [path],
           remediation: {
             kind: 'manual',
@@ -150,16 +139,12 @@ const workspaceMissing: Check = {
   title: 'Non-terminal tickets have workspace fields set',
   async run(ctx) {
     const { withTicketMd } = await listTickets(ctx);
-    // Terminality is judged per the ticket's OWN workflow (a custom terminal
-    // status must exempt the ticket from the workspace requirement).
-    const resolver = makeWorkflowContextResolver(ctx.config);
     const results: CheckResult[] = [];
     for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      const wctx = await resolver.forTicket(parsed, projectDirFor(a));
-      if (wctx.terminalStatuses.has(parsed.status)) continue;
+      if (isTerminalStage(parsed.status as (typeof STAGE_ORDER)[number])) continue;
       if (PRE_WORKSPACE_STATUSES.has(parsed.status)) continue; // workspace not yet expected
       const { repository, worktreePath } = parsed.workspace;
       if (repository === null && worktreePath === null) {
@@ -190,7 +175,7 @@ const requiredFilesByStatus: Check = {
   title: 'Handoff file matches ticket status',
   async run(ctx) {
     const allowed = configuredStatuses(ctx);
-    const defaultsCovered = Array.from(DEFAULT_STATUSES).every((s) => allowed.has(s));
+    const defaultsCovered = STAGE_ORDER.every((s) => allowed.has(s));
     if (!defaultsCovered) {
       return {
         id: this.id,

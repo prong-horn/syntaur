@@ -1,46 +1,38 @@
-// WS-2: the extended `statusHistory` hop fields reference the pure engine's
-// shapes. These are `import type` ONLY — `stage-engine.ts` already imports
-// `AttestationRecord`/`Solicitation` from here, so a value import back would be
-// a runtime cycle; type-only imports erase at compile time (codex r2 finding 8).
-import type { HopTrigger, GateSnapshotEntry, DissentCause } from './stage-engine.js';
-import type { StageRoute } from '../utils/stage-model.js';
+import type { StageId } from '../ticket-templates/manifest.js';
+import { STAGE_ORDER } from '../ticket-templates/stages.js';
 
-export type TicketStatus = string;
+export type TicketStatus = StageId | 'dropped';
 
 export type TransitionCommand = string;
 
-export const DEFAULT_STATUSES = [
-  'draft',
-  'pending',
-  'ready_for_planning',
-  'ready_to_implement',
-  'in_progress',
-  'blocked',
-  'review',
-  'completed',
-  'failed',
-] as const;
+export const DEFAULT_STATUSES = STAGE_ORDER;
 
-export const DEFAULT_COMMANDS = [
+export const VERBS = [
+  'plan',
+  'approve',
+  'unapprove',
   'start',
-  'shape',
-  'plan-ready',
-  'implement',
-  'complete',
+  'review',
+  'done',
+  'drop',
+  'reopen',
   'block',
   'unblock',
-  'review',
-  'fail',
-  'reopen',
-  'assign',
+  'park',
+  'unpark',
 ] as const;
 
-export const DEFAULT_TERMINAL_STATUSES: ReadonlySet<string> = new Set([
-  'completed',
-  'failed',
-]);
+export type Verb = (typeof VERBS)[number];
 
-export const TERMINAL_STATUSES: ReadonlySet<string> = DEFAULT_TERMINAL_STATUSES;
+export const DEFAULT_COMMANDS = VERBS;
+
+export const TERMINAL_STAGES: ReadonlySet<TicketStatus> = new Set(['done', 'dropped']);
+
+/** @deprecated Use {@link TERMINAL_STAGES}. */
+export const DEFAULT_TERMINAL_STATUSES = TERMINAL_STAGES;
+
+/** @deprecated Use {@link TERMINAL_STAGES}. */
+export const TERMINAL_STATUSES: ReadonlySet<string> = TERMINAL_STAGES;
 
 export interface ExternalId {
   system: string;
@@ -74,20 +66,17 @@ export interface StatusHistoryEntry {
   phaseTo?: string | null;
   dispositionFrom?: string | null;
   dispositionTo?: string | null;
-  // ── stage-engine hop fields (WS-2) ───────────────────────────────────────
+  // ── lifecycle-engine hop fields (WS-2) ───────────────────────────────────────
   // Present ONLY on entries the engine writes (one per hop). Absent → a flat
   // ladder/legacy entry, unchanged. `route` is optional because the forced
   // first move of a `manual-override`/`reopen` step has no engine route (a pure
   // `Hop.route` is required; the forced move is written as a bare
   // StatusHistoryEntry, never a `Hop` — codex r4).
-  /** The declared route this hop traversed; absent on a forced first move. */
-  route?: StageRoute;
-  /** How the move was triggered (`gate`/`verdict`/`manual-override`/`reopen`/…). */
-  trigger?: HopTrigger;
-  /** The gate-passage snapshot at the hop (for regression + audit). */
-  gateSnapshot?: GateSnapshotEntry[];
-  /** The (check, actor, verdict) that fired a verdict route, if any. */
-  dissent?: DissentCause;
+  /** Legacy engine hop metadata (pre-v2); retained for parse compatibility. */
+  route?: unknown;
+  trigger?: string;
+  gateSnapshot?: unknown;
+  dissent?: unknown;
 }
 
 /**
@@ -220,6 +209,9 @@ export type Disposition = (typeof DISPOSITIONS)[number];
 
 export interface Workspace {
   repository: string | null;
+  /** v2 field name; `worktreePath` is read for unmigrated tickets only. */
+  worktree: string | null;
+  /** @deprecated v2 uses `worktree`. */
   worktreePath: string | null;
   branch: string | null;
   parentBranch: string | null;
@@ -234,7 +226,8 @@ export interface TicketFrontmatter {
   /** Explicit lifecycle-workflow override (`workflow:` id). Null → resolve via
    * project `workflowByType[template]` / project default / global default / `default`. */
   workflow: string | null;
-  status: TicketStatus;
+  /** v2 stage id after migration; may hold legacy v1 values until the statuses step. */
+  status: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   created: string;
   updated: string;
@@ -243,7 +236,8 @@ export interface TicketFrontmatter {
   statusHistory: StatusHistoryEntry[];
   depends_on: string[];
   links: string[];
-  blockedReason: string | null;
+  /** Non-null when blocked; reason string set by `block`. */
+  blocked: string | null;
   workspace: Workspace;
   tags: string[];
   archived: boolean;
@@ -256,8 +250,8 @@ export interface TicketFrontmatter {
   disposition: string | null;
   /** Plan role file and approval digest (always present; null fields = no plan / unapproved). */
   plan: PlanBlock;
-  /** Intentional withhold → disposition: parked. */
-  parked: boolean;
+  /** Non-null when parked; reason string set by `park`. */
+  parked: string | null;
   /** Review escalation atom; feeds the review phase rung. */
   reviewRequested: boolean;
   /** Rework requested: a new `implement` stage opened after `review`. Drops the
@@ -273,7 +267,7 @@ export interface TicketFrontmatter {
   /** Attestation records, one per (fact, actor). Revision-bound; stale records
    * contribute nothing at compute time. Absent block → []. */
   attestations: AttestationRecord[];
-  // ── stage-engine fields (WS-2; dormant until `stages-migrated`) ───────────
+  // ── lifecycle-engine fields (WS-2; dormant until `stages-migrated`) ───────────
   /** Open/rendered judgment solicitations (design §2.5). Absent block → []. */
   solicitations: Solicitation[];
   /** `dissentKey()`s already routed on — edge-trigger bookkeeping so a still-valid
@@ -291,7 +285,7 @@ export interface TicketFrontmatter {
 export interface TransitionResult {
   success: boolean;
   message: string;
-  fromStatus: TicketStatus;
-  toStatus?: TicketStatus;
+  fromStatus: string;
+  toStatus?: string;
   warnings?: string[];
 }

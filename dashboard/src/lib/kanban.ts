@@ -1,3 +1,5 @@
+import { STAGE_ORDER } from '../hooks/useStatusConfig';
+
 export const DEFAULT_PROJECT_BOARD_COLUMNS = [
   'pending',
   'active',
@@ -8,17 +10,7 @@ export const DEFAULT_PROJECT_BOARD_COLUMNS = [
 
 export const PROJECT_BOARD_COLUMNS = DEFAULT_PROJECT_BOARD_COLUMNS;
 
-export const DEFAULT_TICKET_BOARD_COLUMNS = [
-  'draft',
-  'pending',
-  'ready_for_planning',
-  'ready_to_implement',
-  'in_progress',
-  'blocked',
-  'review',
-  'completed',
-  'failed',
-] as const;
+export const DEFAULT_TICKET_BOARD_COLUMNS = [...STAGE_ORDER] as const;
 
 export const TICKET_BOARD_COLUMNS = DEFAULT_TICKET_BOARD_COLUMNS;
 

@@ -1,6 +1,5 @@
 import { watch } from 'chokidar';
 import { basename, dirname, isAbsolute, relative, sep } from 'node:path';
-import { invalidateWorkflowLibraryCache } from '../utils/workflow-library.js';
 import type { WsMessage } from './types.js';
 import { parseTicketFolderName } from '../utils/ticket-folder.js';
 
@@ -43,23 +42,8 @@ export function ignoreDotSegmentsBelow(
 export interface WatcherOptions {
   projectsDir: string;
   playbooksDir?: string;
-  /** Absolute path to ~/.syntaur/workflows/. When set, changes to per-file stage
-   * workflows invalidate the workflow-library cache and fire `onConfigChanged`
-   * (the same recompute-all signal a config.md change triggers) — the config
-   * watcher is `depth:0` on config.md, so it never sees per-file workflow edits. */
-  workflowsDir?: string;
-  /** Absolute path to ~/.syntaur/config.md. When set, changes trigger
-   * `onConfigChanged` — derive rules may have changed, so the server runs a
-   * recompute-all sweep (design v3, Piece 3 trigger set). */
-  configPath?: string;
-  /** Debounced per-ticket hook fired alongside `ticket-updated` —
-   * the server wires this to `recomputeAndWrite` so out-of-band edits
-   * (agents/humans editing files directly) re-derive. The recompute's own
-   * write fires one more event that no-ops (no change → no write), so the
-   * cycle terminates. */
+  /** Optional debounced per-ticket hook fired alongside `ticket-updated`. */
   onTicketChanged?: (projectSlug: string | null, ticketSlug: string) => void;
-  /** Debounced hook for config.md changes (recompute-all trigger). */
-  onConfigChanged?: () => void;
   /** Absolute path to ~/.syntaur/syntaur.db. When set, watch the parent dir
    * for changes to this file and its WAL siblings (-wal, -shm) and broadcast
    * `agent-sessions-updated`. chokidar 4 removed glob support so we must filter by
@@ -73,12 +57,9 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
   const {
     projectsDir,
     playbooksDir,
-    workflowsDir,
     dbPath,
-    configPath,
     onMessage,
     onTicketChanged,
-    onConfigChanged,
     debounceMs = 300,
   } = options;
   const pendingEvents = new Map<string, NodeJS.Timeout>();
@@ -180,43 +161,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     playbooksWatcher.on('unlink', handlePlaybookChange);
   }
 
-  // --- Workflows watcher (per-file stage workflows) ---
-  // Per-file workflows live in ~/.syntaur/workflows/*.md. The config watcher is
-  // depth:0 on config.md, so a workflow-file edit fires nothing today. Model this
-  // on the playbooks watcher, but on change invalidate the workflow-library cache
-  // and fire the config watcher's recompute signal (a stage/route/gate change can
-  // move where tickets sit, exactly like a derive-rule change).
-  let workflowsWatcher: ReturnType<typeof watch> | null = null;
-
-  if (workflowsDir) {
-    workflowsWatcher = watch(workflowsDir, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 1,
-      ignored: ignoreDotSegmentsBelow(workflowsDir),
-    });
-
-    function handleWorkflowsChange(): void {
-      const debounceKey = '__workflows__';
-      const existing = pendingEvents.get(debounceKey);
-      if (existing) clearTimeout(existing);
-
-      pendingEvents.set(
-        debounceKey,
-        setTimeout(() => {
-          pendingEvents.delete(debounceKey);
-          // Drop the stale per-file library BEFORE the recompute reads it.
-          invalidateWorkflowLibraryCache();
-          if (onConfigChanged) onConfigChanged();
-        }, debounceMs),
-      );
-    }
-
-    workflowsWatcher.on('change', handleWorkflowsChange);
-    workflowsWatcher.on('add', handleWorkflowsChange);
-    workflowsWatcher.on('unlink', handleWorkflowsChange);
-  }
-
   // --- DB watcher (agent sessions share syntaur.db) ---
   // SQLite WAL-mode writes mostly go to `<db>-wal`, not the main file. Watch
   // the parent directory and filter by basename to catch the main DB and its
@@ -259,33 +203,6 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     sessionsDbWatcher.on('unlink', handleDbChange);
   }
 
-  // --- config.md watcher (derive rules → recompute-all) ---
-  let configWatcher: ReturnType<typeof watch> | null = null;
-
-  if (configPath && onConfigChanged) {
-    configWatcher = watch(configPath, {
-      ignoreInitial: true,
-      persistent: true,
-      depth: 0,
-    });
-
-    function handleConfigChange(): void {
-      const debounceKey = '__config__';
-      const existing = pendingEvents.get(debounceKey);
-      if (existing) clearTimeout(existing);
-      pendingEvents.set(
-        debounceKey,
-        setTimeout(() => {
-          pendingEvents.delete(debounceKey);
-          onConfigChanged!();
-        }, debounceMs),
-      );
-    }
-
-    configWatcher.on('change', handleConfigChange);
-    configWatcher.on('add', handleConfigChange);
-  }
-
   return {
     close: async () => {
       pendingEvents.forEach((timeout) => {
@@ -294,9 +211,7 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       pendingEvents.clear();
       await projectsWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
-      if (workflowsWatcher) await workflowsWatcher.close();
       if (sessionsDbWatcher) await sessionsDbWatcher.close();
-      if (configWatcher) await configWatcher.close();
     },
   };
 }

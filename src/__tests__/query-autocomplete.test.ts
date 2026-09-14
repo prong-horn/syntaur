@@ -8,16 +8,9 @@ import {
   type FieldCaretContext,
   type ValueCaretContext,
 } from '../../dashboard/src/lib/query-autocomplete';
-import { queryFieldNames, buildQueryRegistry } from '../utils/fact-registry.js';
-import type { FactDeclaration } from '../utils/fact-registry.js';
+import { queryFieldNames, buildQueryRegistry } from '../utils/query/registry.js';
 
-// Declarations exercising both fact kinds: a bool fact and a plan-bound
-// attestation (which contributes five export field names).
-const DECLS: FactDeclaration[] = [
-  { name: 'qaPassed', type: 'bool' },
-  { name: 'codeReview', type: 'attestation', binds: 'plan' },
-];
-const REGISTRY = buildQueryRegistry(DECLS);
+const REGISTRY = buildQueryRegistry();
 
 const SOURCES: ValueSuggestionSources = {
   statuses: ['draft', 'in_progress', 'review', 'awaiting_triage'],
@@ -29,34 +22,14 @@ const SOURCES: ValueSuggestionSources = {
 };
 
 // ── AC2: queryFieldNames vocabulary ──────────────────────────────────────────
-describe('AC2 — queryFieldNames exposes built-ins, exports, and declared facts', () => {
+describe('AC2 — queryFieldNames exposes built-in v2 fields', () => {
   it('includes camelCase built-in fields', () => {
-    const names = queryFieldNames([]);
+    const names = queryFieldNames();
     expect(names).toContain('completedAt');
     expect(names).toContain('statusAge');
-    expect(names).toContain('planApproved');
     expect(names).toContain('status');
-    // WS-3 compat window (§4.5): deprecated fields are no longer advertised —
-    // they still parse, with a deprecation warning.
-    expect(names).not.toContain('phaseAge');
-    expect(names).not.toContain('pinned');
-  });
-
-  it('includes the bool declared fact name', () => {
-    expect(queryFieldNames(DECLS)).toContain('qaPassed');
-  });
-
-  it('includes all five per-attestation export names', () => {
-    const names = queryFieldNames(DECLS);
-    for (const exp of [
-      'codeReview',
-      'codeReviewApproved',
-      'codeReviewChangesRequested',
-      'codeReviewBy',
-      'codeReviewApprovedBy',
-    ]) {
-      expect(names).toContain(exp);
-    }
+    expect(names).toContain('blocked');
+    expect(names).toContain('parked');
   });
 });
 
@@ -124,38 +97,21 @@ describe('AC2 — detectCaretContext distinguishes field vs value', () => {
 // ── AC2: rankFieldSuggestions ranking ────────────────────────────────────────
 describe('AC2 — rankFieldSuggestions ranks prefix matches first', () => {
   it('empty partial returns the full field list', () => {
-    expect(rankFieldSuggestions('', DECLS)).toEqual(queryFieldNames(DECLS));
+    expect(rankFieldSuggestions('')).toEqual(queryFieldNames());
   });
 
   it('prefix matches precede substring matches', () => {
-    // "stat" prefixes `status`, `statusAge`; substring-only matches (e.g.
-    // `implementationStarted`, `unresolvedQuestions` contain no "stat") — use a
-    // partial that yields both classes: "approved".
-    const ranked = rankFieldSuggestions('status', DECLS);
+    const ranked = rankFieldSuggestions('status');
     expect(ranked[0]).toBe('status');
     expect(ranked).toContain('statusAge');
-
-    // `by` is a substring of several attestation exports; ranking still works.
-    const rankedApproved = rankFieldSuggestions('approved', DECLS);
-    // planApproved / codeReviewApproved / codeReviewApprovedBy all CONTAIN
-    // "approved" but none START with it → all are substring matches, present.
-    expect(rankedApproved).toContain('planApproved');
-    expect(rankedApproved).toContain('codeReviewApproved');
   });
 
   it('a true prefix is ordered before a substring-only match', () => {
-    // `pro` is a prefix of `project`/`progressStaleDays`; `planApproved` only
-    // CONTAINS "pro" (apPROved) so it must rank after the prefix matches.
-    const ranked = rankFieldSuggestions('pro', DECLS);
-    const projectIdx = ranked.indexOf('project');
-    const progressIdx = ranked.indexOf('progressStaleDays');
-    const substringIdx = ranked.indexOf('planApproved');
-    expect(projectIdx).toBeGreaterThanOrEqual(0);
-    expect(progressIdx).toBeGreaterThanOrEqual(0);
-    expect(substringIdx).toBeGreaterThan(projectIdx);
-    expect(substringIdx).toBeGreaterThan(progressIdx);
-    // WS-3: the deprecated `phaseAge` is no longer suggested at all.
-    expect(rankFieldSuggestions('phase', DECLS)).not.toContain('phaseAge');
+    const ranked = rankFieldSuggestions('stat');
+    const statusIdx = ranked.indexOf('status');
+    const statusAgeIdx = ranked.indexOf('statusAge');
+    expect(statusIdx).toBe(0);
+    expect(statusAgeIdx).toBeGreaterThan(statusIdx);
   });
 });
 
@@ -186,13 +142,10 @@ describe('AC2 — getValueSuggestions returns the right candidates per field', (
     ]);
   });
 
-  it('a bool field (built-in or custom fact) → true / false', () => {
+  it('a bool field → true / false', () => {
     expect(getValueSuggestions('blocked', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
-    expect(getValueSuggestions('planApproved', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
-    expect(getValueSuggestions('qaPassed', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
-    expect(getValueSuggestions('codeReviewApproved', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
-    // partial filters the bool candidates
-    expect(getValueSuggestions('qaPassed', 't', SOURCES, REGISTRY)).toEqual(['true']);
+    expect(getValueSuggestions('parked', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
+    expect(getValueSuggestions('archived', 't', SOURCES, REGISTRY)).toEqual(['true']);
   });
 
   it('a freeform / non-enumerable field → empty list', () => {

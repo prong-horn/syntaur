@@ -186,7 +186,7 @@ describe('newCommand', () => {
       resolve(ticketDir, 'ticket.md'),
       'utf-8',
     );
-    expect(content).toContain('status: draft');
+    expect(content).toContain('status: backlog');
     expect(content).toContain('priority: high');
     expect(content).toContain('depends_on:');
     expect(content).toContain(`  - ${dep.id}`);
@@ -236,23 +236,6 @@ describe('newCommand', () => {
     await expect(
       newCommand('', { project: 'test' }),
     ).rejects.toThrow('cannot be empty');
-  });
-
-  it('creates ticket with --ready as ready_for_planning', async () => {
-    await createProjectCommand('Test Project', { dir: testDir });
-
-    await newCommand('Already Shaped', {
-      project: 'test-project',
-      dir: testDir,
-      ready: true,
-    });
-
-    const content = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'TP-1-already-shaped', 'ticket.md'),
-      'utf-8',
-    );
-    expect(content).toContain('status: ready_for_planning');
-    expect(content).not.toContain('status: draft');
   });
 
   it('throws on invalid project slug', async () => {

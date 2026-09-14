@@ -76,11 +76,11 @@ describe('syntaur ls', () => {
     const today = new Date(Date.now() - 3 * DAY_MS).toISOString(); // recent: within any --age window
     const old = new Date(Date.now() - 400 * DAY_MS).toISOString(); // stale: outside 30d
     for (const a of [
-      { id: 'PA-1', slug: 'a-pending', status: 'pending', tags: ['x', 'y'], updated: today },
+      { id: 'PA-1', slug: 'a-backlog', status: 'backlog', tags: ['x', 'y'], updated: today },
       { id: 'PA-2', slug: 'a-progress', status: 'in_progress', tags: ['x'], updated: today },
-      { id: 'PA-3', slug: 'a-old', status: 'pending', tags: ['z'], updated: old },
+      { id: 'PA-3', slug: 'a-old', status: 'backlog', tags: ['z'], updated: old },
     ]) {
-      const adir = resolve(projDir, 'tickets', `${a.id}-${a.slug}`);
+      const adir = resolve(projDir, 'tickets', a.slug);
       await mkdir(adir, { recursive: true });
       await writeFile(
         resolve(adir, 'ticket.md'),
@@ -108,11 +108,11 @@ describe('syntaur ls', () => {
   });
 
   it('filters by --status', async () => {
-    const r = await runCli(['ls', '--status', 'pending', '--json'], syntaurHome);
+    const r = await runCli(['ls', '--status', 'backlog', '--json'], syntaurHome);
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
     const slugs = data.tickets.map((a: { slug: string }) => a.slug).sort();
-    expect(slugs).toEqual(['a-old', 'a-pending']);
+    expect(slugs).toEqual(['a-backlog', 'a-old']);
   });
 
   it('filters by --age', async () => {
@@ -120,7 +120,7 @@ describe('syntaur ls', () => {
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
     const slugs = data.tickets.map((a: { slug: string }) => a.slug).sort();
-    expect(slugs).toEqual(['a-pending', 'a-progress']);
+    expect(slugs).toEqual(['a-backlog', 'a-progress']);
   });
 
   it('filters by --tag (must have ALL listed tags)', async () => {
@@ -128,7 +128,7 @@ describe('syntaur ls', () => {
     expect(r.code, r.stderr).toBe(0);
     const data = JSON.parse(r.stdout);
     expect(data.tickets).toHaveLength(1);
-    expect(data.tickets[0].slug).toBe('a-pending');
+    expect(data.tickets[0].slug).toBe('a-backlog');
   });
 
   it('hides archived by default and shows only archived with --archived', async () => {
@@ -138,7 +138,7 @@ describe('syntaur ls', () => {
     await mkdir(adir, { recursive: true });
     await writeFile(
       resolve(adir, 'ticket.md'),
-      `---\nid: a4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
+      `---\nid: PA-4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
     );
 
     const def = await runCli(['ls', '--json'], syntaurHome);

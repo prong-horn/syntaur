@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RequestHandler, Router } from 'express';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, join as joinPath, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   getOverview,
@@ -10,7 +10,6 @@ import {
   invalidateRecordsCache,
 } from '../dashboard/api.js';
 import { createWriteRouter } from '../dashboard/api-write.js';
-import { createStatusConfigRouter } from '../dashboard/api-status-config.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
 
 // Hermetic root: these tests pass fixture configs; without a sandboxed
@@ -22,6 +21,12 @@ let testDir: string;
 
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-cache-test-'));
+  if (process.env.SYNTAUR_HOME) {
+    await writeFile(
+      joinPath(process.env.SYNTAUR_HOME, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${testDir}\n---\n`,
+    );
+  }
   // Records cache is module-global; clear it so a prior test's snapshot for a
   // (now-deleted) tmp dir can never bleed into this one.
   invalidateRecordsCache();
@@ -79,7 +84,7 @@ async function seedProjectWithTicket(status: string): Promise<string> {
   const ticketDir = resolve(projectDir, 'tickets', `${TEST_TICKET_ID}-test-ticket`);
   await mkdir(ticketDir, { recursive: true });
   await writeFile(resolve(projectDir, 'project.md'), projectMd('test-project', 'Test Project'), 'utf-8');
-  await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd('test-ticket', status), 'utf-8');
+  await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd(`${TEST_TICKET_ID}-test-ticket`, status), 'utf-8');
   return resolve(ticketDir, 'ticket.md');
 }
 
@@ -116,7 +121,7 @@ async function invokeRoute(
 
 describe('records cache', () => {
   it('serves a cached snapshot until explicitly invalidated', async () => {
-    await seedProjectWithTicket('pending');
+    await seedProjectWithTicket('backlog');
     const ticketPath = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`, 'ticket.md');
 
     // Warm the cache.
@@ -125,7 +130,7 @@ describe('records cache', () => {
 
     // Mutate the file directly on disk, bypassing every router (so nothing
     // invalidates). A live (non-cached) read would see in_progress.
-    await writeFile(ticketPath, ticketMd('test-ticket', 'in_progress'), 'utf-8');
+    await writeFile(ticketPath, ticketMd(`${TEST_TICKET_ID}-test-ticket`, 'in_progress'), 'utf-8');
 
     // Cache is still serving the warm snapshot — proves it is not re-fanning out.
     const cached = await getOverview(testDir);
@@ -138,7 +143,7 @@ describe('records cache', () => {
   });
 
   it('shares one snapshot across listProjects and getOverview', async () => {
-    await seedProjectWithTicket('pending');
+    await seedProjectWithTicket('backlog');
     const projectMdPath = resolve(testDir, 'test-project', 'project.md');
 
     // Warm via listProjects.
@@ -158,10 +163,10 @@ describe('records cache', () => {
   });
 
   it('returns fresh data immediately after a dashboard write (no stale-read-after-write)', async () => {
-    await seedProjectWithTicket('pending');
+    await seedProjectWithTicket('ready');
     const router = createWriteRouter(testDir);
 
-    // Warm the cache with the pending state.
+    // Warm the cache with the ready state.
     const before = await getOverview(testDir);
     expect(before.stats.inProgressTickets).toBe(0);
 
@@ -169,37 +174,14 @@ describe('records cache', () => {
     // the cache synchronously before this returns — no watcher debounce window.
     const status = await invokeRoute(
       router,
-      'patch',
-      '/api/tickets/:id',
-      { id: TEST_TICKET_ID },
-      { content: ticketMd('test-ticket', 'in_progress') },
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: TEST_TICKET_ID, verb: 'start' },
+      {},
     );
     expect(status).toBe(200);
 
     // The very next read reflects the write with no manual invalidation.
-    const after = await getOverview(testDir);
-    expect(after.stats.inProgressTickets).toBe(1);
-  });
-
-  it('invalidates the records cache after a status-config mutation', async () => {
-    await seedProjectWithTicket('pending');
-    const ticketPath = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`, 'ticket.md');
-    const router = createStatusConfigRouter(testDir, null);
-
-    // Warm the cache with the pending state.
-    const before = await getOverview(testDir);
-    expect(before.stats.inProgressTickets).toBe(0);
-
-    // Mutate on disk, bypassing every router.
-    await writeFile(ticketPath, ticketMd('test-ticket', 'in_progress'), 'utf-8');
-
-    // A malformed body short-circuits to 400 before any global status-config
-    // read/write, but it must still run the invalidation wrapper's `finally` —
-    // proving the status-config router is wired with installRecordsInvalidation.
-    const status = await invokeRoute(router, 'post', '/', {}, {});
-    expect(status).toBe(400);
-
-    // The next read reflects the on-disk change → the cache was cleared.
     const after = await getOverview(testDir);
     expect(after.stats.inProgressTickets).toBe(1);
   });

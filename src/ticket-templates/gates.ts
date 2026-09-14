@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import type { GateId, StageId, TemplateManifest, VerbWithGates } from './manifest.js';
 import { deliverableRoleFile, logRoleFile, planRoleFile } from './manifest.js';
 import type { TicketFrontmatter } from '../lifecycle/types.js';
-import { countRealAcceptanceCriteria, isPlanApproved } from '../lifecycle/facts.js';
+import { countRealAcceptanceCriteria, isPlanApproved } from './plan-facts.js';
 import { fileExists } from '../utils/fs.js';
 import { nonEmptyBeyondScaffold } from './content.js';
 import type { LogEntry } from './log-reader.js';
@@ -17,7 +17,7 @@ export interface GateResult {
 }
 
 export const GATE_HINTS: Record<GateId, string> = {
-  'plan-exists': 'Run syntaur plan create',
+  'plan-exists': 'Run syntaur plan create <ID>',
   'plan-approved': 'Run syntaur approve',
   'deps-done': 'Wait for dependencies',
   'workspace-set': 'Set workspace in ticket.md',
@@ -46,10 +46,11 @@ export interface GateContext {
 
 function workspaceSet(fm: TicketFrontmatter): boolean {
   const w = fm.workspace;
+  const worktree = w.worktree ?? w.worktreePath;
   return Boolean(
     w.repository?.trim() &&
       w.branch?.trim() &&
-      w.worktreePath?.trim() &&
+      worktree?.trim() &&
       w.parentBranch?.trim(),
   );
 }
@@ -259,7 +260,14 @@ export async function computeNextLine(
   const results = await evaluateVerbGates(verb, ctx);
   const failing = firstFailingGate(results);
   if (failing) {
-    return failing.hint;
+    if (verb === 'plan' && nextStage === 'planning') {
+      return `Run syntaur plan create ${ticketId}`;
+    }
+    return failing.hint.replace('<ID>', ticketId);
+  }
+
+  if (verb === 'plan' && nextStage === 'planning') {
+    return `syntaur plan create ${ticketId}`;
   }
 
   return `syntaur ${verb} ${ticketId}`;

@@ -40,7 +40,6 @@ const SIDEBAR_SECTIONS = [
   '/playbooks',
   '/help',
   '/settings',
-  '/workflow',
 ] as const;
 
 export type SidebarSection = (typeof SIDEBAR_SECTIONS)[number];
@@ -98,10 +97,6 @@ export function getSidebarSection(pathname: string): SidebarSection | null {
 
   if (normalized.startsWith('/settings')) {
     return '/settings';
-  }
-
-  if (normalized.startsWith('/workflow')) {
-    return '/workflow';
   }
 
   if (normalized.startsWith('/inbox')) {
@@ -197,9 +192,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
   } else if (parts[0] === 'settings') {
     title = 'Settings';
     breadcrumbs.push({ label: 'Settings', path: '/settings' });
-  } else if (parts[0] === 'workflow') {
-    title = 'Workflow';
-    breadcrumbs.push({ label: 'Workflow', path: '/workflow' });
   } else if (parts[0] === 'create' && parts[1] === 'project') {
     title = 'Create Project';
     breadcrumbs.push({ label: 'Create Project', path: '/create/project' });

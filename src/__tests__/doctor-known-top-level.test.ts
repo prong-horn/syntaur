@@ -7,7 +7,6 @@ const REPO_ROOT = resolve(import.meta.dirname, '../..');
 
 const CRITERION_NAMES = [
   'agents',
-  'workflows',
   'targets',
   'templates',
   'view-prefs.json',
@@ -22,7 +21,7 @@ const REQUIRED_DISCOVERED = [
 ] as const;
 
 // session.ts compares against context.json only to skip it — nothing writes it at root.
-const EXCLUDED_ROOT_NAMES = new Set(['context.json']);
+const EXCLUDED_ROOT_NAMES = new Set(['context.json', 'workflows', 'derive-migrated']);
 
 function walkTsFiles(dir: string): string[] {
   const results: string[] = [];
@@ -101,11 +100,9 @@ export function discoverKnownTopLevelNames(): Set<string> {
 }
 
 function markerConstants(): string[] {
-  const recompute = readFileSync(join(REPO_ROOT, 'src/lifecycle/recompute.ts'), 'utf-8');
-  const stages = readFileSync(join(REPO_ROOT, 'src/utils/stages-marker.ts'), 'utf-8');
-  const derive = recompute.match(/const MIGRATION_MARKER = '([^']+)'/)?.[1];
-  const stagesMarker = stages.match(/const STAGES_MARKER = '([^']+)'/)?.[1];
-  return [derive, stagesMarker].filter((v): v is string => Boolean(v));
+  const migrate = readFileSync(join(REPO_ROOT, 'src/commands/migrate-v2.ts'), 'utf-8');
+  const v2Marker = migrate.match(/export const V2_MIGRATED_MARKER = '([^']+)'/)?.[1];
+  return v2Marker ? [v2Marker] : [];
 }
 
 describe('doctor KNOWN_TOP_LEVEL', () => {

@@ -1,13 +1,28 @@
-export type {
-  TicketStatus,
-  TransitionCommand,
-  TicketFrontmatter,
-  ExternalId,
-  Workspace,
-  TransitionResult,
-} from './types.js';
-export { TERMINAL_STATUSES, DEFAULT_STATUSES, DEFAULT_COMMANDS, DEFAULT_TERMINAL_STATUSES } from './types.js';
-export { canTransition, getTargetStatus, isTerminalStatus, DEFAULT_TRANSITION_TABLE, DEFAULT_COMMAND_TARGETS, buildTransitionTable, buildCommandTargets, unambiguousCommandTarget } from './state-machine.js';
+export type { TicketStatus, TicketFrontmatter, Workspace, PlanBlock } from './types.js';
+export { TERMINAL_STAGES, VERBS } from './types.js';
+export { STAGE_ORDER, STAGE_LABELS, STAGE_COLORS, stageForStatus, isTerminalStage } from '../ticket-templates/stages.js';
 export { parseTicketFrontmatter, updateTicketFile, updateTicketWorkspace } from './frontmatter.js';
-export { executeTransition, executeAssign, executeTransitionByDir, executeAssignByDir, executeUnassign, executeUnassignByDir } from './transitions.js';
-export type { TransitionOptions, TransitionByDirOptions } from './transitions.js';
+export { assignTicket, unassignTicket } from './assign.js';
+export {
+  moveTicket,
+  flagTicket,
+  unapproveTicket,
+  resolveVerbActor,
+  VerbRefusedError,
+  GateFailedError,
+} from './verbs.js';
+export type { VerbOptions, MoveTicketResult, MoveVerb, FlagVerb } from './verbs.js';
+export {
+  emitEvent,
+  emitMoved,
+  emitFlagged,
+  emitUnflagged,
+  emitPlanApproved,
+  emitPlanVersioned,
+  emitCreated,
+  withSuppressedEvents,
+  setSuppressEvents,
+} from './event-emit.js';
+export { appendProgressLog } from './progress-append.js';
+export { appendLogEntry } from './log-append.js';
+export { appendComment } from './comment-append.js';

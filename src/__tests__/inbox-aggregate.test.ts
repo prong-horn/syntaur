@@ -12,9 +12,7 @@ import type { SnoozeMap } from '../inbox/types.js';
 import type { InboxCategory } from '../inbox/types.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
-import { buildDefaultStatusConfig } from '../utils/config.js';
-import { buildTransitionTable } from '../lifecycle/state-machine.js';
-import { planDigest } from '../lifecycle/facts.js';
+import { planDigest } from '../ticket-templates/plan-facts.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
 
 let root: string;
@@ -22,13 +20,30 @@ let projectsDir: string;
 
 const NOW = Date.parse('2026-06-16T12:00:00Z');
 
+function buildTransitionTable(
+  transitions: Array<{ from: string; command: string; to: string }>,
+): Map<string, string> {
+  const table = new Map<string, string>();
+  for (const t of transitions) {
+    table.set(`${t.from}:${t.command}`, t.to);
+  }
+  return table;
+}
+
 function statusConfig(): InboxStatusConfig {
-  const def = buildDefaultStatusConfig();
+  const transitions = [
+    { from: 'review', command: 'done', to: 'done' },
+    { from: 'review', command: 'start', to: 'in_progress' },
+  ];
   return {
-    statuses: def.statuses,
-    transitions: def.transitions,
-    transitionTable: buildTransitionTable(def.transitions),
-    terminalStatuses: new Set(def.statuses.filter((s) => s.terminal).map((s) => s.id)),
+    statuses: [
+      { id: 'review' },
+      { id: 'in_progress' },
+      { id: 'done', terminal: true },
+    ],
+    transitions,
+    transitionTable: buildTransitionTable(transitions),
+    terminalStatuses: new Set(['done']),
     blockedParkedStatuses: new Set(['blocked', 'parked']),
   };
 }
@@ -167,7 +182,7 @@ describe('computeInbox — shape', () => {
       since: expect.any(String),
       ageMs: expect.any(Number),
       summary: expect.any(String),
-      action: { verb: 'Accept', command: 'syntaur complete rev --project p1' },
+      action: { verb: 'Accept', command: 'syntaur done rev --project p1' },
     });
     expect(Number.isNaN(Date.parse(item.since))).toBe(false);
   });
@@ -176,8 +191,8 @@ describe('computeInbox — shape', () => {
     await seed({ id: 'u1', slug: 'rev', status: 'review', project: 'p1' });
     const result = await run();
     const item = result.items[0];
-    expect(item.acceptCommand).toBe('complete');
-    expect(item.reopenCommand).toBe('start');
+    expect(item.acceptCommand).toBe('done');
+    expect(item.reopenCommand).toBe('reopen');
     expect(item.commentId).toBeUndefined();
   });
 
@@ -219,7 +234,7 @@ describe('computeInbox — positive categories', () => {
   });
 
   it('does not emit a blocked ticket', async () => {
-    await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1', blockedReason: 'waiting on api' });
+    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blockedReason: 'waiting on api' });
     const r = await run();
     expect(r.total).toBe(0);
     expect(r.counts).toEqual({ question: 0, review: 0, 'plan-approval': 0 });
@@ -250,7 +265,7 @@ describe('computeInbox — positive categories', () => {
     await seed({
       id: 'pa',
       slug: 'plan-it',
-      status: 'ready_for_planning',
+      status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
     });
@@ -263,7 +278,7 @@ describe('computeInbox — positive categories', () => {
     await seed({ id: 'IBX-1', slug: 'ibx', status: 'review', project: 'p1' });
     const r = await run({ project: 'p1' });
     expect(r.items[0].project).toBe('p1');
-    expect(r.items[0].action.command).toBe('syntaur complete ibx --project p1');
+    expect(r.items[0].action.command).toBe('syntaur done ibx --project p1');
   });
 });
 
@@ -276,29 +291,29 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes draft / ready_to_implement / in_progress / terminal / parked', async () => {
-    await seed({ id: '1', slug: 'd', status: 'draft', project: 'p1' });
-    await seed({ id: '2', slug: 'rti', status: 'ready_to_implement', project: 'p1' });
+  it('excludes backlog / ready / in_progress / terminal / parked', async () => {
+    await seed({ id: '1', slug: 'd', status: 'backlog', project: 'p1' });
+    await seed({ id: '2', slug: 'rti', status: 'ready', project: 'p1' });
     await seed({ id: '3', slug: 'ip', status: 'in_progress', project: 'p1' });
-    await seed({ id: '4', slug: 'done', status: 'completed', project: 'p1' });
-    await seed({ id: '5', slug: 'fail', status: 'failed', project: 'p1' });
+    await seed({ id: '4', slug: 'done', status: 'done', project: 'p1' });
+    await seed({ id: '5', slug: 'fail', status: 'dropped', project: 'p1' });
     await seed({ id: '6', slug: 'park', status: 'parked', project: 'p1' });
     const r = await run();
     expect(r.total).toBe(0);
   });
 
-  it('ready_for_planning WITHOUT a plan is excluded', async () => {
-    await seed({ id: 'np', slug: 'noplan', status: 'ready_for_planning', project: 'p1' });
+  it('planning WITHOUT a plan is excluded', async () => {
+    await seed({ id: 'np', slug: 'noplan', status: 'planning', project: 'p1' });
     const r = await run();
     expect(r.total).toBe(0);
   });
 
-  it('ready_for_planning WITH an already-approved plan is excluded', async () => {
+  it('planning WITH an already-approved plan is excluded', async () => {
     const content = '# plan\n';
     await seed({
       id: 'ap',
       slug: 'approved',
-      status: 'ready_for_planning',
+      status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': content },
       plan: { file: 'plan.md', approvedDigest: planDigest(content) },
@@ -365,14 +380,14 @@ describe('computeInbox — exclusions', () => {
   });
 
   it('excludes a TERMINAL-status ticket with NULL disposition and an open question', async () => {
-    // Legacy/null-disposition: status is `completed` (∈ terminalStatuses) with
+    // Legacy/null-disposition: status is `done` (∈ terminalStatuses) with
     // no `disposition` field, plus an unresolved question. The terminal-STATUS
     // guard must drop it BEFORE the status-agnostic question loop — otherwise
     // the question would leak into the inbox.
     await seed({
       id: 'tnq',
       slug: 'terminal-null-q',
-      status: 'completed',
+      status: 'done',
       project: 'p1',
       comments: [
         { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'q?', resolved: false },
@@ -383,13 +398,13 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('keeps a blocked-disposition ticket excluded (blocked category removed)', async () => {
+  it('keeps a blocked-flag ticket excluded (blocked category removed)', async () => {
     await seed({
       id: 'bd',
       slug: 'blocked-d',
-      status: 'blocked',
+      status: 'in_progress',
       project: 'p1',
-      extraFrontmatter: ['disposition: blocked'],
+      blockedReason: 'waiting',
     });
     const r = await run();
     expect(r.total).toBe(0);
@@ -437,10 +452,10 @@ describe('computeInbox — since, age, ordering', () => {
     await seed({
       id: 'plan',
       slug: 'plan-row',
-      status: 'ready_for_planning',
+      status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
-      statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
+      statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: planning', '  command: shape'],
     });
     const r = await run();
     expect(r.items.map((i) => i.ticketSlug)).toEqual(['plan-row', 'old-rev', 'new-rev']);
@@ -644,10 +659,10 @@ describe('computeInbox — tiered ordering with lookup', () => {
     await seed({
       id: 't-plan',
       slug: 'tier-plan',
-      status: 'ready_for_planning',
+      status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
-      statusHistory: ['- at: "2026-06-11T00:00:00Z"', '  to: ready_for_planning', '  command: shape'],
+      statusHistory: ['- at: "2026-06-11T00:00:00Z"', '  to: planning', '  command: shape'],
     });
     await seed({
       id: 't-rev',
@@ -855,8 +870,8 @@ describe('computeInbox — filters', () => {
 // ── board-parity sanity ────────────────────────────────────────────────────────
 
 describe('computeInbox — board parity', () => {
-  it('blocked-status tickets are excluded from the inbox queue', async () => {
-    await seed({ id: 'b', slug: 'blk', status: 'blocked', project: 'p1' });
+  it('blocked-flag tickets are excluded from the inbox queue', async () => {
+    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blockedReason: 'waiting' });
     const r = await run();
     expect(r.total).toBe(0);
   });

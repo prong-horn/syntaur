@@ -7,12 +7,32 @@ describe('dashboard help contract', () => {
   it('only documents commands that exist in src/index.ts', async () => {
     const indexSource = await readFile(resolve(process.cwd(), 'src/index.ts'), 'utf-8');
     const projectSource = await readFile(resolve(process.cwd(), 'src/commands/project.ts'), 'utf-8');
+    const verbsSource = await readFile(resolve(process.cwd(), 'src/commands/verbs.ts'), 'utf-8');
+    const planSource = await readFile(resolve(process.cwd(), 'src/commands/plan.ts'), 'utf-8');
     const commands = getHelpCommandNames();
+
+    const VERB_COMMANDS = new Set([
+      'approve',
+      'unapprove',
+      'start',
+      'review',
+      'done',
+      'drop',
+      'reopen',
+      'block',
+      'unblock',
+      'park',
+      'unpark',
+    ]);
 
     for (const command of commands) {
       if (command.startsWith('project ')) {
         const sub = command.slice('project '.length);
         expect(projectSource).toContain(`.command('${sub}')`);
+      } else if (command === 'plan') {
+        expect(indexSource).toContain(`addCommand(planCommand)`);
+      } else if (VERB_COMMANDS.has(command)) {
+        expect(verbsSource).toContain(`.command('${command}')`);
       } else {
         expect(indexSource).toContain(`.command('${command}')`);
       }

@@ -27,7 +27,7 @@ id: PX-1
 slug: a
 title: "A"
 template: legacy
-status: in_progress
+status: backlog
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 ---
@@ -78,6 +78,9 @@ describe('syntaur plan create', () => {
     const again = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(again.code).toBe(1);
     expect(again.stderr).toContain('already exists');
+    const ticketPath = resolve(ticketDir, 'ticket.md');
+    const ticketMd = await readFile(ticketPath, 'utf-8');
+    await writeFile(ticketPath, ticketMd.replace('status: planning', 'status: backlog'));
     const forced = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p', '--force'], home);
     expect(forced.code, forced.stderr).toBe(0);
   });

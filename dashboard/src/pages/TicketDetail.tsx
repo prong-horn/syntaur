@@ -15,7 +15,6 @@ import { CopyButton } from '../components/CopyButton';
 import { useTicket, useProject, useTicketSessions, useTicketUsage, type TicketTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
 import { ticketEditHref, ticketPageHref } from '../lib/routes';
 import { useTicketEvents } from '../hooks/useTicketEvents';
-import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
@@ -33,13 +32,11 @@ import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu'
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import {
   deleteTicket,
-  runTicketTransition,
-  overrideTicketStatus,
+  runTicketVerb,
   transitionNeedsReason,
 } from '../lib/tickets';
 import { splitTicketSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
-import { FactsPanel } from '../components/FactsPanel';
 import { LinksPanel } from '../components/LinksPanel';
 import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
@@ -54,71 +51,6 @@ import { cn } from '../lib/utils';
 import { useToast, Toaster } from '../components/Toast';
 
 const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
-
-/** The Workflow detail row — a dropdown to bind a ticket to a workflow
- * (or inherit the resolved binding). */
-function WorkflowSelectRow({
-  projectSlug: _projectSlug,
-  ticketId,
-  workflow,
-  workflowLabel,
-  onChanged,
-}: {
-  projectSlug: string;
-  ticketId: string;
-  workflow: string | null;
-  workflowLabel: string;
-  onChanged: () => void;
-}) {
-  const { workflows } = useWorkflows();
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function change(value: string) {
-    setSaving(true);
-    setErr(null);
-    try {
-      const res = await fetch(
-        `/api/tickets/${encodeURIComponent(ticketId)}/workflow`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ workflow: value === '' ? null : value }),
-        },
-      );
-      if (!res.ok) {
-        const e = await res.json().catch(() => null);
-        throw new Error(e?.error ?? `HTTP ${res.status}`);
-      }
-      onChanged();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : 'Failed to set workflow');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <DetailNodeRow label="Workflow">
-      <div className="flex flex-col gap-1">
-        <select
-          className="rounded-md border border-border/60 bg-background px-2 py-1 text-xs"
-          value={workflow ?? ''}
-          disabled={saving}
-          onChange={(e) => void change(e.target.value)}
-        >
-          <option value="">Inherit ({workflowLabel})</option>
-          {workflows.map((w) => (
-            <option key={w.id} value={w.id}>
-              {w.label}
-            </option>
-          ))}
-        </select>
-        {err && <span className="text-[11px] text-error-foreground">{err}</span>}
-      </div>
-    </DetailNodeRow>
-  );
-}
 
 /** Ticket detail for project-nested tickets at `/t/:id`. */
 export function TicketDetail() {
@@ -141,7 +73,6 @@ export function TicketDetail() {
   const tab = searchParams.get('tab') ?? 'summary';
   // Honor `#section` deep-links from the command palette once the pane renders.
   useHashScroll(tab);
-  const statusConfig = useStatusConfig();
   const { data: ticket, loading, error, refetch } = useTicket(id);
   const projectSlug = ticket?.projectSlug ?? undefined;
   const { data: project } = useProject(projectSlug);
@@ -385,10 +316,6 @@ export function TicketDetail() {
           count: events.length,
           content: (
             <div className="space-y-5">
-              <FactsPanel
-                customFacts={ticket.derived?.customFacts}
-                attestations={ticket.derived?.attestations}
-              />
               <ActivityTimeline
                 events={events}
                 loading={eventsLoading}
@@ -456,7 +383,7 @@ export function TicketDetail() {
   const ticketSlug = ticket.slug;
   const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
 
-  const transitions = ticket.availableTransitions ?? [];
+  const transitions = ticket.availableVerbs ?? [];
   // Exclude same-target transitions: the backend currently returns every command as enabled
   // even when the targetStatus equals the current status, which would produce a meaningless
   // idempotent primary action. Filter those out for the primary slot; they still surface in
@@ -468,17 +395,6 @@ export function TicketDetail() {
     TRANSITION_PRECEDENCE.map((cmd) => enabledTransitions.find((a) => a.command === cmd)).find(Boolean) ??
     enabledTransitions[0] ??
     null;
-
-  async function handleStatusOverride(status: string) {
-    setTransitionError(null);
-    try {
-      await overrideTicketStatus(id!, status);
-      refetch();
-      refetchEvents();
-    } catch (err) {
-      setTransitionError((err as Error).message);
-    }
-  }
 
   async function handleArchiveTicket(archived: boolean) {
     setTransitionError(null);
@@ -516,7 +432,7 @@ export function TicketDetail() {
     setTransitioning(action.command);
 
     try {
-      await runTicketTransition(id!, action, reason);
+      await runTicketVerb(id!, action.command, reason);
       refetch();
       refetchEvents();
       return true;
@@ -595,13 +511,6 @@ export function TicketDetail() {
             ? `Already ${ticket.status.replace(/_/g, ' ')}`
             : action.disabledReason ?? action.warning ?? action.description,
       })),
-    ...statusConfig.statuses.map<OverflowMenuItem>((s) => ({
-      key: `override-${s.id}`,
-      label: `Override → ${s.label}`,
-      onSelect: () => handleStatusOverride(s.id),
-      disabled: s.id === ticket.status,
-      disabledReason: s.id === ticket.status ? 'Already in this status' : undefined,
-    })),
     {
       key: 'edit-ticket',
       label: 'Edit ticket source',
@@ -660,7 +569,7 @@ export function TicketDetail() {
             projectSlug={projectSlug}
             status={ticket.status}
             title={ticket.title}
-            availableTransitions={ticket.availableTransitions}
+            availableVerbs={ticket.availableVerbs}
             progress={progress}
             onChange={() => refetch()}
           />
@@ -803,20 +712,6 @@ export function TicketDetail() {
                 <DetailNodeRow label="Template">
                   <TemplateChip template={ticket.template} compact />
                 </DetailNodeRow>
-              )}
-              {ticket.projectSlug ? (
-                <WorkflowSelectRow
-                  projectSlug={ticket.projectSlug}
-                  ticketId={id}
-                  workflow={ticket.workflow}
-                  workflowLabel={ticket.workflowLabel}
-                  onChanged={refetch}
-                />
-              ) : (
-                <DetailRow label="Workflow" value={ticket.workflowLabel} />
-              )}
-              {ticket.phase && ticket.phase !== ticket.status && (
-                <DetailRow label="Phase" value={ticket.phase} />
               )}
               {ticket.disposition && ticket.disposition !== 'active' && (
                 <DetailNodeRow label="Disposition">

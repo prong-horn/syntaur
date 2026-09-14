@@ -15,7 +15,7 @@ import { join } from 'node:path';
  * stages-migrated marker, config reads) resolve AMBIENT machine state. A test
  * that passes fixture configs without sandboxing `SYNTAUR_HOME` silently reads
  * the developer's real `~/.syntaur` — green or red depending on the machine.
- * This bit for real on 2026-07-21: the live stage-engine migration created
+ * This bit for real on 2026-07-21: the live lifecycle-engine migration created
  * `~/.syntaur/workflows/`, and 16 unsandboxed tests started throwing false
  * DUAL_SOURCE errors (fixture config block + the real migrated dir). Tests
  * that sandbox via a temp `HOME` instead must keep doing that — `SYNTAUR_HOME`

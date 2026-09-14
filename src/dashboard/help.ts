@@ -4,7 +4,7 @@ import type {
   HelpResponse,
   HelpStatusGuideEntry,
 } from './types.js';
-import { getStatusConfig } from './api.js';
+import { STAGE_TABLE } from './stage-config.js';
 
 const CLI_COMMANDS: HelpCommand[] = [
   // --- Core setup & scaffolding (indices 0-4) ---
@@ -34,41 +34,41 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur assign UI-1 --project ui-overhaul --agent codex-1',
   },
 
-  // --- Lifecycle transitions ---
+  // --- Lifecycle verbs ---
+  {
+    command: 'syntaur plan',
+    description: 'Move a ticket into planning (or scaffold its plan file).',
+    example: 'syntaur plan UI-1 --project ui-overhaul',
+  },
+  {
+    command: 'syntaur approve',
+    description: 'Approve the plan and move to ready when gates pass.',
+    example: 'syntaur approve UI-1 --project ui-overhaul',
+  },
   {
     command: 'syntaur start',
-    description: 'Transition a ticket to in_progress.',
+    description: 'Move a ticket to in_progress.',
     example: 'syntaur start UI-1 --project ui-overhaul',
   },
   {
-    command: 'syntaur shape',
-    description: 'Transition a draft ticket to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
-    example: 'syntaur shape UI-1 --project ui-overhaul',
-  },
-  {
-    command: 'syntaur plan-ready',
-    description: 'Transition a ready_for_planning ticket to ready_to_implement once a plan has been written and approved.',
-    example: 'syntaur plan-ready UI-1 --project ui-overhaul',
-  },
-  {
-    command: 'syntaur implement',
-    description: 'Transition a ready_to_implement ticket to in_progress when coding begins.',
-    example: 'syntaur implement UI-1 --project ui-overhaul',
-  },
-  {
-    command: 'syntaur migrate-statuses',
-    description: 'Suggest pending -> ready_for_planning promotions for fleshed-out tickets. Dry-run by default; pass --apply to write.',
-    example: 'syntaur migrate-statuses --apply',
-  },
-  {
     command: 'syntaur review',
-    description: 'Move active work into review once implementation is ready for inspection.',
+    description: 'Move active work into review.',
     example: 'syntaur review UI-1 --project ui-overhaul',
   },
   {
-    command: 'syntaur complete',
-    description: 'Mark a ticket completed after review or direct completion.',
-    example: 'syntaur complete UI-1 --project ui-overhaul',
+    command: 'syntaur done',
+    description: 'Mark a ticket done after review or direct completion.',
+    example: 'syntaur done UI-1 --project ui-overhaul',
+  },
+  {
+    command: 'syntaur drop',
+    description: 'Drop a ticket with a required reason.',
+    example: 'syntaur drop UI-1 "Out of scope" --project ui-overhaul',
+  },
+  {
+    command: 'syntaur reopen',
+    description: 'Reopen a done or dropped ticket.',
+    example: 'syntaur reopen UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur block',
@@ -81,17 +81,17 @@ const CLI_COMMANDS: HelpCommand[] = [
     example: 'syntaur unblock UI-1 --project ui-overhaul',
   },
   {
-    command: 'syntaur fail',
-    description: 'Mark a ticket failed when it cannot be completed as planned.',
-    example: 'syntaur fail UI-1 --project ui-overhaul',
+    command: 'syntaur park',
+    description: 'Park a ticket with a required reason (pauses work without dropping).',
+    example: 'syntaur park UI-1 --project ui-overhaul --reason "Waiting on design"',
   },
   {
-    command: 'syntaur reopen',
-    description: 'Reopen a completed or failed ticket back to in_progress.',
-    example: 'syntaur reopen UI-1 --project ui-overhaul',
+    command: 'syntaur unpark',
+    description: 'Resume a parked ticket.',
+    example: 'syntaur unpark UI-1 --project ui-overhaul',
   },
 
-  // --- Dashboard (index 12) ---
+  // --- Dashboard (index 16) ---
   {
     command: 'syntaur dashboard',
     description: 'Start the local dashboard UI over the project files on disk.',
@@ -184,65 +184,55 @@ const WORKFLOW: HelpChecklistItem[] = [
     command: CLI_COMMANDS[4],
   },
   {
-    title: 'Start, review, complete, or block through lifecycle actions',
-    detail: 'Status changes happen through lifecycle actions, kanban drag-and-drop, or the status override controls.',
-    command: CLI_COMMANDS[5],
+    title: 'Move tickets through lifecycle verbs',
+    detail: 'Use plan, approve, start, review, and done to advance stages. Block, park, or drop when work stalls. Kanban drag-and-drop and the status pill call the same verb API.',
+    command: CLI_COMMANDS[7],
   },
   {
     title: 'Use the dashboard for triage and context',
     detail: 'Overview shows the current queue, project pages show health, ticket pages show the execution surface.',
-    command: CLI_COMMANDS[12],
+    command: CLI_COMMANDS[16],
     href: '/',
   },
 ];
 
 const DEFAULT_STATUS_GUIDE: Record<string, { meaning: string; useWhen: string }> = {
-  draft: {
-    meaning: 'The ticket is a just-created stub; objective and acceptance criteria are not yet fleshed out.',
-    useWhen: 'Use draft for newly-scaffolded tickets. Transition to ready_for_planning with `syntaur shape` once the Objective and AC are written.',
+  backlog: {
+    meaning: 'The ticket is queued and not yet in planning.',
+    useWhen: 'Use backlog for new tickets. Run `syntaur plan` when shaping or planning should begin.',
   },
-  pending: {
-    meaning: 'The ticket has not started yet.',
-    useWhen: 'Use pending while waiting to start. If dependencies are unmet, pending is the normal waiting state.',
+  planning: {
+    meaning: 'The ticket is being shaped or has a plan in progress.',
+    useWhen: 'Use planning while writing or revising plan.md. Run `syntaur approve` when the plan is ready.',
   },
-  ready_for_planning: {
-    meaning: 'The ticket is fully shaped; a plan needs to be written before implementation can begin.',
-    useWhen: 'Use ready_for_planning after the Objective and Acceptance Criteria are filled out but before any plan.md exists. Transition to ready_to_implement with `syntaur plan-ready` after the plan is approved.',
-  },
-  ready_to_implement: {
-    meaning: 'The plan has been written and approved; the ticket is ready to start coding.',
-    useWhen: 'Use ready_to_implement once a plan.md exists and is approved. Transition to in_progress with `syntaur implement` when coding begins.',
+  ready: {
+    meaning: 'The plan is approved and the ticket can start implementation.',
+    useWhen: 'Use ready when dependencies are satisfied and coding can begin. Run `syntaur start` to move to in_progress.',
   },
   in_progress: {
-    meaning: 'An assigned agent is actively working the ticket.',
-    useWhen: 'Use in_progress once the work has started and dependencies are satisfied.',
-  },
-  blocked: {
-    meaning: 'The ticket hit a manual or runtime obstacle.',
-    useWhen: 'Use blocked when work hits an obstacle. Adding a blockedReason is recommended for traceability.',
+    meaning: 'An assignee is actively working the ticket.',
+    useWhen: 'Use in_progress once work has started. Run `syntaur block` if an obstacle appears.',
   },
   review: {
     meaning: 'Implementation is ready for inspection or validation.',
-    useWhen: 'Use review after active work is ready to be checked before completion.',
+    useWhen: 'Use review after active work is ready to be checked. Run `syntaur done` when acceptance criteria are met.',
   },
-  completed: {
-    meaning: 'The ticket is done.',
-    useWhen: 'Use completed when the acceptance criteria are satisfied.',
+  done: {
+    meaning: 'The ticket is complete.',
+    useWhen: 'Use done when the acceptance criteria are satisfied.',
   },
-  failed: {
-    meaning: 'The ticket could not be completed as planned.',
-    useWhen: 'Use failed when the work cannot be recovered within the current ticket.',
+  dropped: {
+    meaning: 'The ticket was abandoned or cannot be completed as planned.',
+    useWhen: 'Use dropped with `syntaur drop` and a reason when work will not continue.',
   },
 };
 
 async function buildStatusGuide(): Promise<HelpStatusGuideEntry[]> {
-  const config = await getStatusConfig();
-
-  return config.statuses.map((s) => {
+  return STAGE_TABLE.map((s) => {
     const defaults = DEFAULT_STATUS_GUIDE[s.id];
     return {
       status: s.id,
-      meaning: s.description ?? defaults?.meaning ?? `The ticket is in the "${s.label}" state.`,
+      meaning: defaults?.meaning ?? `The ticket is in the "${s.label}" state.`,
       useWhen: defaults?.useWhen ?? `Use ${s.id} when appropriate for the "${s.label}" workflow state.`,
     };
   });

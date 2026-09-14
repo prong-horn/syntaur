@@ -3,7 +3,6 @@ import { spawnSync } from 'node:child_process';
 import { resolve, isAbsolute } from 'node:path';
 import { syntaurRoot, defaultProjectDir, expandHome } from './paths.js';
 import { fileExists, writeFileForce } from './fs.js';
-import { isStagesMigrated } from './stages-marker.js';
 import { renderConfig } from '../templates/config.js';
 import { migrateLegacyConfig } from './fs-migration.js';
 import {
@@ -14,10 +13,6 @@ import {
   type BindableActionKind,
 } from './hotkeysCatalog.js';
 import { isValidSlug } from './slug.js';
-import {
-  type FactDeclaration,
-  type RawFactDeclaration,
-} from './fact-registry.js';
 
 export interface StatusDefinition {
   id: string;
@@ -37,27 +32,87 @@ export interface StatusTransition {
   requiresReason?: boolean;
 }
 
-/**
- * Derive-status primitives ({@link PhaseRung}, {@link DispositionRule},
- * {@link HeadlineProjection}, {@link DeriveConfig}, {@link DEFAULT_DERIVE_CONFIG},
- * {@link validateDeriveConfig}) live in the browser-safe `derive-config.ts` so
- * the dashboard client can alias and reuse them; imported for local use here and
- * re-exported so existing Node-side imports from `config.js` keep resolving.
- */
-import {
-  DEFAULT_DERIVE_CONFIG,
-  validateDeriveConfig,
-  validateDeriveShape,
-  type PhaseRung,
-  type DispositionRule,
-  type HeadlineProjection,
-  type DeriveConfig,
-} from './derive-config.js';
-
-export { DEFAULT_DERIVE_CONFIG, validateDeriveConfig, validateDeriveShape };
-export type { PhaseRung, DispositionRule, HeadlineProjection, DeriveConfig };
-
 import type { StaleThresholds } from '../staleness/classify.js';
+
+const REMOVED_IN_V2 = 'removed in v2';
+
+/** @deprecated v2 — derive rules are no longer config-driven. */
+export interface PhaseRung {
+  phase: string;
+  when: string;
+  next?: string;
+}
+
+/** @deprecated v2 — derive rules are no longer config-driven. */
+export interface DispositionRule {
+  when: string | null;
+  is: string;
+}
+
+/** @deprecated v2 — derive rules are no longer config-driven. */
+export interface HeadlineProjection {
+  terminal: string;
+  parked: string;
+  blocked: string;
+  active: string;
+}
+
+/** @deprecated v2 — derive rules are no longer config-driven. */
+export interface DeriveConfig {
+  phaseLadder: PhaseRung[];
+  disposition: DispositionRule[];
+  headline: HeadlineProjection;
+}
+
+export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
+  phaseLadder: [],
+  disposition: [],
+  headline: { terminal: 'passthrough', parked: 'Parked', blocked: 'Blocked', active: 'phase' },
+};
+
+export function validateDeriveConfig(_config: DeriveConfig): string[] {
+  throw new Error(REMOVED_IN_V2);
+}
+
+export function validateDeriveShape(_raw: unknown): string[] {
+  throw new Error(REMOVED_IN_V2);
+}
+
+/** @deprecated v2 — custom facts removed. */
+export type RawFactDeclaration = { name: string; type: string; binds: string | null };
+
+/** @deprecated v2 — custom facts removed. */
+export type FactDeclaration = RawFactDeclaration;
+
+export function validateFactDeclarations(_facts: RawFactDeclaration[]): string[] {
+  throw new Error(REMOVED_IN_V2);
+}
+
+export function normalizeFactDeclarations(_facts: RawFactDeclaration[]): FactDeclaration[] {
+  throw new Error(REMOVED_IN_V2);
+}
+
+/** @deprecated v2 — stage engine routes are template-driven, not config-driven. */
+export const ROUTE_TRIGGERS: readonly string[] = [];
+
+export type RouteTrigger = string;
+export type StageCheck = unknown;
+export type StageRoute = unknown;
+export type StageWork = unknown;
+export type WorkflowStage = unknown;
+export type WorkflowFlag = unknown;
+export type WorkflowFlags = unknown;
+export type StageWorkflow = unknown;
+
+export const DEFAULT_STATUS_COLORS: Record<string, string> = {};
+
+export function toTitleCase(value: string): string {
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+export function buildDefaultStatusConfig(): StatusConfig {
+  throw new Error(REMOVED_IN_V2);
+}
 
 /** Config keys for the `staleness:` block → `StaleThresholds` ms fields. Keyed
  * on the contradiction (phase/disposition), not raw status ids. */
@@ -99,46 +154,6 @@ export function parseDurationMs(raw: string): number | null {
   if (!Number.isFinite(n) || n <= 0) return null;
   return n * DURATION_UNIT_MS[m[2] ?? 'ms'];
 }
-
-/**
- * A custom-fact declaration EXACTLY as parsed from `statuses.facts` — loose
- * parse (Locked Decisions): every field is a raw string so user input
- * round-trips through serialization even when invalid. The strict
- * {@link FactDeclaration} is derived from this via {@link normalizeFactDeclarations}.
- *
- * Defined in `fact-registry.ts` (browser-safe); re-exported here so existing
- * Node-side imports from `config.js` keep resolving.
- */
-export type { RawFactDeclaration } from './fact-registry.js';
-
-/**
- * A VALIDATED custom-fact declaration (strict union). bool/number facts are
- * asserted values stored in the `facts:` frontmatter map; attestation facts
- * model "agent reviewed revision with verdict" and carry a revision binding.
- *
- * Defined in `fact-registry.ts` (browser-safe); re-exported here so existing
- * Node-side imports from `config.js` keep resolving.
- */
-export type { FactDeclaration } from './fact-registry.js';
-export { validateFactDeclarations, normalizeFactDeclarations } from './fact-registry.js';
-
-/**
- * Browser-safe stage-model types (Phase 1 stage engine, WS-0) live in
- * `stage-model.ts` (zero imports, `@shared`-aliasable); re-exported here so
- * existing Node-side imports from `config.js` keep resolving. Mirrors the
- * `derive-config.ts` / `fact-registry.ts` re-exports above.
- */
-export { ROUTE_TRIGGERS } from './stage-model.js';
-export type {
-  RouteTrigger,
-  StageCheck,
-  StageRoute,
-  StageWork,
-  WorkflowStage,
-  WorkflowFlag,
-  WorkflowFlags,
-  StageWorkflow,
-} from './stage-model.js';
 
 export interface StatusConfig {
   statuses: StatusDefinition[];
@@ -319,13 +334,8 @@ function cloneDefaultConfig(): SyntaurConfig {
     agentDefaults: { ...DEFAULT_CONFIG.agentDefaults },
     session: { ...DEFAULT_CONFIG.session },
     integrations: { ...DEFAULT_CONFIG.integrations },
-    statuses: DEFAULT_CONFIG.statuses
-      ? {
-          statuses: DEFAULT_CONFIG.statuses.statuses.map((s) => ({ ...s })),
-          order: [...DEFAULT_CONFIG.statuses.order],
-          transitions: DEFAULT_CONFIG.statuses.transitions.map((t) => ({ ...t })),
-        }
-      : null,
+    statuses: null,
+    workflows: null,
     playbooks: {
       disabled: [...DEFAULT_CONFIG.playbooks.disabled],
     },
@@ -385,441 +395,24 @@ function parseInstalledAgents(
 }
 
 
-export function parseStatusConfig(content: string): StatusConfig | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const fmBlock = match[1];
-
-  // Check if there's a top-level statuses: section
-  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
-  if (!statusesStart) return null;
-
-  // Extract the statuses block (everything indented after "statuses:")
-  const startIdx = fmBlock.indexOf(statusesStart[0]) + statusesStart[0].length;
-  const remaining = fmBlock.slice(startIdx);
-
-  const statuses: StatusDefinition[] = [];
-  const order: string[] = [];
-  const transitions: StatusTransition[] = [];
-  const phaseLadder: PhaseRung[] = [];
-  const disposition: DispositionRule[] = [];
-  const headline: Record<string, string> = {};
-  const facts: RawFactDeclaration[] = [];
-
-  // Strip surrounding quotes from a YAML scalar (AQL conditions are quoted).
-  const unquote = (v: string): string => {
-    const t = v.trim();
-    if ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'"))) {
-      return t.slice(1, -1);
-    }
-    return t;
-  };
-
-  // Like `unquote`, but also reverses the `\`/`"` escaping that `escapeAql`
-  // applies to the THREE escaped derive-rule fields (phaseLadder when/next,
-  // disposition when). Scoped to those reads only — the plain `unquote` above
-  // stays the decoder for every other (unescaped) scalar (is/phase/headline/
-  // facts/aliases), so no field the serializer never escapes can be
-  // over-decoded. Mirrors parseSimpleValue's escape handling.
-  const unquoteAql = (v: string): string => {
-    const t = v.trim();
-    if (t.startsWith('"') && t.endsWith('"') && t.length >= 2) {
-      return t.slice(1, -1).replace(/\\(["\\])/g, '$1');
-    }
-    if (t.startsWith("'") && t.endsWith("'") && t.length >= 2) {
-      return t.slice(1, -1);
-    }
-    return t;
-  };
-
-  // Parse sub-sections: definitions, order, transitions + derive rules
-  // (phaseLadder, disposition, headline — derived-status v3, persisted flat
-  // under `statuses:`).
-  let currentSection:
-    | 'definitions'
-    | 'order'
-    | 'transitions'
-    | 'phaseLadder'
-    | 'disposition'
-    | 'headline'
-    | 'facts'
-    | null = null;
-  const lines = remaining.split('\n');
-
-  function parseListEntry(lineIdx: number, baseIndent: number): { entry: Record<string, string>; consumed: number } {
-    const entry: Record<string, string> = {};
-    const firstLine = lines[lineIdx].trimStart().slice(2).trim();
-    const colonIdx = firstLine.indexOf(':');
-    if (colonIdx > 0) {
-      entry[firstLine.slice(0, colonIdx).trim()] = firstLine.slice(colonIdx + 1).trim();
-    }
-    let consumed = 1;
-    for (let i = lineIdx + 1; i < lines.length; i++) {
-      const next = lines[i];
-      const nextTrimmed = next.trimStart();
-      const nextIndent = next.length - nextTrimmed.length;
-      if (nextIndent <= baseIndent || nextTrimmed.startsWith('- ')) break;
-      const ci = nextTrimmed.indexOf(':');
-      if (ci > 0) {
-        entry[nextTrimmed.slice(0, ci).trim()] = nextTrimmed.slice(ci + 1).trim();
-      }
-      consumed++;
-    }
-    return { entry, consumed };
-  }
-
-  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const line = lines[lineIdx];
-    const trimmed = line.trimStart();
-    const indent = line.length - trimmed.length;
-
-    // Top-level key under statuses (indent 2)
-    if (indent === 2 && trimmed.endsWith(':')) {
-      const key = trimmed.slice(0, -1).trim();
-      if (key === 'definitions') currentSection = 'definitions';
-      else if (key === 'order') currentSection = 'order';
-      else if (key === 'transitions') currentSection = 'transitions';
-      else if (key === 'phaseLadder') currentSection = 'phaseLadder';
-      else if (key === 'disposition') currentSection = 'disposition';
-      else if (key === 'headline') currentSection = 'headline';
-      else if (key === 'facts') currentSection = 'facts';
-      else currentSection = null;
-      continue;
-    }
-
-    // Stop if we hit a new top-level key (no indent)
-    if (indent === 0 && trimmed.includes(':')) break;
-
-    if (currentSection === 'order' && indent >= 4 && trimmed.startsWith('- ')) {
-      order.push(trimmed.slice(2).trim());
-      continue;
-    }
-
-    if (currentSection === 'definitions' && indent >= 4 && trimmed.startsWith('- ')) {
-      const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (entry['id']) {
-        statuses.push({
-          id: entry['id'],
-          label: entry['label'] ?? entry['id'],
-          description: entry['description'],
-          color: entry['color'],
-          icon: entry['icon'],
-          terminal: entry['terminal'] === 'true',
-        });
-      }
-      lineIdx += consumed - 1; // skip consumed continuation lines
-      continue;
-    }
-
-    if (currentSection === 'transitions' && indent >= 4 && trimmed.startsWith('- ')) {
-      const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (entry['from'] && entry['command'] && entry['to']) {
-        transitions.push({
-          from: entry['from'],
-          command: entry['command'],
-          to: entry['to'],
-          label: entry['label'],
-          description: entry['description'],
-          requiresReason: entry['requiresReason'] === 'true',
-        });
-      }
-      lineIdx += consumed - 1;
-      continue;
-    }
-
-    if (currentSection === 'phaseLadder' && indent >= 4 && trimmed.startsWith('- ')) {
-      const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (entry['phase'] && entry['when'] !== undefined) {
-        phaseLadder.push({
-          phase: unquote(entry['phase']),
-          when: unquoteAql(entry['when']),
-          next: entry['next'] !== undefined ? unquoteAql(entry['next']) : undefined,
-        });
-      }
-      lineIdx += consumed - 1;
-      continue;
-    }
-
-    if (currentSection === 'disposition' && indent >= 4 && trimmed.startsWith('- ')) {
-      const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (entry['else'] !== undefined) {
-        disposition.push({ when: null, is: unquote(entry['else']) });
-      } else if (entry['when'] !== undefined && entry['is']) {
-        disposition.push({ when: unquoteAql(entry['when']), is: unquote(entry['is']) });
-      }
-      lineIdx += consumed - 1;
-      continue;
-    }
-
-    if (currentSection === 'headline' && indent >= 4 && !trimmed.startsWith('- ')) {
-      const ci = trimmed.indexOf(':');
-      if (ci > 0) {
-        headline[trimmed.slice(0, ci).trim()] = unquote(trimmed.slice(ci + 1));
-      }
-      continue;
-    }
-
-    if (currentSection === 'facts' && indent >= 4 && trimmed.startsWith('- ')) {
-      // Loose parse: keep every recognizable row verbatim (RawFactDeclaration)
-      // so invalid rows round-trip AND doctor can diagnose exactly what the
-      // normalize/accept pipeline drops — a row missing `name` must NOT be
-      // silently deleted (that is the silent-deletion bug class this feature
-      // exists to prevent). A row with no recognized key at all is skipped.
-      const { entry, consumed } = parseListEntry(lineIdx, indent);
-      if (
-        entry['name'] !== undefined ||
-        entry['type'] !== undefined ||
-        entry['binds'] !== undefined
-      ) {
-        facts.push({
-          name: entry['name'] !== undefined ? unquote(entry['name']) : '',
-          type: entry['type'] !== undefined ? unquote(entry['type']) : '',
-          binds: entry['binds'] !== undefined ? unquote(entry['binds']) : null,
-        });
-      }
-      lineIdx += consumed - 1;
-      continue;
-    }
-  }
-
-  const derive: DeriveConfig | null =
-    phaseLadder.length > 0 || disposition.length > 0 || Object.keys(headline).length > 0
-      ? {
-          phaseLadder: phaseLadder.length > 0 ? phaseLadder : DEFAULT_DERIVE_CONFIG.phaseLadder,
-          disposition: disposition.length > 0 ? disposition : DEFAULT_DERIVE_CONFIG.disposition,
-          headline: {
-            terminal: 'passthrough',
-            parked: headline['parked'] ?? DEFAULT_DERIVE_CONFIG.headline.parked,
-            blocked: headline['blocked'] ?? DEFAULT_DERIVE_CONFIG.headline.blocked,
-            active: 'phase',
-          },
-        }
-      : null;
-
-  // Return null only when the `statuses:` block carried no usable content at
-  // all. A block that declares facts and/or derive rules but no status
-  // `definitions` must still surface them — dropping them here is the
-  // silent-deletion bug class this loose parser exists to prevent
-  // (getStatusConfig falls back to default statuses/order so the board still
-  // renders, while the declared facts/derive ride along).
-  if (statuses.length === 0 && facts.length === 0 && derive === null) return null;
-
-  return {
-    statuses,
-    order: order.length > 0 ? order : statuses.map((s) => s.id),
-    transitions,
-    derive,
-    facts: facts.length > 0 ? facts : null,
-  };
+export function parseStatusConfig(_content: string): StatusConfig | null {
+  return null;
 }
 
-/**
- * Parse the `workflows:` block — a global library of named lifecycle workflows,
- * each a full {@link StatusConfig} bundle plus a `label`. Returns null when the
- * block is absent (caller treats absent as "legacy `statuses:` is the built-in
- * `default` workflow" via the resolver, not here — this stays a pure parser).
- *
- * Structurally this is `parseStatusConfig` one nesting level deeper: the block
- * splits into per-workflow sub-blocks keyed by indent-2 `<id>:` lines, and each
- * sub-block's body (indent ≥ 4) is dedented by two spaces and fed back through
- * {@link parseStatusConfig} verbatim — so the loose, no-silent-deletion parse
- * (facts/derive preservation, AQL unescaping) is reused rather than reimplemented.
- */
 export function parseWorkflowsConfig(
-  content: string,
+  _content: string,
 ): Record<string, WorkflowDefinition> | null {
-  const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
-  const fmBlock = match[1];
-
-  const workflowsStart = fmBlock.match(/^workflows:\s*$/m);
-  if (!workflowsStart) return null;
-
-  const startIdx = (workflowsStart.index ?? 0) + workflowsStart[0].length;
-  const lines = fmBlock.slice(startIdx).split('\n');
-
-  const stripQuotes = (v: string): string => {
-    const t = v.trim();
-    if (
-      t.length >= 2 &&
-      ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))
-    ) {
-      return t.slice(1, -1);
-    }
-    return t;
-  };
-
-  // Split into per-workflow sub-blocks. A new workflow starts at an indent-2
-  // `<id>:` line; the block ends at the next top-level (indent-0) key (e.g.
-  // the sibling `defaultWorkflow:` scalar, read separately in readConfig).
-  const blocks: { id: string; body: string[] }[] = [];
-  let current: { id: string; body: string[] } | null = null;
-  for (const line of lines) {
-    if (line.trim() === '') {
-      if (current) current.body.push(line);
-      continue;
-    }
-    const indent = line.length - line.trimStart().length;
-    if (indent === 0) break;
-    const trimmed = line.trimStart();
-    if (indent === 2 && trimmed.endsWith(':')) {
-      current = { id: trimmed.slice(0, -1).trim(), body: [] };
-      blocks.push(current);
-      continue;
-    }
-    if (current) current.body.push(line);
-  }
-
-  if (blocks.length === 0) return null;
-
-  const workflows: Record<string, WorkflowDefinition> = {};
-  for (const { id, body } of blocks) {
-    const dedented = body.map((l) => (l.startsWith('  ') ? l.slice(2) : l));
-    const labelLine = dedented.find(
-      (l) => l.length - l.trimStart().length === 2 && l.trimStart().startsWith('label:'),
-    );
-    const label =
-      (labelLine ? stripQuotes(labelLine.trimStart().slice('label:'.length)) : '') || id;
-    // Reuse parseStatusConfig by wrapping the dedented body under a synthetic
-    // top-level `statuses:` block. An unparseable/empty bundle still round-trips
-    // as an empty bundle so the labeled workflow id is never silently dropped.
-    const bundle =
-      parseStatusConfig(`---\nstatuses:\n${dedented.join('\n')}\n---\n`) ??
-      { statuses: [], order: [], transitions: [], derive: null, facts: null };
-    workflows[id] = { label, ...bundle };
-  }
-
-  return workflows;
+  return null;
 }
 
-/**
- * Default status-set primitives now live in the browser-safe `status-defaults.ts`
- * (so `workflow-resolve.ts` can synthesize the `default` workflow without pulling
- * Node into the dashboard bundle); re-exported here so existing Node-side imports
- * from `config.js` keep resolving. Mirrors the `derive-config.ts` re-export above.
- */
-export {
-  DEFAULT_STATUS_COLORS,
-  toTitleCase,
-  buildDefaultStatusConfig,
-} from './status-defaults.js';
-
-// Symmetric with `unquoteAql` in parseStatusConfig: escape backslash THEN
-// quote so the derive-rule when/next/disposition-when fields round-trip even
-// when they contain a literal `"` or `\`. (Previously only `"` was escaped and
-// nothing reversed it, so a quoted AQL condition accumulated a backslash on
-// every save→reload.)
-const escapeAql = (s: string): string => s.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-
-/**
- * Emit a {@link StatusConfig} bundle body (definitions/order/transitions/facts/
- * derive) into `lines`, with sub-section keys at `base` indent. Shared by
- * {@link serializeStatusConfig} (base 2, under a top-level `statuses:`) and
- * {@link serializeWorkflowsConfig} (base 4, one level deeper under each
- * `workflows.<id>:`) so the two writers can never drift.
- */
-function appendStatusBundle(lines: string[], bundle: StatusConfig, base: number): void {
-  const p = ' '.repeat(base); // sub-section key indent (definitions/order/…)
-  const item = ' '.repeat(base + 2); // list-item / headline-scalar indent
-  const cont = ' '.repeat(base + 4); // list-item continuation-key indent
-
-  // definitions
-  lines.push(`${p}definitions:`);
-  for (const s of bundle.statuses) {
-    lines.push(`${item}- id: ${s.id}`);
-    lines.push(`${cont}label: ${s.label}`);
-    if (s.description) lines.push(`${cont}description: ${s.description}`);
-    if (s.color) lines.push(`${cont}color: ${s.color}`);
-    if (s.icon) lines.push(`${cont}icon: ${s.icon}`);
-    if (s.terminal) lines.push(`${cont}terminal: true`);
-  }
-
-  // order
-  lines.push(`${p}order:`);
-  for (const id of bundle.order) {
-    lines.push(`${item}- ${id}`);
-  }
-
-  // transitions
-  if (bundle.transitions.length > 0) {
-    lines.push(`${p}transitions:`);
-    for (const t of bundle.transitions) {
-      lines.push(`${item}- from: ${t.from}`);
-      lines.push(`${cont}command: ${t.command}`);
-      lines.push(`${cont}to: ${t.to}`);
-      if (t.label) lines.push(`${cont}label: ${t.label}`);
-      if (t.description) lines.push(`${cont}description: ${t.description}`);
-      if (t.requiresReason) lines.push(`${cont}requiresReason: true`);
-    }
-  }
-
-  // custom fact declarations — emitted verbatim (RawFactDeclaration) so the
-  // round-trip preserves whatever the user wrote, even invalid rows that the
-  // normalize/accept pipeline later drops. Same silent-deletion class as derive.
-  if (bundle.facts && bundle.facts.length > 0) {
-    lines.push(`${p}facts:`);
-    for (const f of bundle.facts) {
-      lines.push(`${item}- name: ${f.name}`);
-      lines.push(`${cont}type: ${f.type}`);
-      if (f.binds !== null && f.binds !== undefined) {
-        lines.push(`${cont}binds: ${f.binds}`);
-      }
-    }
-  }
-
-  // derive rules (derived-status v3) — serialized so every write round-trip
-  // preserves them (the pre-v3 writer rebuilt the block from definitions/order/
-  // transitions only and silently deleted custom rules).
-  if (bundle.derive) {
-    const d = bundle.derive;
-    lines.push(`${p}phaseLadder:`);
-    for (const rung of d.phaseLadder) {
-      lines.push(`${item}- phase: ${rung.phase}`);
-      lines.push(`${cont}when: "${escapeAql(rung.when)}"`);
-      // `!== undefined`, not truthy: an accepted empty-string `next: ""` must
-      // be preserved (otherwise it reparses as undefined — a round-trip loss).
-      if (rung.next !== undefined) lines.push(`${cont}next: "${escapeAql(rung.next)}"`);
-    }
-    lines.push(`${p}disposition:`);
-    for (const rule of d.disposition) {
-      if (rule.when === null) {
-        lines.push(`${item}- else: ${rule.is}`);
-      } else {
-        lines.push(`${item}- when: "${escapeAql(rule.when)}"`);
-        lines.push(`${cont}is: ${rule.is}`);
-      }
-    }
-    lines.push(`${p}headline:`);
-    lines.push(`${item}terminal: passthrough`);
-    lines.push(`${item}parked: ${d.headline.parked}`);
-    lines.push(`${item}blocked: ${d.headline.blocked}`);
-    lines.push(`${item}active: phase`);
-  }
+export function serializeStatusConfig(_statuses: StatusConfig): string {
+  throw new Error(REMOVED_IN_V2);
 }
 
-export function serializeStatusConfig(statuses: StatusConfig): string {
-  const lines: string[] = ['statuses:'];
-  appendStatusBundle(lines, statuses, 2);
-  return lines.join('\n');
-}
-
-/**
- * Serialize the `workflows:` block for a global workflow library. Emits only the
- * block (mirrors {@link serializeStatusConfig} emitting only `statuses:`); the
- * `defaultWorkflow:` scalar is written separately by {@link writeWorkflowsConfig}.
- * Each workflow renders its `label` then its full bundle body one indent level
- * deeper (base 4) via the shared {@link appendStatusBundle}.
- */
 export function serializeWorkflowsConfig(
-  workflows: Record<string, WorkflowDefinition>,
+  _workflows: Record<string, WorkflowDefinition>,
 ): string {
-  const lines: string[] = ['workflows:'];
-  for (const [id, wf] of Object.entries(workflows)) {
-    lines.push(`  ${id}:`);
-    lines.push(`    label: ${wf.label}`);
-    appendStatusBundle(lines, wf, 4);
-  }
-  return lines.join('\n');
+  throw new Error(REMOVED_IN_V2);
 }
 
 function serializeIntegrationConfig(integrations: IntegrationConfig): string | null {
@@ -1246,209 +839,39 @@ function yamlQuoteScalar(value: string): string {
 
 
 
-/**
- * WS-3 T9b — the legacy-writer lockout. After `syntaur migrate-workflows`
- * flips the `stages-migrated` marker, the workflow source of truth is the
- * per-file `~/.syntaur/workflows/<id>.md` store and the `config.md`
- * `workflows:`/`statuses:` blocks are DELETED. The legacy editors (`syntaur
- * status`/`syntaur workflow`, the dashboard settings API) still persist
- * through {@link writeStatusConfig}/{@link writeWorkflowsConfig} — recreating
- * either block would instantly re-brick the per-file loader on its next read
- * (`DUAL_SOURCE_ERROR`, §4.6). The guard lives INSIDE the two writers (the
- * fewest-misses point — every callsite funnels here); rewiring the editors to
- * the stage model is Phase 2 "pipeline editor" scope. Pre-marker behavior is
- * byte-identical.
- */
+/** @deprecated v2 — legacy workflow writers removed. */
 export class LegacyWorkflowWriteLockedError extends Error {
   constructor() {
-    super('workflows migrated to per-file; edit `~/.syntaur/workflows/<id>.md`');
+    super(REMOVED_IN_V2);
     this.name = 'LegacyWorkflowWriteLockedError';
   }
 }
 
-async function assertLegacyWorkflowWritesAllowed(): Promise<void> {
-  if (await isStagesMigrated()) throw new LegacyWorkflowWriteLockedError();
-}
-
-export async function writeStatusConfig(statuses: StatusConfig): Promise<void> {
-  await assertLegacyWorkflowWritesAllowed();
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const statusBlock = serializeStatusConfig(statuses);
-
-  if (!(await fileExists(configPath))) {
-    // Create new config file with defaults + statuses
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${statusBlock}\n---\n`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    // No frontmatter — wrap in new frontmatter
-    const content = `---\nversion: "2.0"\n${statusBlock}\n---\n${existing}`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-
-  // Remove existing statuses: block from frontmatter
-  const statusesStart = fmBlock.match(/^statuses:\s*$/m);
-  let cleanedFm: string;
-  if (statusesStart) {
-    const startIdx = fmBlock.indexOf(statusesStart[0]);
-    const before = fmBlock.slice(0, startIdx);
-    const after = fmBlock.slice(startIdx + statusesStart[0].length);
-    // Skip all indented lines (belonging to statuses block)
-    const remaining = after.split('\n');
-    let endIdx = 0;
-    for (let i = 0; i < remaining.length; i++) {
-      const line = remaining[i];
-      if (line.trim() === '') { endIdx = i + 1; continue; }
-      if (line.length > 0 && line[0] !== ' ') break;
-      endIdx = i + 1;
-    }
-    cleanedFm = before + remaining.slice(endIdx).join('\n');
-  } else {
-    cleanedFm = fmBlock;
-  }
-
-  // Trim trailing whitespace/newlines from cleaned frontmatter
-  cleanedFm = cleanedFm.replace(/\n+$/, '');
-
-  const newContent = `---\n${cleanedFm}\n${statusBlock}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
+export async function writeStatusConfig(_statuses: StatusConfig): Promise<void> {
+  throw new Error(REMOVED_IN_V2);
 }
 
 export async function deleteStatusConfig(): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  if (!(await fileExists(configPath))) return;
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) return;
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'statuses');
-
-  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
+  throw new Error(REMOVED_IN_V2);
 }
 
-/**
- * Persist the global workflow library: the `workflows:` block plus the
- * top-level `defaultWorkflow:` scalar. Mirrors {@link writeStatusConfig} — it
- * strips any prior `workflows:` block and `defaultWorkflow:` line and rewrites
- * both, leaving every other frontmatter block (incl. a legacy `statuses:`) and
- * the file body untouched.
- */
 export async function writeWorkflowsConfig(
-  workflows: Record<string, WorkflowDefinition>,
-  defaultWorkflow: string,
+  _workflows: Record<string, WorkflowDefinition>,
+  _defaultWorkflow: string,
 ): Promise<void> {
-  await assertLegacyWorkflowWritesAllowed(); // T9b — see the class doc above
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const block = serializeWorkflowsConfig(workflows);
-  const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
-
-  if (!(await fileExists(configPath))) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${block}\n${defaultLine}\n---\n`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\n${block}\n${defaultLine}\n---\n${existing}`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-
-  let cleanedFm = stripTopLevelBlock(fmBlock, 'workflows');
-  // Drop any prior top-level defaultWorkflow: line (stripTopLevelBlock stops at
-  // it — it's a scalar, not an indented block — so remove it explicitly).
-  cleanedFm = cleanedFm.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
-
-  const newContent = `---\n${cleanedFm}\n${block}\n${defaultLine}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
+  throw new Error(REMOVED_IN_V2);
 }
 
 export async function deleteWorkflowsConfig(): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  if (!(await fileExists(configPath))) return;
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) return;
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  let cleanedFm = stripTopLevelBlock(fmBlock, 'workflows');
-  cleanedFm = cleanedFm.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
-
-  const newContent = `---\n${cleanedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
+  throw new Error(REMOVED_IN_V2);
 }
 
-/**
- * Write ONLY the top-level `defaultWorkflow:` scalar in config.md frontmatter,
- * leaving every block (a legacy `statuses:`, any `workflows:` map, the body)
- * untouched. This is the per-file (WS-0) home for the default pointer: a
- * scalar, NOT a workflow body, so it does not reintroduce a `workflows:` block
- * and the per-file loader's single-source invariant (§4.6) stays satisfied.
- * Mirrors {@link deleteWorkflowsConfig}'s scalar handling.
- */
-export async function writeDefaultWorkflowScalar(defaultWorkflow: string): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const defaultLine = `defaultWorkflow: ${defaultWorkflow}`;
-
-  if (!(await fileExists(configPath))) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ~/projects\n${defaultLine}\n---\n`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\n${defaultLine}\n---\n${existing}`;
-    await writeFileForce(configPath, content);
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = fmBlock.replace(/^defaultWorkflow:[^\n]*\n?/m, '').replace(/\n+$/, '');
-  const newContent = `---\n${cleanedFm}\n${defaultLine}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
+export async function writeDefaultWorkflowScalar(_defaultWorkflow: string): Promise<void> {
+  throw new Error(REMOVED_IN_V2);
 }
 
-/**
- * Remove the legacy top-level `statuses:` block from config.md (Decision D4:
- * once the workflow library exists, the single source of truth is
- * `workflows.default`, so the lifted legacy block is deleted). No-op when
- * config.md or the block is absent. The read path already prefers `workflows`
- * over `statuses`, so this is a cleanup step, not a correctness requirement.
- */
 export async function deleteLegacyStatusesBlock(): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  if (!(await fileExists(configPath))) return;
-
-  const existing = await readFile(configPath, 'utf-8');
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) return;
-  if (!/^statuses:\s*$/m.test(fmMatch[2])) return; // nothing to strip
-
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmMatch[2], 'statuses');
-  await writeFileForce(configPath, `---\n${cleanedFm}\n---${afterFrontmatter}`);
+  throw new Error(REMOVED_IN_V2);
 }
 
 /**
@@ -1817,8 +1240,8 @@ export async function readConfig(): Promise<SyntaurConfig> {
       ),
       ...parseInstalledAgents(fm),
     },
-    statuses: parseStatusConfig(content),
-    workflows: parseWorkflowsConfig(content),
+    statuses: null,
+    workflows: null,
     defaultWorkflow: fm['defaultWorkflow'] ? String(fm['defaultWorkflow']) : null,
     playbooks: parsePlaybooksConfig(fmBlock),
     theme: parseThemeConfig(content),

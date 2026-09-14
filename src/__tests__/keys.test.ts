@@ -3,7 +3,7 @@ import { ChatNormalizer } from '../chat/normalizer.js';
 import {
   backfillPlanApprovalSourceKey,
   backfillStatusSourceKey,
-} from '../commands/migrate-events.js';
+} from '../commands/migrate-v2.js';
 import { chatSessionKey, ticketScopeKey } from '../chat/broker.js';
 import { inboxRowKey, compactInboxTimestamp, type InboxItem } from '../inbox/index.js';
 import type { ChatEvent } from '../chat/types.js';

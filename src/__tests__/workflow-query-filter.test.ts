@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { compileQuery, validateQuery } from '../utils/query/index.js';
-import { buildQueryRegistry } from '../utils/fact-registry.js';
+import { buildQueryRegistry } from '../utils/query/registry.js';
 import { TICKET_FIELDS } from '../utils/query/index.js';
 import { boardItemToQueryItem, filterBoardItems } from '../../dashboard/src/lib/queryFilter';
 import type { TicketBoardItem } from '../../dashboard/src/hooks/useProjects';
@@ -58,7 +58,7 @@ describe('workflow AQL field', () => {
       makeItem({ resolvedWorkflow: 'default' }),
       makeItem({ resolvedWorkflow: 'bug' }),
     ];
-    const { query } = compileQuery('workflow:bug', buildQueryRegistry([]));
+    const { query } = compileQuery('workflow:bug', buildQueryRegistry());
     const matched = filterBoardItems(items, query);
     expect(matched).toHaveLength(2);
     expect(matched.every((i) => i.resolvedWorkflow === 'bug')).toBe(true);

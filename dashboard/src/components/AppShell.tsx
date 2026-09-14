@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LifeBuoy, ListTodo, Settings, Workflow, X } from 'lucide-react';
+import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LifeBuoy, ListTodo, Settings, X } from 'lucide-react';
 import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useInbox } from '../hooks/useInbox';
@@ -70,7 +70,6 @@ const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
 
 const UTILITY_NAV_ITEMS: SidebarNavItem[] = [
   { to: '/help', label: 'Help', icon: LifeBuoy },
-  { to: '/workflow', label: 'Workflow', icon: Workflow },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 

@@ -39,7 +39,9 @@ export function TicketTransitionDialog({
       return 'Reason';
     }
 
-    return action.command === 'block' ? 'Blocked Reason' : 'Reason';
+    if (action.command === 'block' || action.command === 'park') return 'Reason';
+    if (action.command === 'drop') return 'Drop reason';
+    return 'Reason';
   }, [action]);
 
   if (!action) {
@@ -83,7 +85,7 @@ export function TicketTransitionDialog({
               autoFocus
               rows={4}
               disabled={loading}
-              placeholder="Optional context for why this ticket is blocked."
+              placeholder="Optional context for this verb."
               className="editor-textarea min-h-[120px] bg-background/95 font-sans"
             />
             <p className="text-xs text-muted-foreground">

@@ -6,34 +6,10 @@ import { renameCommand } from './commands/rename.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { unassignCommand } from './commands/unassign.js';
-import { startCommand } from './commands/start.js';
 import { archiveCommand } from './commands/archive.js';
 import { restoreCommand } from './commands/restore.js';
-import { shapeCommand } from './commands/shape.js';
-import { planReadyCommand } from './commands/plan-ready.js';
-import { implementCommand } from './commands/implement.js';
-import { migrateStatusesCommand } from './commands/migrate-statuses.js';
-import { migrateStatusHistoryCommand } from './commands/migrate-status-history.js';
-import { migrateEventsCommand } from './commands/migrate-events.js';
-import { migrateDeriveCommand } from './commands/migrate-derive.js';
-import { migrateWorkflowsCommand } from './commands/migrate-workflows.js';
 import { v2MigrateCommand } from './commands/migrate-v2.js';
-import {
-  planApproveCommand,
-  planUnapproveCommand,
-  parkCommand,
-  unparkCommand,
-  requestReviewCommand,
-  recomputeCommand,
-  factSetCommand,
-  attestCommand,
-} from './commands/derive-verbs.js';
-import { completeCommand } from './commands/complete.js';
-import { blockCommand } from './commands/block.js';
-import { unblockCommand } from './commands/unblock.js';
-import { reviewCommand } from './commands/review.js';
-import { failCommand } from './commands/fail.js';
-import { reopenCommand } from './commands/reopen.js';
+import { registerVerbCommands } from './commands/verbs.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
@@ -61,8 +37,6 @@ import { lsCommand } from './commands/ls.js';
 import { searchCommand } from './commands/search.js';
 import { timelineCommand } from './commands/timeline.js';
 import { inboxCommand } from './commands/inbox.js';
-import { statusCommand } from './commands/status.js';
-import { workflowCommand } from './commands/workflow.js';
 import { templateCommand } from './commands/template.js';
 import { retemplateCliCommand } from './commands/retemplate.js';
 import { showCommand } from './commands/show.js';
@@ -123,11 +97,9 @@ program
   .option('--slug <slug>', 'Override auto-generated display slug')
   .option('--priority <level>', 'Priority level (low|medium|high|critical)')
   .option('-t, --template <id>', 'Ticket template id (defaults to the project defaultTemplate)')
-  .option('--workflow <id>', 'Lifecycle workflow this ticket follows (defaults to the resolved binding)')
   .option('--depends-on <ids>', 'Comma-separated dependency ticket ids')
   .option('--links <ids>', 'Comma-separated linked ticket ids')
   .option('--dir <path>', 'Override default project directory')
-  .option('--ready', 'Create the ticket directly as ready_for_planning (skips the draft phase)')
   .action(
     runCommand(async (title, options) => {
       await newCommand(title, {
@@ -209,19 +181,6 @@ program
   );
 
 program
-  .command('start')
-  .description('Assert implementation has started (alias of implement under derived status)')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await startCommand(ticket, options);
-    }),
-  );
-
-program
   .command('archive')
   .description('Archive a ticket or a project (hidden from normal views; restorable)')
   .argument('<target>', 'Ticket id, or a project slug')
@@ -246,267 +205,7 @@ program
     }),
   );
 
-program
-  .command('shape')
-  .description('Recompute derived status; ready_for_planning follows once objective + ACs are real')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await shapeCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('plan-ready')
-  .description('Approve the latest plan revision (file+digest bound); ready_to_implement derives from it')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await planReadyCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('migrate-statuses')
-  .description('Suggest pending -> ready_for_planning promotions for fleshed-out tickets (use --apply to write)')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--apply', 'Apply the migration (default: dry-run)')
-  .action(
-    runCommand(async (options) => {
-      await migrateStatusesCommand(options);
-    }),
-  );
-
-program
-  .command('migrate-status-history')
-  .description('Seed a synthetic statusHistory entry on tickets that lack one (use --apply to write)')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--apply', 'Apply the migration (default: dry-run)')
-  .action(
-    runCommand(async (options) => {
-      await migrateStatusHistoryCommand(options);
-    }),
-  );
-
-program
-  .command('migrate-events')
-  .description('Backfill the audit event log from statusHistory + plan (idempotent via source_key; use --apply to write)')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--apply', 'Apply the backfill (default: dry-run)')
-  .action(
-    runCommand(async (options) => {
-      await migrateEventsCommand(options);
-    }),
-  );
-
-program
-  .command('migrate-derive')
-  .description('One-time migration to derived status: seed facts from current statuses, re-derive all, print a divergence report')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--dry-run', 'Report what would change without writing')
-  .action(
-    runCommand(async (options) => {
-      await migrateDeriveCommand(options);
-    }),
-  );
-
-program
-  .command('migrate-workflows')
-  .description('One-time WS-3 migration: relocate workflows to per-file yaml (deleting the config block), compile the ladder to stages, seed stored stage positions, set the stages-migrated marker')
-  .option('--root <path>', 'Migrate this syntaur home (a copy) instead of ~/.syntaur')
-  .option('--dry-run', 'Print the compile + divergence report without writing')
-  .action(
-    runCommand(async (options) => {
-      await migrateWorkflowsCommand(options);
-    }),
-  );
-
-program
-  .command('park')
-  .description('Park a ticket (intentional withhold); disposition derives to parked')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .option('--project <slug>', 'Target project slug')
-  .option('--reason <text>', 'Why it is parked (recorded in history)')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await parkCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('unpark')
-  .description('Unpark a ticket; status re-derives from facts')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await unparkCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('request-review')
-  .description('Request review (sets reviewRequested); the review phase derives from it')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .option('--project <slug>', 'Target project slug')
-  .option('--clear', 'Clear the review request instead')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await requestReviewCommand(ticket, options);
-    }),
-  );
-
-const factCommand = program
-  .command('fact')
-  .description('Manage custom asserted facts declared under statuses.facts');
-
-factCommand
-  .command('set')
-  .description('Set a declared custom fact (bool/number); status re-derives from it')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .argument('<name>', 'Declared fact name (statuses.facts)')
-  .argument('<value>', 'Value (bool: true/false; number: any finite number)')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, name, value, options) => {
-      await factSetCommand(ticket, name, value, options);
-    }),
-  );
-
-program
-  .command('attest')
-  .description('Record an attestation (agent reviewed a revision with a verdict); revision-bound')
-  .argument('<ticket>', 'Ticket slug or standalone UUID')
-  .argument('<fact>', 'Declared attestation fact name (statuses.facts)')
-  .option('--verdict <verdict>', 'approved | changes-requested', 'approved')
-  .option('--note <text>', 'Optional note recorded on the attestation')
-  .option('--agent <id>', 'Acting agent id (else the bound session, else human)')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, fact, options) => {
-      await attestCommand(ticket, fact, options);
-    }),
-  );
-
-program
-  .command('recompute')
-  .description('Recompute derived status for one ticket or --all (headless reconcile)')
-  .argument('[ticket]', 'Ticket slug or standalone UUID')
-  .option('--all', 'Recompute every ticket (projects + standalone)')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Acting agent id')
-  .option('--dir <path>', 'Override default project directory')
-  .option('--if-migrated', 'No-op unless derive migration has run (for implicit triggers like session-end hooks)')
-  .option(
-    '--session-id <id>',
-    'Resolve the implicit target from this session\'s latest engagement (open-else-latest). The SessionEnd cleanup hook passes the ending session id here; explicit provenance lets it recompute after `session stop` closed the engagement.',
-  )
-  .action(
-    runCommand(async (ticket, options) => {
-      await recomputeCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('implement')
-  .description('Assert implementation has started; status derives to in_progress when the plan is approved')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--agent <name>', 'Agent name (sets assignee if not already set)')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await implementCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('complete')
-  .description('Transition a ticket to completed')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await completeCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('block')
-  .description('Assert a blocker (sets blockedReason); disposition derives to blocked')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--reason <text>', 'Reason for blocking')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await blockCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('unblock')
-  .description('Clear the blocker; status re-derives from facts')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await unblockCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('review')
-  .description('Request review; the review phase derives from it (or from all ACs checked)')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await reviewCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('fail')
-  .description('Transition a ticket to failed')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await failCommand(ticket, options);
-    }),
-  );
-
-program
-  .command('reopen')
-  .description('Reopen a completed or failed ticket')
-  .argument('<ticket>', 'Ticket slug')
-  .option('--project <slug>', 'Target project slug')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, options) => {
-      await reopenCommand(ticket, options);
-    }),
-  );
+registerVerbCommands(program);
 
 program
   .command('setup')
@@ -771,8 +470,6 @@ program.addCommand(lsCommand);
 program.addCommand(searchCommand);
 program.addCommand(timelineCommand);
 program.addCommand(inboxCommand);
-program.addCommand(statusCommand);
-program.addCommand(workflowCommand);
 program.addCommand(templateCommand);
 program.addCommand(retemplateCliCommand);
 program.addCommand(showCommand);

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
 import { createInboxRouter } from '../dashboard/api-inbox.js';
-import { clearStatusConfigCache } from '../dashboard/api.js';
+import { clearStageTableCache } from '../dashboard/api.js';
 import { initSessionDb, closeSessionDb } from '../dashboard/session-db.js';
 import { upsertChatItem } from '../db/chat-db.js';
 import { inboxRowKey } from '../inbox/index.js';
@@ -122,7 +122,7 @@ beforeEach(async () => {
   projectsDir = join(sandbox, 'projects');
   await mkdir(projectsDir, { recursive: true });
 
-  // A minimal config.md so getStatusConfig() resolves the default status config.
+  // A minimal config.md so getStageTableConfig() resolves the default status config.
   await writeFile(
     join(sandbox, 'config.md'),
     `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
@@ -130,8 +130,8 @@ beforeEach(async () => {
 
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = sandbox;
-  // getStatusConfig() caches module-globally; clear so each test resolves fresh.
-  clearStatusConfigCache();
+  // getStageTableConfig() caches module-globally; clear so each test resolves fresh.
+  clearStageTableCache();
   closeSessionDb();
   initSessionDb(join(sandbox, 'syntaur.db'));
 
@@ -151,7 +151,7 @@ afterEach(async () => {
   closeSessionDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
-  clearStatusConfigCache();
+  clearStageTableCache();
   await rm(sandbox, { recursive: true, force: true });
 });
 
@@ -176,7 +176,7 @@ describe('GET /api/inbox', () => {
       `---\nslug: p1\ntitle: P1\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# P1\n`,
     );
     await seed({ id: 'r1', slug: 'rev-a', status: 'review', project: 'p1', title: 'Rev A' });
-    await seed({ id: 'b1', slug: 'blk-a', status: 'blocked', project: 'p1', title: 'Blk A' });
+    await seed({ id: 'b1', slug: 'blk-a', status: 'in_progress', project: 'p1', title: 'Blk A' });
 
     const res = await fetch(`${baseUrl}/api/inbox`);
     expect(res.status).toBe(200);
@@ -189,7 +189,7 @@ describe('GET /api/inbox', () => {
     expect(reviewItem).toBeDefined();
     expect(reviewItem!.ticketSlug).toBe('rev-a');
     expect(reviewItem!.action.verb).toBe('Accept');
-    expect(reviewItem!.action.command).toContain('syntaur complete rev-a');
+    expect(reviewItem!.action.command).toContain('syntaur done rev-a');
   });
 
   it('?type=review filters to only review items', async () => {
@@ -643,7 +643,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     await seed({
       id: 'plan:uuid',
       slug: 'plan-check',
-      status: 'ready_for_planning',
+      status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
     });

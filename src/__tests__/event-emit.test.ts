@@ -2,9 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
-import { executeTransition } from '../lifecycle/transitions.js';
-import { factSetCommand } from '../commands/derive-verbs.js';
-import { migrateStatusHistoryCommand } from '../commands/migrate-status-history.js';
+import { moveTicket } from '../lifecycle/verbs.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import {
   initEventsDb,
@@ -13,66 +11,16 @@ import {
   listEventsByTicket,
 } from '../db/events-db.js';
 import {
+  emitMoved,
   recordStatusEvent,
   withSuppressedEvents,
 } from '../lifecycle/event-emit.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 let home: string;
 let prevHome: string | undefined;
-
-// A minimal custom-status config with one declared bool fact, so `fact set`
-// runs through the derive spine without moving the headline status.
-function configMd(projectsDir: string): string {
-  return `---
-version: "2.0"
-defaultProjectDir: ${projectsDir}
-statuses:
-  definitions:
-    - id: draft
-      label: Draft
-    - id: ready_for_planning
-      label: Ready for Planning
-    - id: ready_to_implement
-      label: Ready to Implement
-    - id: in_progress
-      label: In Progress
-    - id: review
-      label: Review
-    - id: blocked
-      label: Blocked
-    - id: completed
-      label: Completed
-      terminal: true
-    - id: failed
-      label: Failed
-      terminal: true
-  order:
-    - draft
-    - ready_for_planning
-    - ready_to_implement
-    - in_progress
-    - review
-    - blocked
-    - completed
-    - failed
-  facts:
-    - name: qaPassed
-      type: bool
-  phaseLadder:
-    - phase: draft
-      when: "*"
-  disposition:
-    - when: "blocked:true"
-      is: blocked
-    - else: active
-  headline:
-    terminal: passthrough
-    parked: blocked
-    blocked: blocked
-    active: phase
----
-`;
-}
+let projectDir: string;
+let ticketPath: string;
 
 function ticketMd(): string {
   return `---
@@ -80,18 +28,24 @@ id: FTX-1
 slug: feat-x
 title: "Feat X"
 project: p1
-status: draft
+template: feature
+status: backlog
 priority: medium
 created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
-externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
+parked: null
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -105,23 +59,20 @@ A real objective.
 `;
 }
 
-let projectDir: string;
-let ticketPath: string;
-
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'syntaur-event-emit-'));
   prevHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = home;
-  // Reset the events-db singleton so it lazily re-opens at THIS home's db.
   resetEventsDb();
-
-  await writeFile(join(home, 'config.md'), configMd(resolve(home, 'projects')));
+  await seedMissingBuiltins(home);
+  await writeFile(join(home, 'config.md'), `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`);
   projectDir = join(home, 'projects', 'p1');
   const aDir = join(projectDir, 'tickets', 'FTX-1-feat-x');
   await mkdir(aDir, { recursive: true });
   await writeFile(join(projectDir, 'project.md'), '---\nslug: p1\nprefix: FTX\nnextTicket: 2\n---\n# P1\n');
   ticketPath = join(aDir, 'ticket.md');
   await writeFile(ticketPath, ticketMd());
+  initEventsDb(resolve(home, 'syntaur.db'));
 });
 
 afterEach(async () => {
@@ -133,38 +84,31 @@ afterEach(async () => {
   vi.restoreAllMocks();
 });
 
-/** Open the events db that the live emits wrote to under SYNTAUR_HOME. */
-function openEvents() {
-  return initEventsDb(resolve(home, 'syntaur.db'));
-}
-
 async function readFm() {
   return parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
 }
 
 describe('recordStatusEvent self-guard (R5)', () => {
   it('emits nothing when from === to', () => {
-    openEvents();
     recordStatusEvent({
       ticketId: 'a1',
       projectSlug: 'p1',
       actor: 'human',
-      from: 'draft',
-      to: 'draft',
+      from: 'backlog',
+      to: 'backlog',
       command: 'edit',
     });
     expect(listEventsByTicket('a1')).toHaveLength(0);
   });
 
-  it('emits one status-change when from !== to', () => {
-    openEvents();
+  it('emits one status-change when from !== to (deprecated)', () => {
     recordStatusEvent({
       ticketId: 'a1',
       projectSlug: 'p1',
       actor: 'human',
-      from: 'draft',
-      to: 'review',
-      command: 'edit',
+      from: 'backlog',
+      to: 'planning',
+      command: 'plan',
     });
     const events = listEventsByTicket('a1');
     expect(events).toHaveLength(1);
@@ -172,98 +116,109 @@ describe('recordStatusEvent self-guard (R5)', () => {
   });
 });
 
-describe('CLI status transition emits exactly one status-change', () => {
-  it('records one status-change with correct from/to/actor', async () => {
-    const result = await executeTransition(projectDir, 'FTX-1', 'shape', { agent: 'codex' });
-    expect(result.success).toBe(true);
+describe('moveTicket emits moved events', () => {
+  it('records one moved event with correct from/to/actor', async () => {
+    await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), agent: 'codex' });
     const id = (await readFm()).id;
-
-    openEvents(); // no-op if the live emit already opened the singleton
     const events = listEventsByTicket(id);
-    const statusEvents = events.filter((e) => e.type === 'status-change');
-    expect(statusEvents).toHaveLength(1);
-    const details = JSON.parse(statusEvents[0].details ?? '{}');
-    expect(details.from).toBe('draft');
-    expect(details.to).toBe('ready_for_planning');
-    expect(statusEvents[0].actor).toBe('codex');
+    const moved = events.filter((e) => e.type === 'moved');
+    expect(moved).toHaveLength(1);
+    const details = JSON.parse(moved[0].details ?? '{}');
+    expect(details.from).toBe('backlog');
+    expect(details.to).toBe('planning');
+    expect(details.verb).toBe('plan');
+    expect(moved[0].actor).toBe('codex');
+    expect((await readFm()).status).toBe('planning');
   });
-});
 
-describe('same-status fact set (R5)', () => {
-  it('records a fact-set event and ZERO status-change events', async () => {
-    const before = (await readFm()).status;
-    await factSetCommand('FTX-1', 'qaPassed', 'true', { project: 'p1' });
-    const after = (await readFm()).status;
-    // qaPassed does not feed any rung here → headline unchanged.
-    expect(after).toBe(before);
+  it('file-only approve on bug emits plan-approved without moved', async () => {
+    const bugDir = join(projectDir, 'tickets', 'BG-1-bug');
+    await mkdir(bugDir, { recursive: true });
+    const planBody = '# Plan\n\nReal fix plan.\n';
+    await writeFile(
+      join(bugDir, 'ticket.md'),
+      `---
+id: BG-1
+slug: bug
+title: Bug
+project: p1
+template: bug
+status: backlog
+priority: high
+created: "2026-06-09T10:00:00Z"
+updated: "2026-06-09T10:00:00Z"
+depends_on: []
+links: []
+blocked: null
+parked: null
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+---
 
-    const id = (await readFm()).id;
-    openEvents();
-    const events = listEventsByTicket(id);
-    expect(events.filter((e) => e.type === 'fact-set')).toHaveLength(1);
-    expect(events.filter((e) => e.type === 'status-change')).toHaveLength(0);
+# Bug
+`,
+    );
+    await writeFile(join(bugDir, 'plan.md'), planBody, 'utf-8');
+    await moveTicket('BG-1', 'approve', {
+      project: 'p1',
+      dir: resolve(home, 'projects'),
+      agent: 'human',
+    });
+    const events = listEventsByTicket('BG-1');
+    expect(events.filter((e) => e.type === 'moved')).toHaveLength(0);
+    expect(events.filter((e) => e.type === 'plan-approved')).toHaveLength(1);
+    const fm = parseTicketFrontmatter(await readFile(join(bugDir, 'ticket.md'), 'utf-8'));
+    expect(fm.status).toBe('backlog');
   });
 });
 
 describe('migration suppression', () => {
-  it('migrate-status-history --apply records ZERO live events', async () => {
-    // feat-x has no statusHistory → the migration seeds one. defaultProjectDir
-    // (from config.md) is <home>/projects, so no --dir is needed.
-    const id = (await readFm()).id;
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    await migrateStatusHistoryCommand({ apply: true });
-    logSpy.mockRestore();
-
-    // The migration seeded a statusHistory entry but must emit NO live event.
-    expect((await readFm()).statusHistory.length).toBeGreaterThan(0);
-    openEvents();
-    expect(listEventsByTicket(id)).toHaveLength(0);
-  });
-
-  it('withSuppressedEvents suppresses recordStatusEvent and restores after', () => {
-    openEvents();
+  it('withSuppressedEvents suppresses emitMoved and restores after', () => {
     withSuppressedEvents(() => {
-      recordStatusEvent({
+      emitMoved({
         ticketId: 's1',
         projectSlug: null,
-        actor: 'human',
-        from: 'draft',
-        to: 'review',
-        command: 'edit',
+        from: 'backlog',
+        to: 'planning',
+        verb: 'plan',
+        by: 'human',
       });
     });
     expect(listEventsByTicket('s1')).toHaveLength(0);
-    // Restored: a post-suppression emit lands.
-    recordStatusEvent({
+    emitMoved({
       ticketId: 's1',
       projectSlug: null,
-      actor: 'human',
-      from: 'draft',
-      to: 'review',
-      command: 'edit',
+      from: 'backlog',
+      to: 'planning',
+      verb: 'plan',
+      by: 'human',
     });
     expect(listEventsByTicket('s1')).toHaveLength(1);
   });
 });
 
-describe('best-effort: a forced events-db failure leaves the transition succeeding', () => {
-  it('transition still writes the status even when the events db is unopenable', async () => {
-    // Make the events db path a DIRECTORY so better-sqlite3 cannot open it as a
-    // file — recordEvent's lazy initEventsDb() throws, and recordEvent swallows
-    // it (best-effort). The transition's own file write must still commit.
+describe('best-effort: a forced events-db failure leaves the verb succeeding', () => {
+  it('plan move still writes the status even when the events db is unopenable', async () => {
+    closeEventsDb();
     resetEventsDb();
+    const { unlink } = await import('node:fs/promises');
+    await unlink(resolve(home, 'syntaur.db')).catch(() => undefined);
     await mkdir(resolve(home, 'syntaur.db'), { recursive: true });
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     let threw = false;
     try {
-      await executeTransition(projectDir, 'FTX-1', 'shape', { agent: 'codex' });
+      await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), agent: 'codex' });
     } catch {
       threw = true;
     }
     warnSpy.mockRestore();
 
     expect(threw).toBe(false);
-    expect((await readFm()).status).toBe('ready_for_planning');
+    expect((await readFm()).status).toBe('planning');
   });
 });

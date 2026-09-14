@@ -33,7 +33,7 @@ slug: demo
 title: "Demo"
 project: p
 template: legacy
-status: in_progress
+status: backlog
 priority: medium
 created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
@@ -66,7 +66,7 @@ function extractTodosSection(content: string): string {
 
 const PLAN_MD = `---
 ticket: demo
-status: in_progress
+status: backlog
 created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 ---

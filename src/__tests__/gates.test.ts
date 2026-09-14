@@ -31,7 +31,7 @@ function baseFm(overrides: Partial<TicketFrontmatter> = {}): TicketFrontmatter {
     project: 'p',
     template: 'feature',
     workflow: null,
-    status: 'draft',
+    status: 'backlog',
     priority: 'medium',
     created: '2026-01-01T00:00:00Z',
     updated: '2026-01-01T00:00:00Z',
@@ -40,7 +40,7 @@ function baseFm(overrides: Partial<TicketFrontmatter> = {}): TicketFrontmatter {
     statusHistory: [],
     depends_on: [],
     links: [],
-    blockedReason: null,
+    blocked: null,
     workspace: {
       repository: null,
       branch: null,
@@ -54,7 +54,7 @@ function baseFm(overrides: Partial<TicketFrontmatter> = {}): TicketFrontmatter {
     phase: null,
     disposition: null,
     plan: { file: null, approvedDigest: null, approvedAt: null, approvedBy: null },
-    parked: false,
+    parked: null,
     reviewRequested: false,
     reworkRequested: false,
     implementationStarted: false,
@@ -76,7 +76,7 @@ function ctx(
   manifest: TemplateManifest,
   body: string,
   log = '',
-  deps = new Map<string, 'done' | 'backlog'>(),
+  deps = new Map<string, 'done' | 'dropped'>(),
 ): GateContext {
   return {
     ticketDir,
@@ -242,7 +242,7 @@ Work.
 
 describe('Next line per built-in stage', () => {
   it('quick backlog → syntaur done', async () => {
-    expect(await nextFor('quick', 'draft')).toBe('syntaur done X-1');
+    expect(await nextFor('quick', 'backlog')).toBe('syntaur done X-1');
   });
 
   it('feature in_progress → syntaur review when gates pass', async () => {
@@ -367,27 +367,27 @@ describe('all gate ids pass and fail', () => {
 
 describe('Next line for every built-in stage', () => {
   const matrix: Array<[string, string, string]> = [
-    ['feature', 'draft', 'syntaur plan X-1'],
-    ['feature', 'ready_for_planning', GATE_HINTS['plan-exists']],
-    ['feature', 'ready_to_implement', GATE_HINTS['plan-approved']],
+    ['feature', 'backlog', 'syntaur plan create X-1'],
+    ['feature', 'planning', 'Run syntaur plan create X-1'],
+    ['feature', 'ready', GATE_HINTS['plan-approved']],
     ['feature', 'in_progress', 'syntaur review X-1'],
     ['feature', 'review', GATE_HINTS['handoff-logged']],
-    ['feature', 'completed', 'none (terminal)'],
-    ['bug', 'draft', GATE_HINTS['workspace-set']],
+    ['feature', 'done', 'none (terminal)'],
+    ['bug', 'backlog', GATE_HINTS['workspace-set']],
     ['bug', 'in_progress', 'syntaur review X-1'],
     ['bug', 'review', GATE_HINTS['handoff-logged']],
-    ['bug', 'completed', 'none (terminal)'],
-    ['spike', 'draft', 'syntaur start X-1'],
+    ['bug', 'done', 'none (terminal)'],
+    ['spike', 'backlog', 'syntaur start X-1'],
     ['spike', 'in_progress', GATE_HINTS['deliverable-present']],
-    ['spike', 'completed', 'none (terminal)'],
-    ['quick', 'draft', 'syntaur done X-1'],
-    ['quick', 'completed', 'none (terminal)'],
-    ['legacy', 'draft', 'syntaur plan X-1'],
-    ['legacy', 'ready_for_planning', GATE_HINTS['plan-exists']],
-    ['legacy', 'ready_to_implement', 'syntaur start X-1'],
+    ['spike', 'done', 'none (terminal)'],
+    ['quick', 'backlog', 'syntaur done X-1'],
+    ['quick', 'done', 'none (terminal)'],
+    ['legacy', 'backlog', 'syntaur plan create X-1'],
+    ['legacy', 'planning', 'Run syntaur plan create X-1'],
+    ['legacy', 'ready', 'syntaur start X-1'],
     ['legacy', 'in_progress', 'syntaur review X-1'],
     ['legacy', 'review', GATE_HINTS['handoff-logged']],
-    ['legacy', 'completed', 'none (terminal)'],
+    ['legacy', 'done', 'none (terminal)'],
   ];
 
   for (const [templateId, status, expected] of matrix) {
@@ -406,7 +406,7 @@ slug: x
 title: X
 project: p
 template: quick
-status: ready_for_planning
+status: planning
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -429,7 +429,7 @@ Work.
 `;
     await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd, 'utf-8');
     const fm = parseTicketFrontmatter(ticketMd);
-    const stage = stageForStatus('ready_for_planning');
+    const stage = stageForStatus('planning');
     const gateCtx = ctx(ticketDir, fm, manifest, '## Acceptance Criteria\n\n- [ ] one\n');
     const next = await computeNextLine('X-1', stage, manifest, gateCtx);
     expect(next).toBe('syntaur done X-1');

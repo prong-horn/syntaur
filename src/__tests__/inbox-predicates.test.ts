@@ -16,22 +16,32 @@ import {
 } from '../inbox/index.js';
 import type { InboxItem } from '../inbox/types.js';
 import { parseTicketFull, type ParsedTicketFull, type ParsedComment } from '../dashboard/parser.js';
-import { buildDefaultStatusConfig } from '../utils/config.js';
-import { buildTransitionTable } from '../lifecycle/state-machine.js';
-import { planDigest } from '../lifecycle/facts.js';
+import { planDigest } from '../ticket-templates/plan-facts.js';
 
-// ── helpers ──────────────────────────────────────────────────────────────────
+function buildTransitionTable(
+  transitions: Array<{ from: string; command: string; to: string }>,
+): Map<string, string> {
+  const table = new Map<string, string>();
+  for (const t of transitions) {
+    table.set(`${t.from}:${t.command}`, t.to);
+  }
+  return table;
+}
 
 function defaultStatusConfig(): InboxStatusConfig {
-  const def = buildDefaultStatusConfig();
+  const transitions = [
+    { from: 'review', command: 'complete', to: 'completed' },
+    { from: 'review', command: 'start', to: 'in_progress' },
+  ];
   return {
-    statuses: def.statuses,
-    transitions: def.transitions,
-    transitionTable: buildTransitionTable(def.transitions),
-    terminalStatuses: new Set(def.statuses.filter((s) => s.terminal).map((s) => s.id)),
-    // Default headline blocked/parked ids (DEFAULT_DERIVE_CONFIG.headline). These
-    // are NOT valid active reopen targets; `in_progress` is absent so default
-    // `review:start -> in_progress` stays a valid reopen.
+    statuses: [
+      { id: 'review' },
+      { id: 'in_progress' },
+      { id: 'completed', terminal: true },
+    ],
+    transitions,
+    transitionTable: buildTransitionTable(transitions),
+    terminalStatuses: new Set(['completed']),
     blockedParkedStatuses: new Set(['blocked', 'parked']),
   };
 }
@@ -60,7 +70,7 @@ describe('isReview', () => {
     expect(isReview(ticket('status: review'))).toBe(true);
   });
   it('negative: any other status', () => {
-    for (const s of ['draft', 'ready_to_implement', 'in_progress', 'completed', 'blocked']) {
+    for (const s of ['backlog', 'ready', 'in_progress', 'done', 'planning']) {
       expect(isReview(ticket(`status: ${s}`))).toBe(false);
     }
   });
@@ -104,21 +114,21 @@ describe('isPlanAwaitingApproval', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  it('negative: ready_for_planning WITHOUT a plan file', async () => {
-    const a = ticket('status: ready_for_planning');
+  it('negative: planning WITHOUT a plan file', async () => {
+    const a = ticket('status: planning');
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
   it('negative: plan on disk without plan.file set', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
-    const a = ticket('status: ready_for_planning');
+    const a = ticket('status: planning');
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
-  it('positive: ready_for_planning WITH plan.file and an unapproved plan', async () => {
+  it('positive: planning WITH plan.file and an unapproved plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
     const a = ticket(
-      'status: ready_for_planning\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
+      'status: planning\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
@@ -128,14 +138,14 @@ describe('isPlanAwaitingApproval', () => {
     await writeFile(join(dir, 'plan.md'), content);
     const digest = planDigest(content);
     const a = ticket(
-      `status: ready_for_planning\nplan:\n  file: plan.md\n  approvedDigest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
+      `status: planning\nplan:\n  file: plan.md\n  approvedDigest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
   it('negative: wrong status even with an unapproved plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
-    for (const s of ['ready_to_implement', 'in_progress', 'draft']) {
+    for (const s of ['ready', 'in_progress', 'backlog']) {
       expect(await isPlanAwaitingApproval(ticket(`status: ${s}`), dir)).toBe(false);
     }
   });
@@ -174,14 +184,14 @@ describe('resolveSince', () => {
   it('plan-approval: uses latest statusHistory .at', () => {
     const a = ticket(
       [
-        'status: ready_for_planning',
+        'status: planning',
         'statusHistory:',
         '  - at: "2026-06-05T00:00:00Z"',
-        '    to: draft',
+        '    to: backlog',
         '    command: ""',
         '  - at: "2026-06-08T00:00:00Z"',
-        '    to: ready_for_planning',
-        '    command: shape',
+        '    to: planning',
+        '    command: plan',
       ].join('\n'),
     );
     expect(resolveSince('plan-approval', a, now)).toBe('2026-06-08T00:00:00Z');
@@ -255,128 +265,9 @@ describe('computeAgeMs', () => {
 // ── accept-verb derivation ─────────────────────────────────────────────────────
 
 describe('deriveReviewVerbs', () => {
-  it('default config → accept=complete, reopen=start (active target from review)', () => {
-    const v = deriveReviewVerbs(defaultStatusConfig());
-    expect(v.accept).toBe('complete');
-    // review:start -> in_progress (active, non-terminal) → reopen
-    expect(v.reopen).toBe('start');
-  });
-
-  it('accept is null when the only review→terminal command is a non-CLI verb', () => {
-    // `ship` reaches a terminal status but is NOT a registered CLI verb, so it is
-    // not runnable (no `syntaur transition` fallback) → accept must be null.
-    const transitions = [
-      { from: 'review', command: 'ship', to: 'shipped' },
-      { from: 'review', command: 'start', to: 'in_progress' },
-    ];
-    const cfg: InboxStatusConfig = {
-      statuses: [
-        { id: 'review' },
-        { id: 'shipped', terminal: true },
-        { id: 'in_progress' },
-      ],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
-      terminalStatuses: new Set(['shipped']),
-    };
-    const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBeNull();
-    // `start` → in_progress (active) is a known reopen verb.
-    expect(v.reopen).toBe('start');
-  });
-
-  it('prefers a non-fail terminal command for accept; fail alone → accept null', () => {
-    const both = [
-      { from: 'review', command: 'fail', to: 'failed' },
-      { from: 'review', command: 'complete', to: 'completed' },
-    ];
-    const cfgBoth: InboxStatusConfig = {
-      statuses: [{ id: 'completed', terminal: true }, { id: 'failed', terminal: true }],
-      transitions: both,
-      transitionTable: buildTransitionTable(both),
-      terminalStatuses: new Set(['completed', 'failed']),
-    };
-    expect(deriveReviewVerbs(cfgBoth).accept).toBe('complete');
-
-    // Only `fail` reaches terminal → `fail` is explicitly excluded from accept.
-    const failOnly = [{ from: 'review', command: 'fail', to: 'failed' }];
-    const cfgFail: InboxStatusConfig = {
-      statuses: [{ id: 'failed', terminal: true }],
-      transitions: failOnly,
-      transitionTable: buildTransitionTable(failOnly),
-      terminalStatuses: new Set(['failed']),
-    };
-    expect(deriveReviewVerbs(cfgFail).accept).toBeNull();
-  });
-
-  it('accept is null when no review→terminal command resolves', () => {
-    const transitions = [{ from: 'review', command: 'start', to: 'in_progress' }];
-    const cfg: InboxStatusConfig = {
-      statuses: [{ id: 'in_progress' }],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
-      terminalStatuses: new Set(['completed', 'failed']),
-    };
-    const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBeNull();
-    expect(v.reopen).toBe('start');
-  });
-
-  it('reopen prefers start over reopen when both target an active status', () => {
-    const transitions = [
-      { from: 'review', command: 'reopen', to: 'in_progress' },
-      { from: 'review', command: 'start', to: 'in_progress' },
-      { from: 'review', command: 'complete', to: 'completed' },
-    ];
-    const cfg: InboxStatusConfig = {
-      statuses: [{ id: 'in_progress' }, { id: 'completed', terminal: true }],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
-      terminalStatuses: new Set(['completed']),
-    };
-    const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBe('complete');
-    expect(v.reopen).toBe('start');
-  });
-
-  it('reopen is null when start targets a blocked/parked headline status (target disposition, not command name)', () => {
-    // Malformed/custom `review:start -> blocked`: `start` is a reopen-eligible
-    // command name, but its TARGET is a blocked headline status, so it must NOT
-    // be labeled "Reopen".
-    const transitions = [
-      { from: 'review', command: 'start', to: 'blocked' },
-      { from: 'review', command: 'complete', to: 'completed' },
-    ];
-    const cfg: InboxStatusConfig = {
-      statuses: [
-        { id: 'blocked' },
-        { id: 'completed', terminal: true },
-      ],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
-      terminalStatuses: new Set(['completed']),
-      blockedParkedStatuses: new Set(['blocked', 'parked']),
-    };
-    const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBe('complete');
-    expect(v.reopen).toBeNull();
-  });
-
-  it('reopen=reopen when reopen targets an active (non-headline) status', () => {
-    const transitions = [
-      { from: 'review', command: 'reopen', to: 'in_progress' },
-      { from: 'review', command: 'complete', to: 'completed' },
-    ];
-    const cfg: InboxStatusConfig = {
-      statuses: [{ id: 'in_progress' }, { id: 'completed', terminal: true }],
-      transitions,
-      transitionTable: buildTransitionTable(transitions),
-      terminalStatuses: new Set(['completed']),
-      blockedParkedStatuses: new Set(['blocked', 'parked']),
-    };
-    const v = deriveReviewVerbs(cfg);
-    expect(v.accept).toBe('complete');
-    expect(v.reopen).toBe('reopen');
+  it('returns fixed v2 review verbs regardless of status config', () => {
+    expect(deriveReviewVerbs(defaultStatusConfig())).toEqual({ accept: 'done', reopen: 'reopen' });
+    expect(deriveReviewVerbs()).toEqual({ accept: 'done', reopen: 'reopen' });
   });
 });
 
@@ -386,22 +277,22 @@ describe('buildAction', () => {
   const projItem = { project: 'proj', ticketSlug: 'my-slug', ticketId: 'uuid-1' };
   const standalone = { project: null, ticketSlug: 'uuid-2', ticketId: 'uuid-2' };
 
-  it('review (project): Accept + complete command with --project', () => {
-    expect(buildAction('review', projItem, { acceptCommand: 'complete', reopenCommand: 'start' })).toEqual({
+  it('review (project): Accept + done command with --project', () => {
+    expect(buildAction('review', projItem, { acceptCommand: 'done', reopenCommand: 'reopen' })).toEqual({
       verb: 'Accept',
-      command: 'syntaur complete my-slug --project proj',
+      command: 'syntaur done my-slug --project proj',
     });
   });
   it('review (standalone): omits --project, targets UUID', () => {
-    expect(buildAction('review', standalone, { acceptCommand: 'complete', reopenCommand: 'start' })).toEqual({
+    expect(buildAction('review', standalone, { acceptCommand: 'done', reopenCommand: 'reopen' })).toEqual({
       verb: 'Accept',
-      command: 'syntaur complete uuid-2',
+      command: 'syntaur done uuid-2',
     });
   });
   it('review: falls back to Reopen when accept is null', () => {
-    expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: 'start' })).toEqual({
+    expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: 'reopen' })).toEqual({
       verb: 'Reopen',
-      command: 'syntaur start my-slug --project proj',
+      command: 'syntaur reopen my-slug --project proj',
     });
   });
   it('review: inspect fallback when neither accept nor reopen resolves', () => {

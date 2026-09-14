@@ -1,7 +1,10 @@
-import { runAssign, reportResult, type LifecycleOptions } from './_lifecycle-helper.js';
+import { assignTicket } from '../lifecycle/assign.js';
+import { resolveTicketTarget } from '../utils/ticket-target.js';
 
-export interface AssignOptions extends LifecycleOptions {
-  agent: string;
+export interface AssignOptions {
+  project?: string;
+  dir?: string;
+  agent?: string;
 }
 
 export async function assignCommand(
@@ -11,6 +14,10 @@ export async function assignCommand(
   if (!options.agent) {
     throw new Error('--agent <name> is required.');
   }
-  const result = await runAssign(ticket, options.agent, options);
-  reportResult(result);
+  const target = await resolveTicketTarget(ticket, {
+    project: options.project,
+    dir: options.dir,
+  });
+  const result = await assignTicket(target.ticketDir, options.agent, options.agent);
+  console.log(result.message);
 }

@@ -1,9 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
-import { countRealAcceptanceCriteria } from '../lifecycle/facts.js';
+import { countRealAcceptanceCriteria } from './plan-facts.js';
+import { buildGateContext } from './context.js';
 import type { TicketFrontmatter } from '../lifecycle/types.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { fileExists } from '../utils/fs.js';
 import { rebuildChatIndex } from '../chat/store.js';
 import { listChatItems } from '../db/chat-db.js';
@@ -12,13 +12,7 @@ import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { logRoleFile } from './manifest.js';
 import type { StageId, TemplateManifest } from './manifest.js';
 import { markdownBody, objectiveOneLiner, sectionFirstParagraph } from './content.js';
-import {
-  computeNextLine,
-  hasCommentsFile,
-  hasLogRole,
-  resolveDependencyStage,
-  type GateContext,
-} from './gates.js';
+import { computeNextLine, hasCommentsFile, hasLogRole } from './gates.js';
 import { parseLogEntries, type LogEntry } from './log-reader.js';
 import { fileState } from './roles.js';
 import { stageForStatus } from './stages.js';
@@ -29,8 +23,8 @@ export interface ShowTicket {
   template: string;
   status: string;
   stage: StageId | 'dropped';
-  blockedReason: string | null;
-  parked: boolean;
+  blocked: string | null;
+  parked: string | null;
   objective: string;
   acceptance: { checked: number; total: number };
 }
@@ -86,47 +80,13 @@ export interface ShowModel {
 
 const LOG_TAIL_COUNT = 3;
 
-async function loadDependencyStages(
-  root: string,
-  depends: string[],
-): Promise<Map<string, StageId | 'dropped'>> {
-  const projectsDir = resolve(root, 'projects');
-  const map = new Map<string, StageId | 'dropped'>();
-  for (const dep of depends) {
-    const resolved = await resolveTicketById(projectsDir, dep);
-    if (!resolved) {
-      map.set(dep, 'backlog');
-      continue;
-    }
-    try {
-      const content = await readFile(resolve(resolved.ticketDir, 'ticket.md'), 'utf-8');
-      const fm = parseTicketFrontmatter(content);
-      map.set(dep, resolveDependencyStage(fm.status));
-    } catch {
-      map.set(dep, 'backlog');
-    }
-  }
-  return map;
-}
-
-async function loadLogEntries(
-  ticketDir: string,
-  manifest: TemplateManifest,
-): Promise<LogEntry[]> {
-  const logRole = logRoleFile(manifest);
-  if (!logRole) return [];
-  const path = resolve(ticketDir, logRole.path);
-  if (!(await fileExists(path))) return [];
-  const content = await readFile(path, 'utf-8');
-  return parseLogEntries(content);
-}
-
 function buildWorkspace(manifest: TemplateManifest, fm: TicketFrontmatter): ShowWorkspace {
   if (manifest.workspace === 'none') {
     return { mode: 'none', repository: null, branch: null, worktreePath: null };
   }
   const w = fm.workspace;
-  const set = Boolean(w.repository?.trim() && w.branch?.trim() && w.worktreePath?.trim());
+  const worktree = w.worktree ?? w.worktreePath;
+  const set = Boolean(w.repository?.trim() && w.branch?.trim() && worktree?.trim());
   if (!set) {
     return { mode: 'not-set', repository: null, branch: null, worktreePath: null };
   }
@@ -134,7 +94,7 @@ function buildWorkspace(manifest: TemplateManifest, fm: TicketFrontmatter): Show
     mode: 'set',
     repository: w.repository,
     branch: w.branch,
-    worktreePath: w.worktreePath,
+    worktreePath: worktree,
   };
 }
 
@@ -188,17 +148,8 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
   const manifest = await loadTemplate(root, templateId);
   const stage = stageForStatus(fm.status);
   const acceptance = countRealAcceptanceCriteria(body);
-  const logEntries = await loadLogEntries(ticketDir, manifest);
-  const dependencyStages = await loadDependencyStages(root, fm.depends_on);
-
-  const gateCtx: GateContext = {
-    ticketDir,
-    fm,
-    manifest,
-    ticketBody: body,
-    logEntries,
-    dependencyStages,
-  };
+  const gateCtx = await buildGateContext(ticketDir);
+  const logEntries = gateCtx.logEntries;
 
   const files: ShowFile[] = [];
   const kernelOneLiner = objectiveOneLiner(body) || fm.title;
@@ -228,7 +179,7 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
       template: templateId,
       status: fm.status,
       stage,
-      blockedReason: fm.blockedReason,
+      blocked: fm.blocked,
       parked: fm.parked,
       objective: sectionFirstParagraph(body, 'Objective'),
       acceptance: { checked: acceptance.checked, total: acceptance.total },
@@ -236,7 +187,7 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
     workspace: buildWorkspace(manifest, fm),
     depends: fm.depends_on.map((id) => ({
       id,
-      stage: dependencyStages.get(id) ?? 'backlog',
+      stage: gateCtx.dependencyStages.get(id) ?? 'backlog',
     })),
     links: fm.links,
     files,
@@ -262,11 +213,11 @@ export function renderShowText(model: ShowModel): string {
     model.ticket.template,
     model.ticket.stage,
   ];
-  if (model.ticket.blockedReason) {
-    headerParts.push(`blocked: ${model.ticket.blockedReason}`);
+  if (model.ticket.blocked) {
+    headerParts.push(`blocked: ${model.ticket.blocked}`);
   }
   if (model.ticket.parked) {
-    headerParts.push('parked');
+    headerParts.push(`parked: ${model.ticket.parked}`);
   }
   lines.push(headerParts.join(' · '));
 

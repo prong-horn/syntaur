@@ -27,7 +27,6 @@ import { PlaybookDetail } from './pages/PlaybookDetail';
 import { CreatePlaybook } from './pages/CreatePlaybook';
 import { EditPlaybook } from './pages/EditPlaybook';
 import { SettingsPage } from './pages/SettingsPage';
-import { WorkflowPage } from './pages/WorkflowPage';
 import { HotkeyProvider } from './hotkeys';
 
 function WorkspacePrefixRedirect() {
@@ -67,7 +66,6 @@ export function App() {
             <Route path="/playbooks/:slug/edit" element={<EditPlaybook />} />
             <Route path="/help" element={<HelpPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/workflow" element={<WorkflowPage />} />
             <Route path="/create/project" element={<CreateProject />} />
             <Route path="/projects/:slug" element={<ProjectDetail />} />
             <Route path="/projects/:slug/edit" element={<EditProject />} />

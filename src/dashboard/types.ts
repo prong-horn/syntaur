@@ -105,7 +105,7 @@ export interface TicketBoardItem extends TicketSummary {
   /** `null` for standalone tickets. */
   projectTitle: string | null;
   blockedReason: string | null;
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
 }
 
 /** One archived ticket row shown on the canonical Archive page. */
@@ -307,7 +307,7 @@ export interface TicketDetail {
   referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first). Empty when the session DB is not initialized (non-dashboard callers). */
   engagements: EngagementInfo[];
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
   templateBlock: TicketTemplateBlock;
 }
 
@@ -403,7 +403,7 @@ export interface AttentionItem {
   /** Current assignee from frontmatter; `null` if unclaimed. */
   assignee: string | null;
   /** Transitions available right now; powers the Advance quick action. */
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
 }
 
 /** Hero category — drives both copy lookup and the row reference. */

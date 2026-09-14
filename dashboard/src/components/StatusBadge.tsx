@@ -9,6 +9,7 @@ import {
   Play,
   SearchCheck,
   StopCircle,
+  XCircle,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useStatusConfig } from '../hooks/useStatusConfig';
@@ -24,27 +25,21 @@ import {
 } from '../lib/statusMeta';
 
 export const STATUS_META = {
-  draft: {
-    label: 'Draft',
-    description: 'Just-created stub; not yet shaped.',
-    className: STATUS_PENDING_CLASS,
-    icon: Pencil,
-  },
-  pending: {
-    label: 'Pending',
-    description: 'Waiting to start or waiting on dependencies.',
+  backlog: {
+    label: 'Backlog',
+    description: 'Not yet started.',
     className: STATUS_PENDING_CLASS,
     icon: Clock3,
   },
-  ready_for_planning: {
-    label: 'Ready for Planning',
-    description: 'Objective and acceptance criteria written; awaiting a plan.',
+  planning: {
+    label: 'Planning',
+    description: 'Shaping or writing the plan.',
     className: STATUS_PENDING_CLASS,
     icon: Compass,
   },
-  ready_to_implement: {
-    label: 'Ready to Implement',
-    description: 'Plan written and approved; ready to start coding.',
+  ready: {
+    label: 'Ready',
+    description: 'Plan approved; ready to implement.',
     className: STATUS_IN_PROGRESS_CLASS,
     icon: Play,
   },
@@ -54,21 +49,45 @@ export const STATUS_META = {
     className: STATUS_IN_PROGRESS_CLASS,
     icon: LoaderCircle,
   },
-  blocked: {
-    label: 'Blocked',
-    description: 'Blocked by an explicit obstacle that needs intervention.',
-    className: STATUS_BLOCKED_CLASS,
-    icon: AlertCircle,
-  },
   review: {
     label: 'Review',
     description: 'Ready for inspection or approval.',
     className: STATUS_REVIEW_CLASS,
     icon: SearchCheck,
   },
+  done: {
+    label: 'Done',
+    description: 'Finished successfully.',
+    className: STATUS_COMPLETED_CLASS,
+    icon: CheckCircle2,
+  },
+  dropped: {
+    label: 'Dropped',
+    description: 'Will not be completed.',
+    className: STATUS_FAILED_CLASS,
+    icon: XCircle,
+  },
+  active: {
+    label: 'Active',
+    description: 'The project has active work in flight.',
+    className: STATUS_IN_PROGRESS_CLASS,
+    icon: CircleDot,
+  },
+  pending: {
+    label: 'Pending',
+    description: 'Waiting to start.',
+    className: STATUS_PENDING_CLASS,
+    icon: Clock3,
+  },
+  blocked: {
+    label: 'Blocked',
+    description: 'Blocked by an explicit obstacle.',
+    className: STATUS_BLOCKED_CLASS,
+    icon: AlertCircle,
+  },
   completed: {
     label: 'Completed',
-    description: 'Finished successfully.',
+    description: 'All work finished.',
     className: STATUS_COMPLETED_CLASS,
     icon: CheckCircle2,
   },
@@ -78,26 +97,17 @@ export const STATUS_META = {
     className: STATUS_FAILED_CLASS,
     icon: AlertCircle,
   },
-  active: {
-    label: 'Active',
-    description: 'The project has active or review work in flight.',
-    className: STATUS_IN_PROGRESS_CLASS,
-    icon: CircleDot,
-  },
-  stopped: {
-    label: 'Stopped',
-    description: 'Session ended without completing.',
-    className: STATUS_PENDING_CLASS,
-    icon: StopCircle,
-  },
-  // Not a status value anymore — `archived` is an orthogonal flag. Kept as a
-  // reusable visual badge for archived content (Archive page + archived-project
-  // detail), decoupled from the status model.
   archived: {
     label: 'Archived',
-    description: 'Hidden from normal views; restorable from the Archive page.',
+    description: 'Hidden from normal views.',
     className: STATUS_ARCHIVED_CLASS,
-    icon: CircleDot,
+    icon: StopCircle,
+  },
+  draft: {
+    label: 'Draft',
+    description: 'Legacy draft status.',
+    className: STATUS_PENDING_CLASS,
+    icon: Pencil,
   },
 } as const;
 
@@ -126,23 +136,13 @@ export function getStatusMeta(status: string): StatusMeta {
   };
 }
 
-/**
- * Shared pill chrome (shape + border-width + padding), WITHOUT any color. Callers
- * append a color class and/or an inline style. Shared by the read-only StatusBadge
- * and the interactive StatusPillPicker trigger so they stay visually identical.
- */
 export const STATUS_PILL_BASE =
   'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-medium tracking-normal shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0)] dark:shadow-[inset_0_0_0_1px_oklch(100%_0_0_/_0.04)]';
 
-/**
- * Config-less pill class string (built-in colors only). Retained for direct
- * callers; the config-driven path goes through {@link resolveStatusAppearance}.
- */
 export function getStatusPillClassName(status: string, extra?: string): string {
   return cn(STATUS_PILL_BASE, getStatusMeta(status).className, extra);
 }
 
-/** Lucide icon for a status — built-in icon when known, else a generic dot. */
 export function getStatusIcon(status: string): typeof CircleDot {
   return STATUS_META[status as keyof typeof STATUS_META]?.icon ?? CircleDot;
 }
@@ -196,8 +196,7 @@ export function StatusBadge({
   const appearance = resolveStatusAppearance(config.statuses, status);
   const Icon = getStatusIcon(status);
   const label = appearance.label;
-  const baseDescription =
-    config.statuses.find((s) => s.id === status)?.description ?? getStatusDescription(status);
+  const baseDescription = getStatusMeta(status).description;
 
   const hasProgress = progress && progress.total > 0;
   const description = hasProgress
@@ -221,5 +220,5 @@ export function StatusBadge({
 }
 
 export function getStatusDescription(status: string): string {
-  return (STATUS_META[status as keyof typeof STATUS_META])?.description ?? `Status: ${status}`;
+  return getStatusMeta(status).description;
 }

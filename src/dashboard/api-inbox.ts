@@ -12,8 +12,6 @@ import {
 } from '../inbox/index.js';
 import { INBOX_CATEGORIES, type InboxCategory } from '../inbox/types.js';
 import { getChatItem } from '../db/chat-db.js';
-import { getStatusConfig } from './api.js';
-import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
 
 /**
  * Read-only "Needs me" decision inbox API. Localhost-only per the existing
@@ -35,10 +33,20 @@ import { DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
  */
 
 async function baseComputeOptions(req: Request, projectsDir: string) {
-  const resolved = await getStatusConfig();
-  const headline = (resolved.derive ?? DEFAULT_DERIVE_CONFIG).headline;
-  const blockedParkedStatuses = new Set([headline.blocked, headline.parked].filter(Boolean));
-  const statusConfig = { ...resolved, blockedParkedStatuses };
+  const statusConfig = {
+    statuses: [
+      { id: 'backlog' },
+      { id: 'planning' },
+      { id: 'ready' },
+      { id: 'in_progress' },
+      { id: 'review' },
+      { id: 'done', terminal: true },
+      { id: 'dropped', terminal: true },
+    ],
+    transitions: [],
+    transitionTable: new Map<string, string>(),
+    terminalStatuses: new Set(['done', 'dropped']),
+  };
   return {
     projectsDir,
     statusConfig,

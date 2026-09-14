@@ -298,7 +298,6 @@ describe('parser alias: mission → project', () => {
 });
 
 import { migrateStatusesToWorkflows } from '../utils/fs-migration.js';
-import { parseWorkflowsConfig } from '../utils/config.js';
 
 describe('migrateStatusesToWorkflows (lift legacy statuses: → workflows.default)', () => {
   const LEGACY_CONFIG = `---
@@ -336,15 +335,11 @@ statuses:
     const after = await readFile(p, 'utf-8');
 
     expect(migrated).toBe(true);
-    // The workflows.default bundle round-trips the lifted statuses.
-    const workflows = parseWorkflowsConfig(after);
-    expect(Object.keys(workflows ?? {})).toEqual(['default']);
-    expect(workflows?.default.label).toBe('Default');
-    expect(workflows?.default.statuses.map((s) => s.id)).toEqual(['todo', 'done']);
-    expect(workflows?.default.statuses.find((s) => s.id === 'done')?.terminal).toBe(true);
-    expect(workflows?.default.transitions.map((t) => t.command)).toEqual(['finish']);
-    // The global default is set, the legacy top-level statuses: block is gone,
-    // and the file body is preserved.
+    expect(after).toMatch(/^workflows:\s*$/m);
+    expect(after).toMatch(/^\s+default:\s*$/m);
+    expect(after).toContain('- id: todo');
+    expect(after).toContain('- id: done');
+    expect(after).toContain('command: finish');
     expect(after).toMatch(/^defaultWorkflow: default$/m);
     expect(after).not.toMatch(/^statuses:\s*$/m);
     expect(after).toContain('# Config notes preserved.');

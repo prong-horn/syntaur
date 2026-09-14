@@ -181,40 +181,26 @@ slug: pf
 title: Prompt framing
 project: p
 template: legacy
-status: draft
+status: backlog
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
+assignee: null
 depends_on: []
 links: []
+blocked: null
+parked: null
 plan:
   file: null
   approvedDigest: null
   approvedAt: null
   approvedBy: null
+workspace:
+  repository: null
+  worktree: null
+  branch: null
+  parentBranch: null
 tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
 ---
 
 ## Objective
@@ -256,40 +242,26 @@ slug: bad
 title: Bad template
 project: p
 template: not-a-real-template
-status: draft
+status: backlog
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
+assignee: null
 depends_on: []
 links: []
+blocked: null
+parked: null
 plan:
   file: null
   approvedDigest: null
   approvedAt: null
   approvedBy: null
+workspace:
+  repository: null
+  worktree: null
+  branch: null
+  parentBranch: null
 tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
 ---
 
 ## Objective
@@ -324,7 +296,7 @@ Still readable.
     const agent = def('planner');
     const roster = [agent];
     const participants = { agents: ['planner'] };
-    const a = standingFingerprint(agent, roster, participants, { status: 'draft', template: 'feature' });
+    const a = standingFingerprint(agent, roster, participants, { status: 'backlog', template: 'feature' });
     const b = standingFingerprint(agent, roster, participants, {
       status: 'in_progress',
       template: 'feature',

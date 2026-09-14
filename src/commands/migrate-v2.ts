@@ -552,6 +552,16 @@ export function migrateItemId(
   return itemId;
 }
 
+/** Canonical tilde form for backfilled status events. */
+export function backfillStatusSourceKey(ticketId: string, index: number): string {
+  return `backfill~${ticketId}~status~${index}`;
+}
+
+/** Canonical tilde form for backfilled plan-approval events. */
+export function backfillPlanApprovalSourceKey(ticketId: string): string {
+  return `backfill~${ticketId}~plan-approval`;
+}
+
 /** `backfill:<uuid>:status:<n>` → `backfill~<ID>~status~<n>`; same for plan-approval. */
 export function migrateBackfillSourceKey(
   sourceKey: string,

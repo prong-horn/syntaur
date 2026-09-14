@@ -4,7 +4,7 @@ import { fileExists } from '../utils/fs.js';
 import type { TemplateFile, TemplateManifest } from './manifest.js';
 import { planRoleFile } from './manifest.js';
 import type { TicketFrontmatter } from '../lifecycle/types.js';
-import { isPlanApproved, planDigest } from '../lifecycle/facts.js';
+import { isPlanApproved, planDigest } from './plan-facts.js';
 import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { nonEmptyBeyondScaffold } from './content.js';

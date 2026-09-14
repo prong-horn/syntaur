@@ -7,11 +7,8 @@ export default defineConfig({
       // Dashboard libs import shared schema via `@shared/*` (mapped to src/utils
       // in the dashboard's own tsconfig/vite). Some of those imports are now
       // runtime (not just type-only), so node-env tests that pull in a dashboard
-      // lib must resolve `@shared` too. The two lifecycle modules live outside
-      // src/utils, so they need explicit (more-specific-first) aliases.
-      '@shared/derive': fileURLToPath(new URL('./src/lifecycle/derive.ts', import.meta.url)),
-      '@shared/state-machine': fileURLToPath(new URL('./src/lifecycle/state-machine.ts', import.meta.url)),
-      '@shared/stage-engine': fileURLToPath(new URL('./src/lifecycle/stage-engine.ts', import.meta.url)),
+      // lib must resolve `@shared` too.
+      '@shared/query-registry': fileURLToPath(new URL('./src/utils/query/registry.ts', import.meta.url)),
       '@shared': fileURLToPath(new URL('./src/utils', import.meta.url)),
     },
   },

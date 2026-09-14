@@ -24,8 +24,7 @@ import {
   type ParsedTicketFull,
   type ParsedComment,
 } from '../dashboard/parser.js';
-import { isPlanApproved } from '../lifecycle/facts.js';
-import { getTargetStatus } from '../lifecycle/state-machine.js';
+import { isPlanApproved } from '../ticket-templates/plan-facts.js';
 import type {
   InboxAction,
   InboxCard,
@@ -63,7 +62,7 @@ export {
 /**
  * The minimal lifecycle status-config the inbox core needs for accept-verb
  * derivation. A structural subset of the dashboard's `ResolvedStatusConfig`, so
- * callers (CLI / API) just pass `getStatusConfig()`'s result. The core itself
+ * callers (CLI / API) just pass `getStageTableConfig()`'s result. The core itself
  * never resolves config.
  */
 export interface InboxStatusConfig {
@@ -139,7 +138,7 @@ export async function isPlanAwaitingApproval(
   a: ParsedTicketFull,
   ticketDir: string,
 ): Promise<boolean> {
-  if (a.status !== 'ready_for_planning') return false;
+  if (a.status !== 'planning') return false;
   if (!a.plan.file) return false;
   if (!(await fileExists(resolve(ticketDir, a.plan.file)))) return false;
   const approved = await isPlanApproved(ticketDir, { plan: a.plan });
@@ -248,15 +247,22 @@ export function computeAgeMs(since: string, now: number): number {
  * the derivation rejects it (e.g. a custom `review→shipped` command named
  * `ship`).
  */
-export const KNOWN_TRANSITION_CLI_VERBS = new Set<string>([
+export const KNOWN_CLI_VERBS = new Set<string>([
+  'plan',
+  'approve',
   'start',
-  'complete',
-  'fail',
+  'review',
+  'done',
+  'drop',
   'reopen',
   'block',
   'unblock',
-  'review',
+  'park',
+  'unpark',
 ]);
+
+/** @deprecated Use {@link KNOWN_CLI_VERBS} */
+export const KNOWN_TRANSITION_CLI_VERBS = KNOWN_CLI_VERBS;
 
 export interface ReviewVerbs {
   /**
@@ -291,49 +297,9 @@ export interface ReviewVerbs {
  * non-null, enumerated from the declared `transitions` (from==='review') plus a
  * sweep of `transitionTable` keys (`review:*`).
  */
-export function deriveReviewVerbs(config: InboxStatusConfig): ReviewVerbs {
-  const candidates = new Set<string>();
-  for (const t of config.transitions) {
-    if (t.from === 'review') candidates.add(t.command);
-  }
-  for (const key of config.transitionTable.keys()) {
-    if (key.startsWith('review:')) candidates.add(key.slice('review:'.length));
-  }
-
-  const blockedParked = config.blockedParkedStatuses ?? new Set<string>();
-  const terminalAccept: string[] = [];
-  const activeReopen: string[] = [];
-  for (const command of candidates) {
-    const target = getTargetStatus('review', command, config.transitionTable);
-    if (target === null) continue;
-    const isTerminal = config.terminalStatuses.has(target);
-    if (
-      isTerminal &&
-      command !== 'fail' &&
-      KNOWN_TRANSITION_CLI_VERBS.has(command)
-    ) {
-      terminalAccept.push(command);
-    }
-    // reopen requires the TARGET be an active status: non-terminal AND not a
-    // blocked/parked headline status. (Disposition of the target, not the
-    // command name, is load-bearing — a review→blocked/parked target is NOT a
-    // valid reopen even when the command is `start`/`reopen`.)
-    if (
-      !isTerminal &&
-      !blockedParked.has(target) &&
-      (command === 'start' || command === 'reopen')
-    ) {
-      activeReopen.push(command);
-    }
-  }
-
-  const accept =
-    terminalAccept.find((c) => c === 'complete') ?? terminalAccept[0] ?? null;
-  const reopen =
-    activeReopen.find((c) => c === 'start') ??
-    activeReopen.find((c) => c === 'reopen') ??
-    null;
-  return { accept, reopen };
+/** Fixed review-stage verbs (v2): accept via `done`, reopen via `reopen`. */
+export function deriveReviewVerbs(_config?: InboxStatusConfig): ReviewVerbs {
+  return { accept: 'done', reopen: 'reopen' };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

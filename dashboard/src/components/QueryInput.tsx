@@ -3,7 +3,7 @@
  *
  * This component is PRESENTATIONAL + CONTROLLED: it does not fetch config or
  * own query state. The consuming page builds the FieldRegistry with
- * `buildQueryRegistry(factDeclarations)` and passes it in as `registry`.
+ * `buildQueryRegistry()` and passes it in as `registry`.
  *
  * Error format: `at {pos}: {message}` — matches ls.ts:119's rendering.
  */
@@ -11,7 +11,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FieldRegistry, CompiledQuery } from '@shared/query';
 import { compileQuery } from '@shared/query';
-import type { FactDeclaration } from '@shared/fact-registry';
 import type { ValueSuggestionSources } from '../lib/query-autocomplete';
 import {
   detectCaretContext,
@@ -33,10 +32,8 @@ export interface QueryInputProps {
    * null when the input is empty or has errors.
    */
   onCompiled?: (compiled: CompiledQuery | null) => void;
-  /** Field registry built by the page: `buildQueryRegistry(factDeclarations)`. */
+  /** Field registry built by the page: `buildQueryRegistry()`. */
   registry: FieldRegistry;
-  /** Used for field name autocomplete. */
-  declarations: FactDeclaration[];
   /** Value suggestion source lists derived from board data / config. */
   valueSources: ValueSuggestionSources;
   placeholder?: string;
@@ -63,7 +60,6 @@ export function QueryInput({
   onChange,
   onCompiled,
   registry,
-  declarations,
   valueSources,
   placeholder = 'AQL query (e.g. status:active AND priority:high)',
   className,
@@ -117,7 +113,7 @@ export function QueryInput({
         return;
       }
       if (ctx.kind === 'field') {
-        const candidates = rankFieldSuggestions(ctx.partial, declarations);
+        const candidates = rankFieldSuggestions(ctx.partial);
         setSuggestions(candidates);
         setSuggestionKind('field');
         setDropdownOpen(candidates.length > 0);
@@ -129,7 +125,7 @@ export function QueryInput({
       }
       setActiveSuggestion(-1);
     },
-    [declarations, valueSources, registry],
+    [valueSources, registry],
   );
 
   const handleChange = useCallback(

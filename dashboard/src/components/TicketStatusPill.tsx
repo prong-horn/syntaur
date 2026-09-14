@@ -3,12 +3,7 @@ import { StatusPillPicker } from './StatusPillPicker';
 import { TicketTransitionDialog } from './TicketTransitionDialog';
 import { Toaster, useToast } from './Toast';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
-import { overrideTargetsForStatus, isTerminalStatus } from '../lib/statusMeta';
-import {
-  runTicketTransition,
-  overrideTicketStatus,
-  transitionNeedsReason,
-} from '../lib/tickets';
+import { runTicketVerb, verbNeedsReason } from '../lib/tickets';
 import type { TicketTransitionAction, TicketDetail } from '../hooks/useProjects';
 
 interface TicketStatusPillProps {
@@ -17,74 +12,46 @@ interface TicketStatusPillProps {
   projectSlug?: string | null;
   status: string;
   title?: string;
-  availableTransitions?: TicketTransitionAction[];
+  availableVerbs?: TicketTransitionAction[];
   progress?: { checked: number; total: number };
   onChange?: (updated: TicketDetail) => void;
   disabled?: boolean;
   className?: string;
-  // Delegated mode (board): when BOTH are provided, the component forwards
-  // selections instead of mutating.
   onSelectAction?: (action: TicketTransitionAction) => void;
-  onSelectOverride?: (statusId: string) => void;
 }
 
-/**
- * Self-contained interactive status pill. Drops in anywhere a read-only
- * `StatusBadge` renders a mutable ticket status. It owns its own override
- * targets, routes the correct API call (by-id vs by-slug), does an optimistic
- * update + rollback, surfaces toasts, and pops the reason dialog when a
- * transition requires one.
- *
- * A "delegated" mode (both `onSelectAction` and `onSelectOverride` provided)
- * lets a parent — e.g. the board — keep its own mutation logic; the component
- * then only forwards the picker's selections and does NOT mutate, toast,
- * optimistic-update, or render a dialog.
- *
- * This is a refactor of the board's `applyMove`/`handleMove`/`handleOverride`
- * (`TicketsPage.tsx`) into a reusable component.
- */
 export function TicketStatusPill({
   id,
   slug,
   projectSlug: _projectSlug,
   status,
   title,
-  availableTransitions,
+  availableVerbs,
   progress,
   onChange,
   disabled,
   className,
   onSelectAction,
-  onSelectOverride,
 }: TicketStatusPillProps) {
   const config = useStatusConfig();
   const { toast, showToast, dismissToast } = useToast();
 
-  // Prop-derived state: seed from props and re-sync when the prop changes, so an
-  // external truth update (parent re-render) re-seeds the optimistic view. Same
-  // synchronizing-effect pattern used elsewhere (e.g. TicketTransitionDialog).
   const [displayStatus, setDisplayStatus] = useState(status);
   useEffect(() => {
     setDisplayStatus(status);
   }, [status]);
 
-  const [availableTransitionsState, setAvailableTransitionsState] = useState<
+  const [availableVerbsState, setAvailableTransitionsState] = useState<
     TicketTransitionAction[]
-  >(availableTransitions ?? []);
+  >(availableVerbs ?? []);
   useEffect(() => {
-    setAvailableTransitionsState(availableTransitions ?? []);
-  }, [availableTransitions]);
+    setAvailableTransitionsState(availableVerbs ?? []);
+  }, [availableVerbs]);
 
   const [transitioning, setTransitioning] = useState(false);
-  // The action awaiting a reason. Non-null ⇒ the reason dialog is open.
   const [pending, setPending] = useState<TicketTransitionAction | null>(null);
 
-  // Delegated only when BOTH delegates are provided (mixed mode is not supported).
-  const delegated = Boolean(onSelectAction && onSelectOverride);
-
-  // Override targets are ALWAYS derived internally from the live config + the
-  // current (optimistic) status + transitions — in both modes.
-  const overrideTargets = overrideTargetsForStatus(config, displayStatus, availableTransitionsState);
+  const delegated = Boolean(onSelectAction);
 
   function ensureIdentifiers(): boolean {
     if (!id) {
@@ -94,18 +61,11 @@ export function TicketStatusPill({
     return true;
   }
 
-  /**
-   * Shared optimistic-update + rollback. Sets the target status (and clears the
-   * busy flag) around `perform()`. On success, adopts the server's status +
-   * transitions, notifies `onChange`, and toasts. On error, restores the captured
-   * previous status + transitions and toasts the message. Returns success so the
-   * reason dialog can decide whether to close. Mirrors the board's `applyMove`.
-   */
   async function runMutation(
     targetStatus: string,
     perform: () => Promise<TicketDetail>,
   ): Promise<boolean> {
-    const previous = { status: displayStatus, transitions: availableTransitionsState };
+    const previous = { status: displayStatus, transitions: availableVerbsState };
 
     setDisplayStatus(targetStatus);
     setTransitioning(true);
@@ -113,7 +73,7 @@ export function TicketStatusPill({
     try {
       const updated = await perform();
       setDisplayStatus(updated.status);
-      setAvailableTransitionsState(updated.availableTransitions);
+      setAvailableTransitionsState(updated.availableVerbs);
       onChange?.(updated);
       showToast(`Moved to ${getStatusLabel(config, updated.status)}`, 'success');
       return true;
@@ -127,85 +87,42 @@ export function TicketStatusPill({
     }
   }
 
-  function runTransition(action: TicketTransitionAction, reason?: string): Promise<boolean> {
+  function runVerb(action: TicketTransitionAction, reason?: string): Promise<boolean> {
     return runMutation(action.targetStatus, () =>
-      runTicketTransition(id as string, action, reason),
+      runTicketVerb(id as string, action.command, reason),
     );
-  }
-
-  function runOverride(statusId: string): Promise<boolean> {
-    return runMutation(statusId, () => overrideTicketStatus(id as string, statusId));
   }
 
   function handleSelect(action: TicketTransitionAction) {
-    // 1. Disabled actions never POST — the picker calls onSelect directly without
-    //    disabling transition buttons, so this guard is the only thing keeping a
-    //    disabled action safe (mirrors handleMove's guard).
     if (action.disabled) {
       showToast(
-        action.disabledReason || `Cannot move to ${getStatusLabel(config, action.targetStatus)}.`,
+        action.disabledReason || `Cannot run ${action.label}.`,
         'error',
       );
       return;
     }
     if (!ensureIdentifiers()) return;
 
-    // 2. Reason-required transitions defer to the dialog; the mutation begins on
-    //    confirm. Otherwise the optimistic transition begins immediately.
-    if (transitionNeedsReason(action)) {
+    if (verbNeedsReason(action.command) || action.requiresReason) {
       setPending(action);
       return;
     }
-    void runTransition(action);
+    void runVerb(action);
   }
 
-  function handleOverride(statusId: string) {
-    // Prefer a live transition to this status when one exists (e.g. terminal
-    // targets must go through their complete/fail transition); route it through
-    // the same reason check + transition path.
-    const action = availableTransitionsState.find(
-      (a) => a.targetStatus === statusId && !a.disabled,
-    );
-    if (action) {
-      handleSelect(action);
-      return;
-    }
-
-    // No transition. Terminal statuses cannot be reached via the override endpoint
-    // (it 400s) — tell the user to use the transition instead. No POST.
-    const targetDef = config.statuses.find((s) => s.id === statusId);
-    if (isTerminalStatus(targetDef ?? { id: statusId })) {
-      showToast(
-        `Reach “${getStatusLabel(config, statusId)}” through its complete/fail transition.`,
-        'error',
-      );
-      return;
-    }
-
-    if (!ensureIdentifiers()) return;
-    void runOverride(statusId);
-  }
-
-  // In delegated mode the parent owns mutation; forward selections verbatim.
-  const pickerOnSelect = onSelectAction && onSelectOverride ? onSelectAction : handleSelect;
-  const pickerOnOverride = onSelectAction && onSelectOverride ? onSelectOverride : handleOverride;
+  const pickerOnSelect = onSelectAction ?? handleSelect;
 
   return (
     <>
       <StatusPillPicker
         currentStatus={displayStatus}
-        availableTransitions={availableTransitionsState}
+        availableVerbs={availableVerbsState}
         onSelect={pickerOnSelect}
-        overrideTargets={overrideTargets}
-        onOverride={pickerOnOverride}
         progress={progress}
         disabled={disabled || transitioning}
         className={className}
       />
 
-      {/* Self-contained mode owns its reason dialog + toaster (useToast is local
-          state, so a Toaster must be rendered here for toasts to appear). In
-          delegated mode the parent owns all of that. */}
       {!delegated ? (
         <>
           <TicketTransitionDialog
@@ -216,7 +133,7 @@ export function TicketStatusPill({
             onConfirm={async (reason) => {
               if (!pending) return;
               const action = pending;
-              const succeeded = await runTransition(action, reason);
+              const succeeded = await runVerb(action, reason);
               if (succeeded) {
                 setPending(null);
               }

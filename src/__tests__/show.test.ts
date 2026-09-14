@@ -102,7 +102,7 @@ slug: dep
 title: Dep
 project: syntaur
 template: feature
-status: completed
+status: done
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -152,7 +152,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -168,7 +168,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -255,7 +255,7 @@ slug: readme
 title: Update README install section
 project: scratch
 template: quick
-status: draft
+status: backlog
 priority: low
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -272,7 +272,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -288,7 +288,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -327,7 +327,7 @@ slug: planning
 title: Off-template stage
 project: scratch
 template: quick
-status: ready_for_planning
+status: planning
 priority: low
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -344,7 +344,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -360,7 +360,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -390,7 +390,7 @@ slug: legacy
 title: Legacy ticket
 project: p
 template: legacy
-status: draft
+status: backlog
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -407,7 +407,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -423,7 +423,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -469,7 +469,7 @@ slug: both
 title: Both flags
 project: p
 template: quick
-status: draft
+status: backlog
 priority: low
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -486,7 +486,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: true
+parked: on hold
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -502,7 +502,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: waiting on upstream
+blocked: waiting on upstream
 ---
 
 ## Objective
@@ -511,7 +511,7 @@ x
 `,
     });
     const text = renderShowText(await buildShow(home, ticketDir));
-    expect(text).toContain('blocked: waiting on upstream · parked');
+    expect(text).toContain('blocked: waiting on upstream · parked: on hold');
   });
 
   it('renders zero log entries without a last segment', async () => {
@@ -547,7 +547,7 @@ slug: t
 title: T
 project: p
 template: feature
-status: draft
+status: backlog
 priority: medium
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -564,7 +564,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -580,7 +580,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -604,7 +604,7 @@ slug: readme
 title: Update README install section
 project: scratch
 template: quick
-status: draft
+status: backlog
 priority: low
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -621,7 +621,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -637,7 +637,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -646,7 +646,7 @@ Add skills.sh install path to README.
 `,
     });
     const model = await buildShow(home, ticketDir);
-    expect(model.ticket.status).toBe('draft');
+    expect(model.ticket.status).toBe('backlog');
     expect(model.ticket.stage).toBe('backlog');
     expect(model.commands.length).toBeGreaterThan(0);
   });
@@ -676,7 +676,7 @@ archivedAt: null
 archivedReason: null
 phase: null
 disposition: null
-parked: false
+parked: null
 reviewRequested: false
 reworkRequested: false
 implementationStarted: false
@@ -692,7 +692,7 @@ statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective

@@ -14,7 +14,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'agents', // agents.ts
   'config.md', // config.ts
   'dashboard-port', // server.ts
-  'derive-migrated', // recompute.ts
   'inbox-snoozes.json', // snooze.ts
   'npx-handler-nudge', // install-detection.ts
   'npx-install.json', // npx-prompt.ts
@@ -22,7 +21,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'projects', // paths.ts
   'templates', // ticket-templates/builtins.ts
   'runtime', // session-id.ts
-  'stages-migrated', // stages-marker.ts
   'v2-migrated', // migrate-v2.ts
   'statusline.backup.json', // install-statusline.ts
   'statusline.conf', // install-statusline.ts
@@ -35,7 +33,6 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'targets', // user-descriptors.ts
   'tier3-violations.log', // hermes plugin write-boundary violations (platforms/hermes)
   'view-prefs.json', // paths.ts
-  'workflows', // paths.ts
   'worktrees', // worktree-defaults.ts
 ]);
 

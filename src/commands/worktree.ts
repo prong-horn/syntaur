@@ -19,7 +19,7 @@ import { fileExists, writeFileForce } from '../utils/fs.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { readConfig } from '../utils/config.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
-import { isTerminalStatus } from '../lifecycle/state-machine.js';
+import { isTerminalStageId } from '../dashboard/stage-config.js';
 import { canonicalPath } from '../utils/path-canon.js';
 import { countSessionsByPath } from '../utils/session-count.js';
 import { nowTimestamp } from '../utils/timestamp.js';
@@ -297,7 +297,7 @@ export async function runWorktreeGc(
         ticketSlug: entry.ticketSlug,
         projectSlug: entry.projectSlug,
         status: fm.status,
-        terminal: isTerminalStatus(fm.status) || fm.archived === true,
+        terminal: isTerminalStageId(fm.status) || fm.archived === true,
         worktreePathRaw: wp,
       });
       owners.set(key, list);

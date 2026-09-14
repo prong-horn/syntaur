@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BookOpenText, ChevronDown, ChevronUp, GitBranch, Plus, SquarePen } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { ProjectWorkflowSection } from '../components/ProjectWorkflowSection';
-import { WorkflowSwimlanes } from '../components/WorkflowSwimlanes';
 import { useProject, type TicketSummary } from '../hooks/useProjects';
 import { formatDate, formatDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
@@ -533,15 +531,6 @@ export function ProjectDetail() {
                             </Link>
                           }
                         />
-                      ) : ticketView === 'kanban' && grouping === 'workflow' ? (
-                        <WorkflowSwimlanes
-                          items={sortedTickets}
-                          getItemId={(a) => a.slug}
-                          renderCard={(item) => (
-                            <TicketCard projectSlug={project.slug} ticket={item} onTicketChange={() => refetch()} />
-                          )}
-                          emptyMessage={(column) => `No ${column.title.toLowerCase()} tickets.`}
-                        />
                       ) : ticketView === 'kanban' ? (
                         <KanbanBoard
                           columns={kanbanColumns}
@@ -630,18 +619,6 @@ export function ProjectDetail() {
                       )}
                     </SectionCard>
                   </div>
-                ),
-              },
-              {
-                value: 'workflow',
-                label: 'Workflow',
-                content: (
-                  <ProjectWorkflowSection
-                    projectSlug={project.slug}
-                    defaultWorkflow={project.defaultWorkflow}
-                    workflowByType={project.workflowByType}
-                    onSaved={() => refetch()}
-                  />
                 ),
               },
               {

@@ -4,16 +4,12 @@ import { cn } from '../lib/utils';
 import { STATUS_PILL_BASE, getStatusIcon, StatusProgressRing } from './StatusBadge';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
 import { resolveStatusAppearance } from '../lib/statusMeta';
-import type { StatusOverrideTarget } from '../lib/statusMeta';
 import type { TicketTransitionAction } from '../hooks/useProjects';
 
 interface StatusPillPickerProps {
   currentStatus: string;
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
   onSelect: (action: TicketTransitionAction) => void;
-  /** Config-driven direct-set targets, rendered as an "Override → …" section. */
-  overrideTargets?: StatusOverrideTarget[];
-  onOverride?: (statusId: string) => void;
   progress?: { checked: number; total: number };
   disabled?: boolean;
   className?: string;
@@ -28,10 +24,8 @@ interface AnchorRect {
 
 export function StatusPillPicker({
   currentStatus,
-  availableTransitions,
+  availableVerbs,
   onSelect,
-  overrideTargets,
-  onOverride,
   progress,
   disabled = false,
   className,
@@ -47,14 +41,11 @@ export function StatusPillPicker({
   const triggerAppearance = resolveStatusAppearance(config.statuses, currentStatus);
   const CurrentIcon = getStatusIcon(currentStatus);
 
-  // Single combined list so keyboard nav traverses transitions then overrides.
-  const overrides = overrideTargets ?? [];
-  const itemCount = availableTransitions.length + overrides.length;
+  const itemCount = availableVerbs.length;
 
   const closeMenu = useCallback((returnFocus: boolean) => {
     setOpen(false);
     if (returnFocus) {
-      // Defer to next frame so React has finished unmounting the menu.
       requestAnimationFrame(() => {
         triggerRef.current?.focus();
       });
@@ -106,23 +97,10 @@ export function StatusPillPicker({
     setHighlightIndex(0);
   }, [open, itemCount]);
 
-  function isOverrideActionable(target: StatusOverrideTarget): boolean {
-    return !target.disabled && target.id !== currentStatus;
-  }
-
-  /** Activate the menu item at `index` (transition first, then override). */
   function activateItem(index: number) {
-    if (index < availableTransitions.length) {
-      const action = availableTransitions[index];
-      if (action) {
-        onSelect(action);
-        closeMenu(true);
-      }
-      return;
-    }
-    const target = overrides[index - availableTransitions.length];
-    if (target && isOverrideActionable(target)) {
-      onOverride?.(target.id);
+    const action = availableVerbs[index];
+    if (action && !action.disabled) {
+      onSelect(action);
       closeMenu(true);
     }
   }
@@ -212,95 +190,53 @@ export function StatusPillPicker({
             >
               {itemCount === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  No status changes available from this status.
+                  No lifecycle verbs available from this stage.
                 </div>
               ) : (
-                <>
-                  {availableTransitions.map((action, index) => {
-                    const TargetIcon = getStatusIcon(action.targetStatus);
-                    const highlighted = index === highlightIndex;
-                    return (
-                      <button
-                        key={`${action.command}:${action.targetStatus}`}
-                        type="button"
-                        role="menuitem"
-                        data-no-drag
-                        onMouseEnter={() => setHighlightIndex(index)}
-                        onClick={() => activateItem(index)}
-                        title={action.warning || action.description}
-                        className={cn(
-                          'flex w-full flex-col items-stretch gap-0.5 px-3 py-1.5 text-left text-sm transition',
-                          highlighted ? 'bg-foreground/5' : 'hover:bg-foreground/5',
-                        )}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="flex min-w-0 items-center gap-2">
-                            <TargetIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                            <span className="truncate">{action.label}</span>
-                          </span>
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                            {getStatusLabel(config, action.targetStatus)}
-                          </span>
-                        </span>
-                        {action.warning ? (
-                          <span className="text-[11px] leading-snug text-warning-foreground">
-                            {action.warning}
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-
-                  {overrides.length > 0 && availableTransitions.length > 0 ? (
-                    <div className="my-1 border-t border-border/60" role="separator" />
-                  ) : null}
-
-                  {overrides.map((target, i) => {
-                    const index = availableTransitions.length + i;
-                    const highlighted = index === highlightIndex;
-                    const inactive = !isOverrideActionable(target);
-                    const appearance = resolveStatusAppearance(config.statuses, target.id);
-                    return (
-                      <button
-                        key={`override-${target.id}`}
-                        type="button"
-                        role="menuitem"
-                        data-no-drag
-                        disabled={inactive}
-                        onMouseEnter={() => setHighlightIndex(index)}
-                        onClick={() => activateItem(index)}
-                        title={
-                          inactive
-                            ? target.disabledReason ??
-                              (target.id === currentStatus ? 'Already in this status' : undefined)
-                            : `Set status to ${target.label}`
-                        }
-                        className={cn(
-                          'flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-sm transition',
-                          inactive
-                            ? 'cursor-not-allowed text-muted-foreground/60'
-                            : highlighted
-                              ? 'bg-foreground/5'
-                              : 'hover:bg-foreground/5',
-                        )}
-                      >
+                availableVerbs.map((action, index) => {
+                  const TargetIcon = getStatusIcon(action.targetStatus);
+                  const highlighted = index === highlightIndex;
+                  const inactive = action.disabled;
+                  return (
+                    <button
+                      key={`${action.command}:${action.targetStatus}`}
+                      type="button"
+                      role="menuitem"
+                      data-no-drag
+                      disabled={inactive}
+                      onMouseEnter={() => setHighlightIndex(index)}
+                      onClick={() => activateItem(index)}
+                      title={
+                        inactive
+                          ? action.disabledReason ?? action.description
+                          : action.warning || action.description
+                      }
+                      className={cn(
+                        'flex w-full flex-col items-stretch gap-0.5 px-3 py-1.5 text-left text-sm transition',
+                        inactive
+                          ? 'cursor-not-allowed text-muted-foreground/60'
+                          : highlighted
+                            ? 'bg-foreground/5'
+                            : 'hover:bg-foreground/5',
+                      )}
+                    >
+                      <span className="flex items-center justify-between gap-2">
                         <span className="flex min-w-0 items-center gap-2">
-                          {/* Config-driven color swatch so the override list matches
-                              the trigger/badge styling (hex → solid dot, else class). */}
-                          <span
-                            aria-hidden="true"
-                            className={cn(
-                              'h-2.5 w-2.5 flex-shrink-0 rounded-full border border-border/40',
-                              appearance.style ? undefined : appearance.className,
-                            )}
-                            style={appearance.style ? { backgroundColor: appearance.style.color } : undefined}
-                          />
-                          <span className="truncate">Override → {target.label}</span>
+                          <TargetIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                          <span className="truncate">{action.label}</span>
                         </span>
-                      </button>
-                    );
-                  })}
-                </>
+                        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {getStatusLabel(config, action.targetStatus)}
+                        </span>
+                      </span>
+                      {action.warning ? (
+                        <span className="text-[11px] leading-snug text-warning-foreground">
+                          {action.warning}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })
               )}
             </div>,
             document.body,

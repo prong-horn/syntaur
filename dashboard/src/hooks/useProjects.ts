@@ -89,7 +89,7 @@ export interface TicketBoardItem extends TicketSummary {
   projectSlug: string | null;
   projectTitle: string | null;
   blockedReason: string | null;
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
 }
 
 export interface ArchivedTicketItem {
@@ -251,7 +251,7 @@ export interface TicketDetail {
   referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first); empty when the server's session DB is uninitialized. */
   engagements: EngagementInfo[];
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
   templateBlock: TicketTemplateBlock;
   // ── derived-status v3 (server-materialized; may be absent on old servers) ──
   /** Cached phase dimension (null pre-migration). */
@@ -344,7 +344,7 @@ export interface AttentionItem {
   segment: OverviewSegmentId;
   agingMs: number;
   assignee: string | null;
-  availableTransitions: TicketTransitionAction[];
+  availableVerbs: TicketTransitionAction[];
 }
 
 export type OverviewHeroKind =

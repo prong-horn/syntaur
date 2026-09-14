@@ -9,8 +9,6 @@ import { workspaceChecks } from './checks/workspace.js';
 import { skillsChecks } from './checks/skills.js';
 import { crossAgentChecks } from './checks/cross-agent.js';
 import { pluginChecks } from './checks/plugin.js';
-import { deriveConfigChecks } from './checks/derive-config.js';
-import { workflowsChecks } from './checks/workflows.js';
 import { stalenessChecks } from './checks/staleness.js';
 
 export function allChecks(): Check[] {
@@ -25,8 +23,6 @@ export function allChecks(): Check[] {
     ...skillsChecks,
     ...crossAgentChecks,
     ...pluginChecks,
-    ...deriveConfigChecks,
-    ...workflowsChecks,
     ...stalenessChecks,
   ];
 }

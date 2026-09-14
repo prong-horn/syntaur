@@ -1,9 +1,8 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { readConfig, DEFAULT_DERIVE_CONFIG } from '../utils/config.js';
+import { readConfig } from '../utils/config.js';
 import { syntaurRoot } from '../utils/paths.js';
-import { getStatusConfig } from '../dashboard/api.js';
 import {
   computeInbox,
   INBOX_CATEGORIES,
@@ -36,7 +35,7 @@ export interface InboxOptions {
  * `defaultProjectDir()` path helper — so the CLI scans the same tree the
  * dashboard displays.
  *
- * Status-config resolution: we reuse `getStatusConfig()` from `src/dashboard/api.ts`
+ * Status-config resolution: we reuse `getStageTableConfig()` from `src/dashboard/api.ts`
  * — the SAME loader the dashboard's `getAvailableTransitions` and the lifecycle
  * routes wrap, and the canonical source for accept/reopen verb derivation under
  * custom status configs. It is import-safe: `api.ts` is a pure data/logic module
@@ -63,12 +62,20 @@ export async function runInbox(options: InboxOptions): Promise<InboxResult> {
   const snoozePath = snoozeFilePath();
   const snoozes = await readSnoozes(snoozePath, now);
 
-  const resolved = await getStatusConfig();
-  // The blocked/parked HEADLINE status ids are NOT valid active "reopen" targets.
-  // `derive` is null when the user has no custom derive rules → DEFAULT_DERIVE_CONFIG.
-  const headline = (resolved.derive ?? DEFAULT_DERIVE_CONFIG).headline;
-  const blockedParkedStatuses = new Set([headline.blocked, headline.parked].filter(Boolean));
-  const statusConfig: InboxStatusConfig = { ...resolved, blockedParkedStatuses };
+  const statusConfig: InboxStatusConfig = {
+    statuses: [
+      { id: 'backlog' },
+      { id: 'planning' },
+      { id: 'ready' },
+      { id: 'in_progress' },
+      { id: 'review' },
+      { id: 'done', terminal: true },
+      { id: 'dropped', terminal: true },
+    ],
+    transitions: [],
+    transitionTable: new Map(),
+    terminalStatuses: new Set(['done', 'dropped']),
+  };
 
   const dashboardUrl = await resolveDashboardUrl();
 

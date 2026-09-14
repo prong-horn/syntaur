@@ -2,7 +2,8 @@ import { basename, dirname, resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseTicketFull } from '../../../dashboard/parser.js';
-import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
+import { isTerminalStage } from '../../../ticket-templates/stages.js';
+import type { StageId } from '../../../ticket-templates/manifest.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'workspace';
@@ -158,11 +159,7 @@ const contextTerminal: Check = {
     try {
       const content = await readFile(ticketMd, 'utf-8');
       const parsed = parseTicketFull(content);
-      // Terminality per the ticket's OWN workflow (custom terminal statuses).
-      const parent = dirname(data.ticketDir);
-      const projectDir = basename(parent) === 'tickets' ? dirname(parent) : null;
-      const wctx = await makeWorkflowContextResolver(ctx.config).forTicket(parsed, projectDir);
-      if (wctx.terminalStatuses.has(parsed.status)) {
+      if (isTerminalStage(parsed.status as StageId | 'dropped')) {
         return {
           id: this.id,
           category: this.category,

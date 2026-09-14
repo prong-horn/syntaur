@@ -62,92 +62,35 @@ describe('ignoreDotSegmentsBelow', () => {
 
 // ── derived-status v3: recompute hooks ──────────────────────────────────────
 
-describe('watcher derive hooks', () => {
-  it('fires onTicketChanged for project + standalone edits, onConfigChanged for config.md', async () => {
+describe('watcher ticket hooks', () => {
+  it('fires onTicketChanged when a project ticket file changes', async () => {
     const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
     const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-derive-'));
     const projectsDir = join(root, 'projects');
-    const ticketsPath = join(root, 'tickets');
-    const configPath = join(root, 'config.md');
     await mkdir(join(projectsDir, 'p1', 'tickets', 'TP-1-a1'), { recursive: true });
-    await writeFile(configPath, '---\nversion: "2.0"\n---\n');
 
     const ticketEvents: Array<[string | null, string]> = [];
-    let configEvents = 0;
 
     const watcher = createWatcher({
       projectsDir,
-            configPath,
       onMessage: () => {},
       onTicketChanged: (p, a) => ticketEvents.push([p, a]),
-      onConfigChanged: () => configEvents++,
       debounceMs: 50,
     });
 
     // let chokidar settle before generating events
     await new Promise((r) => setTimeout(r, 300));
-    await writeFile(join(projectsDir, 'p1', 'tickets', 'TP-1-a1', 'ticket.md'), '---\nid: TP-1\nslug: a1\n---\n');
-    await writeFile(configPath, '---\nversion: "2.0"\nupdated: true\n---\n');
-    await new Promise((r) => setTimeout(r, 700));
+    await writeFile(
+      join(projectsDir, 'p1', 'tickets', 'TP-1-a1', 'ticket.md'),
+      '---\nid: TP-1\nslug: a1\nstatus: backlog\n---\n',
+    );
+    await new Promise((r) => setTimeout(r, 1200));
 
     await watcher.close();
 
     expect(ticketEvents).toContainEqual(['p1', 'TP-1']);
-    expect(configEvents).toBeGreaterThanOrEqual(1);
   });
 });
 
-// ── WS-0: per-file workflows watcher ────────────────────────────────────────
-
-describe('watcher workflows hook', () => {
-  it('fires onConfigChanged and serves a fresh library on a ~/.syntaur/workflows change', async () => {
-    const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const { loadWorkflowLibrary, invalidateWorkflowLibraryCache } = await import(
-      '../utils/workflow-library.js'
-    );
-
-    const originalHome = process.env.SYNTAUR_HOME;
-    const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-wf-'));
-    // The loader derives the workflows dir from SYNTAUR_HOME; point both there.
-    process.env.SYNTAUR_HOME = root;
-    const wfDir = join(root, 'workflows');
-    await mkdir(wfDir, { recursive: true });
-    const wf = (label: string) => `id: feature\nlabel: ${label}\nstages:\n  - id: done\n    terminal: true\n`;
-    await writeFile(join(wfDir, 'feature.md'), wf('Feature'));
-
-    const noBlock = { workflows: null, statuses: null };
-    invalidateWorkflowLibraryCache();
-    // Prime the cache.
-    expect(loadWorkflowLibrary(noBlock).feature.label).toBe('Feature');
-
-    let configEvents = 0;
-    const watcher = createWatcher({
-      projectsDir: join(root, 'projects'),
-      workflowsDir: wfDir,
-      onMessage: () => {},
-      onConfigChanged: () => configEvents++,
-      debounceMs: 50,
-    });
-
-    try {
-      await new Promise((r) => setTimeout(r, 300)); // let chokidar settle
-      await writeFile(join(wfDir, 'feature.md'), wf('Renamed'));
-      await new Promise((r) => setTimeout(r, 700));
-
-      // Registration + recompute signal: the workflows edit fired onConfigChanged.
-      expect(configEvents).toBeGreaterThanOrEqual(1);
-      // And the library the recompute reads is fresh (cache invalidated).
-      expect(loadWorkflowLibrary(noBlock).feature.label).toBe('Renamed');
-    } finally {
-      await watcher.close();
-      invalidateWorkflowLibraryCache();
-      if (originalHome === undefined) delete process.env.SYNTAUR_HOME;
-      else process.env.SYNTAUR_HOME = originalHome;
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-});

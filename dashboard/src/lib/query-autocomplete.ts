@@ -15,10 +15,9 @@
  *      quoting values via `quoteQueryValue` when required by AQL lexer rules.
  */
 
-import { queryFieldNames } from '@shared/fact-registry';
+import { queryFieldNames } from '@shared/query-registry';
 import type { FieldRegistry } from '@shared/query';
 import { quoteQueryValue } from '@shared/view-filters-query';
-import type { FactDeclaration } from '@shared/fact-registry';
 
 // ── CaretContext ──────────────────────────────────────────────────────────────
 
@@ -158,11 +157,8 @@ function detectInsideQuotes(input: string, pos: number): ValueCaretContext | nul
  * Rank field name suggestions for a typed partial: prefix matches first, then
  * substring matches, all case-insensitive. An empty partial returns every field.
  */
-export function rankFieldSuggestions(
-  partial: string,
-  declarations: FactDeclaration[],
-): string[] {
-  const candidates = queryFieldNames(declarations);
+export function rankFieldSuggestions(partial: string): string[] {
+  const candidates = queryFieldNames();
   const p = partial.toLowerCase();
   if (p === '') return candidates;
   const prefix: string[] = [];

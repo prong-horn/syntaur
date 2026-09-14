@@ -1,26 +1,16 @@
 import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
-import { getTargetStatus, DEFAULT_TRANSITION_TABLE, buildTransitionTable } from '../lifecycle/index.js';
-import { getWorkflowLibrary, resolveWorkflowId } from '../utils/workflow-resolve.js';
-import { isStagesMigrated } from '../utils/stages-marker.js';
-import type { StageWorkflow } from '../utils/stage-model.js';
-import { readProjectBinding, type ProjectWorkflowBinding } from '../utils/project-binding.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
+import { readConfig } from '../utils/config.js';
+import { buildQueryRegistry } from '../utils/query/registry.js';
+import { getAvailableVerbs } from '../lifecycle/available-verbs.js';
+import type { TicketFrontmatter } from '../lifecycle/types.js';
 import {
-  readConfig,
-  buildDefaultStatusConfig,
-  normalizeFactDeclarations,
-  toTitleCase,
-  type StatusTransition,
-  type DeriveConfig,
-  type FactDeclaration,
-  type RawFactDeclaration,
-  type SyntaurConfig,
-  type StatusConfig,
-} from '../utils/config.js';
-import { acceptFactDeclarations, buildDeriveRegistry, buildQueryRegistry } from '../lifecycle/derive.js';
-import { TICKET_FIELDS, type FieldRegistry } from '../utils/query/index.js';
+  STAGE_TABLE,
+  getStageLabel,
+  isTerminalStageId,
+} from './stage-config.js';
 import { resolvePlaybookSlug } from '../utils/playbooks.js';
 import { migrateLegacyProjectFiles, migrateLegacyArchivedProjects } from '../utils/fs-migration.js';
 import {
@@ -171,11 +161,10 @@ function emitTrace(traces: OverviewTraces, meta: Record<string, unknown>): void 
 
 const STATUS_TO_SEGMENT: Readonly<Record<string, OverviewSegmentId>> = {
   review: 'readyForReview',
-  ready_to_implement: 'readyToImplement',
-  ready_for_planning: 'readyForPlanning',
+  ready: 'readyToImplement',
+  planning: 'readyForPlanning',
   in_progress: 'inProgress',
-  draft: 'drafts',
-  blocked: 'blocked',
+  backlog: 'drafts',
 };
 
 const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
@@ -188,7 +177,70 @@ const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
   ['stale', 'stale'],
 ];
 
+const TERMINAL_STAGES = new Set(['done', 'dropped']);
+
+export function clearStageTableCache(): void {
+  /* v2 stage table is fixed — no config cache */
+}
+
+/** @deprecated Use {@link STAGE_TABLE} from stage-config. */
+export async function getStageTableConfig(): Promise<{
+  statuses: typeof STAGE_TABLE;
+  order: string[];
+  terminalStatuses: ReadonlySet<string>;
+}> {
+  return {
+    statuses: STAGE_TABLE,
+    order: STAGE_TABLE.map((s) => s.id),
+    terminalStatuses: TERMINAL_STAGES,
+  };
+}
+
 type TicketRecord = ReturnType<typeof parseTicketFull>;
+
+function ticketAsFrontmatter(ticket: TicketRecord): TicketFrontmatter {
+  return {
+    id: ticket.id,
+    slug: ticket.slug,
+    title: ticket.title,
+    project: ticket.project,
+    template: ticket.template,
+    workflow: ticket.workflow,
+    status: ticket.status,
+    priority: ticket.priority as TicketFrontmatter['priority'],
+    created: ticket.created,
+    updated: ticket.updated,
+    assignee: ticket.assignee,
+    externalIds: ticket.externalIds,
+    statusHistory: ticket.statusHistory,
+    depends_on: ticket.depends_on,
+    links: ticket.links,
+    blocked: ticket.blockedReason,
+    workspace: {
+      ...ticket.workspace,
+      worktree: ticket.workspace.worktreePath,
+    },
+    tags: ticket.tags,
+    archived: ticket.archived,
+    archivedAt: ticket.archivedAt,
+    archivedReason: ticket.archivedReason,
+    phase: ticket.phase,
+    disposition: ticket.disposition,
+    parked: ticket.parked ? 'parked' : null,
+    reviewRequested: ticket.reviewRequested,
+    reworkRequested: ticket.reworkRequested,
+    implementationStarted: ticket.implementationStarted,
+    plan: ticket.plan,
+    override: ticket.override,
+    facts: ticket.facts,
+    attestations: ticket.attestations,
+    solicitations: ticket.solicitations,
+    firedVerdicts: ticket.firedVerdicts,
+    frozenChecks: ticket.frozenChecks,
+    hold: ticket.hold,
+    gateOverrides: ticket.gateOverrides,
+  };
+}
 
 interface ProjectRecord {
   projectPath: string;
@@ -264,373 +316,6 @@ export function installRecordsInvalidation(router: MutatingRouter): void {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-
-const DEFAULT_TRANSITION_DEFINITIONS: Array<{
-  command: string;
-  label: string;
-  description: string;
-  requiresReason: boolean;
-}> = [
-  {
-    command: 'start',
-    label: 'Start',
-    description: 'Move pending or review work into active execution.',
-    requiresReason: false,
-  },
-  {
-    command: 'shape',
-    label: 'Shape',
-    description: 'Promote a draft ticket to ready_for_planning once the Objective and Acceptance Criteria are fleshed out.',
-    requiresReason: false,
-  },
-  {
-    command: 'plan-ready',
-    label: 'Plan Ready',
-    description: 'Promote a ready_for_planning ticket to ready_to_implement after the plan is written and approved.',
-    requiresReason: false,
-  },
-  {
-    command: 'implement',
-    label: 'Implement',
-    description: 'Move a ready_to_implement ticket into in_progress when coding begins.',
-    requiresReason: false,
-  },
-  {
-    command: 'review',
-    label: 'Send To Review',
-    description: 'Mark the ticket ready for inspection.',
-    requiresReason: false,
-  },
-  {
-    command: 'complete',
-    label: 'Complete',
-    description: 'Mark the ticket done.',
-    requiresReason: false,
-  },
-  {
-    command: 'block',
-    label: 'Block',
-    description: 'Record an exceptional blocker and pause work.',
-    requiresReason: true,
-  },
-  {
-    command: 'unblock',
-    label: 'Unblock',
-    description: 'Resume active work after the blocker is cleared.',
-    requiresReason: false,
-  },
-  {
-    command: 'fail',
-    label: 'Fail',
-    description: 'Mark the ticket as failed when it cannot be completed as planned.',
-    requiresReason: false,
-  },
-  {
-    command: 'reopen',
-    label: 'Reopen',
-    description: 'Reopen a completed or failed ticket to resume work.',
-    requiresReason: false,
-  },
-];
-
-function getTransitionDefinitions(config: ResolvedStatusConfig) {
-  if (!config.custom) return DEFAULT_TRANSITION_DEFINITIONS;
-  // Deduplicate commands from transitions
-  const seen = new Set<string>();
-  return config.transitions
-    .filter((t) => {
-      if (seen.has(t.command)) return false;
-      seen.add(t.command);
-      return true;
-    })
-    .map((t) => ({
-      command: t.command,
-      label: t.label ?? toTitleCase(t.command),
-      description: t.description ?? `Transition via ${t.command}.`,
-      requiresReason: t.requiresReason ?? false,
-    }));
-}
-
-interface ResolvedStatusConfig {
-  /** The workflow id this config was resolved for (`'default'` for the legacy
-   * single lifecycle). */
-  workflowId: string;
-  /** Human label for the workflow (`'Default'` for the built-in, Title Case of
-   * the id for a named workflow with no explicit label). */
-  label: string;
-  custom: boolean;
-  statuses: Array<{ id: string; label: string; description?: string; color?: string; terminal?: boolean }>;
-  order: string[];
-  transitions: StatusTransition[];
-  transitionTable: Map<string, string>;
-  /** RAW transitions as configured (empty when the user declares none — the
-   * Settings editor distinguishes "user customized" from "showing defaults"
-   * via {@link transitionsCustom}, same pattern as {@link derive}). Distinct
-   * from {@link transitions}, which is materialized with the default table for
-   * the runtime transition guards so the board still offers commands. */
-  rawTransitions: StatusTransition[];
-  transitionsCustom: boolean;
-  terminalStatuses: ReadonlySet<string>;
-  /** Derive rules as configured (null when the user has none — resolve to
-   * DEFAULT_DERIVE_CONFIG at the derivation call site, NOT here, so the
-   * Settings writer can distinguish "user customized" from "defaults"). */
-  derive: DeriveConfig | null;
-  /** RAW custom-fact declarations (verbatim) — what the Settings writer passes
-   * back to `writeStatusConfig` so a Settings save can't silently delete the
-   * user's `statuses.facts` (same bug class as `derive`). */
-  facts: RawFactDeclaration[] | null;
-  /** ACCEPTED declarations (normalize→accept) — drives `customFacts` extraction
-   * and the registry; collision-skipped/malformed rows are absent here. */
-  factDeclarations: FactDeclaration[];
-  /** Derive registry built ONCE per cached resolution from the accepted list —
-   * reused across requests so the WeakMap compile-cache stays warm (no
-   * per-request registry construction in buildDerivedDetail). */
-  deriveRegistry: FieldRegistry;
-  /** Query registry built ONCE per cached resolution from the accepted list —
-   * sibling of deriveRegistry; stable object identity keeps the WeakMap
-   * compile-cache warm across saved-view query validations. */
-  queryRegistry: FieldRegistry;
-}
-
-const _cachedConfigs = new Map<string, ResolvedStatusConfig>();
-
-/**
- * Resolve the dashboard status-config view for one workflow id (default
- * `'default'`). Backed by a per-workflow cache. For the legacy single-lifecycle
- * config (no `workflows:` block), the `'default'` workflow resolves from the
- * top-level `statuses:` block — byte-identical to the pre-workflow behavior, so
- * every existing no-arg caller is unaffected. Ticket-specific surfaces
- * (board items, projection, transitions, terminal virtuals) pass the ticket's
- * resolved workflow id so each ticket derives against its OWN workflow.
- */
-export async function getStatusConfig(workflowId = 'default'): Promise<ResolvedStatusConfig> {
-  const cached = _cachedConfigs.get(workflowId);
-  if (cached) return cached;
-  const config = await readConfig();
-  // Warm the sync marker peek used by deriveStatusVirtuals — every record
-  // materialization flow awaits a getStatusConfig() before building virtuals.
-  if (_stagesMigratedCache === null) _stagesMigratedCache = await isStagesMigrated();
-  // Post-migration the config block is gone: a per-file StageWorkflow is the
-  // source of truth for this id. Without this, getStatusConfig('test') fell
-  // through to the built-in DEFAULT statuses/transitions and non-default
-  // workflow tickets got default lifecycle affordances (codex code-review r1).
-  let resolved: ResolvedStatusConfig | null = null;
-  const explicitBundle =
-    config.workflows?.[workflowId] ?? (workflowId === 'default' ? config.statuses : null) ?? null;
-  if (!explicitBundle) {
-    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
-    const stageWorkflow = loadWorkflowLibrary(config)[workflowId];
-    if (stageWorkflow) resolved = stageWorkflowStatusConfig(workflowId, stageWorkflow);
-  }
-  resolved ??= resolveWorkflowStatusConfig(config, workflowId);
-  _cachedConfigs.set(workflowId, resolved);
-  return resolved;
-}
-
-export function clearStatusConfigCache(): void {
-  _cachedConfigs.clear();
-  _cachedWorkflowMeta = null;
-  _stagesMigratedCache = null;
-}
-
-/** Sync peek for materialization helpers (deriveStatusVirtuals) — warmed by
- * getStatusConfig, reset with the config caches. `false` = pre-marker
- * behavior, the safe default. */
-let _stagesMigratedCache: boolean | null = null;
-
-/** Materialize the dashboard status-config view from a per-file StageWorkflow
- * (post-migration). The ENGINE owns movement for stage workflows (WS-2 rejects
- * legacy transition commands on engine-active tickets), so no legacy transition
- * table is synthesized — an empty table means the board offers no legacy
- * affordances for these tickets. */
-function stageWorkflowStatusConfig(workflowId: string, wf: StageWorkflow): ResolvedStatusConfig {
-  const statuses = wf.stages.map((s) => ({
-    id: s.id,
-    label: s.label ?? toTitleCase(s.id),
-    ...(s.color ? { color: s.color } : {}),
-    ...(s.terminal ? { terminal: true } : {}),
-  }));
-  const terminalSet = new Set(wf.stages.filter((s) => s.terminal).map((s) => s.id));
-  return {
-    workflowId,
-    label: wf.label ?? (workflowId === 'default' ? 'Default' : toTitleCase(workflowId)),
-    custom: true,
-    statuses,
-    order: wf.stages.map((s) => s.id),
-    transitions: [],
-    transitionTable: new Map(),
-    rawTransitions: [],
-    transitionsCustom: true,
-    terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
-    derive: null,
-    facts: null,
-    factDeclarations: [],
-    deriveRegistry: buildDeriveRegistry([]),
-    queryRegistry: buildQueryRegistry([]),
-  };
-}
-
-/** Cached workflow-library meta (available ids + global default) so per-ticket
- * workflow resolution during board/detail materialization never re-reads +
- * re-parses config.md per ticket. Rebuilt from config.md on demand; cleared
- * alongside the status-config cache whenever config.md is written. */
-let _cachedWorkflowMeta: { available: ReadonlySet<string>; defaultWorkflow: string | null } | null =
-  null;
-
-async function getWorkflowMeta(): Promise<{
-  available: ReadonlySet<string>;
-  defaultWorkflow: string | null;
-}> {
-  if (_cachedWorkflowMeta) return _cachedWorkflowMeta;
-  const config = await readConfig();
-  _cachedWorkflowMeta = {
-    available: new Set(await effectiveWorkflowIds(config)),
-    defaultWorkflow: config.defaultWorkflow ?? null,
-  };
-  return _cachedWorkflowMeta;
-}
-
-/**
- * The effective workflow-id set (WS-3, T8): once the migration relocates
- * workflows to per-file `~/.syntaur/workflows/<id>.md` and deletes the
- * `config.md` block, the LEGACY library synthesizes only `default` — reading it
- * alone would silently re-bind every non-default ticket. Per-file library
- * (when non-empty) is authoritative; the legacy config library remains the
- * pre-migration source. A mid-migration dual-source read falls back to legacy.
- */
-export async function effectiveWorkflowIds(
-  config: Awaited<ReturnType<typeof readConfig>>,
-): Promise<string[]> {
-  try {
-    const { loadWorkflowLibrary } = await import('../utils/workflow-library.js');
-    const perFile = Object.keys(loadWorkflowLibrary(config));
-    if (perFile.length > 0) return perFile;
-  } catch {
-    /* dual-source window mid-migration — the legacy block is still live */
-  }
-  return Object.keys(getWorkflowLibrary(config));
-}
-
-const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowByType: {} };
-
-/** Resolve a ticket's workflow id from its `workflow`/`type` fields and a
- * project binding (from the already-parsed project record — no extra read).
- * Uses the cached workflow-library meta. First-hit-wins precedence. */
-async function resolveWorkflowIdWithBinding(
-  ticket: { workflow?: string | null; template?: string | null },
-  binding: ProjectWorkflowBinding,
-): Promise<string> {
-  const meta = await getWorkflowMeta();
-  return resolveWorkflowId({
-    ticketWorkflow: ticket.workflow ?? null,
-    ticketType: ticket.template ?? null,
-    projectDefaultWorkflow: binding.defaultWorkflow,
-    projectWorkflowByType: binding.workflowByType,
-    globalDefaultWorkflow: meta.defaultWorkflow,
-    available: meta.available,
-  });
-}
-
-/** Resolve a ticket's workflow id reading the project binding from disk
- * (single-record paths where the parsed project isn't already in hand).
- * Standalone (no projectDir) → binding-less resolution. */
-async function resolveWorkflowIdByDir(
-  ticket: { workflow?: string | null; template?: string | null },
-  projectDir: string | null,
-): Promise<string> {
-  const binding = projectDir ? await readProjectBinding(projectDir) : EMPTY_BINDING;
-  return resolveWorkflowIdWithBinding(ticket, binding);
-}
-
-/** The per-ticket resolved status config (its OWN workflow). Convenience over
- * {@link resolveWorkflowIdByDir} + {@link getStatusConfig}. */
-async function statusConfigForTicket(
-  ticket: { workflow?: string | null; template?: string | null },
-  projectDir: string | null,
-): Promise<ResolvedStatusConfig> {
-  return getStatusConfig(await resolveWorkflowIdByDir(ticket, projectDir));
-}
-
-/** Human label for a workflow id: the explicit `workflows.<id>.label`, else
- * `'Default'` for the built-in, else Title Case of the id. */
-function workflowLabel(config: SyntaurConfig, workflowId: string): string {
-  const explicit = config.workflows?.[workflowId]?.label;
-  if (explicit) return explicit;
-  return workflowId === 'default' ? 'Default' : toTitleCase(workflowId);
-}
-
-function resolveWorkflowStatusConfig(
-  config: SyntaurConfig,
-  workflowId: string,
-): ResolvedStatusConfig {
-  // The explicit per-workflow bundle: a named workflow, or — for the built-in
-  // `'default'` in a legacy config with no `workflows:` block — the top-level
-  // `statuses:` block. Null → no explicit config → read-only defaults branch.
-  const explicitBundle: StatusConfig | null =
-    config.workflows?.[workflowId] ?? (workflowId === 'default' ? config.statuses : null) ?? null;
-
-  if (explicitBundle) {
-    const sc = explicitBundle;
-    // A bundle may declare facts and/or derive rules without any status
-    // `definitions` (the parser preserves those rather than dropping the block).
-    // Fall back to the default statuses/order so the board still renders, while
-    // the declared facts/derive ride along — same no-silent-deletion contract.
-    const defaults = sc.statuses.length === 0 ? buildDefaultStatusConfig() : null;
-    const effectiveStatuses = defaults ? defaults.statuses : sc.statuses;
-    const effectiveOrder = defaults ? defaults.order : sc.order;
-    const terminalSet = new Set(effectiveStatuses.filter((s) => s.terminal).map((s) => s.id));
-    // Custom statuses but no `transitions:` block → materialize a FRESH table
-    // from DEFAULT_TRANSITION_TABLE entries (not the reference) so getTargetStatus
-    // takes the custom `from:command` path and only offers valid-from-status
-    // transitions.
-    const hasCustomTransitions = sc.transitions.length > 0;
-    const effectiveTransitions = hasCustomTransitions
-      ? sc.transitions
-      : Array.from(DEFAULT_TRANSITION_TABLE.entries()).map(([key, to]) => {
-          const [from, command] = key.split(':');
-          return { from, command, to };
-        });
-    const accepted = acceptFactDeclarations(normalizeFactDeclarations(sc.facts ?? null));
-    return {
-      workflowId,
-      label: workflowLabel(config, workflowId),
-      custom: true,
-      statuses: effectiveStatuses,
-      order: effectiveOrder,
-      transitions: effectiveTransitions,
-      transitionTable: buildTransitionTable(effectiveTransitions),
-      rawTransitions: sc.transitions,
-      transitionsCustom: hasCustomTransitions,
-      terminalStatuses: terminalSet.size > 0 ? terminalSet : new Set(['completed', 'failed']),
-      derive: sc.derive ?? null,
-      facts: sc.facts ?? null,
-      factDeclarations: accepted,
-      deriveRegistry: buildDeriveRegistry(accepted),
-      queryRegistry: buildQueryRegistry(accepted),
-    };
-  }
-
-  // No explicit config for this workflow → shared default builder so the
-  // dashboard and the `syntaur status` CLI resolve identical defaults (no drift).
-  const def = buildDefaultStatusConfig();
-  return {
-    workflowId,
-    label: workflowLabel(config, workflowId),
-    custom: false,
-    statuses: def.statuses,
-    order: def.order,
-    transitions: def.transitions,
-    transitionTable: DEFAULT_TRANSITION_TABLE,
-    rawTransitions: [],
-    transitionsCustom: false,
-    terminalStatuses: new Set(['completed', 'failed']),
-    derive: null,
-    facts: null,
-    factDeclarations: [],
-    deriveRegistry: buildDeriveRegistry([]),
-    queryRegistry: buildQueryRegistry([]),
-  };
-}
 
 /**
  * List all projects with source-first summary data.
@@ -745,7 +430,7 @@ export async function getOverview(projectsDir: string,
         0,
       ),
       blockedTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.progress['blocked'] ?? 0),
+        (total, record) => total + (record.summary.needsAttention.blockedCount ?? 0),
         0,
       ),
       reviewTickets: activeProjectRecords.reduce(
@@ -753,7 +438,7 @@ export async function getOverview(projectsDir: string,
         0,
       ),
       failedTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.progress['failed'] ?? 0),
+        (total, record) => total + (record.summary.needsAttention.failedCount ?? 0),
         0,
       ),
       // Derived from the SAME classifier verdict as the stale segment (via the
@@ -1023,20 +708,9 @@ export async function getProjectDetail(
   // children so archiving an old ticket doesn't bump it.
   const updated = getProjectActivityTimestamp(project.updated, activeTickets(tickets));
 
-  // Each ticket's terminal virtuals come from ITS OWN workflow (resolved via
-  // this project's binding — already parsed, no extra read).
-  const projectBinding: ProjectWorkflowBinding = {
-    defaultWorkflow: project.defaultWorkflow,
-    workflowByType: project.workflowByType,
-  };
-  const ticketSummaries = (
-    await Promise.all(
-      tickets.map(async (a) => {
-        const config = await getStatusConfig(await resolveWorkflowIdWithBinding(a, projectBinding));
-        return toTicketSummary(a, config);
-      }),
-    )
-  ).sort((left, right) => compareTimestamps(right.updated, left.updated));
+  const ticketSummaries = tickets
+    .map((a) => toTicketSummary(a))
+    .sort((left, right) => compareTimestamps(right.updated, left.updated));
 
   return {
     slug: project.slug || slug,
@@ -1239,7 +913,13 @@ export async function getTicketDetail(
     };
   }
 
-  const wfConfig = await statusConfigForTicket(ticket, resolve(projectsDir, projectSlug));
+  const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+  const availableVerbs = (await getAvailableVerbs(
+    ticketDir,
+    ticketAsFrontmatter(ticket),
+    manifest,
+  )) as TicketTransitionAction[];
+
   const detail: TicketDetail = {
     id: ticket.id,
     projectSlug,
@@ -1248,25 +928,25 @@ export async function getTicketDetail(
     status: ticket.status,
     template: ticket.template,
     workflow: ticket.workflow,
-    resolvedWorkflow: wfConfig.workflowId,
-    workflowLabel: wfConfig.label,
-    statusLabel: statusLabelFor(wfConfig, ticket.status),
+    resolvedWorkflow: ticket.template ?? 'default',
+    workflowLabel: ticket.template ?? 'Default',
+    statusLabel: getStageLabel(ticket.status),
     priority: ticket.priority as TicketDetail['priority'],
     assignee: ticket.assignee,
     depends_on: ticket.depends_on,
     links: ticket.links,
     reverseLinks: [],
     enrichedLinks: [],
-    blockedReason: ticket.blockedReason,
+    blockedReason: ticket.blockedReason ?? null,
     workspace: ticket.workspace,
     externalIds: ticket.externalIds,
     tags: ticket.tags,
     archived: ticket.archived,
     archivedAt: ticket.archivedAt,
     archivedReason: ticket.archivedReason,
-    ...deriveStatusVirtuals(ticket, wfConfig.terminalStatuses),
+    ...deriveStatusVirtuals(ticket),
     override: ticket.override,
-    derived: await buildDerivedDetail(ticket, ticketDir, resolve(projectsDir, projectSlug)),
+    derived: null,
     created: ticket.created,
     updated: ticket.updated,
     body: ticket.body,
@@ -1278,12 +958,7 @@ export async function getTicketDetail(
     comments,
     referencedBy: [],
     engagements: buildTicketEngagements(ticket.id),
-    availableTransitions: await getAvailableTransitions(
-      projectsDir,
-      projectSlug,
-      ticketSlug,
-      ticket,
-    ),
+    availableVerbs,
     templateBlock: await buildTicketTemplateBlock(ticketDir, ticket),
   };
 
@@ -1682,31 +1357,37 @@ async function buildProjectRollup(
   needsAttention: NeedsAttention;
   status: string;
 }> {
-  // Archived children are hidden from normal views, so they must not count in
-  // the project's progress/totals/status rollup either (cascade consistency).
   const active = activeTickets(tickets);
   const progress: ProgressCounts = { total: active.length };
 
-  // Map: read every comments.md in parallel. Reduce: fold the per-ticket
-  // results into progress counters + openQuestions sum.
   const perTicket = await Promise.all(
     active.map(async (ticket) => {
       const t0 = traces ? performance.now() : 0;
       const openQuestions = await countOpenQuestions(projectPath, ticket.slug);
       if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
-      return { status: ticket.status, openQuestions };
+      return { ticket, openQuestions };
     }),
   );
 
   let openQuestions = 0;
+  let blockedCount = 0;
+  let failedCount = 0;
+  let doneCount = 0;
+  let activeWorkCount = 0;
+
   for (const entry of perTicket) {
-    progress[entry.status] = (progress[entry.status] ?? 0) + 1;
+    const stage = entry.ticket.status;
+    progress[stage] = (progress[stage] ?? 0) + 1;
     openQuestions += entry.openQuestions;
+    if (entry.ticket.blockedReason) blockedCount++;
+    if (stage === 'dropped') failedCount++;
+    if (stage === 'done') doneCount++;
+    if (stage === 'in_progress' || stage === 'review') activeWorkCount++;
   }
 
   const needsAttention: NeedsAttention = {
-    blockedCount: progress['blocked'] ?? 0,
-    failedCount: progress['failed'] ?? 0,
+    blockedCount,
+    failedCount,
     openQuestions,
   };
 
@@ -1715,15 +1396,15 @@ async function buildProjectRollup(
     status = project.statusOverride;
   } else if (project.archived) {
     status = 'archived';
-  } else if (progress.total > 0 && (progress['completed'] ?? 0) === progress.total) {
+  } else if (progress.total > 0 && doneCount === progress.total) {
     status = 'completed';
-  } else if ((progress['in_progress'] ?? 0) > 0 || (progress['review'] ?? 0) > 0) {
+  } else if (activeWorkCount > 0) {
     status = 'active';
-  } else if ((progress['failed'] ?? 0) > 0) {
+  } else if (failedCount > 0) {
     status = 'failed';
-  } else if ((progress['blocked'] ?? 0) > 0) {
+  } else if (blockedCount > 0) {
     status = 'blocked';
-  } else if (progress.total === 0 || (progress['pending'] ?? 0) === progress.total) {
+  } else if (progress.total === 0 || (progress['backlog'] ?? 0) === progress.total) {
     status = 'pending';
   } else {
     status = 'active';
@@ -1741,10 +1422,7 @@ async function buildProjectRollup(
  * milliseconds since the last entry (time in current status), null when there is
  * no history or the timestamp is unparseable.
  */
-function deriveStatusVirtuals(
-  ticket: TicketRecord,
-  terminalStatuses: ReadonlySet<string>,
-): {
+function deriveStatusVirtuals(ticket: TicketRecord): {
   completedAt: string | null;
   statusAge: number | null;
   phaseAge: number | null;
@@ -1752,166 +1430,32 @@ function deriveStatusVirtuals(
   disposition: string | null;
   pinned: boolean;
 } {
-  const hist = ticket.statusHistory ?? [];
+  const updatedMs = Date.parse(ticket.updated);
+  const statusAge = Number.isNaN(updatedMs) ? null : Date.now() - updatedMs;
+  const isTerminal = isTerminalStageId(ticket.status);
+  const completedAt =
+    isTerminal && ticket.status === 'done' && !Number.isNaN(updatedMs)
+      ? ticket.updated
+      : null;
 
-  let completedAt: string | null = null;
-  if (terminalStatuses.has(ticket.status)) {
-    for (const entry of hist) {
-      if (entry.to === ticket.status) completedAt = entry.at;
-    }
-  }
-
-  // statusAge counts HEADLINE changes only: dimension-only entries (from == to,
-  // e.g. phase advanced while blocked) must not reset the clock. The seed
-  // entry (from: null) counts as a headline change.
-  let statusAge: number | null = null;
-  for (let i = hist.length - 1; i >= 0; i--) {
-    const entry = hist[i];
-    if (entry.from !== entry.to || entry.from === null) {
-      const t = Date.parse(entry.at);
-      statusAge = Number.isNaN(t) ? null : Date.now() - t;
-      break;
-    }
-  }
-
-  let phaseAge: number | null = null;
-  for (let i = hist.length - 1; i >= 0; i--) {
-    const entry = hist[i];
-    if (entry.phaseTo !== undefined && entry.phaseFrom !== entry.phaseTo) {
-      const t = Date.parse(entry.at);
-      phaseAge = Number.isNaN(t) ? null : Date.now() - t;
-      break;
-    }
-  }
+  const blocked = Boolean(ticket.blockedReason);
+  const parked = Boolean(ticket.parked);
+  let disposition: string | null = 'active';
+  if (isTerminal) disposition = 'terminal';
+  else if (blocked) disposition = 'blocked';
+  else if (parked) disposition = 'parked';
 
   return {
     completedAt,
     statusAge,
-    // Post-marker the stage IS `status` — the frontmatter `phase` mirror is
-    // stale forever on preserved terminals (89 completed carry phase: review),
-    // and `phaseTo` history entries stop being written so phaseAge freezes.
-    // Sync peek warmed by getStatusConfig; false = pre-marker behavior.
-    phaseAge: _stagesMigratedCache ? statusAge : phaseAge,
-    phase: _stagesMigratedCache ? ticket.status : ticket.phase,
-    disposition: ticket.disposition,
-    pinned: ticket.override !== null,
+    phaseAge: statusAge,
+    phase: ticket.status,
+    disposition,
+    pinned: false,
   };
 }
 
-/**
- * Server-side materialization of the derivation detail for one ticket
- * (design v3: the browser never reads the filesystem — facts ship in the
- * payload). Null for terminal tickets (derivation defers entirely).
- */
-async function buildDerivedDetail(
-  ticket: TicketRecord,
-  ticketDir: string,
-  projectDir: string | null,
-): Promise<TicketDetail['derived']> {
-  // Derive against the ticket's OWN workflow (its terminal set, derive rules,
-  // fact registry, known statuses) so the dashboard projection agrees with the
-  // CLI recompute for the same ticket.
-  const config = await statusConfigForTicket(ticket, projectDir);
-  if (config.terminalStatuses.has(ticket.status)) return null;
-  try {
-    const { computeFactsDetailed } = await import('../lifecycle/facts.js');
-    const { deriveDimensions } = await import('../lifecycle/derive.js');
-    const { DEFAULT_DERIVE_CONFIG } = await import('../utils/config.js');
-    // ONE compute pass: facts (custom + attestation exports) and per-record
-    // validity come from the same plan-file / HEAD reads. Fresh-per-request is
-    // what makes binds:commit lazy convergence honest (Locked Decisions).
-    const { facts, attestations } = await computeFactsDetailed({
-      ticketDir,
-      frontmatter: {
-        ...ticket,
-        // TicketRecord ⊃ the fields computeFacts reads (incl. facts +
-        // attestations from the parser); statusHistory + derived caches ride along.
-      } as unknown as import('../lifecycle/types.js').TicketFrontmatter,
-      body: ticket.body,
-      projectDir,
-      terminalStatuses: config.terminalStatuses,
-      declarations: config.factDeclarations,
-    });
-    const dims = deriveDimensions({
-      facts,
-      derive: config.derive ?? DEFAULT_DERIVE_CONFIG,
-      currentStatus: ticket.status,
-      terminalStatuses: config.terminalStatuses,
-      knownStatusIds: new Set(config.statuses.map((s) => s.id)),
-      override: ticket.override,
-      registry: config.deriveRegistry,
-    });
-    if (!dims) return null;
-
-    // customFacts: declared bool/number values only — the client renders them
-    // without guessing which keys are built-ins (the server separated them).
-    const customFacts: Record<string, boolean | number> = {};
-    for (const decl of config.factDeclarations) {
-      if (decl.type === 'bool' || decl.type === 'number') {
-        const v = facts[decl.name];
-        if (typeof v === 'boolean' || typeof v === 'number') customFacts[decl.name] = v;
-      }
-    }
-
-    // WS-3 compat window (§4.5): `derivedStatus`/`nextAction` are DEPRECATED
-    // payload mirrors kept one release. When the stage engine is active for
-    // this ticket (marker + per-file workflow + stored status is a stage),
-    // the honest mirror is the STORED stage and its `guidance:` — the ladder's
-    // re-ranked headline would contradict the frozen stage position.
-    let derivedStatus = dims.derivedStatus;
-    let nextAction = dims.nextAction;
-    try {
-      const { isStagesMigrated } = await import('../lifecycle/recompute.js');
-      if (await isStagesMigrated()) {
-        const { makeWorkflowContextResolver } = await import('../lifecycle/workflow-context.js');
-        const sw = await makeWorkflowContextResolver(await readConfig()).stageWorkflowFor(
-          ticket,
-          projectDir,
-        );
-        const stage = sw?.stages.find((s) => s.id === ticket.status);
-        if (stage) {
-          derivedStatus = ticket.status;
-          nextAction = stage.guidance ?? null;
-        }
-      }
-    } catch {
-      /* dual-source window mid-migration — keep the ladder mirror */
-    }
-
-    return {
-      derivedStatus,
-      nextAction,
-      facts: facts as unknown as Record<string, boolean | number | string[]>,
-      customFacts,
-      attestations: attestations.map((a) => ({
-        fact: a.fact,
-        binds: a.binds,
-        records: a.records.map(({ record, valid }) => ({
-          actor: record.actor,
-          verdict: record.verdict,
-          at: record.at,
-          note: record.note ?? null,
-          stale: !valid,
-        })),
-      })),
-    };
-  } catch (err) {
-    // Best-effort enrichment, never a 500 — but not silent (codex finding 12).
-    console.warn(`buildDerivedDetail failed for ${ticketDir}:`, err);
-    return null;
-  }
-}
-
-/** Display label for a status id within a resolved workflow (falls back to the
- * raw id when the status isn't in the workflow's definitions). */
-function statusLabelFor(config: ResolvedStatusConfig, status: string): string {
-  return config.statuses.find((s) => s.id === status)?.label ?? status;
-}
-
-function toTicketSummary(
-  ticket: TicketRecord,
-  config: ResolvedStatusConfig,
-): TicketSummary {
+function toTicketSummary(ticket: TicketRecord): TicketSummary {
   return {
     id: ticket.id,
     slug: ticket.slug,
@@ -1919,9 +1463,9 @@ function toTicketSummary(
     status: ticket.status,
     template: ticket.template,
     workflow: ticket.workflow,
-    resolvedWorkflow: config.workflowId,
-    workflowLabel: config.label,
-    statusLabel: statusLabelFor(config, ticket.status),
+    resolvedWorkflow: ticket.template ?? 'default',
+    workflowLabel: ticket.template ?? 'Default',
+    statusLabel: getStageLabel(ticket.status),
     priority: ticket.priority as TicketSummary['priority'],
     assignee: ticket.assignee,
     depends_on: ticket.depends_on,
@@ -1933,65 +1477,35 @@ function toTicketSummary(
     archived: ticket.archived,
     archivedAt: ticket.archivedAt,
     archivedReason: ticket.archivedReason,
-    ...deriveStatusVirtuals(ticket, config.terminalStatuses),
+    ...deriveStatusVirtuals(ticket),
   };
 }
 
 async function toTicketBoardItem(
-  projectsDir: string,
+  _projectsDir: string,
   projectRecord: ProjectRecord,
   ticket: TicketRecord,
 ): Promise<TicketBoardItem> {
-  // Resolve the ticket's OWN workflow once (from the already-parsed project
-  // binding — no extra read) and reuse it for terminal virtuals, fact
-  // declarations, and the available-transitions table.
-  const workflowId = await resolveWorkflowIdWithBinding(ticket, {
-    defaultWorkflow: projectRecord.project.defaultWorkflow,
-    workflowByType: projectRecord.project.workflowByType,
-  });
-  const config = await getStatusConfig(workflowId);
-  const { terminalStatuses } = config;
-
   const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.slug);
-  const projectDir = projectRecord.projectPath;
-
-  let facts: TicketBoardItem['facts'];
-  try {
-    const { computeFacts } = await import('../lifecycle/facts.js');
-    facts = await computeFacts({
-      ticketDir,
-      frontmatter: ticket as unknown as import('../lifecycle/types.js').TicketFrontmatter,
-      body: ticket.body,
-      projectDir,
-      terminalStatuses,
-      declarations: config.factDeclarations,
-    });
-  } catch (err) {
-    console.warn(`toTicketBoardItem: computeFacts failed for ${ticketDir}:`, err);
-  }
+  const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+  const verbs = await getAvailableVerbs(ticketDir, ticketAsFrontmatter(ticket), manifest);
 
   return {
-    ...toTicketSummary(ticket, config),
+    ...toTicketSummary(ticket),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
-    blockedReason: ticket.blockedReason,
-    availableTransitions: await getAvailableTransitions(
-      projectsDir,
-      projectRecord.summary.slug,
-      ticket.slug,
-      ticket,
-      { resolvedConfig: config },
-    ),
-    facts,
+    blockedReason: ticket.blockedReason ?? null,
+    availableVerbs: verbs as TicketTransitionAction[],
   };
 }
 
 const DEFAULT_GRAPH_COLORS: Record<string, string> = {
-  completed: 'fill:#4ea84f,stroke:#1f6b29,color:#ffffff',
+  done: 'fill:#4ea84f,stroke:#1f6b29,color:#ffffff',
   in_progress: 'fill:#1e6fd9,stroke:#0f3f8f,color:#ffffff',
-  pending: 'fill:#c0ccd9,stroke:#738399,color:#163047',
-  blocked: 'fill:#db5a3f,stroke:#8d2815,color:#ffffff',
-  failed: 'fill:#9f2d2d,stroke:#651616,color:#ffffff',
+  backlog: 'fill:#c0ccd9,stroke:#738399,color:#163047',
+  planning: 'fill:#c0ccd9,stroke:#738399,color:#163047',
+  ready: 'fill:#5b8fd9,stroke:#2f5f9f,color:#ffffff',
+  dropped: 'fill:#9f2d2d,stroke:#651616,color:#ffffff',
   review: 'fill:#c6911e,stroke:#7a5a10,color:#ffffff',
 };
 
@@ -2024,68 +1538,7 @@ function buildDependencyGraph(tickets: TicketRecord[]): string | null {
 }
 
 function findTicketStatus(tickets: TicketRecord[], slug: string): string {
-  return tickets.find((ticket) => ticket.slug === slug)?.status ?? 'pending';
-}
-
-async function getAvailableTransitions(
-  projectsDir: string,
-  projectSlug: string,
-  ticketSlug: string,
-  ticket: TicketRecord,
-  options?: {
-    dependencyStatusMap?: ReadonlyMap<string, string>;
-    traces?: OverviewTraces;
-    /** Pre-resolved per-ticket status config — pass in board loops so the
-     * ticket's workflow isn't re-resolved (and project.md re-read) per call. */
-    resolvedConfig?: ResolvedStatusConfig;
-  },
-): Promise<TicketTransitionAction[]> {
-  const projectPath = resolve(projectsDir, projectSlug);
-  // Transitions offered come from the ticket's OWN workflow (its transition
-  // table + terminal set), resolved via the project binding.
-  const config = options?.resolvedConfig ?? (await statusConfigForTicket(ticket, projectPath));
-  const transitionDefs = getTransitionDefinitions(config);
-  const actions: TicketTransitionAction[] = [];
-  const traces = options?.traces;
-
-  for (const definition of transitionDefs) {
-    const target = getTargetStatus(ticket.status, definition.command, config.transitionTable);
-    // Only valid transitions reach the client; the kanban inline picker renders them directly.
-    if (target === null) continue;
-
-    let warning: string | null = null;
-
-    if (definition.command === 'start' && !ticket.assignee) {
-      warning = 'No assignee set — consider assigning before starting.';
-    }
-
-    if (definition.command === 'start' && ticket.depends_on.length > 0) {
-      const t0 = traces ? performance.now() : 0;
-      const unmetDependencies = await getUnmetDependencies(
-        projectPath,
-        ticket.depends_on,
-        config.terminalStatuses,
-        options?.dependencyStatusMap,
-      );
-      if (traces) accumulatePhase(traces, 'get-unmet-dependencies', performance.now() - t0);
-      if (unmetDependencies.length > 0) {
-        warning = `Unmet dependencies: ${unmetDependencies.join(', ')}.`;
-      }
-    }
-
-    actions.push({
-      command: definition.command,
-      label: definition.label,
-      description: definition.description,
-      targetStatus: target,
-      disabled: false,
-      disabledReason: null,
-      warning,
-      requiresReason: definition.requiresReason,
-    });
-  }
-
-  return actions;
+  return tickets.find((ticket) => ticket.slug === slug)?.status ?? 'backlog';
 }
 
 async function getUnmetDependencies(
@@ -2094,7 +1547,7 @@ async function getUnmetDependencies(
   terminalStatuses?: ReadonlySet<string>,
   dependencyStatusMap?: ReadonlyMap<string, string>,
 ): Promise<string[]> {
-  const terminals = terminalStatuses ?? new Set(['completed']);
+  const terminals = terminalStatuses ?? TERMINAL_STAGES;
   const unmet: string[] = [];
 
   for (const dependency of depends_on) {
@@ -2188,25 +1641,22 @@ async function readProgressActivityMs(progressPath: string, now: number): Promis
 /** Run the shared staleness classifier for one ticket record. */
 function classifyTicketRecord(
   ticket: TicketRecord,
-  terminalStatuses: ReadonlySet<string>,
   depsSatisfied: boolean | null,
   lastActivityMs: number | null,
   thresholds: StaleThresholds,
 ): StaleReason[] {
-  const virtuals = deriveStatusVirtuals(ticket, terminalStatuses);
   return classifyNeedsAttention(
     {
-      phase: virtuals.phase,
-      disposition: virtuals.disposition,
-      isTerminal: terminalStatuses.has(ticket.status),
+      stage: ticket.status,
+      isTerminal: isTerminalStageId(ticket.status),
       assignee: ticket.assignee ?? null,
-      blockedReason: ticket.blockedReason,
+      blocked: ticket.blockedReason ?? null,
       depsSatisfied,
       // plan_awaiting_approval is deferred to the decision inbox's plan-approval
       // category for now; pass values that keep that reason dormant.
       planExists: false,
       planApproved: true,
-      statusAgeMs: virtuals.statusAge,
+      statusAgeMs: deriveStatusVirtuals(ticket).statusAge,
       lastActivityMs,
     },
     thresholds,
@@ -2229,27 +1679,18 @@ export async function collectStaleCandidates(projectsDir: string,
   for (const record of projectRecords) {
     if (isProjectArchived(record.summary)) continue;
     const projectPath = resolve(projectsDir, record.summary.slug);
-    const binding: ProjectWorkflowBinding = {
-      defaultWorkflow: record.project.defaultWorkflow,
-      workflowByType: record.project.workflowByType,
-    };
     const depMap = new Map<string, string>();
     for (const a of record.tickets) depMap.set(a.slug, a.status);
     for (const ticket of activeTickets(record.tickets)) {
-      // Terminal set from the ticket's OWN workflow, so a custom terminal status
-      // isn't misread as "active" and wrongly flagged stale.
-      const { terminalStatuses } = await getStatusConfig(
-        await resolveWorkflowIdWithBinding(ticket, binding),
-      );
       const depsSatisfied =
         ticket.depends_on.length === 0
           ? true
-          : (await getUnmetDependencies(projectPath, ticket.depends_on, terminalStatuses, depMap)).length === 0;
+          : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap)).length === 0;
       const lastActivityMs = await readProgressActivityMs(
         resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
         now,
       );
-      const reasons = classifyTicketRecord(ticket, terminalStatuses, depsSatisfied, lastActivityMs, thresholds);
+      const reasons = classifyTicketRecord(ticket, depsSatisfied, lastActivityMs, thresholds);
       if (reasons.length > 0) {
         out.push({ ticketId: ticket.id, projectSlug: record.summary.slug, reasons });
       }
@@ -2294,54 +1735,36 @@ async function buildOverviewSegmentBuckets(
     // Resolve every per-ticket getAvailableTransitions call for this project
     // in parallel, then run the synchronous classification logic below over the results.
     const projectPath = resolve(projectsDir, record.summary.slug);
-    const binding: ProjectWorkflowBinding = {
-      defaultWorkflow: record.project.defaultWorkflow,
-      workflowByType: record.project.workflowByType,
-    };
     const resolvedTransitions = await Promise.all(
       visibleTickets.map(async (ticket) => {
-        // The ticket's OWN workflow config → its transition table + terminal set.
-        const resolvedConfig = await getStatusConfig(
-          await resolveWorkflowIdWithBinding(ticket, binding),
-        );
-        const ticketTerminal = resolvedConfig.terminalStatuses;
+        const ticketDir = resolve(projectPath, 'tickets', ticket.slug);
+        const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
         const t0 = traces ? performance.now() : 0;
-        const availableTransitions = await getAvailableTransitions(
-          projectsDir,
-          record.summary.slug,
-          ticket.slug,
-          ticket,
-          { traces, dependencyStatusMap: depMap, resolvedConfig },
-        );
-        if (traces) accumulatePhase(traces, 'get-available-transitions', performance.now() - t0);
-        // Inputs for the staleness classifier (resolved off already-parsed data
-        // + one progress.md stat). depsSatisfied via the in-memory depMap; no
-        // extra disk read when there are no deps.
+        const availableVerbs = (await getAvailableVerbs(
+          ticketDir,
+          ticketAsFrontmatter(ticket),
+          manifest,
+        )) as TicketTransitionAction[];
+        if (traces) accumulatePhase(traces, 'get-available-verbs', performance.now() - t0);
         const depsSatisfied =
           ticket.depends_on.length === 0
             ? true
-            : (await getUnmetDependencies(projectPath, ticket.depends_on, ticketTerminal, depMap))
+            : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
           resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
           now,
         );
-        return { ticket, availableTransitions, depsSatisfied, lastActivityMs, ticketTerminal };
+        return { ticket, availableVerbs, depsSatisfied, lastActivityMs };
       }),
     );
 
-    for (const {
-      ticket,
-      availableTransitions,
-      depsSatisfied,
-      lastActivityMs,
-      ticketTerminal,
-    } of resolvedTransitions) {
-      const segmentId = STATUS_TO_SEGMENT[ticket.status];
-      const isTerminal = ticketTerminal.has(ticket.status);
+    for (const { ticket, availableVerbs, depsSatisfied, lastActivityMs } of resolvedTransitions) {
+      const segmentId =
+        ticket.blockedReason ? 'blocked' : STATUS_TO_SEGMENT[ticket.status];
+      const isTerminal = isTerminalStageId(ticket.status);
       const staleReasons = classifyTicketRecord(
         ticket,
-        ticketTerminal,
         depsSatisfied,
         lastActivityMs,
         staleThresholds,
@@ -2358,11 +1781,11 @@ async function buildOverviewSegmentBuckets(
         status: ticket.status,
         updated: ticket.updated,
         href: `/t/${ticket.id}`,
-        blockedReason: ticket.blockedReason,
+        blockedReason: ticket.blockedReason ?? null,
         stale,
         agingMs,
         assignee: ticket.assignee ?? null,
-        availableTransitions,
+        availableVerbs,
       };
 
       if (segmentId) {

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { runInbox, inboxCommand } from '../commands/inbox.js';
 import { inboxRowKey, rowFingerprint, setSnooze, snoozeFilePath } from '../inbox/index.js';
 import { readFile } from 'node:fs/promises';
-import { clearStatusConfigCache } from '../dashboard/api.js';
+import { clearStageTableCache } from '../dashboard/api.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 
@@ -79,15 +79,15 @@ beforeEach(async () => {
 
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = root;
-  // getStatusConfig() caches module-globally; clear so each test resolves fresh
+  // getStageTableConfig() caches module-globally; clear so each test resolves fresh
   // against the temp SYNTAUR_HOME (default status config here).
-  clearStatusConfigCache();
+  clearStageTableCache();
 });
 
 afterEach(async () => {
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
-  clearStatusConfigCache();
+  clearStageTableCache();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -117,7 +117,7 @@ describe('runInbox — JSON shape', () => {
       ticketSlug: 'rev',
       ticketId: 'r1',
       category: 'review',
-      action: { verb: 'Accept', command: 'syntaur complete rev --project p1' },
+      action: { verb: 'Accept', command: 'syntaur done rev --project p1' },
     });
     expect(typeof review.since).toBe('string');
     expect(typeof review.ageMs).toBe('number');
@@ -241,7 +241,7 @@ describe('inbox human output (grouped, smoke)', () => {
     expect(out).toContain('question 1');
     expect(out).toContain('Review me');
     expect(out).toContain('[p1/rev]');
-    expect(out).toContain('→ syntaur complete rev --project p1');
+    expect(out).toContain('→ syntaur done rev --project p1');
     expect(out).toContain('→ syntaur comment qs "<answer>" --reply-to c1 --project p1');
   });
 
@@ -317,7 +317,7 @@ describe('inbox human output (grouped, smoke)', () => {
     const parsed = JSON.parse(logs.join('\n'));
     expect(parsed.total).toBe(1);
     expect(parsed.counts.review).toBe(1);
-    expect(parsed.items[0].action.command).toBe('syntaur complete rev --project p1');
+    expect(parsed.items[0].action.command).toBe('syntaur done rev --project p1');
   });
 });
 

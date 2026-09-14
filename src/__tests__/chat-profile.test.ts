@@ -199,6 +199,48 @@ describe('applyProfile', () => {
 });
 
 describe('prompt framing', () => {
+  function v2TicketYaml(opts: {
+    id: string;
+    template: string;
+    status?: string;
+    priority?: string;
+    planFile?: string | null;
+  }): string {
+    const planFile = opts.planFile === undefined ? 'plan.md' : opts.planFile;
+    return `---
+id: ${opts.id}
+slug: ticket-chat-single-agent
+title: Ticket chat
+project: syntaur-meta
+template: ${opts.template}
+status: ${opts.status ?? 'backlog'}
+priority: ${opts.priority ?? 'medium'}
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+assignee: null
+depends_on: []
+links: []
+blocked: null
+parked: null
+plan:
+  file: ${planFile === null ? 'null' : planFile}
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+workspace:
+  repository: null
+  worktree: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+## Objective
+
+Ticket chat
+`;
+  }
+
   async function seedTicket(files: Record<string, string>): Promise<string> {
     const dir = join(sandbox, 'ticket');
     await mkdir(dir, { recursive: true });
@@ -226,52 +268,7 @@ describe('prompt framing', () => {
 
   it('claude gets show text, ticket/plan resources, and <context>, but no <system> block', async () => {
     const dir = await seedTicket({
-      'ticket.md': `---
-id: CH-1
-slug: ticket-chat-single-agent
-title: Ticket chat
-project: syntaur-meta
-template: legacy
-status: draft
-priority: medium
-created: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
-depends_on: []
-links: []
-plan:
-  file: plan.md
-  approvedDigest: null
-  approvedAt: null
-  approvedBy: null
-tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
----
-
-## Objective
-
-Ticket chat
-`,
+      'ticket.md': v2TicketYaml({ id: 'CH-1', template: 'legacy' }),
       'plan.md': '# Plan v1\n\nReal plan content.\n',
       'progress.md': '# Progress\n',
     });
@@ -294,52 +291,12 @@ Ticket chat
 
   it('codex gets a <system> block first', async () => {
     const dir = await seedTicket({
-      'ticket.md': `---
-id: CH-2
-slug: ticket-chat-single-agent
-title: Ticket chat
-project: syntaur-meta
-template: quick
-status: draft
-priority: low
-created: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
-depends_on: []
-links: []
-plan:
-  file: null
-  approvedDigest: null
-  approvedAt: null
-  approvedBy: null
-tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
----
-
-## Objective
-
-Ticket chat
-`,
+      'ticket.md': v2TicketYaml({
+        id: 'CH-2',
+        template: 'quick',
+        priority: 'low',
+        planFile: null,
+      }),
     });
     const { blocks } = await buildStandingContext({
       definition: { ...BASE, harness: 'codex' },
@@ -356,52 +313,7 @@ Ticket chat
 
   it('uses the plan role path, not superseded revisions', async () => {
     const dir = await seedTicket({
-      'ticket.md': `---
-id: CH-3
-slug: ticket-chat-single-agent
-title: Ticket chat
-project: syntaur-meta
-template: legacy
-status: draft
-priority: medium
-created: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
-depends_on: []
-links: []
-plan:
-  file: plan.md
-  approvedDigest: null
-  approvedAt: null
-  approvedBy: null
-tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
----
-
-## Objective
-
-Ticket chat
-`,
+      'ticket.md': v2TicketYaml({ id: 'CH-3', template: 'legacy' }),
       'plan.md': '# Plan v1\n\nContent.\n',
       'plan-v2.md': '# Plan v2\n',
       'plan-v10.md': '# Plan v10\n',
@@ -426,52 +338,7 @@ Ticket chat
 
   it('carries the show log tail instead of a progress.md resource', async () => {
     const dir = await seedTicket({
-      'ticket.md': `---
-id: CH-4
-slug: ticket-chat-single-agent
-title: Ticket chat
-project: syntaur-meta
-template: legacy
-status: draft
-priority: medium
-created: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
-depends_on: []
-links: []
-plan:
-  file: null
-  approvedDigest: null
-  approvedAt: null
-  approvedBy: null
-tags: []
-archived: false
-archivedAt: null
-archivedReason: null
-phase: null
-disposition: null
-parked: false
-reviewRequested: false
-reworkRequested: false
-implementationStarted: false
-override: null
-facts: {}
-attestations: []
-solicitations: []
-firedVerdicts: []
-frozenChecks: null
-hold: false
-gateOverrides: []
-statusHistory: []
-assignee: null
-externalIds: []
-workflow: null
-blockedReason: null
----
-
-## Objective
-
-Ticket chat
-`,
+      'ticket.md': v2TicketYaml({ id: 'CH-4', template: 'legacy', planFile: null }),
       'progress.md': `---
 ticket: legacy
 entryCount: 1
@@ -517,7 +384,7 @@ Recent work line.
     const roster = [BASE];
     const participants = { agents: ['claude'] };
     const before = standingFingerprint(BASE, roster, participants, {
-      status: 'draft',
+      status: 'backlog',
       template: 'feature',
     });
     const after = standingFingerprint(BASE, roster, participants, {
