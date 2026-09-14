@@ -151,6 +151,17 @@ describe('gate evaluators', () => {
     expect(result.pass).toBe(true);
   });
 
+  it('handoff-logged fails when the log has no handoff entry', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-01T00:00:00Z · progress · human\n\nStill working.\n`;
+    const result = await evaluateGate(
+      'handoff-logged',
+      ctx(join(home, 't'), baseFm(), manifest, '', log),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.hint).toBe(GATE_HINTS['handoff-logged']);
+  });
+
   it('review-clean passes on latest approve with high=0', async () => {
     const manifest = await loadBuiltin('feature');
     const log = `## 2026-09-02T00:00:00Z · review · pi\nverdict: approve · open: high=0 medium=0\n\nClean.\n`;
@@ -159,6 +170,28 @@ describe('gate evaluators', () => {
       ctx(join(home, 't'), baseFm(), manifest, '', log),
     );
     expect(result.pass).toBe(true);
+  });
+
+  it('review-clean fails when the latest review verdict is changes', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-02T00:00:00Z · review · pi\nverdict: changes · open: high=0 medium=0\n\nFix it.\n`;
+    const result = await evaluateGate(
+      'review-clean',
+      ctx(join(home, 't'), baseFm(), manifest, '', log),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.hint).toBe(GATE_HINTS['review-clean']);
+  });
+
+  it('review-clean fails when the latest review approves with high=1', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-02T00:00:00Z · review · pi\nverdict: approve · open: high=1 medium=0\n\nNot clean.\n`;
+    const result = await evaluateGate(
+      'review-clean',
+      ctx(join(home, 't'), baseFm(), manifest, '', log),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.hint).toBe(GATE_HINTS['review-clean']);
   });
 });
 
