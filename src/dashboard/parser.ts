@@ -99,7 +99,7 @@ function parseListField(frontmatter: string, fieldName: string): string[] {
  * Parse a flat nested `header:` mapping block (indented `key: value` lines) into
  * a string map. Absent header → `{}`. Stops at the first non-indented line (a
  * sibling top-level key). Null-valued entries are dropped. Mirrors the lifecycle
- * parser's `parseNestedBlock` so the two parsers agree on e.g. `workflowByType`.
+ * parser's `parseNestedBlock` so the two parsers agree on nested frontmatter blocks.
  */
 function parseNestedMap(frontmatter: string, header: string): Record<string, string> {
   const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));

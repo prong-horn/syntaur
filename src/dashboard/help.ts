@@ -77,7 +77,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur unblock',
-    description: 'Move a blocked ticket back to in_progress after the blocker is cleared.',
+    description: 'Clear the blocked flag without changing stage.',
     example: 'syntaur unblock UI-1 --project ui-overhaul',
   },
   {

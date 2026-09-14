@@ -1,21 +1,21 @@
 ---
 name: list-tickets
 description: >-
-  List Syntaur tickets across all projects with filters by status,
+  List Syntaur tickets across all projects with filters by stage,
   project, tag, and age. Use when the user wants to "see all tickets",
-  "list pending work", "show in_progress tickets", "what's open",
+  "list backlog work", "show in_progress tickets", "what's open",
   "find tickets tagged X", or otherwise query the cross-project board
   non-interactively. Emits scriptable output (table or JSON).
 license: MIT
 metadata:
   author: prong-horn
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # List Tickets
 
 Cross-project ticket listing using `syntaur ls`. Supports filters by
-status, project, tag, and age. Emits a compact aligned table by default;
+stage, project, tag, and age. Emits a compact aligned table by default;
 `--json` produces machine-readable output suitable for piping into other
 tools.
 
@@ -23,8 +23,8 @@ tools.
 
 - The user wants to interactively browse and act on tickets — use the
   dashboard instead.
-- The user wants details for a single ticket they already know — open
-  its `ticket.md` directly.
+- The user wants details for a single ticket they already know — run
+  `syntaur show <id>`.
 - The user wants project-level rollups (totals, blocked counts) — that's the
   dashboard, not `ls`.
 
@@ -32,9 +32,10 @@ tools.
 
 Common requests → flags:
 
-- "pending tickets" → `--status pending`
+- "backlog tickets" → `--status backlog`
 - "in-progress" / "active" → `--status in_progress`
-- "stuff blocked" → `--status blocked`
+- "in review" → `--status review`
+- "blocked tickets" → filter tickets with `blocked` flag (use `--json` and filter, or dashboard)
 - "everything in <project>" → `--project <slug>`
 - "tagged with X" / "labeled X" → `--tag X`
 - "must have all of X and Y" → `--tag X,Y` (AND semantics)
@@ -53,6 +54,8 @@ syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>
 
 Supported `--age` units: `h` (hours), `d` (days), `w` (weeks), `m` (~30 days).
 
+Stage ids: `backlog`, `planning`, `ready`, `in_progress`, `review`, `done`, `dropped`.
+
 ## Step 3: Present results
 
 Default output is a table with columns: PROJECT, SLUG, STATUS, PRIORITY,
@@ -64,9 +67,9 @@ action ("which one is highest priority?"), parse the table or re-run with
 
 If interactive:
 
-- Summarize the count and any obvious patterns (e.g. "5 pending in
-  syntaur-meta, 3 blocked across other projects").
+- Summarize the count and any obvious patterns (e.g. "5 backlog in
+  syntaur-meta, 3 in_progress across other projects").
 - Suggest a next action when applicable (e.g. "want to grab the top-priority
-  pending one?").
+  backlog one?").
 
 If scripted (`--json`), pass the parsed JSON downstream without re-rendering.

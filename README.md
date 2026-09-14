@@ -173,6 +173,22 @@ button, a `syntaur://` deep link, a transcript scanner and a PTY daemon. All of
 it was removed in v0.80; see the
 [release note](docs/releases/v0.80.md) if you are upgrading an existing install.
 
+## Lifecycle verbs (v2)
+
+Tickets move through fixed **stages** via explicit CLI verbs. `blocked` and `parked` are **flags** (reason strings), not stages.
+
+| Stage | Meaning | Typical verb |
+|-------|---------|--------------|
+| `backlog` | Not started | `syntaur new` |
+| `planning` | Plan being written | `syntaur plan` |
+| `ready` | Plan approved | `syntaur approve` |
+| `in_progress` | Active work | `syntaur start` |
+| `review` | Awaiting review | `syntaur review` |
+| `done` | Completed | `syntaur done` |
+| `dropped` | Abandoned | `syntaur drop` |
+
+Flag verbs: `syntaur block`, `unblock`, `park`, `unpark`. Reopen terminal tickets: `syntaur reopen`. Run `syntaur show <id>` for the **Next** hint and gate checks.
+
 ## Common Commands
 
 ```bash
@@ -207,15 +223,15 @@ See [`docs/cli.md`](docs/cli.md) for the full reference.
 
 ### Timeline
 
-`syntaur timeline <ticket>` shows the per-ticket audit event log — a chronological who/what/when/from→to record of every tracked change (status-change, assignee-change, priority-change, archived/restored, plan-approval, fact-set, attestation, comment-added, comment-resolved), newest first. The same events appear live on the dashboard **Activity** tab.
+`syntaur timeline <ticket>` shows the per-ticket audit event log — stage moves (`moved`), flags (`flagged`/`unflagged`), plan approval (`plan-approved`), log entries (`logged`), dispatches (`dispatched`), and retemplates (`retemplated`), newest first. The same events appear live on the dashboard **Activity** tab.
 
 ```bash
 # Show the event log for a ticket
 syntaur timeline add-oauth --project my-api
 
-# Filter to status changes since a date, return JSON
+# Filter to stage moves since a date, return JSON
 syntaur timeline add-oauth --project my-api \
-  --type status-change --since 2026-06-01T00:00:00Z --json
+  --type moved --since 2026-06-01T00:00:00Z --json
 ```
 
 Key flags: `--project <slug>`, `--since <date>`, `--type <list>` (comma-separated), `--limit <n>` (default 50), `--json`.
@@ -262,7 +278,7 @@ Any of these can be prefixed with `npx syntaur@latest` if you chose not to insta
 
 All Syntaur skills live at `<repo>/skills/<name>/SKILL.md` — one canonical source. The full set ships with the package and includes:
 
-`syntaur-protocol`, `grab-ticket`, `plan-ticket`, `complete-ticket`, `create-ticket`, `create-project`, `manage-statuses`, `clear-ticket`, `track-session`, `replan`, `resume-session`, `syntaur-worktree`, `list-tickets`, `log-progress`, `set-workspace`, `run-playbook`, `doctor-syntaur`.
+`syntaur-protocol`, `grab-ticket`, `plan-ticket`, `complete-ticket`, `create-ticket`, `create-project`, `clear-ticket`, `track-session`, `replan`, `resume-session`, `syntaur-worktree`, `list-tickets`, `log-progress`, `set-workspace`, `run-playbook`, `doctor-syntaur`.
 
 There are three install paths, all backed by the same `<repo>/skills/`:
 

@@ -42,7 +42,7 @@ export type InboxCard =
  *
  * - `question`      — an unresolved `question` comment (awaiting an answer)
  * - `review`        — derived `status === 'review'` (awaiting accept/reopen)
- * - `plan-approval` — `ready_for_planning` with a latest, unapproved plan
+ * - `plan-approval` — unapproved plan-role file on a non-terminal ticket
  */
 export type InboxCategory = 'question' | 'review' | 'plan-approval';
 

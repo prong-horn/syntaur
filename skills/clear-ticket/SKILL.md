@@ -45,14 +45,14 @@ Show the user what is about to be cleared and confirm before touching anything:
 > About to clear active ticket context:
 > - Ticket: `<ticketId>` — <title>
 > - Project: `<projectSlug>` (or "standalone" if null)
-> - The ticket itself will NOT be transitioned. Its lifecycle status stays as-is.
+> - The ticket itself will NOT be transitioned. Its stage stays as-is.
 > - Proceed?
 
 Stop if the user says no.
 
-If lifecycle status is `in_progress` and the user has not passed `--complete-instead`, also note:
+If stage is `in_progress` and the user has not passed `--complete-instead`, also note:
 
-> Note: this ticket is currently `in_progress`. Clearing context does not change that. If you actually finished it, run `complete-ticket` instead so a handoff is recorded.
+> Note: this ticket is currently `in_progress`. Clearing context does not change stage. If you actually finished it, run `complete-ticket` instead so a handoff is logged.
 
 ## Step 3 (optional): Unassign
 
@@ -88,6 +88,6 @@ If this fails (e.g., dashboard not running, endpoint not present in the installe
 
 Summarize:
 - Which ticket was cleared (slug + title).
-- That its lifecycle status is unchanged (and what that status currently is, if known from frontmatter).
+- That its stage is unchanged (and what stage it is currently, if known from frontmatter).
 - Whether the ticket was unassigned via the CLI or the claim was left in place.
 - Suggested next step: `grab-ticket` to claim a different one, or `complete-ticket` if the previous one was actually finished.

@@ -46,7 +46,6 @@ const KNOWN_SKILL_NAMES = [
   'complete-ticket',
   'create-ticket',
   'project-new',
-  'manage-statuses',
   'clear-ticket',
   'track-session',
   'replan',

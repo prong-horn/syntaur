@@ -21,8 +21,8 @@ operations:
    `<repository>/.worktrees/<branch>`.
 2. Update `ticket.md` workspace fields (done by the same CLI verb,
    transactionally — rolls back the worktree on write failure).
-3. `syntaur assign` + `syntaur start` — claim the ticket for this agent
-   and transition to `in_progress`.
+3. `syntaur assign` + `syntaur start` — claim the ticket and move to
+   `in_progress` when gates pass.
 4. Write `.syntaur/context.json` (a workspace marker) inside the new worktree,
    then `syntaur track-session` to bind the session's engagement to the
    ticket.
@@ -56,7 +56,7 @@ The computed worktree path is **always**
 - Confirm `<repository>/.git` exists.
 - Confirm the branch does NOT already exist (otherwise the CLI will fail
   cleanly — surface that error).
-- Confirm the ticket is not in a terminal status. If it is, suggest
+- Confirm the ticket is not in a terminal stage (`done`, `dropped`). If it is, suggest
   `syntaur reopen` first.
 
 ## Step 3: Create worktree + record workspace
@@ -77,11 +77,10 @@ new branch are removed.
 
 ```bash
 syntaur assign <ticket> --agent <your-agent-name> --project <project-slug>
-syntaur start <ticket> --project <project-slug>   # only if status was pending
+syntaur start <ticket> --project <project-slug>   # when pre-in_progress and gates pass
 ```
 
-Skip `start` for any non-`pending` status — never rewind a `review`,
-`completed`, or `failed` ticket.
+Skip `start` when already `in_progress`, `review`, `done`, or `dropped`.
 
 ## Step 5: Write the workspace marker
 
@@ -116,7 +115,7 @@ Summarize:
 
 - New worktree path (`<repository>/.worktrees/<branch>`).
 - Branch + parent branch.
-- Ticket slug, project slug, new status.
+- Ticket id, project slug, current stage.
 - Whether the session was registered with the dashboard.
 - Reminder to `cd` into the new worktree if the parent shell is not already
   there.

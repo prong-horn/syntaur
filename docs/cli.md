@@ -2,55 +2,51 @@
 
 Reference for `syntaur` subcommands. Run `syntaur --help` for a full list.
 
-## `syntaur status`
+## Lifecycle verbs
 
-Manage the ticket-status workflow — the `statuses:` block in `~/.syntaur/config.md` that the dashboard Settings page also edits. The runtime is **all-or-nothing**: once a `statuses:` block exists the built-in defaults are no longer merged. Every mutating verb accepts `--dry-run` to print a unified diff of the would-be `statuses:` block (and, for `rename`, per-file `ticket.md` diffs) without writing.
+Status moves only by explicit verbs. Each verb evaluates template gates at call time; `--force` skips gates and records `forced: true` on the `moved` event.
 
-### `syntaur status list [--json]`
-
-Print the current statuses, order, and transitions, with a `source: config | default` marker (`--json` emits `{ statuses, order, transitions, source }`).
-
-### `syntaur status init [--force] [--dry-run]`
-
-Materialize the built-in defaults explicitly. Refuses to overwrite an existing custom block unless `--force`.
-
-### `syntaur status reset [--force] [--dry-run]`
-
-Remove the `statuses:` block and revert to implicit defaults.
-
-### `syntaur status add <id> [--dry-run]`
+### Stage verbs
 
 ```
-syntaur status add <id> --label <label> [--color <hex>] [--icon <name>] \
-  [--description <text>] [--terminal] [--after <id> | --before <id> | --at-end]
+syntaur plan <id> [--project <slug>] [--force]
+syntaur approve <id> [--project <slug>] [--force]
+syntaur start <id> [--project <slug>] [--agent <id>] [--force]
+syntaur review <id> [--project <slug>] [--force]
+syntaur done <id> [--project <slug>] [--force]
+syntaur drop <id> "<reason>" [--project <slug>]
+syntaur reopen <id> [--project <slug>]
 ```
 
-Append a new status. The position flags are mutually exclusive (default `--at-end`).
+- `plan` — move to `planning` (or scaffold plan file only when the template has no `planning` stage).
+- `approve` — approve the plan and move to `ready` when the template declares it.
+- `start` — move to `in_progress`; runs `plan-approved`, `deps-done`, and `workspace-set` gates per template.
+- `review` — move to `review`.
+- `done` — move to `done`; runs template `gates.done`.
+- `drop` — move to `dropped`; reason required.
+- `reopen` — move from `done` or `dropped` back to the stage before `done` in the template subset.
 
-### `syntaur status set --id <id> [--dry-run]`
-
-Edit metadata on an existing status without renaming it: `--label`, `--color`, `--icon`, `--description`, `--terminal true|false` (literal strings).
-
-### `syntaur status reorder <ids> [--dry-run]`
-
-Replace the order. `<ids>` is a comma-separated list that must be a permutation of the current ids (no drops or extras).
-
-### `syntaur status remove <id> [--force] [--dry-run]`
-
-Remove a status. Without `--force` it errors and lists any tickets still using the id. With `--force` it edits `config.md` only — it drops the status from `statuses`/`order` and prunes transitions referencing it; **affected `ticket.md` files are left untouched** (they now reference an undefined status, which `syntaur doctor` flags). It never deletes tickets.
-
-### `syntaur status rename <id> --to <new-id> [--label <label>] [--dry-run]`
-
-Rename a status id atomically across `config.md` AND every affected `ticket.md` (buffer-write-rollback: if any write fails, all originals are restored). Keeps the original label unless `--label` is given.
-
-### `syntaur status transition add|remove [--dry-run]`
+### Flag verbs
 
 ```
-syntaur status transition add --from <id> --command <cmd> --to <id> [--label <label>] [--requires-reason]
-syntaur status transition remove --from <id> --command <cmd>
+syntaur block <id> "<reason>" [--project <slug>]
+syntaur unblock <id> [--project <slug>]
+syntaur park <id> "<reason>" [--project <slug>]
+syntaur unpark <id> [--project <slug>]
 ```
 
-Define or drop a custom transition.
+`block` and `park` set frontmatter flags (`blocked`, `parked`) without changing stage. Reason is required.
+
+### Plan file verbs
+
+```
+syntaur plan create [--ticket <id> [--project <slug>]] [--force]
+syntaur plan version [--ticket <id> [--project <slug>]] [--force]
+```
+
+`plan version` creates the next `plan-v<N>.md`, sets `plan.file`, clears approval, and moves to `planning` when the template declares that stage.
+
+Gate failure: `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exit 1).
 
 ## `syntaur project new` / `syntaur project list`
 
@@ -160,10 +156,11 @@ One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dr
 syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
 ```
 
-Two steps, recorded in the `v2-migrated` marker ledger:
+Three steps, recorded in the `v2-migrated` marker ledger:
 
 1. **`rename-ids`** — Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
-2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`. Status mapping is deferred to `lifecycle-verbs`.
+2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`.
+3. **`lifecycle-verbs`** — Maps v1 statuses to v2 stages (`draft→backlog`, `ready_for_planning→planning`, `ready_to_implement→ready`, `completed→done`, `failed→dropped`, etc.); folds `blockedReason` into `blocked` flag; adds `parked: null`; drops engine frontmatter (`statusHistory`, `planApproval`, `facts`, `attestations`, and the rest of the §3.3 dropped-field list).
 
 Dry-run / apply transcript lines (representative):
 
@@ -173,7 +170,7 @@ Dry-run / apply transcript lines (representative):
 [dry-run] depends_on: 8 renamed
 [dry-run] plan block: 5 tickets (3 approvals carried, 1 superseded approvals dropped)
 [dry-run] dropped type: 12
-[dry-run] status mapping deferred to lifecycle-verbs
+[dry-run] lifecycle-verbs: 12 tickets · draft→backlog: 3 · ready_for_planning→planning: 2 · completed→done: 4
 ```
 
 `--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step.
@@ -247,23 +244,23 @@ syntaur timeline <ticket> [options]
 
 - `--project <slug>` — Project the ticket belongs to (optional when id resolves unambiguously).
 - `--since <date>` — Only show events at or after this UTC ISO timestamp (inclusive: `at >= since`).
-- `--type <list>` — Comma-separated event-type filter (e.g. `status-change,plan-approval`).
+- `--type <list>` — Comma-separated event-type filter (e.g. `moved,plan-approved`).
 - `--limit <n>` — Maximum number of events to show (default: 50).
 - `--json` — Emit a JSON array instead of a table.
 
 ### Tracked event types
 
-| Event type | Triggered when |
-|---|---|
-| `status-change` | Ticket status moves from one value to another |
-| `assignee-change` | Assignee is set, changed, or cleared |
-| `priority-change` | Priority field changes |
-| `archived` / `restored` | Ticket is archived or un-archived |
-| `plan-approval` | A plan file is approved or rejected |
-| `fact-set` | A structured fact is written via `syntaur fact set` |
-| `attestation` | An attestation is recorded |
-| `comment-added` | A comment is appended |
-| `comment-resolved` | A comment is resolved |
+| Event type | Payload | Triggered when |
+|---|---|---|
+| `created` | — | Ticket is created |
+| `moved` | `from`, `to`, `verb`, `by`, `forced` | Stage changes via a lifecycle verb |
+| `flagged` | `flag`, `reason` | `block` or `park` sets a flag |
+| `unflagged` | `flag` | `unblock` or `unpark` clears a flag |
+| `plan-approved` | `file`, `digest` | Plan is approved via `approve` |
+| `plan-versioned` | `file` | New plan version created |
+| `logged` | `type` | Log-role entry appended via `syntaur log` |
+| `dispatched` | `agent`, `stage` | Agent auto-dispatched on stage entry |
+| `retemplated` | `from`, `to` | Template switched via `retemplate` |
 
 ### JSON output shape
 
@@ -271,12 +268,13 @@ syntaur timeline <ticket> [options]
 [
   {
     "id": "evt_01j…",
-    "type": "status-change",
+    "type": "moved",
     "at": "2026-06-15T14:32:00.000Z",
     "actor": "claude",
-    "from": "in-progress",
+    "from": "in_progress",
     "to": "review",
-    "note": null
+    "verb": "review",
+    "forced": false
   }
 ]
 ```
@@ -289,9 +287,9 @@ The same events are surfaced live in the dashboard's **Activity** tab for the ti
 # Show the full event log for a ticket
 syntaur timeline API-3 --project my-api
 
-# Only status-change events since a specific date
+# Only moved events since a specific date
 syntaur timeline API-3 --project my-api \
-  --type status-change --since 2026-06-01T00:00:00Z
+  --type moved --since 2026-06-01T00:00:00Z
 
 # Emit JSON, capped at 10 events
 syntaur timeline API-3 --project my-api --json --limit 10
@@ -413,16 +411,16 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 | Category | What it means | Action command |
 |---|---|---|
 | `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <id> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
-| `review` | Ticket is in `review` status — awaiting accept or reopen | `syntaur complete <id> --project <p>` (accept) or `syntaur reopen <id> --project <p>` (reopen); exact command is derived from the lifecycle status-config |
-| `plan-approval` | Ticket is in `ready_for_planning` status with a latest unapproved plan file | `syntaur plan approve <id> --project <p>` |
+| `review` | Ticket is in `review` stage — awaiting `done` or `reopen` | `syntaur done <id> --project <p>` or `syntaur reopen <id> --project <p>` |
+| `plan-approval` | Ticket has an unapproved plan-role file (any non-terminal stage) | `syntaur approve <id> --project <p>` |
 
 ### What does NOT appear
 
 - Archived tickets
-- `draft`, `ready_to_implement`, `in_progress` tickets (agent is still working)
-- `ready_for_planning` tickets without a latest unapproved plan (nothing to approve)
-- Terminal statuses: `completed`, `failed`
-- `parked` disposition tickets
+- `in_progress` tickets (agent is still working)
+- Tickets without an unapproved plan-role file (nothing to approve)
+- Terminal stages: `done`, `dropped`
+- Tickets with `parked` flag set
 - Resolved comments (`resolved: true`)
 - `note` and `feedback` comment types (only `question` awaits a human answer)
 
@@ -443,8 +441,8 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
       "ageMs": 575717277,
       "summary": "Review requested — awaiting accept or reopen.",
       "action": {
-        "verb": "Accept",
-        "command": "syntaur complete API-3 --project my-api"
+        "verb": "Done",
+        "command": "syntaur done API-3 --project my-api"
       }
     }
   ],
@@ -509,3 +507,9 @@ cockpit), `syntaur daemon` / `bg` / `attach` / `attach-doctor`, and
 `syntaur session scan` / `scan-install` / `scan-uninstall`. See the
 [v0.80 release note](./releases/v0.80.md) for the one-time cleanup an already-
 installed machine needs.
+
+Also removed: `syntaur status *` (custom status workflow in `config.md`),
+`syntaur complete` / `syntaur fail`, `syntaur fact set`, `syntaur attest`,
+and the `manage-statuses` skill. Lifecycle moves use the verbs in
+[Lifecycle verbs](#lifecycle-verbs) above (`plan`, `approve`, `start`,
+`review`, `done`, `drop`, `reopen`, `block`, `unblock`, `park`, `unpark`).

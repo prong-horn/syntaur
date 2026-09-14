@@ -66,40 +66,35 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 
 ## Ticket Lifecycle
 
-| Status | Meaning |
-|--------|---------|
-| \`pending\` | Not yet started |
+Stages (stored in \`status\` frontmatter):
+
+| Stage | Meaning |
+|-------|---------|
+| \`backlog\` | Not yet started |
+| \`planning\` | Plan being written |
+| \`ready\` | Plan approved, waiting to start |
 | \`in_progress\` | Actively being worked on |
-| \`blocked\` | Manually blocked (requires blockedReason) |
-| \`review\` | Work complete, awaiting review |
-| \`completed\` | Done |
-| \`failed\` | Could not be completed |
+| \`review\` | Awaiting review |
+| \`done\` | Completed |
+| \`dropped\` | Abandoned or failed |
 
-## Valid State Transitions
-
-| From | Command | To |
-|------|---------|-----|
-| pending | start | in_progress |
-| pending | block | blocked |
-| in_progress | block | blocked |
-| in_progress | review | review |
-| in_progress | complete | completed |
-| in_progress | fail | failed |
-| blocked | unblock | in_progress |
-| review | start | in_progress |
-| review | complete | completed |
-| review | fail | failed |
+Flags (not stages): \`blocked\` and \`parked\` hold reason strings or \`null\`.
 
 ## Lifecycle Commands
 
-Use the \`syntaur\` CLI for state transitions and coordination:
+Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur assign <id> --agent <name> --project <project>\` -- set assignee
-- \`syntaur start <id> --project <project>\` -- pending -> in_progress
-- \`syntaur review <id> --project <project>\` -- in_progress -> review
-- \`syntaur complete <id> --project <project>\` -- in_progress/review -> completed
-- \`syntaur block <id> --project <project> --reason <text>\` -- block a ticket
-- \`syntaur unblock <id> --project <project>\` -- unblock
-- \`syntaur fail <id> --project <project>\` -- mark as failed
+- \`syntaur plan <id> --project <project>\` -- move to planning (or scaffold plan)
+- \`syntaur approve <id> --project <project>\` -- approve plan, move to ready
+- \`syntaur start <id> --project <project>\` -- move to in_progress
+- \`syntaur review <id> --project <project>\` -- move to review
+- \`syntaur done <id> --project <project>\` -- move to done
+- \`syntaur drop <id> "<reason>" --project <project>\` -- move to dropped
+- \`syntaur reopen <id> --project <project>\` -- reopen from done/dropped
+- \`syntaur block <id> "<reason>" --project <project>\` -- set blocked flag
+- \`syntaur unblock <id> --project <project>\` -- clear blocked flag
+- \`syntaur park <id> "<reason>" --project <project>\` -- set parked flag
+- \`syntaur unpark <id> --project <project>\` -- clear parked flag
 - \`syntaur new "Title" [-t|--template <id>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
 - \`syntaur rename <id> <new-slug>\` -- rename slug (folder becomes \`<ID>-<new-slug>\`)
 - \`syntaur comment <id> "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (questions support resolve toggle via dashboard)

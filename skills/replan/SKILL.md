@@ -27,7 +27,7 @@ old one.
 - The current plan has not been implemented yet — per the Plan Versioning
   playbook, iterate on `plan.md` directly while it is still in draft /
   in_progress.
-- The ticket is in a terminal status (`completed`, `failed`, `cancelled`).
+- The ticket is in a terminal stage (`done`, `dropped`).
   Reopen it first via `syntaur reopen`.
 - You only need to add a new task to an in-flight plan — edit the existing
   plan; do not bump version.
@@ -88,10 +88,14 @@ Tasks / Verification, etc.) but keep the body concise. Document explicitly
 **why** a new revision is needed (e.g., "scope expanded after review",
 "rework after partial implementation").
 
-## Step 6: Update progress.md
+## Step 6: Log the plan version
 
-Append a progress entry recording the new plan version, the reason, and a
-pointer to the new plan file.
+Append a log entry recording the new plan version, the reason, and a
+pointer to the new plan file:
+
+```bash
+syntaur log <ticket-id> -t progress "..." [--project <slug>]
+```
 
 ## Step 7: Report to User
 

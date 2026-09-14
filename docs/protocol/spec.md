@@ -173,70 +173,115 @@ This is the most important rule in the protocol. The `status`, `priority`, `assi
 
 Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from ticket states and written to `_status.md` by the rebuild script.
 
-**Workspace naming note:** On `ticket.md`, `workspace` is an **object** containing code context fields (`repository`, `worktreePath`, `branch`, `parentBranch`) — the git worktree where the ticket's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
+**Workspace naming note:** On `ticket.md`, `workspace` is an **object** containing code context fields (`repository`, `worktree`, `branch`, `parentBranch`) — the git worktree where the ticket's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
 
 ---
 
 ## 6. Lifecycle Overview
 
-### Ticket Statuses
+### Stages
 
-Every ticket has a `status` field in its frontmatter. The valid values are:
+Every ticket has a `status` field in its frontmatter holding a **stage id** from the fixed vocabulary. Templates declare an ordered subset and may relabel display names; they must never invent stage ids.
 
-| Status | Meaning |
-|--------|---------|
-| `pending` | Not yet started. May be waiting on dependencies. |
-| `in_progress` | Actively being worked on by an assigned agent. |
-| `blocked` | Manually blocked due to a runtime obstacle. Requires `blockedReason`. |
-| `review` | Work is complete and awaiting review. |
-| `completed` | Done. All acceptance criteria met. |
-| `failed` | Could not be completed. |
+| Stage id | Meaning | Typical entry verb |
+|----------|---------|-------------------|
+| `backlog` | Not started | `syntaur new` |
+| `planning` | Plan being written | `plan` |
+| `ready` | Plan approved, waiting to start | `approve` |
+| `in_progress` | Active implementation | `start` |
+| `review` | Awaiting or in review | `review` |
+| `done` | Successfully completed | `done` |
+| `dropped` | Abandoned or failed | `drop` |
 
-**v1 status vocabulary (transitional).** Tickets migrated by `syntaur migrate v2` keep their pre-v2 `status` values until the `lifecycle-verbs` migration runs. The templates step sets `template: legacy` and rewrites frontmatter keys but prints `status mapping deferred to lifecycle-verbs` — do not assume every ticket already uses the v2 stage/status model.
+`dropped` is implicit for every template — it is never listed in a template's `stages[]`, and `drop` works from any active stage. `ready` is valid only when the template declares a `plan` role; templates without a plan role use `backlog → in_progress` (no `planning`/`ready` stages).
 
-**Custom statuses and derived status.** The table above is the built-in default set. Users may define their own status workflow (and the **derived-status** rules that compute `status` from objective facts) under a `statuses:` block in `~/.syntaur/config.md`. That block may also declare **custom facts** (`statuses.facts`) — config-declared `bool`/`number` values (asserted via `syntaur fact set`, stored in a `facts:` frontmatter map) and **attestation** facts (`syntaur attest`, stored in an `attestations:` frontmatter list) that model "agent reviewed revision with verdict" and self-invalidate when the plan digest or workspace commit moves. Declared facts are usable in `phaseLadder`/`disposition` conditions. See the `manage-statuses` skill for the full declaration syntax, the exported attestation fields, and revision-binding semantics; see `file-formats.md` §3 for the `facts:`/`attestations:` frontmatter shapes.
+**Stage order:** `backlog < planning < ready < in_progress < review < done` (`dropped` is aside).
+
+Status moves only by explicit lifecycle verbs (`plan`, `approve`, `start`, `review`, `done`, `drop`, `reopen`). Gates declared on the template run at call time; `--force` skips gates and records `forced: true` on the `moved` event.
+
+#### Gate table
+
+| Gate id | Reads | Passes when |
+|---------|-------|-------------|
+| `plan-exists` | plan role file | File exists and is non-empty beyond scaffold |
+| `plan-approved` | plan role + `plan.approvedDigest` | SHA-256 digest of current plan file equals `plan.approvedDigest` |
+| `deps-done` | `depends_on` + ticket statuses | Every depended ticket is `done` |
+| `workspace-set` | `workspace` frontmatter | All four workspace fields non-empty when template `workspace: required` |
+| `criteria-checked` | Acceptance Criteria checkboxes | Every box checked |
+| `handoff-logged` | log role | `handoff` entry later than last entry into `in_progress` or last `reopen` |
+| `review-clean` | log role | Latest `review` entry is `approve` with `high=0`, after last entry into `review` or `reopen` |
+| `deliverable-present` | deliverable role | File non-empty beyond scaffold |
+
+Gate failure shape: `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exit 1).
+
+#### Verb table
+
+| Verb | From (by template) | To | Gates (typical) | Side effects |
+|------|-------------------|-----|-----------------|--------------|
+| `plan` | stage before `planning`, or any active if no `planning` | `planning` or file-only | — | create/scaffold plan file |
+| `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | `plan-exists` | set `plan.approved*` |
+| `start` | stage before `in_progress` | `in_progress` | `plan-approved`, `deps-done`, `workspace-set` (per template) | dispatch if `auto` |
+| `review` | stage before `review` | `review` | — | dispatch reviewer if configured |
+| `done` | stage before `done` | `done` | per template `gates.done` | — |
+| `drop` | any active | `dropped` | reason required | — |
+| `reopen` | `done` or `dropped` | stage before `done` in subset | — | keeps `plan.approvedDigest` |
+| `block` | any | — (flag) | reason required | `blocked: reason` |
+| `unblock` | any | — | — | `blocked: null` |
+| `park` | any | — (flag) | reason required | `parked: reason` |
+| `unpark` | any | — | — | `parked: null` |
+
+`plan version` creates `plan-v<N>.md`, sets `plan.file`, clears approval, and moves to `planning` when the template declares a `planning` stage.
+
+### Flags
+
+`blocked` and `parked` are **flags**, not stages. They hold a reason string or `null` in ticket frontmatter. A flagged ticket keeps its stage and shows a badge on the board and in `show`.
+
+| Flag | Set by | Cleared by |
+|------|--------|------------|
+| `blocked` | `syntaur block <id> "<reason>"` | `syntaur unblock <id>` |
+| `parked` | `syntaur park <id> "<reason>"` | `syntaur unpark <id>` |
+
+`block` and `park` require a non-empty reason.
 
 ### Dependency Semantics
 
-Tickets declare dependencies via the `depends_on` field, which lists ticket ids (`<PREFIX>-<n>`). Dependency enforcement follows two distinct rules:
+Tickets declare dependencies via `depends_on`, which lists ticket ids (`<PREFIX>-<n>`).
 
-- **`pending` with unmet `depends_on`** = the ticket is waiting for its dependencies to reach `completed` status. The lifecycle engine enforces this: it will not allow a transition from `pending` to `in_progress` while any dependency is not `completed`. No additional field is needed — the combination of `status: pending` and unmet `depends_on` entries implies "waiting."
+- **`backlog` (or any pre-`in_progress` stage) with unmet `depends_on`** — the ticket is waiting for dependencies to reach `done`. The `deps-done` gate on `start` enforces this; no extra field is needed.
 
-- **`blocked`** = a manual or runtime block unrelated to declared dependencies. An agent encounters an obstacle it cannot resolve (e.g., missing credentials, unclear requirements, external system down). The `blockedReason` field is **required** when status is `blocked` and must describe the obstacle.
+- **`blocked` flag** — a manual or runtime obstacle unrelated to declared dependencies (missing credentials, external system down, unclear requirements). Set with `syntaur block` and a reason string.
 
-This distinction matters: `pending` with unmet dependencies is a normal, expected state that resolves automatically when dependencies complete. `blocked` is an exceptional state that requires human intervention.
+Structural waiting on dependencies is normal and resolves when dependencies complete. A `blocked` flag is exceptional and requires explicit clearance via `unblock`.
 
 ### Project Status Rollup
 
-Project status is not stored in `project.md`. It is computed by the rebuild script from the collective state of all tickets and written to `_status.md`. The algorithm evaluates rules top-to-bottom; the first matching rule wins:
+Project status is not stored in `project.md`. It is computed from ticket stages and flags and written to `_status.md`. Rules are evaluated top-to-bottom; first match wins:
 
 | Priority | Condition | Resulting Status |
 |----------|-----------|-----------------|
 | 1 | `project.md` has `archived: true` | `archived` |
-| 2 | ALL tickets are `completed` | `completed` |
+| 2 | ALL tickets are `done` | `completed` |
 | 3 | ANY ticket is `in_progress` or `review` | `active` |
-| 4 | ANY ticket is `failed` | `failed` |
-| 5 | ANY ticket is `blocked` | `blocked` |
-| 6 | ALL tickets are `pending` | `pending` |
+| 4 | ANY ticket is `dropped` | `failed` |
+| 5 | ANY ticket has `blocked` set | `blocked` |
+| 6 | ALL tickets are `backlog` (or pre-active stages only) | `pending` |
 | 7 | Otherwise | `active` |
 
 **Valid project statuses:** `pending`, `active`, `blocked`, `completed`, `failed`, `archived`.
 
-Note that `archived` is a **human-authored override** stored in `project.md` frontmatter (the `archived`, `archivedAt`, and `archivedReason` fields). It is the only project status that is not computed from ticket states. It signals "this project is done, regardless of ticket completion state."
+`archived` is a human-authored override in `project.md` frontmatter. It is the only project status not computed from ticket states.
 
 ### Edge Case Examples
 
-These examples illustrate how the first-match-wins algorithm handles non-obvious situations:
+- **2 done + 1 backlog + 0 active** = `active` (rule 7). Work remains but nothing is running.
 
-- **2 completed + 1 pending + 0 active** = `active` (rule 7). Work remains but nothing is running. This signals to the human that tickets need to be started.
+- **1 done + 1 blocked flag + 1 backlog** = `blocked` (rule 5). The blocked flag takes precedence.
 
-- **1 completed + 1 blocked + 1 pending** = `blocked` (rule 5). The blocked ticket takes precedence over pending ones.
+- **1 in_progress + 1 dropped + 1 done** = `active` (rule 3). Active work takes precedence over drops.
 
-- **1 in_progress + 1 failed + 1 completed** = `active` (rule 3). Active work takes precedence over failures — the project is still being worked on.
+- **3 done** = `completed` (rule 2).
 
-- **3 completed** = `completed` (rule 2). All work is done.
-
-- **Human sets `archived: true` on `project.md`** = `archived` (rule 1). Overrides everything, regardless of ticket states.
+- **Human sets `archived: true` on `project.md`** = `archived` (rule 1).
 
 ---
 

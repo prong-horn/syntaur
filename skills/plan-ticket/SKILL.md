@@ -41,16 +41,16 @@ For each file found, read it and follow its directives. Playbooks may contain ru
 
 ## Step 3: Read Ticket Details
 
-Read these files to understand the ticket:
+Run `syntaur show` and read the files it lists:
 
 1. `<ticketDir>/ticket.md` — objective, acceptance criteria, and context
-2. `<ticketDir>/comments.md` if present — inherited questions, notes, and feedback
-3. `<projectDir>/project.md` — project goal for broader context (skip for standalone)
-4. `<projectDir>/manifest.md` — project navigation index (skip for standalone)
+2. Any log, plan, or notes files `show` lists
+3. `<projectDir>/project.md` — project goal for broader context
+4. `<projectDir>/manifest.md` — project navigation index
 
-Per-project `agent.md` / `claude.md` were removed in protocol v2.0. Agent-level conventions now live at the repo root (`CLAUDE.md` / `AGENTS.md`) and in `~/.syntaur/playbooks/` (already loaded in Step 2).
+If stage is `backlog`, run `syntaur plan <ticket-id>` first to enter `planning` when the template declares that stage.
 
-If the ticket has dependencies (`depends_on` in frontmatter), read each dependency's `handoff.md` AND `decision-record.md` for integration context and upstream decisions.
+If the ticket has dependencies (`depends_on`), read upstream context from dependency tickets via `syntaur show <dep-id>`.
 
 ## Step 4: Explore Workspace (if set)
 
@@ -127,6 +127,7 @@ After writing the plan:
 
 **Recordkeeping reminders for implementation:**
 - Check off acceptance criteria in `ticket.md` as each one is completed — not in a batch at the end.
-- Append timestamped milestones to `progress.md` (a separate append-only file). Do NOT add a `## Progress` section to `ticket.md` — protocol v2.0 moved progress to its own file.
-- Record questions, notes, or feedback via `syntaur comment <ticket-id> "body" --type question|note|feedback` — never edit `comments.md` directly.
-- Keep `ticket.md` status and acceptance checkboxes reflecting current state at all times.
+- Append log entries via `syntaur log <ticket-id> -t progress "..."` (or `syntaur progress log` for legacy templates).
+- Record questions via `syntaur log -t question` or `syntaur comment` per what `show` lists in **Commands**.
+- After the plan is ready, run `syntaur approve <ticket-id>` to move to `ready` when the template declares that stage.
+- Run `syntaur show` after every lifecycle verb; follow **Next**.

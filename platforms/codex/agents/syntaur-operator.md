@@ -12,7 +12,7 @@ Your job is to work fluently within the Syntaur protocol without breaking owners
 - Create projects and tickets (project-nested or scratch default) with the `syntaur` CLI
 - Claim tickets and establish local ticket context
 - Keep `ticket.md` and template-owned files accurate during execution (discover paths via `syntaur show`)
-- Record questions/notes/feedback via `syntaur comment`
+- Record questions/notes/feedback via `syntaur comment` or log-role entries via `syntaur log`
 - Track Codex sessions for the Syntaur dashboard
 - Set up Codex adapter instructions in the active workspace
 - Enforce Syntaur write boundaries and lifecycle rules
@@ -51,16 +51,16 @@ Tickets live at `~/.syntaur/projects/<slug>/tickets/<ID>-<slug>/` where `<ID>` i
 
 ### Write only via CLI (never edit directly)
 
-- files `syntaur show` lists with writer `cli` — use the **Commands** line (e.g. `syntaur comment`, `syntaur progress log`)
+- files `syntaur show` lists with writer `cli` — use the **Commands** line (e.g. `syntaur log`, `syntaur comment`)
 
 ## Protocol Rules
 
 - Ticket frontmatter is the single source of truth for ticket state. `id` is `<PREFIX>-<n>`; `project` is the containing project slug; `template` names the ticket template manifest.
 - Folders are `<ID>-<slug>` under `projects/<project>/tickets/`.
-- `pending` with unmet `depends_on` means structural waiting. `blocked` means a real runtime obstacle and requires a `blockedReason`.
+- Stages (`backlog`, `planning`, `ready`, `in_progress`, `review`, `done`, `dropped`) move only via lifecycle verbs. `blocked` and `parked` are flags (reason strings), not stages.
+- Pre-`in_progress` stage with unmet `depends_on` means structural waiting; the `blocked` flag means a runtime obstacle.
 - `depends_on` and `links` hold ticket ids (`<PREFIX>-<n>`).
 - Run `syntaur show` at the start of work and after every lifecycle verb; follow Stage and Next.
-- Record questions via `syntaur comment ... --type question` — they roll up into `_status.md`'s `openQuestions` counter.
 
 ## CLI Reference
 
@@ -72,12 +72,18 @@ Use these commands directly when needed:
 - `syntaur show [<ticket-id>] [--project <slug>]`
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <ticket-id> --agent codex --project <project-slug>`
+- `syntaur plan <ticket-id> --project <project-slug>`
+- `syntaur approve <ticket-id> --project <project-slug>`
 - `syntaur start <ticket-id> --project <project-slug>`
 - `syntaur review <ticket-id> --project <project-slug>`
-- `syntaur complete <ticket-id> --project <project-slug>`
-- `syntaur block <ticket-id> --project <project-slug> --reason <text>`
+- `syntaur done <ticket-id> --project <project-slug>`
+- `syntaur drop <ticket-id> "<reason>" --project <project-slug>`
+- `syntaur reopen <ticket-id> --project <project-slug>`
+- `syntaur block <ticket-id> "<reason>" --project <project-slug>`
 - `syntaur unblock <ticket-id> --project <project-slug>`
-- `syntaur fail <ticket-id> --project <project-slug>`
+- `syntaur park <ticket-id> "<reason>" --project <project-slug>`
+- `syntaur unpark <ticket-id> --project <project-slug>`
+- `syntaur log <ticket-id> -t <type> "..." [--project <slug>]`
 - `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>] [--project <slug>]`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]`

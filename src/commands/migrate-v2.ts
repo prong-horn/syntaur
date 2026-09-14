@@ -33,7 +33,31 @@ import {
   insertEventOrThrow,
   resetEventsDb,
 } from '../db/events-db.js';
-import { legacyStatusToStage } from '../ticket-templates/stages.js';
+import type { StageId } from '../ticket-templates/manifest.js';
+
+/** v1 status → v2 stage id (`migrate v2` statuses step only). */
+const LEGACY_STATUS_TO_STAGE: Record<string, StageId | 'dropped'> = {
+  draft: 'backlog',
+  pending: 'backlog',
+  ready_for_planning: 'planning',
+  ready_to_implement: 'ready',
+  in_progress: 'in_progress',
+  blocked: 'in_progress',
+  review: 'review',
+  completed: 'done',
+  failed: 'dropped',
+};
+
+export function legacyStatusToStage(status: string): StageId | 'dropped' {
+  if (
+    ['backlog', 'planning', 'ready', 'in_progress', 'review', 'done', 'dropped'].includes(status)
+  ) {
+    return status as StageId | 'dropped';
+  }
+  const mapped = LEGACY_STATUS_TO_STAGE[status];
+  if (mapped) return mapped;
+  return 'backlog';
+}
 import { closeUsageDb, initUsageDb, resetUsageDb } from '../db/usage-db.js';
 import { BUILTIN_TEMPLATE_IDS, seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { latestPlanRevision } from '../ticket-templates/roles.js';

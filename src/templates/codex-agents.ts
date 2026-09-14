@@ -100,40 +100,35 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 
 ## Ticket Lifecycle
 
-| Status | Meaning |
-|--------|---------|
-| \`pending\` | Not yet started |
+Stages (stored in \`status\` frontmatter):
+
+| Stage | Meaning |
+|-------|---------|
+| \`backlog\` | Not yet started |
+| \`planning\` | Plan being written |
+| \`ready\` | Plan approved, waiting to start |
 | \`in_progress\` | Actively being worked on |
-| \`blocked\` | Manually blocked (requires blockedReason) |
-| \`review\` | Work complete, awaiting review |
-| \`completed\` | Done |
-| \`failed\` | Could not be completed |
+| \`review\` | Awaiting review |
+| \`done\` | Completed |
+| \`dropped\` | Abandoned or failed |
 
-## Valid State Transitions
-
-| From | Command | To |
-|------|---------|-----|
-| pending | start | in_progress |
-| pending | block | blocked |
-| in_progress | block | blocked |
-| in_progress | review | review |
-| in_progress | complete | completed |
-| in_progress | fail | failed |
-| blocked | unblock | in_progress |
-| review | start | in_progress |
-| review | complete | completed |
-| review | fail | failed |
+Flags (not stages): \`blocked\` and \`parked\` hold reason strings or \`null\`.
 
 ## Lifecycle Commands
 
-Use the \`syntaur\` CLI for state transitions and coordination:
+Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur assign ${params.ticketSlug} --agent <name> --project ${params.projectSlug}\` -- set assignee
-- \`syntaur start ${params.ticketSlug} --project ${params.projectSlug}\` -- pending -> in_progress
-- \`syntaur review ${params.ticketSlug} --project ${params.projectSlug}\` -- in_progress -> review
-- \`syntaur complete ${params.ticketSlug} --project ${params.projectSlug}\` -- in_progress/review -> completed
-- \`syntaur block ${params.ticketSlug} --project ${params.projectSlug} --reason <text>\` -- block
-- \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug}\` -- unblock
-- \`syntaur fail ${params.ticketSlug} --project ${params.projectSlug}\` -- mark as failed
+- \`syntaur plan ${params.ticketSlug} --project ${params.projectSlug}\` -- move to planning
+- \`syntaur approve ${params.ticketSlug} --project ${params.projectSlug}\` -- approve plan
+- \`syntaur start ${params.ticketSlug} --project ${params.projectSlug}\` -- move to in_progress
+- \`syntaur review ${params.ticketSlug} --project ${params.projectSlug}\` -- move to review
+- \`syntaur done ${params.ticketSlug} --project ${params.projectSlug}\` -- move to done
+- \`syntaur drop ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- move to dropped
+- \`syntaur reopen ${params.ticketSlug} --project ${params.projectSlug}\` -- reopen
+- \`syntaur block ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set blocked flag
+- \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug}\` -- clear blocked flag
+- \`syntaur park ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set parked flag
+- \`syntaur unpark ${params.ticketSlug} --project ${params.projectSlug}\` -- clear parked flag
 - \`syntaur comment ${params.ticketSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
 
 ## Troubleshooting

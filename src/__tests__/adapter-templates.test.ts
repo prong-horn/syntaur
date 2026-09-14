@@ -36,25 +36,29 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('Files you must NEVER write');
   });
 
-  it('contains lifecycle states', () => {
+  it('contains lifecycle stages', () => {
     const out = renderCursorProtocol();
-    expect(out).toContain('pending');
+    expect(out).toContain('backlog');
+    expect(out).toContain('planning');
+    expect(out).toContain('ready');
     expect(out).toContain('in_progress');
-    expect(out).toContain('blocked');
     expect(out).toContain('review');
-    expect(out).toContain('completed');
-    expect(out).toContain('failed');
+    expect(out).toContain('done');
+    expect(out).toContain('dropped');
   });
 
   it('contains lifecycle CLI commands', () => {
     const out = renderCursorProtocol();
     expect(out).toContain('syntaur assign');
+    expect(out).toContain('syntaur plan');
+    expect(out).toContain('syntaur approve');
     expect(out).toContain('syntaur start');
     expect(out).toContain('syntaur review');
-    expect(out).toContain('syntaur complete');
+    expect(out).toContain('syntaur done');
+    expect(out).toContain('syntaur drop');
     expect(out).toContain('syntaur block');
     expect(out).toContain('syntaur unblock');
-    expect(out).toContain('syntaur fail');
+    expect(out).toContain('syntaur park');
     expect(out).toContain('syntaur comment');
     expect(out).toContain('syntaur new');
   });
@@ -147,14 +151,14 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('workspace boundary');
   });
 
-  it('contains lifecycle states and commands', () => {
+  it('contains lifecycle stages and commands', () => {
     const out = renderCodexAgents(TEST_PARAMS);
-    expect(out).toContain('pending');
+    expect(out).toContain('backlog');
     expect(out).toContain('in_progress');
-    expect(out).toContain('completed');
+    expect(out).toContain('done');
     expect(out).toContain('syntaur assign');
     expect(out).toContain('syntaur start');
-    expect(out).toContain('syntaur complete');
+    expect(out).toContain('syntaur done');
     expect(out).toContain('syntaur comment');
   });
 
@@ -251,6 +255,6 @@ describe('renderHermesSoul', () => {
   it('contains lifecycle commands', () => {
     const out = renderHermesSoul(TEST_PARAMS);
     expect(out).toContain('syntaur start');
-    expect(out).toContain('syntaur complete');
+    expect(out).toContain('syntaur done');
   });
 });
