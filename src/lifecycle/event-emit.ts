@@ -56,32 +56,6 @@ export function resolveActor(by: string | null | undefined): string {
   return by ?? 'system';
 }
 
-export interface RecordStatusEventInput {
-  ticketId: string;
-  projectSlug?: string | null;
-  at?: string;
-  actor: string;
-  from: string;
-  to: string;
-  command: string;
-}
-
-/**
- * @deprecated v2 uses `emitMoved` with type `moved`. Kept for transitional callers.
- */
-export function recordStatusEvent(input: RecordStatusEventInput): void {
-  if (suppressEvents) return;
-  if (input.from === input.to) return;
-  recordEvent({
-    ticketId: input.ticketId,
-    projectSlug: input.projectSlug ?? null,
-    type: 'status-change',
-    actor: input.actor,
-    at: input.at,
-    details: { from: input.from, to: input.to, command: input.command },
-  });
-}
-
 export interface EmitMovedInput {
   ticketId: string;
   projectSlug?: string | null;

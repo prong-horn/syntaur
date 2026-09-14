@@ -12,7 +12,6 @@ import {
 } from '../db/events-db.js';
 import {
   emitMoved,
-  recordStatusEvent,
   withSuppressedEvents,
 } from '../lifecycle/event-emit.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
@@ -87,34 +86,6 @@ afterEach(async () => {
 async function readFm() {
   return parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
 }
-
-describe('recordStatusEvent self-guard (R5)', () => {
-  it('emits nothing when from === to', () => {
-    recordStatusEvent({
-      ticketId: 'a1',
-      projectSlug: 'p1',
-      actor: 'human',
-      from: 'backlog',
-      to: 'backlog',
-      command: 'edit',
-    });
-    expect(listEventsByTicket('a1')).toHaveLength(0);
-  });
-
-  it('emits one status-change when from !== to (deprecated)', () => {
-    recordStatusEvent({
-      ticketId: 'a1',
-      projectSlug: 'p1',
-      actor: 'human',
-      from: 'backlog',
-      to: 'planning',
-      command: 'plan',
-    });
-    const events = listEventsByTicket('a1');
-    expect(events).toHaveLength(1);
-    expect(events[0].type).toBe('status-change');
-  });
-});
 
 describe('moveTicket emits moved events', () => {
   it('records one moved event with correct from/to/actor', async () => {
