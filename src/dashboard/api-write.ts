@@ -657,6 +657,10 @@ export function createWriteRouter(projectsDir: string): Router {
         contentWithId = contentWithId.replace(/^(---\n)/, `---\ntemplate: ${templateId}\n`);
       }
 
+      if (!/^priority:\s/m.test(contentWithId)) {
+        contentWithId = contentWithId.replace(/^(---\n)/, `---\npriority: ${priority}\n`);
+      }
+
       await ensureDir(ticketDir);
       const parsedCreate = parseTicketFull(contentWithId);
       const seededHere = parsedCreate.statusHistory.length === 0;

@@ -1779,6 +1779,79 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     expect(fm.title).toBe('Renamed Title');
   });
 
+  it('raw create injects template defaultPriority when priority is omitted', async () => {
+    await createTicketFixture();
+    const router = createWriteRouter(testDir);
+    const bugContent = `---
+id: placeholder
+slug: bug-default-priority
+title: Bug default priority
+template: bug
+status: draft
+created: "2026-03-21T10:00:00Z"
+updated: "2026-03-21T10:00:00Z"
+assignee: null
+externalIds: []
+depends_on: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Bug default priority
+`;
+    const bugRes = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/tickets',
+      { slug: PROJ },
+      { content: bugContent },
+    );
+    expect(bugRes.statusCode).toBe(201);
+    const bugFm = await readFmBySlug('bug-default-priority');
+    expect(bugFm.priority).toBe('high');
+
+    const explicitContent = `---
+id: placeholder
+slug: bug-explicit-priority
+title: Bug explicit priority
+template: bug
+status: draft
+priority: low
+created: "2026-03-21T10:00:00Z"
+updated: "2026-03-21T10:00:00Z"
+assignee: null
+externalIds: []
+depends_on: []
+links: []
+blockedReason: null
+workspace:
+  repository: null
+  worktreePath: null
+  branch: null
+  parentBranch: null
+tags: []
+---
+
+# Bug explicit priority
+`;
+    const explicitRes = await invokeRoute(
+      router,
+      'post',
+      '/api/projects/:slug/tickets',
+      { slug: PROJ },
+      { content: explicitContent },
+    );
+    expect(explicitRes.statusCode).toBe(201);
+    const explicitFm = await readFmBySlug('bug-explicit-priority');
+    expect(explicitFm.priority).toBe('low');
+  });
+
   it('raw create seeds a command:create entry', async () => {
     await createTicketFixture(); // creates the project
     const router = createWriteRouter(testDir);
