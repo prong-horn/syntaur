@@ -13,30 +13,22 @@ function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
     slug: `slug-${seq}`,
     title: `Item ${seq}`,
     status: 'in_progress',
-    type: 'feature',
-    workflow: null,
-    resolvedWorkflow: 'default',
-    workflowLabel: 'Default',
+    template: 'feature',
     statusLabel: 'In progress',
     priority: 'high',
     assignee: 'claude',
     depends_on: [],
     links: [],
     tags: [],
-    externalIds: [],
+    blocked: null,
+    parked: null,
     created: '2026-06-01T10:00:00Z',
     updated: '2026-06-08T10:00:00Z',
-    archived: false,
-    archivedAt: null,
-    archivedReason: null,
     completedAt: null,
     statusAge: null,
     projectSlug: 'p',
     projectTitle: 'P',
-    phase: null,
-    disposition: null,
-    phaseAge: null,
-    facts: {},
+    availableVerbs: [],
     ...overrides,
   } as TicketBoardItem;
 }
@@ -47,48 +39,34 @@ describe('workflow AQL field', () => {
     expect(validateQuery('workflow:bug')).toEqual([]);
   });
 
-  it('maps resolvedWorkflow into the query item', () => {
-    const qi = boardItemToQueryItem(makeItem({ resolvedWorkflow: 'bug' }));
-    expect(qi.resolvedWorkflow).toBe('bug');
+  it('maps template into the query item', () => {
+    const qi = boardItemToQueryItem(makeItem({ template: 'bug' }));
+    expect(qi.template).toBe('bug');
   });
 
-  it('filters board items by resolved workflow', () => {
+  it('filters board items by template', () => {
     const items = [
-      makeItem({ resolvedWorkflow: 'bug' }),
-      makeItem({ resolvedWorkflow: 'default' }),
-      makeItem({ resolvedWorkflow: 'bug' }),
+      makeItem({ template: 'bug' }),
+      makeItem({ template: 'feature' }),
+      makeItem({ template: 'bug' }),
     ];
-    const { query } = compileQuery('workflow:bug', buildQueryRegistry());
+    const { query } = compileQuery('template:bug', buildQueryRegistry());
     const matched = filterBoardItems(items, query);
     expect(matched).toHaveLength(2);
-    expect(matched.every((i) => i.resolvedWorkflow === 'bug')).toBe(true);
-  });
-
-  it('falls back to the raw override when resolvedWorkflow is absent', () => {
-    const qi = boardItemToQueryItem(
-      makeItem({ resolvedWorkflow: undefined as unknown as string, workflow: 'rfc' }),
-    );
-    // The `workflow` field get() prefers resolvedWorkflow, falling to workflow.
-    expect(qi.resolvedWorkflow ?? qi.workflow).toBe('rfc');
+    expect(matched.every((i) => i.template === 'bug')).toBe(true);
   });
 });
 
-// ── WS-3 T7: CLI and browser evaluators agree on the compat aliases (§4.5) ───
-// The aliases live in the ONE shared registry (fields.ts): `phase` falls back
-// to `status` (the stage), `disposition` to the blocked/parked flags, `pinned`
-// reads always-false, `phaseAge` evaluates as statusAge. This proves the
-// browser adapter (boardItemToQueryItem) and a CLI-style item resolve them
-// identically.
+// ── WS-3 compat aliases — dual-evaluator agreement (T7) ─────────────────────
 describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
   const now = Date.now();
   const FIVE_DAYS = 5 * 24 * 60 * 60 * 1000;
 
   it('phase/disposition/pinned/phaseAge agree between the CLI item and boardItemToQueryItem', () => {
-    // CLI-style item (ls.ts loadQueryItem shape), engine-world: no mirrors.
     const cliItem = {
       status: 'ready_for_planning',
-      blocked: true,
-      parked: false,
+      blocked: 'waiting',
+      parked: null,
       statusAge: FIVE_DAYS,
       phaseAge: null,
       phase: null,
@@ -97,11 +75,8 @@ describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
     const browserItem = boardItemToQueryItem(
       makeItem({
         status: 'ready_for_planning',
-        phase: null,
-        disposition: null,
+        blocked: 'waiting',
         statusAge: FIVE_DAYS,
-        phaseAge: null,
-        facts: { blocked: true, parked: false },
       }),
     );
     const registry = buildQueryRegistry([]);
@@ -120,10 +95,10 @@ describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
     }
   });
 
-  it('filterBoardItems honors the aliases end-to-end (no mirrors on the item)', () => {
+  it('filterBoardItems honors the aliases end-to-end', () => {
     const items = [
-      makeItem({ status: 'ready_for_planning', phase: null, disposition: null, facts: { blocked: true } }),
-      makeItem({ status: 'draft', phase: null, disposition: null, facts: {} }),
+      makeItem({ status: 'ready_for_planning', blocked: 'waiting' }),
+      makeItem({ status: 'draft' }),
     ];
     const { query } = compileQuery('phase:ready_for_planning AND disposition:blocked', buildQueryRegistry([]));
     const matched = filterBoardItems(items, query);

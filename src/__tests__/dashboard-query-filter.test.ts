@@ -32,14 +32,12 @@ function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
     tags: [],
     created: '2026-06-01T10:00:00Z',
     updated: '2026-06-08T10:00:00Z',
-    archived: false,
-    archivedAt: null,
-    archivedReason: null,
+    blocked: null,
+    parked: null,
     completedAt: null,
     statusAge: 86_400_000,
     projectSlug: 'syntaur',
     projectTitle: 'Syntaur',
-    blockedReason: null,
     availableVerbs: [],
     ...overrides,
   } as TicketBoardItem;
@@ -73,8 +71,7 @@ describe('v2 built-in query filtering', () => {
     const blocked = makeItem({
       slug: 'blocked',
       status: 'in_progress',
-      blockedReason: 'waiting',
-      facts: { blocked: true },
+      blocked: 'waiting',
     });
     const review = makeItem({ slug: 'review', status: 'review' });
 
@@ -85,7 +82,7 @@ describe('v2 built-in query filtering', () => {
 
 describe('archived pre-filters (page options, not AQL)', () => {
   const active = makeItem({ slug: 'active' });
-  const archived = makeItem({ slug: 'archived', archived: true });
+  const archived = makeItem({ slug: 'archived', parked: 'on hold' });
 
   it('archived items are excluded by default but kept with includeArchived', () => {
     expect(slugsOf(filterBoardItems([active, archived], compile('*'), { now: NOW }))).toEqual(['active']);
