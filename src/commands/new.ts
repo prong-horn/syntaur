@@ -2,12 +2,16 @@ import { resolve } from 'node:path';
 import { slugify, isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { allocateTicketId, isTicketId } from '../utils/ticket-ids.js';
-import { expandHome } from '../utils/paths.js';
+import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { ensureDir, writeFileForce, fileExists } from '../utils/fs.js';
+import { readFile } from 'node:fs/promises';
 import { readConfig } from '../utils/config.js';
 import { ensureScratchProject } from '../utils/scratch-project.js';
 import { formatTicketFolderName } from '../utils/ticket-folder.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { listTemplates } from '../ticket-templates/registry.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import { parseProject } from '../dashboard/parser.js';
 import {
   renderTicket,
   renderScratchpad,
@@ -24,7 +28,7 @@ export interface NewTicketOptions {
   dependsOn?: string;
   links?: string;
   dir?: string;
-  type?: string;
+  template?: string;
   workflow?: string;
   silent?: boolean;
   ready?: boolean;
@@ -38,6 +42,16 @@ export interface NewTicketResult {
   ticketDir: string;
 }
 
+async function resolveDefaultTemplate(projectDir: string): Promise<string> {
+  const projectMd = resolve(projectDir, 'project.md');
+  if (await fileExists(projectMd)) {
+    const content = await readFile(projectMd, 'utf-8');
+    const project = parseProject(content);
+    if (project.defaultTemplate) return project.defaultTemplate;
+  }
+  return 'feature';
+}
+
 export async function newCommand(
   title: string,
   options: NewTicketOptions,
@@ -47,9 +61,8 @@ export async function newCommand(
   }
 
   const config = await readConfig();
-  const baseDir = options.dir
-    ? expandHome(options.dir)
-    : config.defaultProjectDir;
+  const root = syntaurRoot();
+  const baseDir = options.dir ? expandHome(options.dir) : config.defaultProjectDir;
 
   const projectSlug = options.project ?? await ensureScratchProject(baseDir);
 
@@ -66,13 +79,13 @@ export async function newCommand(
     );
   }
 
-  const dependsOn = options.dependsOn
+  const depends_on = options.dependsOn
     ? options.dependsOn.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
-  for (const dep of dependsOn) {
+  for (const dep of depends_on) {
     if (!isTicketId(dep)) {
       throw new Error(
-        `Invalid dependency id "${dep}". dependsOn entries must be ticket ids (e.g. SCR-1).`,
+        `Invalid dependency id "${dep}". depends_on entries must be ticket ids (e.g. SCR-1).`,
       );
     }
     const resolved = await resolveTicketById(baseDir, dep);
@@ -113,6 +126,17 @@ export async function newCommand(
     );
   }
 
+  await seedMissingBuiltins(root);
+  const templates = await listTemplates(root);
+  const templateIds = templates.map((t) => t.id);
+  const template =
+    options.template ?? (await resolveDefaultTemplate(projectDir));
+  if (!templateIds.includes(template)) {
+    throw new Error(
+      `Unknown template "${template}". Available: ${templateIds.join(', ')} (syntaur template list)`,
+    );
+  }
+
   const id = await allocateTicketId(projectDir);
   const folderName = formatTicketFolderName(id, ticketSlug);
   const ticketDir = resolve(projectDir, 'tickets', folderName);
@@ -134,10 +158,10 @@ export async function newCommand(
         title,
         timestamp,
         priority,
-        dependsOn,
+        depends_on,
         links,
         project: projectSlug,
-        type: options.type,
+        template,
         workflow: options.workflow ?? null,
         status: options.ready ? 'ready_for_planning' : 'draft',
         acceptanceCriteria: options.acceptanceCriteria,
@@ -176,11 +200,9 @@ export async function newCommand(
     console.log(`  Id: ${id}`);
     console.log(`  Slug: ${ticketSlug}`);
     console.log(`  Priority: ${priority}`);
-    if (options.type) {
-      console.log(`  Type: ${options.type}`);
-    }
-    if (dependsOn.length > 0) {
-      console.log(`  Depends on: ${dependsOn.join(', ')}`);
+    console.log(`  Template: ${template}`);
+    if (depends_on.length > 0) {
+      console.log(`  Depends on: ${depends_on.join(', ')}`);
     }
     if (links.length > 0) {
       console.log(`  Links: ${links.join(', ')}`);

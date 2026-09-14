@@ -60,8 +60,8 @@ export interface SearchDoc {
   ticketId: string | null;
   /** True when the owning ticket is standalone (no containing project). */
   standalone: boolean;
-  /** Owning ticket `type` (for `--type` filtering). */
-  type?: string;
+  /** Owning ticket `template` (for filtering). */
+  template?: string;
   /** Owning ticket `status` (for `--status` filtering). */
   status?: string;
   /** Archived flag (from ticket or project frontmatter). */

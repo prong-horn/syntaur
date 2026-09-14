@@ -258,7 +258,7 @@ export interface ParsedTicketSummary {
   status: string;
   priority: string;
   assignee: string | null;
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   updated: string;
 }
@@ -272,7 +272,7 @@ export function parseTicketSummary(fileContent: string): ParsedTicketSummary {
     status: getField(fm, 'status') ?? 'pending',
     priority: getField(fm, 'priority') ?? 'medium',
     assignee: getField(fm, 'assignee'),
-    dependsOn: parseListField(fm, 'dependsOn'),
+    depends_on: parseListField(fm, 'depends_on'),
     links: parseListField(fm, 'links'),
     updated: getField(fm, 'updated') ?? '',
   };
@@ -285,13 +285,13 @@ export interface ParsedTicketFull {
   slug: string;
   title: string;
   project: string | null;
-  type: string | null;
+  template: string | null;
   /** Explicit lifecycle-workflow override (`workflow:` id); null when unset. */
   workflow: string | null;
   status: string;
   priority: string;
   assignee: string | null;
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   blockedReason: string | null;
   workspace: {
@@ -316,7 +316,7 @@ export interface ParsedTicketFull {
   reviewRequested: boolean;
   reworkRequested: boolean;
   implementationStarted: boolean;
-  planApproval: { file: string; digest: string; by: string | null; at: string } | null;
+  plan: { file: string | null; approvedDigest: string | null; approvedAt: string | null; approvedBy: string | null };
   override: { status: string; source: string; reason: string | null; at: string } | null;
   // ── custom facts + attestations ──────────────────────────────────────────
   /** Custom asserted fact values (raw scalars). Absent block → {}. Parity with
@@ -594,12 +594,12 @@ export function parseTicketFull(fileContent: string): ParsedTicketFull {
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     project: getField(fm, 'project'),
-    type: getField(fm, 'type'),
+    template: getField(fm, 'template'),
     workflow: getField(fm, 'workflow'),
     status: getField(fm, 'status') ?? 'pending',
     priority: getField(fm, 'priority') ?? 'medium',
     assignee: getField(fm, 'assignee'),
-    dependsOn: parseListField(fm, 'dependsOn'),
+    depends_on: parseListField(fm, 'depends_on'),
     links: parseListField(fm, 'links'),
     blockedReason: getField(fm, 'blockedReason'),
     workspace: {
@@ -630,17 +630,12 @@ export function parseTicketFull(fileContent: string): ParsedTicketFull {
     reviewRequested: getField(fm, 'reviewRequested') === 'true',
     reworkRequested: getField(fm, 'reworkRequested') === 'true',
     implementationStarted: getField(fm, 'implementationStarted') === 'true',
-    planApproval: (() => {
-      const file = getNestedField(fm, 'planApproval', 'file');
-      const digest = getNestedField(fm, 'planApproval', 'digest');
-      if (!file || !digest) return null;
-      return {
-        file,
-        digest,
-        by: getNestedField(fm, 'planApproval', 'by'),
-        at: getNestedField(fm, 'planApproval', 'at') ?? '',
-      };
-    })(),
+    plan: {
+      file: getNestedField(fm, 'plan', 'file'),
+      approvedDigest: getNestedField(fm, 'plan', 'approvedDigest'),
+      approvedAt: getNestedField(fm, 'plan', 'approvedAt'),
+      approvedBy: getNestedField(fm, 'plan', 'approvedBy'),
+    },
     override: (() => {
       const status = getNestedField(fm, 'override', 'status');
       if (!status) return null;

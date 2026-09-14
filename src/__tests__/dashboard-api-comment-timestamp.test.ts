@@ -98,7 +98,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null

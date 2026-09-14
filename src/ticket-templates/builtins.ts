@@ -1,5 +1,6 @@
 import { resolve, dirname } from 'node:path';
 import { readdir, readFile, cp } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ensureDir, fileExists } from '../utils/fs.js';
 
@@ -8,11 +9,19 @@ export type BuiltinTemplateId = (typeof BUILTIN_TEMPLATE_IDS)[number];
 
 export type BuiltinDriftStatus = 'current' | 'modified' | 'outdated' | 'missing';
 
-/** Package root `templates/` directory (shipped built-ins). */
+/** Shipped built-ins under the package `templates/` directory. */
 export function builtinTemplatesDir(): string {
-  const __filename = fileURLToPath(import.meta.url);
-  const packageRoot = resolve(dirname(__filename), '..', '..');
-  return resolve(packageRoot, 'templates');
+  let currentDir = dirname(fileURLToPath(import.meta.url));
+  while (true) {
+    const candidate = resolve(currentDir, 'templates');
+    if (existsSync(resolve(candidate, 'feature', 'template.md'))) {
+      return candidate;
+    }
+    const parentDir = resolve(currentDir, '..');
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+  throw new Error('Could not locate shipped templates directory.');
 }
 
 async function readBuiltinStamp(id: BuiltinTemplateId): Promise<string | null> {

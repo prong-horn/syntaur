@@ -24,7 +24,7 @@ async function writeTicket(slug: string, id: string, extra: Record<string, strin
   await mkdir(dir, { recursive: true });
   const fm = {
     id, slug, title: '"T"', project: 'p', status: 'in_progress', phase: 'in_progress',
-    disposition: 'active', planApproval: 'null', parked: 'false', reviewRequested: 'false',
+    disposition: 'active', plan: 'null', parked: 'false', reviewRequested: 'false',
     reworkRequested: 'false', implementationStarted: 'false', assignee: 'null', ...extra,
   };
   const path = resolve(dir, 'ticket.md');

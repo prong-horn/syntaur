@@ -191,7 +191,7 @@ created: "2026-03-15T09:30:00Z"
 updated: "2026-03-17T10:00:00Z"
 assignee: claude-2
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -211,7 +211,7 @@ tags: []
     expect(summary.status).toBe('completed');
     expect(summary.priority).toBe('high');
     expect(summary.assignee).toBe('claude-2');
-    expect(summary.dependsOn).toEqual([]);
+    expect(summary.depends_on).toEqual([]);
     expect(summary.links).toEqual([]);
   });
 });
@@ -230,7 +230,7 @@ externalIds:
   - system: jira
     id: AUTH-43
     url: https://jira.example.com/browse/AUTH-43
-dependsOn:
+depends_on:
   - design-auth-schema
 links:
   - other-project/some-task
@@ -252,7 +252,7 @@ Body here.`;
     expect(ticket.slug).toBe('implement-jwt-middleware');
     expect(ticket.status).toBe('in_progress');
     expect(ticket.assignee).toBe('claude-1');
-    expect(ticket.dependsOn).toEqual(['design-auth-schema']);
+    expect(ticket.depends_on).toEqual(['design-auth-schema']);
     expect(ticket.links).toEqual(['other-project/some-task']);
     expect(ticket.workspace.branch).toBe('feat/jwt-middleware');
     expect(ticket.workspace.repository).toBe('/Users/test/projects/auth-service');
@@ -303,7 +303,7 @@ externalIds:
   - system: jira
     id: PROJ-99
     url: https://jira.example.com/browse/PROJ-99
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -355,7 +355,7 @@ externalIds:
   - system: jira
     id: A-5
     url:
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -494,7 +494,7 @@ created: "2026-03-18T10:00:00Z"
 updated: "2026-03-18T11:00:00Z"
 assignee: claude-1
 externalIds: []`;
-    const tail = `dependsOn: []
+    const tail = `depends_on: []
 links: []
 blockedReason: waiting on API
 workspace:

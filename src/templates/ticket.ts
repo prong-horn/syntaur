@@ -6,10 +6,10 @@ export interface TicketParams {
   title: string;
   timestamp: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   project?: string | null;
-  type?: string;
+  template: string;
   /** Explicit lifecycle-workflow override; emitted only when provided. */
   workflow?: string | null;
   status?: string;
@@ -18,16 +18,16 @@ export interface TicketParams {
 
 export function renderTicket(params: TicketParams): string {
   const safeTitle = escapeYamlString(params.title);
-  const dependsOnYaml =
-    params.dependsOn.length === 0
-      ? 'dependsOn: []'
-      : `dependsOn:\n  - ${params.dependsOn.join('\n  - ')}`;
+  const dependsYaml =
+    params.depends_on.length === 0
+      ? 'depends_on: []'
+      : `depends_on:\n  - ${params.depends_on.join('\n  - ')}`;
   const linksYaml =
     params.links.length === 0
       ? 'links: []'
       : `links:\n  - ${params.links.join('\n  - ')}`;
   const projectYaml = `project: ${params.project == null ? 'null' : params.project}`;
-  const typeYaml = `type: ${params.type ?? 'feature'}`;
+  const templateYaml = `template: ${params.template}`;
   const workflowLine = params.workflow ? `\nworkflow: ${params.workflow}` : '';
   const seedStatus = params.status ?? 'draft';
 
@@ -42,7 +42,7 @@ id: ${params.id}
 slug: ${params.slug}
 title: ${safeTitle}
 ${projectYaml}
-${typeYaml}${workflowLine}
+${templateYaml}${workflowLine}
 status: ${seedStatus}
 priority: ${params.priority}
 created: "${params.timestamp}"
@@ -55,7 +55,7 @@ statusHistory:
     to: ${seedStatus}
     command: create
     by: null
-${dependsOnYaml}
+${dependsYaml}
 ${linksYaml}
 blockedReason: null
 workspace:
@@ -63,6 +63,11 @@ workspace:
   worktreePath: null
   branch: null
   parentBranch: null
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
 tags: []
 archived: false
 archivedAt: null
@@ -82,14 +87,5 @@ ${criteriaLines}
 ## Context
 
 <!-- Links to relevant docs, code, or other tickets. -->
-
-## Links
-
-- [Progress](./progress.md)
-- [Comments](./comments.md)
-- [Scratchpad](./scratchpad.md)
-- [Handoff](./handoff.md) — cross-ticket outbound
-- [Decision Record](./decision-record.md)
-- [Sessions](./sessions/) — per-session continuity summaries (one \`<session-id>/summary.md\` per session)
 `;
 }

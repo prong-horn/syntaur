@@ -66,7 +66,7 @@ const STALENESS_KEY_TO_FIELD: Record<string, keyof StaleThresholds> = {
   readyUnclaimed: 'readyUnclaimedMs',
   reviewAging: 'reviewAgingMs',
   blockedAging: 'blockedAgingMs',
-  planApprovalAging: 'planApprovalAgingMs',
+  planAging: 'planApprovalAgingMs',
 };
 
 const DURATION_RE = /^(\d+(?:\.\d+)?)\s*(ms|s|m|h|d)?$/;
@@ -164,30 +164,6 @@ export interface WorkflowDefinition extends StatusConfig {
   label: string;
 }
 
-export interface TypeDefinition {
-  id: string;
-  label?: string;
-  description?: string;
-  color?: string;
-  icon?: string;
-}
-
-export interface TypesConfig {
-  definitions: TypeDefinition[];
-  default: string;
-}
-
-export const DEFAULT_TICKET_TYPES: TypesConfig = {
-  definitions: [
-    { id: 'feature', label: 'Feature' },
-    { id: 'bug', label: 'Bug' },
-    { id: 'refactor', label: 'Refactor' },
-    { id: 'research', label: 'Research' },
-    { id: 'chore', label: 'Chore' },
-  ],
-  default: 'feature',
-};
-
 export interface IntegrationConfig {
   claudePluginDir: string | null;
   codexPluginDir: string | null;
@@ -270,7 +246,6 @@ export interface SyntaurConfig {
   /** Global fallback workflow id (last rung of binding resolution). Absent →
    * `'default'`. */
   defaultWorkflow?: string | null;
-  types: TypesConfig | null;
   playbooks: PlaybooksConfig;
   theme: ThemeConfig | null;
   hotkeys: HotkeyBindingsConfig | null;
@@ -312,7 +287,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   statuses: null,
   workflows: null,
   defaultWorkflow: null,
-  types: null,
   playbooks: {
     disabled: [],
   },
@@ -350,12 +324,6 @@ function cloneDefaultConfig(): SyntaurConfig {
           statuses: DEFAULT_CONFIG.statuses.statuses.map((s) => ({ ...s })),
           order: [...DEFAULT_CONFIG.statuses.order],
           transitions: DEFAULT_CONFIG.statuses.transitions.map((t) => ({ ...t })),
-        }
-      : null,
-    types: DEFAULT_CONFIG.types
-      ? {
-          definitions: DEFAULT_CONFIG.types.definitions.map((d) => ({ ...d })),
-          default: DEFAULT_CONFIG.types.default,
         }
       : null,
     playbooks: {
@@ -1852,7 +1820,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
     statuses: parseStatusConfig(content),
     workflows: parseWorkflowsConfig(content),
     defaultWorkflow: fm['defaultWorkflow'] ? String(fm['defaultWorkflow']) : null,
-    types: null,
     playbooks: parsePlaybooksConfig(fmBlock),
     theme: parseThemeConfig(content),
     hotkeys: parseHotkeyBindingsConfig(content),
@@ -1874,12 +1841,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
     ),
   };
 }
-
-export function getTicketTypes(config: SyntaurConfig): TypesConfig {
-  return config.types ?? DEFAULT_TICKET_TYPES;
-}
-
-
 
 export class TerminalConfigError extends Error {}
 

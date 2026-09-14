@@ -26,9 +26,9 @@ async function runCli(args: string[], syntaurHome: string): Promise<RunResult> {
   });
 }
 
-function ticketMd(id: string, slug: string, dependsOn: string[]): string {
+function ticketMd(id: string, slug: string, depends_on: string[]): string {
   const depsYaml =
-    dependsOn.length === 0 ? 'dependsOn: []' : `dependsOn:\n${dependsOn.map((d) => `  - ${d}`).join('\n')}`;
+    depends_on.length === 0 ? 'depends_on: []' : `depends_on:\n${depends_on.map((d) => `  - ${d}`).join('\n')}`;
   return `---
 id: ${id}
 slug: ${slug}

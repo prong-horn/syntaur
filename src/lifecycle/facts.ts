@@ -87,21 +87,19 @@ export function planDigest(content: string): string {
 }
 
 /**
- * Revision-bound approval check: the `planApproval` record must name the
+ * Revision-bound approval check: the `plan` record must name the
  * CURRENT latest plan file AND its digest must match that file's current
  * content. A replan (new plan-vN) or a post-approval edit auto-invalidates.
  */
 export async function isPlanApproved(
   ticketDir: string,
-  frontmatter: Pick<TicketFrontmatter, 'planApproval'>,
+  frontmatter: Pick<TicketFrontmatter, 'plan'>,
 ): Promise<boolean> {
-  const approval = frontmatter.planApproval;
-  if (!approval) return false;
-  const latest = await latestPlanFile(ticketDir);
-  if (!latest || latest !== approval.file) return false;
+  const plan = frontmatter.plan;
+  if (!plan.file || !plan.approvedDigest) return false;
   try {
-    const content = await readFile(resolve(ticketDir, latest), 'utf-8');
-    return planDigest(content) === approval.digest;
+    const content = await readFile(resolve(ticketDir, plan.file), 'utf-8');
+    return planDigest(content) === plan.approvedDigest;
   } catch {
     return false;
   }
@@ -131,14 +129,14 @@ export async function countUnresolvedQuestions(ticketDir: string): Promise<numbe
  * and empty dependency lists are trivially satisfied. */
 export async function areDependenciesSatisfied(
   projectDir: string | null,
-  dependsOn: string[],
+  depends_on: string[],
   terminalStatuses: ReadonlySet<string>,
   /** WS-2: resolve each dependency's OWN terminal set (mixed-workflow edges).
    * Returns null → use the shared `terminalStatuses`. */
   depTerminalFor?: (depFrontmatter: TicketFrontmatter) => Promise<ReadonlySet<string> | null>,
 ): Promise<boolean> {
-  if (dependsOn.length === 0 || projectDir === null) return true;
-  for (const depId of dependsOn) {
+  if (depends_on.length === 0 || projectDir === null) return true;
+  for (const depId of depends_on) {
     const depPath = await resolveTicketMdPathInProject(projectDir, depId);
     if (!depPath || !(await fileExists(depPath))) return false;
     try {
@@ -320,24 +318,29 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
   // content drives BOTH the built-in `planApproved` fact AND binds:plan
   // attestation validity, so a concurrent replan can't make the two disagree
   // and the plan is read at most once. Read only when something needs the digest.
-  const needsPlanDigest =
-    frontmatter.planApproval !== null ||
-    declarations.some((d) => d.type === 'attestation' && d.binds === 'plan');
+  const plan = frontmatter.plan;
+  const needsPlanApprovalDigest = plan.file !== null || plan.approvedDigest !== null;
+  const needsPlanAttestationDigest = declarations.some(
+    (d) => d.type === 'attestation' && d.binds === 'plan',
+  );
   const planFile = await latestPlanFile(ticketDir);
-  const [planFileContent, unresolvedQuestions, depsSatisfied] = await Promise.all([
-    needsPlanDigest && planFile
-      ? readFile(resolve(ticketDir, planFile), 'utf-8').catch(() => null)
-      : Promise.resolve(null),
-    countUnresolvedQuestions(ticketDir),
-    areDependenciesSatisfied(projectDir, frontmatter.dependsOn, terminalStatuses, input.depTerminalFor),
-  ]);
-  const planFileDigest = planFileContent !== null ? planDigest(planFileContent) : null;
-  const approval = frontmatter.planApproval;
+  const [approvalPlanContent, latestPlanContent, unresolvedQuestions, depsSatisfied] =
+    await Promise.all([
+      needsPlanApprovalDigest && plan.file
+        ? readFile(resolve(ticketDir, plan.file), 'utf-8').catch(() => null)
+        : Promise.resolve(null),
+      needsPlanAttestationDigest && planFile
+        ? readFile(resolve(ticketDir, planFile), 'utf-8').catch(() => null)
+        : Promise.resolve(null),
+      countUnresolvedQuestions(ticketDir),
+      areDependenciesSatisfied(projectDir, frontmatter.depends_on, terminalStatuses, input.depTerminalFor),
+    ]);
   const planApproved =
-    approval !== null &&
-    approval.file === planFile &&
-    planFileDigest !== null &&
-    approval.digest === planFileDigest;
+    plan.file !== null &&
+    plan.approvedDigest !== null &&
+    approvalPlanContent !== null &&
+    plan.approvedDigest === planDigest(approvalPlanContent);
+  const planFileDigest = latestPlanContent !== null ? planDigest(latestPlanContent) : null;
 
   const facts: TicketFacts = {
     hasRealObjective: hasRealObjective(body),

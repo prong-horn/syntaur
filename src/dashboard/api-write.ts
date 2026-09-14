@@ -109,7 +109,7 @@ export function rawPatchMoverViolation(
   if (next.reworkRequested !== current.reworkRequested) return 'reworkRequested';
   if (next.implementationStarted !== current.implementationStarted) return 'implementationStarted';
   if (j(next.override) !== j(current.override)) return 'override';
-  if (j(next.planApproval) !== j(current.planApproval)) return 'planApproval';
+  if (j(next.plan) !== j(current.plan)) return 'plan';
   if (j(next.facts) !== j(current.facts)) return 'facts';
   if (j(next.attestations) !== j(current.attestations)) return 'attestations';
   if (j(next.statusHistory) !== j(current.statusHistory)) return 'statusHistory';
@@ -480,8 +480,9 @@ export function createWriteRouter(projectsDir: string): Router {
       title: 'My New Ticket',
       timestamp: nowTimestamp(),
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
+      template: 'feature',
     });
     res.json({ content });
   });

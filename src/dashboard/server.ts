@@ -27,8 +27,8 @@ import {
   writeHotkeyBindingsConfig,
   deleteHotkeyBindingsConfig,
   readConfig,
-  getTicketTypes,
 } from '../utils/config.js';
+import { listTemplates } from '../ticket-templates/registry.js';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
@@ -201,18 +201,24 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use('/api/config/statuses', createStatusConfigRouter(projectsDir));
   app.use('/api/config/workflows', createWorkflowConfigRouter(projectsDir));
 
-  app.get('/api/config/types', async (_req, res) => {
+  app.get('/api/ticket-templates', async (_req, res) => {
     try {
-      const config = await readConfig();
-      const types = getTicketTypes(config);
+      const root = syntaurRoot();
+      const templates = await listTemplates(root);
       res.json({
-        definitions: types.definitions,
-        default: types.default,
-        custom: config.types !== null,
+        templates: templates.map((t) => ({
+          id: t.id,
+          description: t.description,
+          whenToUse: t.whenToUse,
+          builtin: t.builtin ?? null,
+          driftStatus: t.driftStatus ?? null,
+          stageIds: t.stageIds,
+          filePaths: t.filePaths,
+        })),
       });
     } catch (error) {
-      console.error('Error getting types config:', error);
-      res.status(500).json({ error: 'Failed to get types config' });
+      console.error('Error listing ticket templates:', error);
+      res.status(500).json({ error: 'Failed to list ticket templates' });
     }
   });
 

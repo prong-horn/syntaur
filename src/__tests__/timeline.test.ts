@@ -34,7 +34,7 @@ created: "${T1}"
 updated: "${T3}"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:

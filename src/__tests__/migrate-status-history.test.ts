@@ -43,7 +43,7 @@ created: "${created}"
 updated: "${updated}"
 assignee: null
 externalIds: []
-${history}dependsOn: []
+${history}depends_on: []
 links: []
 blockedReason: null
 workspace:

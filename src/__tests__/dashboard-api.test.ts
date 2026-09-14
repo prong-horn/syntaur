@@ -136,14 +136,14 @@ const TICKET_MD = `---
 id: a-123
 slug: test-ticket
 title: Test Ticket
-type: feature
+template: feature
 status: in_progress
 priority: high
 created: "2026-03-20T10:00:00Z"
 updated: "${RECENT_DATE}"
 assignee: codex-1
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -170,7 +170,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-10T10:00:00Z"
 assignee: codex-2
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: Waiting on API credentials
 disposition: blocked
 statusHistory:
@@ -326,7 +326,7 @@ describe('getTicketDetail', () => {
 
     const result = await getTicketDetail(testDir, 'test-project', 'test-ticket');
     expect(result).not.toBeNull();
-    expect(result!.type).toBe('feature');
+    expect(result!.template).toBe('feature');
     expect(result!.plan?.status).toBe('in_progress');
     expect(result!.scratchpad?.updated).toBe('2026-04-07T11:00:00Z');
     expect(result!.handoff?.handoffCount).toBe(1);
@@ -409,14 +409,14 @@ id: ${ticketId}
 slug: my-board
 title: My Board Ticket
 project: p1
-type: feature
+template: feature
 status: pending
 priority: medium
 created: "2026-04-20T10:00:00Z"
 updated: "2026-04-20T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -436,13 +436,13 @@ tags: []
     expect(item).toBeTruthy();
     expect(item!.projectSlug).toBe('p1');
     expect(item!.slug).toBe('my-board');
-    expect(item!.type).toBe('feature');
+    expect(item!.template).toBe('feature');
 
     const detail = await getTicketDetailById(testDir, ticketId);
     expect(detail).not.toBeNull();
     expect(detail!.projectSlug).toBe('p1');
-    expect(detail!.dependsOn).toEqual([]);
-    expect(detail!.type).toBe('feature');
+    expect(detail!.depends_on).toEqual([]);
+    expect(detail!.template).toBe('feature');
   });
 
   it('returns null from getTicketDetailById for an unknown id', async () => {
@@ -601,7 +601,7 @@ describe('externalIds on board summaries', () => {
 id: ext-1
 slug: ext-ticket
 title: Ext Ticket
-type: feature
+template: feature
 status: in_progress
 priority: medium
 created: "2026-03-20T10:00:00Z"
@@ -611,7 +611,7 @@ externalIds:
   - system: jira
     id: ABC-7
     url: https://jira.example.com/browse/ABC-7
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -775,7 +775,7 @@ tags: []
 # ${slug}`;
   }
 
-  function buildPerfTicketMd(slug: string, status: string, dependsOn: string[]): string {
+  function buildPerfTicketMd(slug: string, status: string, depends_on: string[]): string {
     return `---
 id: ${slug}-id
 slug: ${slug}
@@ -786,7 +786,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "${RECENT_DATE}"
 assignee: bench
 externalIds: []
-dependsOn: ${JSON.stringify(dependsOn)}
+depends_on: ${JSON.stringify(depends_on)}
 blockedReason: null
 workspace:
   repository: null
@@ -1330,14 +1330,14 @@ describe('board payload — facts block + terminal completedAt (AC5/AC6)', () =>
 id: done-1
 slug: done-task
 title: Done Task
-type: feature
+template: feature
 status: completed
 priority: medium
 created: "2026-04-01T10:00:00Z"
 updated: "2026-04-01T12:00:00Z"
 assignee: claude
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null

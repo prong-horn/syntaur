@@ -43,7 +43,7 @@ export function boardItemToQueryItem(item: TicketBoardItem): QueryItem {
     phase: item.phase,
     disposition: item.disposition,
     priority: item.priority,
-    type: item.type,
+    type: item.template,
     assignee: item.assignee,
     project: item.projectSlug,
     // Resolved workflow (multi-workflow) — the `workflow` AQL field reads

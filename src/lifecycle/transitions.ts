@@ -31,12 +31,12 @@ async function readTicket(
  */
 export async function checkDependencies(
   projectDir: string,
-  dependsOn: string[],
+  depends_on: string[],
   terminalStatuses?: ReadonlySet<string>,
 ): Promise<{ satisfied: boolean; unmet: string[] }> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
-  for (const depId of dependsOn) {
+  for (const depId of depends_on) {
     const depPath = await resolveTicketPath(projectDir, depId);
     if (!(await fileExists(depPath))) {
       unmet.push(`${depId} (file not found)`);
@@ -106,8 +106,8 @@ export async function executeTransition(
 
   const warnings: string[] = [];
 
-  if (command === 'start' && frontmatter.dependsOn.length > 0) {
-    const depCheck = await checkDependencies(projectDir, frontmatter.dependsOn, options.terminalStatuses);
+  if (command === 'start' && frontmatter.depends_on.length > 0) {
+    const depCheck = await checkDependencies(projectDir, frontmatter.depends_on, options.terminalStatuses);
     if (!depCheck.satisfied) {
       warnings.push(`Starting with unmet dependencies: ${depCheck.unmet.join(', ')}`);
     }
@@ -257,12 +257,12 @@ export async function executeTransitionByDir(
 
   const warnings: string[] = [];
 
-  if (command === 'start' && !options.standalone && frontmatter.dependsOn.length > 0) {
+  if (command === 'start' && !options.standalone && frontmatter.depends_on.length > 0) {
     // Dependency check requires a project context — skip for standalone
     const projectDir = resolve(ticketDir, '..', '..');
     const depCheck = await checkDependencies(
       projectDir,
-      frontmatter.dependsOn,
+      frontmatter.depends_on,
       options.terminalStatuses,
     );
     if (!depCheck.satisfied) {

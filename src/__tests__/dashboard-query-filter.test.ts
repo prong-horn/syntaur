@@ -38,7 +38,7 @@ function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
     type: 'feature',
     priority: 'high',
     assignee: 'claude',
-    dependsOn: [],
+    depends_on: [],
     links: [],
     tags: [],
     created: '2026-06-01T10:00:00Z',

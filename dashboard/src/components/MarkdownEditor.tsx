@@ -368,8 +368,8 @@ function StructuredEditor({
           </Field>
           <Field label="Depends on" className="md:col-span-2">
             <input
-              value={state.dependsOn}
-              onChange={(event) => onChange(normalizeEditorContent(documentType, content, { dependsOn: event.target.value }))}
+              value={state.depends_on}
+              onChange={(event) => onChange(normalizeEditorContent(documentType, content, { depends_on: event.target.value }))}
               placeholder="Comma-separated ticket slugs"
               className="editor-input"
             />

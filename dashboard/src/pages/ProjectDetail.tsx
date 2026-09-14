@@ -10,7 +10,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
 import { TicketStatusPill } from '../components/TicketStatusPill';
-import { TypeChip } from '../components/TypeChip';
+import { TemplateChip } from '../components/TemplateChip';
 import { ExternalIdBadges } from '../components/ExternalIdBadges';
 import { StatCard } from '../components/StatCard';
 import { ProgressBar } from '../components/ProgressBar';
@@ -23,7 +23,7 @@ import { MarkdownRenderer } from '../components/MarkdownRenderer';
 import { KanbanBoard, type KanbanColumn } from '../components/KanbanBoard';
 import { TableColumnPicker } from '../components/TableColumnPicker';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
-import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
+import { useTemplates, getTemplateLabel } from '../hooks/useTemplates';
 import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { coerceProjectDetailView, toFilterValues, type SortField, type SortDirection, type Grouping } from '@shared/view-prefs-schema';
 import { saveScopeViewPrefs, useViewPrefs } from '../hooks/useViewPrefs';
@@ -57,7 +57,7 @@ export function ProjectDetail() {
   });
   const { data: project, loading, error, refetch } = useProject(slug);
   const statusConfig = useStatusConfig();
-  const typesConfig = useTypesConfig();
+  const templatesConfig = useTemplates();
   // Tab selection lives in the URL (?tab=<value>) so it stays in sync when
   // react-router reuses this component across project navigations (e.g. the
   // palette jumping from one project's overview to another's tab).
@@ -302,16 +302,16 @@ export function ProjectDetail() {
     }),
   );
   const sortedTickets = sortTickets(filteredTickets, sortField, sortDirection);
-  const knownTypeIds = new Set(typesConfig.definitions.map((d) => d.id));
+  const knownTypeIds = new Set(templatesConfig.definitions.map((d) => d.id));
   const kanbanColumns: KanbanColumn[] =
     grouping === 'type'
       ? [
-          ...typesConfig.definitions.map((def) => ({
+          ...templatesConfig.definitions.map((def) => ({
             id: def.id,
-            title: getTypeLabel(typesConfig, def.id),
+            title: getTemplateLabel(templatesConfig, def.id),
             description: def.description,
           })),
-          ...(filteredTickets.some((a) => !a.type || !knownTypeIds.has(a.type))
+          ...(filteredTickets.some((a) => !a.template || !knownTypeIds.has(a.template))
             ? [
                 {
                   id: UNKNOWN_TYPE_COLUMN_ID,
@@ -488,7 +488,7 @@ export function ProjectDetail() {
                             ariaLabel="Type filter"
                             className="max-w-[170px]"
                             allLabel="All types"
-                            options={typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) }))}
+                            options={templatesConfig.definitions.map((t) => ({ value: t.id, label: getTemplateLabel(templatesConfig, t.id) }))}
                             value={typeFilter}
                             onChange={handleSetTypeFilter}
                           />
@@ -549,8 +549,8 @@ export function ProjectDetail() {
                           getItemId={(a) => a.slug}
                           getColumnId={(a) =>
                             grouping === 'type'
-                              ? a.type && knownTypeIds.has(a.type)
-                                ? a.type
+                              ? a.template && knownTypeIds.has(a.template)
+                                ? a.template
                                 : UNKNOWN_TYPE_COLUMN_ID
                               : a.status
                           }
@@ -614,10 +614,10 @@ export function ProjectDetail() {
                                   </td>
                                   ) : null}
                                   {showCol('status') ? <td className="py-4"><TicketStatusPill projectSlug={project.slug} slug={ticket.slug} status={ticket.status} title={ticket.title} className="max-w-[150px]" onChange={() => refetch()} /></td> : null}
-                                  <td className="py-4"><TypeChip type={ticket.type} compact /></td>
+                                  <td className="py-4"><TemplateChip template={ticket.template} compact /></td>
                                   {showCol('priority') ? <td className="py-4 capitalize text-muted-foreground">{ticket.priority}</td> : null}
                                   {showCol('assignee') ? <td className="py-4 text-muted-foreground">{ticket.assignee ?? '\u2014'}</td> : null}
-                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{ticket.dependsOn.length}</td> : null}
+                                  {showCol('dependencies') ? <td className="py-4 text-muted-foreground">{ticket.depends_on.length}</td> : null}
                                   {showCol('created') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.created)}</td> : null}
                                   {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.updated)}</td> : null}
                                 </tr>
@@ -788,7 +788,7 @@ function TicketCard({
         </span>
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
-        <TypeChip type={ticket.type} />
+        <TemplateChip template={ticket.template} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {ticket.priority}
         </span>
@@ -796,7 +796,7 @@ function TicketCard({
           {ticket.assignee ?? 'Unassigned'}
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-          {ticket.dependsOn.length} dependencies
+          {ticket.depends_on.length} dependencies
         </span>
       </div>
     </Link>

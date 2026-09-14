@@ -20,7 +20,7 @@ id: abc
 slug: t
 title: Test
 project: p
-type: feature
+template: feature
 workflow: null
 status: in_progress
 priority: medium
@@ -29,7 +29,7 @@ updated: "2026-07-09T00:00:00Z"
 assignee: null
 externalIds: []
 statusHistory: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 tags: []

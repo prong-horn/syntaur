@@ -251,17 +251,22 @@ describe('fact computation', () => {
     const dir = await makeTicketDir();
     const planContent = '# The plan\n\n1. do it\n';
     await writeFile(join(dir, 'plan.md'), planContent);
-    const approval = { file: 'plan.md', digest: planDigest(planContent), by: 'human', at: '' };
+    const approval = {
+      file: 'plan.md',
+      approvedDigest: planDigest(planContent),
+      approvedBy: 'human',
+      approvedAt: '',
+    };
 
-    expect(await isPlanApproved(dir, { planApproval: approval })).toBe(true);
-    // edit the approved plan → digest mismatch
+    expect(await isPlanApproved(dir, { plan: approval })).toBe(true);
+    // edit the approved plan file → digest mismatch
     await writeFile(join(dir, 'plan.md'), planContent + '\n2. do more\n');
-    expect(await isPlanApproved(dir, { planApproval: approval })).toBe(false);
-    // restore content, then replan → file no longer latest
+    expect(await isPlanApproved(dir, { plan: approval })).toBe(false);
+    // a newer revision on disk does not invalidate when plan.file still names plan.md
     await writeFile(join(dir, 'plan.md'), planContent);
-    expect(await isPlanApproved(dir, { planApproval: approval })).toBe(true);
+    expect(await isPlanApproved(dir, { plan: approval })).toBe(true);
     await writeFile(join(dir, 'plan-v2.md'), '# new plan');
-    expect(await isPlanApproved(dir, { planApproval: approval })).toBe(false);
+    expect(await isPlanApproved(dir, { plan: approval })).toBe(true);
   });
 
   it('computeFacts end-to-end on a real-looking ticket', async () => {
@@ -278,7 +283,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: claude
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: "waiting on vendor"
 workspace:
@@ -288,11 +293,11 @@ workspace:
   parentBranch: main
 tags: []
 implementationStarted: true
-planApproval:
+plan:
   file: plan.md
-  digest: ${planDigest(planContent)}
-  by: human
-  at: "2026-06-09T11:00:00Z"
+  approvedDigest: ${planDigest(planContent)}
+  approvedBy: human
+  approvedAt: "2026-06-09T11:00:00Z"
 ---
 ${REAL_BODY}`;
     await writeFile(join(dir, 'ticket.md'), fm);

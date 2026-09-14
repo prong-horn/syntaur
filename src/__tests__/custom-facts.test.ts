@@ -363,7 +363,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -400,9 +400,9 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
   });
 
   it('upsertAttestation replaces the same (fact, actor) record', () => {
-    const r1: AttestationRecord = { fact: 'codeReview', actor: 'agent:codex', verdict: 'changes-requested', at: 't1', file: 'plan.md', digest: 'd1' };
-    const r2: AttestationRecord = { fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't2', file: 'plan.md', digest: 'd2' };
-    const r3: AttestationRecord = { fact: 'codeReview', actor: 'human', verdict: 'approved', at: 't3', file: 'plan.md', digest: 'd2' };
+    const r1: AttestationRecord = { fact: 'codeReview', actor: 'agent:codex', verdict: 'changes-requested', at: 't1', file: 'plan.md', approvedDigest: 'd1' };
+    const r2: AttestationRecord = { fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't2', file: 'plan.md', approvedDigest: 'd2' };
+    const r3: AttestationRecord = { fact: 'codeReview', actor: 'human', verdict: 'approved', at: 't3', file: 'plan.md', approvedDigest: 'd2' };
     let content = upsertAttestation(BASE_FM, r1);
     content = upsertAttestation(content, r2); // replaces r1
     content = upsertAttestation(content, r3); // new actor
@@ -416,7 +416,7 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
   it('lifecycle and dashboard parsers agree on facts/attestations (parity)', () => {
     let content = updateFactsMap(BASE_FM, 'qaPassed', 'true');
     content = upsertAttestation(content, {
-      fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't', file: 'plan.md', digest: 'd',
+      fact: 'codeReview', actor: 'agent:codex', verdict: 'approved', at: 't', file: 'plan.md', approvedDigest: 'd',
     });
     const lifecycle = parseTicketFrontmatter(content);
     const dashboard = parseTicketFull(content);
@@ -428,7 +428,7 @@ describe('frontmatter facts/attestations round-trip + writers', () => {
     const note = 'fix the "lock" and the \\path';
     const content = upsertAttestation(BASE_FM, {
       fact: 'codeReview', actor: 'agent:codex', verdict: 'changes-requested', at: 't',
-      file: 'plan.md', digest: 'd', note,
+      file: 'plan.md', approvedDigest: 'd', note,
     });
     const lifecycle = parseTicketFrontmatter(content);
     const dashboard = parseTicketFull(content);
@@ -552,7 +552,7 @@ updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
 statusHistory: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -710,7 +710,7 @@ updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
 statusHistory: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:

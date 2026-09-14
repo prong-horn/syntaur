@@ -143,7 +143,7 @@ export async function isPlanAwaitingApproval(
   if (a.status !== 'ready_for_planning') return false;
   const latest = await latestPlanFile(ticketDir);
   if (latest === null) return false;
-  const approved = await isPlanApproved(ticketDir, { planApproval: a.planApproval });
+  const approved = await isPlanApproved(ticketDir, { plan: a.plan });
   return !approved;
 }
 

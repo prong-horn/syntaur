@@ -20,7 +20,7 @@ export function sortTickets<
     status: string;
     priority: string;
     assignee: string | null;
-    dependsOn: string[];
+    depends_on: string[];
     created?: string;
     updated: string;
   },
@@ -41,7 +41,7 @@ export function sortTickets<
         cmp = (a.assignee ?? '').localeCompare(b.assignee ?? '');
         break;
       case 'dependencies':
-        cmp = a.dependsOn.length - b.dependsOn.length;
+        cmp = a.depends_on.length - b.depends_on.length;
         break;
       case 'created':
         cmp = epoch(a.created) - epoch(b.created);

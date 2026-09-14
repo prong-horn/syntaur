@@ -46,7 +46,7 @@ tags: []
 # ${slug}`;
 }
 
-function ticketMd(slug: string, status: string, dependsOn: string[] = []): string {
+function ticketMd(slug: string, status: string, depends_on: string[] = []): string {
   return `---
 id: ${slug}-id
 slug: ${slug}
@@ -57,7 +57,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "${RECENT}"
 assignee: bench
 externalIds: []
-dependsOn: ${JSON.stringify(dependsOn)}
+depends_on: ${JSON.stringify(dependsOn)}
 blockedReason: null
 workspace:
   repository: null

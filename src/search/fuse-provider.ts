@@ -29,7 +29,7 @@ export class FuseProvider implements SearchProvider {
     // 1. Pre-filter the doc subset (cheap; keeps Fuse scores undiluted).
     const subset = this.docs.filter((d) => {
       if (q.project !== undefined && d.projectSlug !== q.project) return false;
-      if (q.type && q.type.length > 0 && (!d.type || !q.type.includes(d.type))) return false;
+      if (q.type && q.type.length > 0 && (!d.template || !q.type.includes(d.template))) return false;
       if (q.status && q.status.length > 0 && (!d.status || !q.status.includes(d.status))) return false;
       if (q.in && q.in.length > 0 && !q.in.includes(d.fileKind)) return false;
       return true;

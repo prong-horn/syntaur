@@ -55,10 +55,11 @@ function ticketWithMeta(
     title: slug,
     timestamp: created,
     priority: 'medium',
-    dependsOn: [],
+    depends_on: [],
     links: [],
     project,
     status: 'draft',
+    template: 'feature',
   });
   return base.replace(/^created:.*$/m, `created: "${created}"`);
 }

@@ -132,7 +132,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -238,7 +238,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -276,7 +276,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null
@@ -926,7 +926,7 @@ priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: /repo/c
@@ -953,7 +953,7 @@ priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: /repo/a
@@ -1033,7 +1033,7 @@ priority: medium
 created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: ${repo ?? 'null'}
@@ -1792,7 +1792,7 @@ created: "2026-03-21T10:00:00Z"
 updated: "2026-03-21T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -2032,7 +2032,7 @@ project: plan-project
     }
   }
 
-  it('POST /api/tickets/:id/plan/approve writes planApproval', async () => {
+  it('POST /api/tickets/:id/plan/approve writes plan', async () => {
     await seedProjectPlanTicket();
     const router = createWriteRouter(testDir);
     const response = await invokeRoute(
@@ -2051,8 +2051,8 @@ project: plan-project
       'utf-8',
     );
     const fm = parseTicketFrontmatter(content);
-    expect(fm.planApproval?.file).toBe('plan.md');
-    expect(fm.planApproval?.digest).toBe(planDigest('# Plan body\n'));
+    expect(fm.plan?.file).toBe('plan.md');
+    expect(fm.plan?.approvedDigest).toBe(planDigest('# Plan body\n'));
   });
 
   it('POST /api/tickets/:id/plan/approve returns 409 without a plan file', async () => {

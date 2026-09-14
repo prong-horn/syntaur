@@ -120,7 +120,7 @@ describe('isPlanAwaitingApproval', () => {
     await writeFile(join(dir, 'plan.md'), content);
     const digest = planDigest(content);
     const a = ticket(
-      `status: ready_for_planning\nplanApproval:\n  file: plan.md\n  digest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
+      `status: ready_for_planning\nplan:\n  file: plan.md\n  approvedDigest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });

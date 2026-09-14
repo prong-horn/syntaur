@@ -41,9 +41,9 @@ function ticketContent(opts: {
   blockedReason?: string;
 }): string {
   const deps =
-    opts.dependsOn && opts.dependsOn.length > 0
-      ? `dependsOn:\n${opts.dependsOn.map((d) => `  - ${d}`).join('\n')}`
-      : 'dependsOn: []';
+    opts.depends_on && opts.depends_on.length > 0
+      ? `depends_on:\n${opts.depends_on.map((d) => `  - ${d}`).join('\n')}`
+      : 'depends_on: []';
   return `---
 id: ${opts.id ?? `T${(opts.slug ?? 'test').replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase() || 'ST'}-1`}
 slug: ${opts.slug ?? 'test'}
@@ -157,7 +157,7 @@ describe('recomputeAndWrite', () => {
     let content = await readFile(path, 'utf-8');
     content = content.replace(
       'tags: []',
-      `tags: []\nplanApproval:\n  file: plan.md\n  digest: ${planDigest(planContent)}\n  by: human\n  at: "2026-06-09T11:00:00Z"`,
+      `tags: []\nplan:\n  file: plan.md\n  approvedDigest: ${planDigest(planContent)}\n  by: human\n  at: "2026-06-09T11:00:00Z"`,
     );
     await writeFile(path, content);
 
@@ -217,7 +217,7 @@ describe('recomputeDependents + recomputeAll', () => {
     );
     await writeFile(
       join(projectDir, 'tickets', `${depBId}-dep-b`, 'ticket.md'),
-      ticketContent({ id: depBId, slug: 'dep-b', status: 'draft', dependsOn: [depAId] }),
+      ticketContent({ id: depBId, slug: 'dep-b', status: 'draft', depends_on: [depAId] }),
     );
     const results = await recomputeDependents(projectDir, depAId, {
       cause: 'dep-terminal',

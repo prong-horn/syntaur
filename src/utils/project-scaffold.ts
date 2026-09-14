@@ -113,7 +113,7 @@ export async function rebuildProjectTicketIndex(projectDir: string): Promise<voi
     status: string;
     priority: string;
     assignee: string | null;
-    dependsOn: string[];
+    depends_on: string[];
     updated: string;
     folderName: string;
   }> = [];
@@ -134,7 +134,7 @@ export async function rebuildProjectTicketIndex(projectDir: string): Promise<voi
         status: fm.status,
         priority: fm.priority,
         assignee: fm.assignee,
-        dependsOn: fm.dependsOn,
+        depends_on: fm.depends_on,
         updated: fm.updated,
         folderName: entry.name,
       });
@@ -157,7 +157,7 @@ export async function rebuildProjectTicketIndex(projectDir: string): Promise<voi
 
   const tableRows = rows
     .map((row) => {
-      const deps = row.dependsOn.length > 0 ? row.dependsOn.join(', ') : '—';
+      const deps = row.depends_on.length > 0 ? row.depends_on.join(', ') : '—';
       const assignee = row.assignee ?? '—';
       const link = `[${row.slug}](./tickets/${row.folderName}/ticket.md)`;
       return `| ${link} | ${row.title} | ${row.status} | ${row.priority} | ${assignee} | ${deps} | ${row.updated} |`;

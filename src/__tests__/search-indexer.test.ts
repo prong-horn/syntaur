@@ -28,7 +28,7 @@ beforeEach(async () => {
   const aDir = join(alpha, 'tickets', 'ALP-1-build-widget');
   await write(
     join(aDir, 'ticket.md'),
-    `---\nid: ALP-1\nslug: build-widget\ntitle: Build Widget\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Build Widget\n\nWe must construct the flux capacitor.\n`,
+    `---\nid: ALP-1\nslug: build-widget\ntitle: Build Widget\ntemplate: feature\nstatus: in_progress\narchived: false\n---\n# Build Widget\n\nWe must construct the flux capacitor.\n`,
   );
   await write(
     join(aDir, 'plan.md'),
@@ -46,14 +46,14 @@ beforeEach(async () => {
   const choreDir = join(alpha, 'tickets', 'ALP-2-oneoff');
   await write(
     join(choreDir, 'ticket.md'),
-    `---\nid: ALP-2\nslug: oneoff\ntitle: One Off\ntype: chore\nstatus: pending\narchived: false\n---\n# One Off\n\nStandalone kiwi task.\n`,
+    `---\nid: ALP-2\nslug: oneoff\ntitle: One Off\ntemplate: chore\nstatus: pending\narchived: false\n---\n# One Off\n\nStandalone kiwi task.\n`,
   );
 
   // ── archived ticket (excluded by default) ─────────────────────────────
   const arDir = join(alpha, 'tickets', 'ALP-3-old-task');
   await write(
     join(arDir, 'ticket.md'),
-    `---\nid: ALP-3\nslug: old-task\ntitle: Old Task\ntype: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
+    `---\nid: ALP-3\nslug: old-task\ntitle: Old Task\ntemplate: chore\nstatus: completed\narchived: true\n---\n# Old Task\n\nArchived dragonfruit work.\n`,
   );
 
   // ── archived PROJECT "zeta" — its ticket must be excluded by default.
@@ -65,7 +65,7 @@ beforeEach(async () => {
   const zDir = join(zeta, 'tickets', 'ZET-1-zeta-task');
   await write(
     join(zDir, 'ticket.md'),
-    `---\nid: ZET-1\nslug: zeta-task\ntitle: Zeta Task\ntype: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
+    `---\nid: ZET-1\nslug: zeta-task\ntitle: Zeta Task\ntemplate: feature\nstatus: in_progress\narchived: false\n---\n# Zeta Task\n\nWork on the zeta papaya.\n`,
   );
 });
 
@@ -135,7 +135,7 @@ describe('buildIndex', () => {
     expect(comments).toBeDefined();
     expect(comments?.ticketId).toBe('ALP-1');
     expect(comments?.ticketSlug).toBe('build-widget');
-    expect(comments?.type).toBe('feature');
+    expect(comments?.template).toBe('feature');
     expect(comments?.status).toBe('in_progress');
     expect(comments?.standalone).toBe(false);
   });

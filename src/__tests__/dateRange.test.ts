@@ -73,7 +73,7 @@ describe('isDateRange / isDateRangePreset', () => {
 
 describe('sortTickets created sort (parsed epoch, not lexical)', () => {
   const row = (id: string, created: string) => ({
-    title: id, status: 'x', priority: 'medium', assignee: null, dependsOn: [] as string[],
+    title: id, status: 'x', priority: 'medium', assignee: null, depends_on: [] as string[],
     created, updated: created,
   });
   it('orders by actual instant even when lexical order disagrees (tz offsets)', () => {

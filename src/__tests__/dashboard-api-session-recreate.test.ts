@@ -58,7 +58,7 @@ async function writeProjectTicket(opts: {
       'updated: "2026-06-01T00:00:00Z"',
       'assignee: null',
       'externalIds: []',
-      'dependsOn: []',
+      'depends_on: []',
       'links: []',
       'blockedReason: null',
       'workspace:',

@@ -21,7 +21,7 @@ interface SkillEntry {
   type: 'skill-md' | 'archive';
   description: string;
   url: string;
-  digest: string;
+  approvedDigest: string;
 }
 interface Index {
   $schema: string;

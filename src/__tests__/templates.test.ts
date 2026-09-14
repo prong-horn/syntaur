@@ -82,16 +82,17 @@ describe('renderTicket', () => {
       title: 'Test Ticket',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('id: uuid-1');
     expect(out).toContain('slug: test-ticket');
     expect(out).toContain('status: draft');
     expect(out).toContain('priority: medium');
     expect(out).toContain('assignee: null');
     expect(out).toContain('externalIds: []');
-    expect(out).toContain('dependsOn: []');
+    expect(out).toContain('depends_on: []');
     expect(out).toContain('blockedReason: null');
     expect(out).toContain('repository: null');
     expect(out).toContain('worktreePath: null');
@@ -107,9 +108,10 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('links: []');
   });
 
@@ -120,9 +122,10 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: ['project-a/task-1', 'project-b/task-2'],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('links:');
     expect(out).toContain('  - project-a/task-1');
     expect(out).toContain('  - project-b/task-2');
@@ -136,13 +139,14 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'high',
-      dependsOn: ['dep-one', 'dep-two'],
+      depends_on: ['dep-one', 'dep-two'],
       links: [],
-    });
-    expect(out).toContain('dependsOn:');
+      template: 'feature',
+  });
+    expect(out).toContain('depends_on:');
     expect(out).toContain('  - dep-one');
     expect(out).toContain('  - dep-two');
-    expect(out).not.toContain('dependsOn: []');
+    expect(out).not.toContain('depends_on: []');
   });
 
   it('has correct body sections', () => {
@@ -152,21 +156,16 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('## Objective');
     expect(out).toContain('## Acceptance Criteria');
     expect(out).toContain('## Context');
     expect(out).not.toContain('## Questions & Answers');
     expect(out).not.toContain('## Progress');
-    expect(out).toContain('## Links');
-    expect(out).toContain('(./progress.md)');
-    expect(out).toContain('(./comments.md)');
-    expect(out).not.toContain('- [Plan](./plan.md)');
-    expect(out).toContain('(./scratchpad.md)');
-    expect(out).toContain('(./handoff.md)');
-    expect(out).toContain('(./decision-record.md)');
+    expect(out).not.toContain('## Links');
   });
 
   it('omits ## Todos by default', () => {
@@ -176,9 +175,10 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
-    });
+      template: 'feature',
+  });
     expect(out).not.toContain('## Todos');
   });
 
@@ -189,10 +189,11 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
       status: 'ready_for_planning',
-    });
+      template: 'feature',
+  });
     expect(out).toContain('status: ready_for_planning');
     expect(out).not.toContain('status: draft');
   });
@@ -204,10 +205,11 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
       acceptanceCriteria: ['Do A', 'Do B', 'Do C'],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('## Acceptance Criteria');
     expect(out).toContain('- [ ] Do A');
     expect(out).toContain('- [ ] Do B');
@@ -222,9 +224,10 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
-    });
+      template: 'feature',
+  });
     expect(without).toContain('<!-- criterion 1 -->');
     expect(without).toContain('<!-- criterion 2 -->');
     expect(without).toContain('<!-- criterion 3 -->');
@@ -235,10 +238,11 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
       acceptanceCriteria: [],
-    });
+      template: 'feature',
+  });
     expect(empty).toContain('<!-- criterion 1 -->');
   });
 
@@ -249,10 +253,11 @@ describe('renderTicket', () => {
       title: 'T',
       timestamp: TIMESTAMP,
       priority: 'medium',
-      dependsOn: [],
+      depends_on: [],
       links: [],
       acceptanceCriteria: ['Line 1\nspans two lines'],
-    });
+      template: 'feature',
+  });
     expect(out).toContain('- [ ] Line 1 spans two lines');
     expect(out).not.toContain('- [ ] Line 1\n');
   });

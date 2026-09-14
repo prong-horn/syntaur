@@ -41,7 +41,7 @@ interface TicketIdentity {
   projectSlug: string | null;
   /** @deprecated Standalone tickets were removed; always false. */
   standalone: false;
-  type?: string;
+  template?: string;
   status?: string;
   archived: boolean;
 }
@@ -110,7 +110,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       ticketSlug: entry.ticketSlug,
       projectSlug: entry.projectSlug,
       standalone: false,
-      type: ticket.type ?? undefined,
+      template: ticket.template ?? undefined,
       status: ticket.status,
       archived,
     };
@@ -168,7 +168,7 @@ function makeTicketDoc(
     ticketSlug: identity.ticketSlug,
     ticketId: identity.ticketId,
     standalone: identity.standalone,
-    type: identity.type,
+    template: identity.template,
     status: identity.status,
     archived: identity.archived,
   };

@@ -65,7 +65,7 @@ describe('resolveTicketWorkflowId — first-hit-wins precedence', () => {
       defaultWorkflow: 'feature',
       workflowByType: { bug: 'feature' },
     };
-    expect(resolveTicketWorkflowId(config, binding, { workflow: 'bug', type: 'bug' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: 'bug', template: 'bug' })).toBe(
       'bug',
     );
   });
@@ -75,25 +75,25 @@ describe('resolveTicketWorkflowId — first-hit-wins precedence', () => {
       defaultWorkflow: 'feature',
       workflowByType: { bug: 'bug' },
     };
-    expect(resolveTicketWorkflowId(config, binding, { workflow: null, type: 'bug' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: null, template: 'bug' })).toBe(
       'bug',
     );
   });
 
   it('falls to project defaultWorkflow when type is unmapped', () => {
     const binding: ProjectWorkflowBinding = { defaultWorkflow: 'feature', workflowByType: {} };
-    expect(resolveTicketWorkflowId(config, binding, { workflow: null, type: 'chore' })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: null, template: 'chore' })).toBe(
       'feature',
     );
   });
 
   it('falls to global defaultWorkflow when project has no binding', () => {
     const cfg: WorkflowConfigView = { ...config, defaultWorkflow: 'feature' };
-    expect(resolveTicketWorkflowId(cfg, EMPTY, { workflow: null, type: null })).toBe('feature');
+    expect(resolveTicketWorkflowId(cfg, EMPTY, { workflow: null, template: null })).toBe('feature');
   });
 
   it('terminates at "default" when nothing else resolves', () => {
-    expect(resolveTicketWorkflowId(config, EMPTY, { workflow: null, type: null })).toBe(
+    expect(resolveTicketWorkflowId(config, EMPTY, { workflow: null, template: null })).toBe(
       'default',
     );
   });
@@ -101,7 +101,7 @@ describe('resolveTicketWorkflowId — first-hit-wins precedence', () => {
   it('skips an unknown/deleted workflow id and falls through', () => {
     const binding: ProjectWorkflowBinding = { defaultWorkflow: 'bug', workflowByType: {} };
     // ticket override points at a ghost id → skipped → project default 'bug'
-    expect(resolveTicketWorkflowId(config, binding, { workflow: 'ghost', type: null })).toBe(
+    expect(resolveTicketWorkflowId(config, binding, { workflow: 'ghost', template: null })).toBe(
       'bug',
     );
   });
@@ -150,7 +150,7 @@ describe('legacy config (no workflows: block)', () => {
       statuses: legacyStatuses,
       defaultWorkflow: null,
     };
-    expect(resolveTicketWorkflowId(legacy, EMPTY, { workflow: null, type: null })).toBe(
+    expect(resolveTicketWorkflowId(legacy, EMPTY, { workflow: null, template: null })).toBe(
       'default',
     );
     const ctx = buildWorkflowContext(legacy, 'default');
@@ -170,7 +170,7 @@ describe('legacy config (no workflows: block)', () => {
 describe('resolveTicketWorkflowContext (async)', () => {
   it('resolves via a pre-read projectBinding', async () => {
     const ctx = await resolveTicketWorkflowContext({
-      ticket: { workflow: null, type: 'bug' },
+      ticket: { workflow: null, template: 'bug' },
       projectBinding: { defaultWorkflow: null, workflowByType: { bug: 'bug' } },
       config,
     });
@@ -186,7 +186,7 @@ describe('resolveTicketWorkflowContext (async)', () => {
         'utf-8',
       );
       const ctx = await resolveTicketWorkflowContext({
-        ticket: { workflow: null, type: null },
+        ticket: { workflow: null, template: null },
         projectDir: dir,
         config,
       });
@@ -198,7 +198,7 @@ describe('resolveTicketWorkflowContext (async)', () => {
 
   it('standalone (no project) resolves via global/default', async () => {
     const ctx = await resolveTicketWorkflowContext({
-      ticket: { workflow: null, type: null },
+      ticket: { workflow: null, template: null },
       config,
     });
     expect(ctx.workflowId).toBe('default');
@@ -217,7 +217,7 @@ describe('makeWorkflowContextResolver — sweep memoization', () => {
   it('forTicket resolves and returns the memoized context', async () => {
     const resolver = makeWorkflowContextResolver(config);
     const direct = resolver.context('bug');
-    const viaTicket = await resolver.forTicket({ workflow: 'bug', type: null }, null);
+    const viaTicket = await resolver.forTicket({ workflow: 'bug', template: null }, null);
     expect(viaTicket).toBe(direct);
   });
 });

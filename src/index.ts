@@ -124,7 +124,7 @@ program
     'Priority level (low|medium|high|critical)',
     'medium',
   )
-  .option('--type <type>', 'Ticket type (e.g. feature, bug, refactor)')
+  .option('-t, --template <id>', 'Ticket template id (defaults to the project defaultTemplate)')
   .option('--workflow <id>', 'Lifecycle workflow this ticket follows (defaults to the resolved binding)')
   .option('--depends-on <ids>', 'Comma-separated dependency ticket ids')
   .option('--links <ids>', 'Comma-separated linked ticket ids')
@@ -295,7 +295,7 @@ program
 
 program
   .command('migrate-events')
-  .description('Backfill the audit event log from statusHistory + planApproval (idempotent via source_key; use --apply to write)')
+  .description('Backfill the audit event log from statusHistory + plan (idempotent via source_key; use --apply to write)')
   .option('--dir <path>', 'Override default project directory')
   .option('--apply', 'Apply the backfill (default: dry-run)')
   .action(

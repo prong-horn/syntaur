@@ -15,7 +15,7 @@ export interface MigrateEventsOptions {
   apply?: boolean;
 }
 
-/** A backfilled event synthesized from frontmatter (statusHistory / planApproval). */
+/** A backfilled event synthesized from frontmatter (statusHistory / plan). */
 interface SynthEvent {
   type: string;
   at: string;
@@ -47,7 +47,7 @@ async function parseSafe(path: string): Promise<ParsedTicketFull | null> {
  *   - one `status-change` per `statusHistory` entry whose `from !== to` —
  *     `backfill~<id>~status~<index>` (same-status entries are skipped, matching
  *     the live emit's from!==to guard; index stays the ORIGINAL one for idempotency)
- *   - one `plan-approval` if `planApproval` is present — `backfill~<id>~plan-approval`
+ *   - one `plan-approval` if `plan` is present — `backfill~<id>~plan-approval`
  */
 export function backfillStatusSourceKey(ticketId: string, index: number): string {
   return `backfill~${ticketId}~status~${index}`;
@@ -75,12 +75,12 @@ function synthesizeEvents(fm: ParsedTicketFull): SynthEvent[] {
     });
   });
 
-  if (fm.planApproval) {
+  if (fm.plan.file && fm.plan.approvedDigest) {
     events.push({
       type: 'plan-approval',
-      at: fm.planApproval.at || fm.updated,
-      actor: fm.planApproval.by ?? 'system',
-      details: { file: fm.planApproval.file, digest: fm.planApproval.digest },
+      at: fm.plan.approvedAt || fm.updated,
+      actor: fm.plan.approvedBy ?? 'system',
+      details: { file: fm.plan.file, digest: fm.plan.approvedDigest },
       sourceKey: backfillPlanApprovalSourceKey(fm.id),
     });
   }
@@ -184,7 +184,7 @@ async function collectTargets(baseDirs: string[]): Promise<EventTarget[]> {
 
 /**
  * One-time backfill: synthesize append-only `events` rows from each
- * ticket's `statusHistory` + `planApproval` frontmatter. Dry-run by
+ * ticket's `statusHistory` + `plan` frontmatter. Dry-run by
  * default; `--apply` writes. Idempotency is per-EVENT via a deterministic
  * `source_key` + `INSERT OR IGNORE` (re-running `--apply` inserts 0 rows;
  * survives partial failures; concurrency-safe) — NOT a per-ticket skip.
@@ -202,7 +202,7 @@ export async function migrateEventsCommand(
   const totalEvents = targets.reduce((sum, t) => sum + t.events.length, 0);
 
   if (targets.length === 0) {
-    console.log('No tickets with statusHistory/planApproval to backfill.');
+    console.log('No tickets with statusHistory/plan to backfill.');
     return;
   }
 

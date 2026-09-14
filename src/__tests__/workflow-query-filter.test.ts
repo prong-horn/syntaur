@@ -20,7 +20,7 @@ function makeItem(overrides: Partial<TicketBoardItem> = {}): TicketBoardItem {
     statusLabel: 'In progress',
     priority: 'high',
     assignee: 'claude',
-    dependsOn: [],
+    depends_on: [],
     links: [],
     tags: [],
     externalIds: [],

@@ -178,7 +178,7 @@ describe('newCommand', () => {
     );
     expect(content).toContain('status: draft');
     expect(content).toContain('priority: high');
-    expect(content).toContain('dependsOn:');
+    expect(content).toContain('depends_on:');
     expect(content).toContain(`  - ${dep.id}`);
   });
 

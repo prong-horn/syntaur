@@ -46,7 +46,7 @@ export interface TicketSummary {
   slug: string;
   title: string;
   status: string;
-  type: string | null;
+  template: string | null;
   /** Explicit `workflow:` override (null → resolved via binding). */
   workflow: string | null;
   /** The workflow id this ticket resolves to. */
@@ -57,7 +57,7 @@ export interface TicketSummary {
   statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   tags: string[];
   externalIds: ExternalIdInfo[];
@@ -97,7 +97,7 @@ export interface ArchivedTicketItem {
   slug: string;
   title: string;
   status: string;
-  type: string | null;
+  template: string | null;
   priority: 'low' | 'medium' | 'high' | 'critical';
   projectSlug: string | null;
   projectTitle: string | null;
@@ -191,7 +191,7 @@ export interface TicketDetail {
   slug: string;
   title: string;
   status: string;
-  type: string | null;
+  template: string | null;
   /** Explicit `workflow:` override (null → resolved via binding). */
   workflow: string | null;
   /** The workflow id this ticket resolves to. */
@@ -202,7 +202,7 @@ export interface TicketDetail {
   statusLabel: string;
   priority: TicketSummary['priority'];
   assignee: string | null;
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   reverseLinks: string[];
   enrichedLinks: EnrichedLink[];

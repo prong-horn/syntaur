@@ -20,7 +20,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -36,7 +36,7 @@ reviewRequested: false
 reworkRequested: false
 implementationStarted: true
 override: null
-planApproval: null
+plan: null
 facts: {}
 attestations: []
 statusHistory: []
@@ -91,10 +91,10 @@ describe('rawPatchMoverViolation', () => {
       ),
     ],
     [
-      'planApproval',
+      'plan',
       BASE.replace(
-        'planApproval: null',
-        'planApproval:\n  file: plan.md\n  digest: d\n  by: human\n  at: "2026-06-09T10:00:00Z"',
+        'plan: null',
+        'plan:\n  file: plan.md\n  approvedDigest: d\n  by: human\n  at: "2026-06-09T10:00:00Z"',
       ),
     ],
     ['facts', BASE.replace('facts: {}', 'facts:\n  qaPassed: true')],

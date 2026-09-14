@@ -31,7 +31,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -88,7 +88,7 @@ describe('plan create/version recompute derived status at the source', () => {
     expect(await status()).toBe('ready_to_implement');
 
     // A new plan version invalidates the approval (latest plan file no longer
-    // matches planApproval.file). Without recompute-at-source the status would
+    // matches plan.file). Without recompute-at-source the status would
     // stay 'ready_to_implement' (stale); with it, it drops immediately.
     await runCli(['plan', 'version', '--ticket', 'PRC-1', '--project', 'p1'], home);
     expect(await status()).toBe('ready_for_planning');

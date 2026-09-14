@@ -25,7 +25,7 @@ id: abc-1
 slug: demo
 title: "Demo"
 project: p
-type: feature
+template: feature
 status: in_progress
 priority: medium
 created: "2026-04-23T12:00:00Z"

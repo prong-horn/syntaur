@@ -3,6 +3,7 @@ import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { recomputeTicketDir } from '../lifecycle/recompute.js';
+import { updatePlanBlock } from '../lifecycle/frontmatter.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -254,9 +255,21 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
   console.log(`Path: ${newPath}`);
   console.log(`Carried forward: ${carriedTodos.length} unchecked task(s).`);
 
-  // A new plan version invalidates any prior plan approval (digest no longer
-  // matches the latest plan file). Recompute so the derived status reflects
-  // that immediately. Explicit verb → runs regardless of the migration gate.
+  // A new plan version moves plan.file to the new revision and clears any
+  // prior approval so planApproved drops immediately (revision-bound).
+  const ticketContent = await readFile(ticketMdPath, 'utf-8');
+  await writeFileForce(
+    ticketMdPath,
+    updatePlanBlock(ticketContent, {
+      file: next.fileName,
+      approvedDigest: null,
+      approvedAt: null,
+      approvedBy: null,
+    }),
+  );
+
+  // Recompute so the derived status reflects the invalidated approval.
+  // Explicit verb → runs regardless of the migration gate.
   await recomputeTicketDir(ticketDir, 'plan-version', null);
 }
 

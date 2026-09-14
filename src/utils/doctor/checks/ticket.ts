@@ -6,6 +6,7 @@ import { DEFAULT_STATUSES } from '../../../lifecycle/types.js';
 import { syntaurRoot } from '../../paths.js';
 import { listTicketsByProject, type TicketEntry } from '../../ticket-walk.js';
 import { makeWorkflowContextResolver } from '../../../lifecycle/workflow-context.js';
+import { listTemplates, resolveTemplateForTicket } from '../../../ticket-templates/registry.js';
 import type { CheckContext, Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'ticket';
@@ -206,6 +207,8 @@ const requiredFilesByStatus: Check = {
       const ticketPath = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(ticketPath);
       if (!parsed) continue;
+      const templateId = resolveTemplateForTicket({ template: parsed.template });
+      if (templateId !== 'legacy') continue;
       const missing: string[] = [];
       if (STATUSES_REQUIRING_HANDOFF.has(parsed.status)) {
         const handoffPath = resolve(a.ticketDir, 'handoff.md');
@@ -240,6 +243,10 @@ const companionFilesScaffolded: Check = {
     const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withTicketMd) {
+      const ticketPath = resolve(a.ticketDir, 'ticket.md');
+      const parsed = await parseSafe(ticketPath);
+      if (!parsed) continue;
+      if (resolveTemplateForTicket({ template: parsed.template }) !== 'legacy') continue;
       const missing: string[] = [];
       for (const filename of ['progress.md', 'comments.md']) {
         if (!(await fileExists(resolve(a.ticketDir, filename)))) {
@@ -268,47 +275,68 @@ const companionFilesScaffolded: Check = {
   },
 };
 
-const typeDefinition: Check = {
-  id: 'ticket.type-definition',
+const templateMissing: Check = {
+  id: 'ticket.template-missing',
   category: CATEGORY,
-  title: 'Ticket `type` is in config.types.definitions',
+  title: 'Ticket has a template field',
   async run(ctx) {
-    const typesConfig = ctx.config.types;
-    if (!typesConfig) {
-      return {
+    const { withTicketMd } = await listTickets(ctx);
+    const results: CheckResult[] = [];
+    for (const a of withTicketMd) {
+      const path = resolve(a.ticketDir, 'ticket.md');
+      const raw = await readFile(path, 'utf-8').catch(() => null);
+      if (!raw) continue;
+      if (/^template:\s*/m.test(raw)) continue;
+      const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
+      results.push({
         id: this.id,
         category: this.category,
         title: this.title,
-        status: 'skipped',
-        detail: 'config.types is not set; applying defaults — skipping strict validation',
+        status: 'warn',
+        detail: `${label}: missing template: (renders as legacy)`,
+        affected: [path],
+        remediation: {
+          kind: 'manual',
+          suggestion: 'Add template: <id> to ticket.md or run migrate v2',
+          command: null,
+        },
         autoFixable: false,
-      } satisfies CheckResult;
+      });
     }
-    const allowed = new Set(typesConfig.definitions.map((d) => d.id));
+    if (results.length === 0) return pass(this);
+    return results;
+  },
+};
+
+const templateKnown: Check = {
+  id: 'ticket.template-known',
+  category: CATEGORY,
+  title: 'Ticket template id is installed',
+  async run(ctx) {
+    const installed = new Set((await listTemplates(ctx.syntaurRoot)).map((t) => t.id));
     const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
     for (const a of withTicketMd) {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      if (!parsed.type) continue; // optional field
-      if (!allowed.has(parsed.type)) {
-        const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
-        results.push({
-          id: this.id,
-          category: this.category,
-          title: this.title,
-          status: 'warn',
-          detail: `${label}: type "${parsed.type}" is not in config.types.definitions (${[...allowed].join(', ')})`,
-          affected: [path],
-          remediation: {
-            kind: 'manual',
-            suggestion: `Either add "${parsed.type}" to config.types.definitions or change the ticket's type to one of the configured values`,
-            command: null,
-          },
-          autoFixable: false,
-        });
-      }
+      const templateId = resolveTemplateForTicket({ template: parsed.template });
+      if (installed.has(templateId)) continue;
+      const label = a.standalone ? `standalone/${a.ticketSlug}` : `${a.projectSlug}/${a.ticketSlug}`;
+      results.push({
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: `${label}: template "${templateId}" not found (syntaur template list)`,
+        affected: [path],
+        remediation: {
+          kind: 'manual',
+          suggestion: 'Run syntaur template list and set a known template id',
+          command: 'syntaur template list',
+        },
+        autoFixable: false,
+      });
     }
     if (results.length === 0) return pass(this);
     return results;
@@ -462,7 +490,8 @@ export const ticketChecks: Check[] = [
   workspaceMissing,
   requiredFilesByStatus,
   companionFilesScaffolded,
-  typeDefinition,
+  templateMissing,
+  templateKnown,
   projectFrontmatterMatchesContainer,
   draftMissingObjective,
   readyToImplementMissingPlan,

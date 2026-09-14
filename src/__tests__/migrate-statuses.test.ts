@@ -35,7 +35,7 @@ created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:

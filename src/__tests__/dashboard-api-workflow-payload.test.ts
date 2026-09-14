@@ -30,7 +30,7 @@ const bug: WorkflowDefinition = {
 
 function ticketMd(opts: {
   slug: string;
-  type?: string | null;
+  template?: string | null;
   workflow?: string | null;
   status: string;
 }): string {
@@ -40,7 +40,7 @@ id: 11111111-1111-1111-1111-${opts.slug.padEnd(12, '0').slice(0, 12)}
 slug: ${opts.slug}
 title: ${opts.slug} title
 project: proj
-type: ${opts.type ?? 'feature'}${workflowLine}
+template: ${opts.template ?? 'feature'}${workflowLine}
 status: ${opts.status}
 priority: medium
 created: "2026-04-07T10:00:00Z"
@@ -57,7 +57,7 @@ Do the thing.
 
 async function seedTicket(opts: {
   slug: string;
-  type?: string | null;
+  template?: string | null;
   workflow?: string | null;
   status: string;
 }): Promise<void> {
@@ -95,7 +95,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\nworkflowByType:\n  bug: bug\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedTicket({ slug: 'a1', type: 'bug', status: 'fixing' });
+    await seedTicket({ slug: 'a1', template: 'bug', status: 'fixing' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a1');
     expect(detail).not.toBeNull();
@@ -113,7 +113,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       'utf-8',
     );
     // No project binding; the ticket pins the bug workflow explicitly.
-    await seedTicket({ slug: 'a2', type: 'feature', workflow: 'bug', status: 'verified' });
+    await seedTicket({ slug: 'a2', template: 'feature', workflow: 'bug', status: 'verified' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a2');
     expect(detail!.workflow).toBe('bug');
@@ -129,7 +129,7 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedTicket({ slug: 'a3', type: 'feature', status: 'in_progress' });
+    await seedTicket({ slug: 'a3', template: 'feature', status: 'in_progress' });
 
     const detail = await getTicketDetail(projectsDir, 'proj', 'a3');
     expect(detail!.resolvedWorkflow).toBe('default');
@@ -144,8 +144,8 @@ describe('API payloads carry workflow id/label + real status label (Task 9)', ()
       `---\nid: p\nslug: proj\ntitle: Proj\nworkflowByType:\n  bug: bug\n---\n# Proj\n`,
       'utf-8',
     );
-    await seedTicket({ slug: 'a1', type: 'bug', status: 'fixing' });
-    await seedTicket({ slug: 'a3', type: 'feature', status: 'in_progress' });
+    await seedTicket({ slug: 'a1', template: 'bug', status: 'fixing' });
+    await seedTicket({ slug: 'a3', template: 'feature', status: 'in_progress' });
 
     const project = await getProjectDetail(projectsDir, 'proj');
     expect(project).not.toBeNull();

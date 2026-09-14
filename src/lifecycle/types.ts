@@ -135,18 +135,27 @@ export interface GateOverride {
  * revision AND `digest` matches its current content — so a replan or a
  * post-approval edit auto-invalidates the approval.
  */
+/** @deprecated v2 migration only — use {@link PlanBlock} on tickets. */
 export interface PlanApproval {
   file: string;
-  digest: string;
+  approvedDigest: string;
   by: string | null;
   at: string;
+}
+
+/** Plan role approval state on ticket.md (v2 frontmatter `plan:` block). */
+export interface PlanBlock {
+  file: string | null;
+  approvedDigest: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
 }
 
 /**
  * One attestation record (custom-facts-attestations): "agent X reviewed
  * revision Y with verdict Z". One record per (fact, actor) — re-attesting
  * replaces that actor's record. Revision-bound via the binding snapshot:
- * `file`+`digest` for binds:plan (planApproval semantics), `commit` for
+ * `file`+`digest` for binds:plan (plan semantics), `commit` for
  * binds:commit, neither for binds:none. A record is VALID only while its
  * snapshot still matches the live revision; stale records contribute nothing.
  */
@@ -221,9 +230,9 @@ export interface TicketFrontmatter {
   slug: string;
   title: string;
   project: string | null;
-  type: string | null;
+  template: string | null;
   /** Explicit lifecycle-workflow override (`workflow:` id). Null → resolve via
-   * project `workflowByType[type]` / project default / global default / `default`. */
+   * project `workflowByType[template]` / project default / global default / `default`. */
   workflow: string | null;
   status: TicketStatus;
   priority: 'low' | 'medium' | 'high' | 'critical';
@@ -232,7 +241,7 @@ export interface TicketFrontmatter {
   assignee: string | null;
   externalIds: ExternalId[];
   statusHistory: StatusHistoryEntry[];
-  dependsOn: string[];
+  depends_on: string[];
   links: string[];
   blockedReason: string | null;
   workspace: Workspace;
@@ -245,8 +254,8 @@ export interface TicketFrontmatter {
   phase: string | null;
   /** Cached disposition dimension (written by recompute; null pre-migration). */
   disposition: string | null;
-  /** Revision-bound plan approval record; null = not approved. */
-  planApproval: PlanApproval | null;
+  /** Plan role file and approval digest (always present; null fields = no plan / unapproved). */
+  plan: PlanBlock;
   /** Intentional withhold → disposition: parked. */
   parked: boolean;
   /** Review escalation atom; feeds the review phase rung. */

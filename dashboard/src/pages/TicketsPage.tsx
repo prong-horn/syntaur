@@ -34,14 +34,14 @@ import { ContextMenuPopover } from '../components/ContextMenuPopover';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import type { OverflowMenuItem } from '../components/OverflowMenu';
 import { StatusBadge, getStatusDescription } from '../components/StatusBadge';
-import { TypeChip } from '../components/TypeChip';
+import { TemplateChip } from '../components/TemplateChip';
 import { TicketStatusPill } from '../components/TicketStatusPill';
 import { InlineTitleEditor } from '../components/InlineTitleEditor';
 import { useBodyClickNavigation } from '../hooks/useBodyClickNavigation';
 import { useToast, Toaster } from '../components/Toast';
 import { transitionNeedsReason } from '../lib/tickets';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
-import { useTypesConfig, getTypeLabel } from '../hooks/useTypesConfig';
+import { useTemplates, getTemplateLabel } from '../hooks/useTemplates';
 import { useHotkey, useHotkeyScope, useListSelection } from '../hotkeys';
 import {
   VIEW_MODES,
@@ -97,7 +97,7 @@ export function TicketsPage() {
   useHotkeyScope('list:tickets');
   const { data, loading, error, refetch } = useTicketsBoard();
   const statusConfig = useStatusConfig();
-  const typesConfig = useTypesConfig();
+  const templatesConfig = useTemplates();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const scope: string | null = null;
@@ -123,12 +123,12 @@ export function TicketsPage() {
     [COLUMNS, COLUMN_LABELS],
   );
   const TYPE_KANBAN_COLUMNS: KanbanColumn[] = useMemo(
-    () => typesConfig.definitions.map((def) => ({
+    () => templatesConfig.definitions.map((def) => ({
       id: def.id,
-      title: getTypeLabel(typesConfig, def.id),
+      title: getTemplateLabel(templatesConfig, def.id),
       description: def.description,
     })),
-    [typesConfig],
+    [templatesConfig],
   );
   const UNKNOWN_TYPE_COLUMN_ID = '__unknown_type__';
   const VALID_STATUS_SET = useMemo(() => new Set<string>(['all', ...COLUMNS]), [COLUMNS]);
@@ -699,13 +699,13 @@ export function TicketsPage() {
       return [{ id: '__all__', label: 'All tickets', items: sortedItems }];
     }
     if (grouping === 'type') {
-      const groups: { id: string; label: string; items: TicketBoardItem[] }[] = typesConfig.definitions.map((def) => ({
+      const groups: { id: string; label: string; items: TicketBoardItem[] }[] = templatesConfig.definitions.map((def) => ({
         id: def.id,
-        label: getTypeLabel(typesConfig, def.id),
-        items: sortedItems.filter((it) => it.type === def.id),
+        label: getTemplateLabel(templatesConfig, def.id),
+        items: sortedItems.filter((it) => it.template === def.id),
       }));
-      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
-      const unknown = sortedItems.filter((it) => !it.type || !knownIds.has(it.type));
+      const knownIds = new Set(templatesConfig.definitions.map((d) => d.id));
+      const unknown = sortedItems.filter((it) => !it.template || !knownIds.has(it.template));
       if (unknown.length > 0) {
         groups.push({ id: UNKNOWN_TYPE_COLUMN_ID, label: 'Other', items: unknown });
       }
@@ -761,21 +761,21 @@ export function TicketsPage() {
       label: COLUMN_LABELS[status] ?? status,
       items: sortedItems.filter((it) => it.status === status),
     }));
-  }, [grouping, sortedItems, typesConfig, COLUMNS, COLUMN_LABELS]);
+  }, [grouping, sortedItems, templatesConfig, COLUMNS, COLUMN_LABELS]);
 
   // Add an "Other" column to the type kanban when any filtered item has a null
   // / unrecognized type slug. Mirrors the list-view bucketing so the same
   // ticket doesn't move between buckets when the user switches views.
   const TYPE_KANBAN_COLUMNS_WITH_FALLBACK: KanbanColumn[] = useMemo(() => {
-    const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
-    const hasUnknown = filteredItems.some((it) => !it.type || !knownIds.has(it.type));
+    const knownIds = new Set(templatesConfig.definitions.map((d) => d.id));
+    const hasUnknown = filteredItems.some((it) => !it.template || !knownIds.has(it.template));
     return hasUnknown
       ? [
           ...TYPE_KANBAN_COLUMNS,
           { id: UNKNOWN_TYPE_COLUMN_ID, title: 'Other', description: 'Tickets with no recognized type.' },
         ]
       : TYPE_KANBAN_COLUMNS;
-  }, [TYPE_KANBAN_COLUMNS, typesConfig, filteredItems]);
+  }, [TYPE_KANBAN_COLUMNS, templatesConfig, filteredItems]);
 
   // Flat visible order depends on view. For list, follow the active grouping
   // (which may be any GROUPINGS value). For kanban, follow effectiveKanbanGrouping
@@ -787,11 +787,11 @@ export function TicketsPage() {
     if (view === 'table') {
       items = sortedItems;
     } else if (view === 'kanban') {
-      const knownIds = new Set(typesConfig.definitions.map((d) => d.id));
+      const knownIds = new Set(templatesConfig.definitions.map((d) => d.id));
       if (effectiveKanbanGrouping === 'type') {
         items = [
-          ...typesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.type === def.id)),
-          ...filteredItems.filter((it) => !it.type || !knownIds.has(it.type)),
+          ...templatesConfig.definitions.flatMap((def) => filteredItems.filter((it) => it.template === def.id)),
+          ...filteredItems.filter((it) => !it.template || !knownIds.has(it.template)),
         ];
       } else if (effectiveKanbanGrouping === 'workflow') {
         // Mirror the swimlane render order (lane → column → within) so j/k
@@ -808,7 +808,7 @@ export function TicketsPage() {
     const byKey = new Map<string, number>();
     items.forEach((it, i) => byKey.set(getTicketKey(it), i));
     return { visibleItems: items, visibleIndexByKey: byKey };
-  }, [view, sortedItems, listGroups, effectiveKanbanGrouping, typesConfig, filteredItems, COLUMNS]);
+  }, [view, sortedItems, listGroups, effectiveKanbanGrouping, templatesConfig, filteredItems, COLUMNS]);
 
   const { hotkeyRowProps } = useListSelection(visibleItems, {
     scope: 'list:tickets',
@@ -1080,7 +1080,7 @@ export function TicketsPage() {
           valueSources={{
             statuses: statusConfig.order,
             priorities: uniquePriorities,
-            types: typesConfig.definitions.map((t) => t.id),
+            types: templatesConfig.definitions.map((t) => t.id),
             assignees: uniqueAssignees.filter((a) => a !== '__unassigned__'),
             projects: uniqueProjects.map(([slug]) => slug),
             tags: uniqueTags,
@@ -1123,7 +1123,7 @@ export function TicketsPage() {
           className="max-w-[180px]"
           allLabel="All types"
           disabled={!chipsRepresentable}
-          options={typesConfig.definitions.map((t) => ({ value: t.id, label: getTypeLabel(typesConfig, t.id) }))}
+          options={templatesConfig.definitions.map((t) => ({ value: t.id, label: getTemplateLabel(templatesConfig, t.id) }))}
           value={typeFilter}
           onChange={handleSetTypeFilter}
         />
@@ -1319,11 +1319,11 @@ export function TicketsPage() {
                     </td>
                     ) : null}
                     <td className="py-4 pr-4">
-                      <TypeChip type={ticket.type} compact />
+                      <TemplateChip template={ticket.template} compact />
                     </td>
                     {showCol('priority') ? <td className="py-4 pr-4 capitalize text-muted-foreground">{ticket.priority}</td> : null}
                     {showCol('assignee') ? <td className="py-4 pr-4 text-muted-foreground">{ticket.assignee ?? 'Unassigned'}</td> : null}
-                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{ticket.dependsOn.length}</td> : null}
+                    {showCol('dependencies') ? <td className="py-4 pr-4 text-muted-foreground">{ticket.depends_on.length}</td> : null}
                     {showCol('created') ? <td className="py-4 pr-4 text-muted-foreground">{formatDate(ticket.created)}</td> : null}
                     {showCol('updated') ? <td className="py-4 text-muted-foreground">{formatDate(ticket.updated)}</td> : null}
                   </ClickableTableRow>
@@ -1443,8 +1443,8 @@ export function TicketsPage() {
           getItemId={getTicketKey}
           getColumnId={(item) =>
             effectiveKanbanGrouping === 'type'
-              ? (item.type && typesConfig.definitions.some((d) => d.id === item.type)
-                  ? item.type
+              ? (item.template && templatesConfig.definitions.some((d) => d.id === item.template)
+                  ? item.template
                   : UNKNOWN_TYPE_COLUMN_ID)
               : item.status
           }
@@ -1724,16 +1724,16 @@ function TicketBoardCard({
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        <TypeChip type={ticket.type} />
+        <TemplateChip template={ticket.template} />
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs capitalize text-muted-foreground">
           {ticket.priority}
         </span>
         <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
           {ticket.assignee ?? 'Unassigned'}
         </span>
-        {ticket.dependsOn.length > 0 ? (
+        {ticket.depends_on.length > 0 ? (
           <span className="rounded-full border border-border/60 px-2.5 py-1 text-xs text-muted-foreground">
-            {ticket.dependsOn.length} {ticket.dependsOn.length === 1 ? 'dependency' : 'dependencies'}
+            {ticket.depends_on.length} {ticket.depends_on.length === 1 ? 'dependency' : 'dependencies'}
           </span>
         ) : null}
       </div>

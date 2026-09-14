@@ -31,7 +31,7 @@ function ticketMd(
   slug: string,
   id: string,
   history: HistoryEntry[],
-  opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
+  opts: { plan?: { file: string; approvedDigest: string; by?: string | null; at?: string } } = {},
 ): string {
   const historyBlock =
     history.length === 0
@@ -43,8 +43,8 @@ function ticketMd(
               `  - at: "${h.at}"\n    from: ${h.from === null ? 'null' : h.from}\n    to: ${h.to}\n    command: ${h.command}\n    by: ${h.by == null ? 'null' : h.by}\n`,
           )
           .join('');
-  const planApprovalBlock = opts.planApproval
-    ? `planApproval:\n  file: ${opts.planApproval.file}\n  digest: ${opts.planApproval.digest}\n  by: ${opts.planApproval.by == null ? 'null' : opts.planApproval.by}\n  at: "${opts.planApproval.at ?? U}"\n`
+  const planBlock = opts.plan
+    ? `plan:\n  file: ${opts.plan.file}\n  approvedDigest: ${opts.plan.approvedDigest}\n  approvedBy: ${opts.plan.by == null ? 'null' : opts.plan.by}\n  approvedAt: "${opts.plan.at ?? U}"\n`
     : '';
   return `---
 id: ${id}
@@ -56,7 +56,7 @@ created: "${C}"
 updated: "${U}"
 assignee: null
 externalIds: []
-${historyBlock}${planApprovalBlock}dependsOn: []
+${historyBlock}${planBlock}depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -76,7 +76,7 @@ async function seedProject(
   slug: string,
   id: string,
   history: HistoryEntry[],
-  opts: { planApproval?: { file: string; digest: string; by?: string | null; at?: string } } = {},
+  opts: { plan?: { file: string; approvedDigest: string; by?: string | null; at?: string } } = {},
 ): Promise<void> {
   const dir = resolve(projectsDir, project, 'tickets', `${id}-${slug}`);
   await mkdir(dir, { recursive: true });
@@ -162,9 +162,9 @@ describe('migrateEventsCommand', () => {
     expect(listEventsByTicket('a2-id')).toHaveLength(2);
   });
 
-  it('planApproval yields exactly one plan-approval event with the deterministic source_key', async () => {
+  it('plan yields exactly one plan-approval event with the deterministic source_key', async () => {
     await seedProject('p1', 'a1', 'a1-id', HISTORY, {
-      planApproval: { file: 'plan.md', digest: 'sha', by: 'agent:rev', at: '2026-03-03T00:00:00Z' },
+      plan: { file: 'plan.md', approvedDigest: 'sha', by: 'agent:rev', at: '2026-03-03T00:00:00Z' },
     });
     await migrateEventsCommand({ dir: projectsDir, apply: true });
 

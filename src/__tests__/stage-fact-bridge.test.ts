@@ -22,7 +22,7 @@ async function writeTicket(overrides: Record<string, string> = {}): Promise<void
     status: 'in_progress',
     phase: 'in_progress',
     disposition: 'active',
-    planApproval: 'null',
+    plan: 'null',
     parked: 'false',
     reviewRequested: 'false',
     reworkRequested: 'false',

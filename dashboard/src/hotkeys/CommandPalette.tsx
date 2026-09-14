@@ -10,7 +10,7 @@ import { useHotkeyContext } from './HotkeyProvider';
 import { useContentSearch, type ContentMatchRange } from '../hooks/useContentSearch';
 import { useSearchConfig } from '../hooks/useSearchConfig';
 import { useStatusConfig } from '../hooks/useStatusConfig';
-import { useTypesConfig } from '../hooks/useTypesConfig';
+import { useTemplates } from '../hooks/useTemplates';
 
 interface CommandPaletteProps {
   entries: PaletteEntry[];
@@ -91,7 +91,7 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
   const listboxId = useId();
   const { search: searchCfg } = useSearchConfig();
   const statusCfg = useStatusConfig();
-  const typesCfg = useTypesConfig();
+  const templatesCfg = useTemplates();
 
   // Split the raw query into an AQL filter gate + free-text terms, applying the
   // config-driven aliases and default scope. The gate compiles against the FULL
@@ -126,13 +126,13 @@ export function CommandPalette({ entries }: CommandPaletteProps) {
         : allFields.filter((f) => f !== 'jira' && f !== 'externalid'),
       values: {
         status: statusCfg.statuses.map((s) => s.id),
-        type: typesCfg.definitions.map((d) => d.id),
+        type: templatesCfg.definitions.map((d) => d.id),
         tag: [...tags],
         assignee: [...assignees],
         externalid: searchCfg.externalIds ? [...externalIds] : [],
       },
     };
-  }, [entries, searchCfg.aliases, searchCfg.externalIds, statusCfg.statuses, typesCfg.definitions]);
+  }, [entries, searchCfg.aliases, searchCfg.externalIds, statusCfg.statuses, templatesCfg.definitions]);
 
   const suggestions = useMemo(
     () => suggestPalette(query, caret, suggestCtx),

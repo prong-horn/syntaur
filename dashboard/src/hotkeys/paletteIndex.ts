@@ -101,7 +101,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       status: a.status,
       tags: a.tags,
       assignee: a.assignee,
-      ticketType: a.type,
+      ticketType: a.template,
       project: a.projectSlug,
       externalIds: idField(a.externalIds),
     });

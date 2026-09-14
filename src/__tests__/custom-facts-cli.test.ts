@@ -119,7 +119,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:

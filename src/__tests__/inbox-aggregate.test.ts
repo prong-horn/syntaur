@@ -42,7 +42,7 @@ interface SeedOpts {
   archived?: boolean;
   blockedReason?: string;
   reviewRequested?: boolean;
-  planApproval?: { file: string; digest: string };
+  plan?: { file: string; approvedDigest: string };
   statusHistory?: string[]; // raw YAML lines under statusHistory:
   updated?: string;
   created?: string;
@@ -78,11 +78,11 @@ async function seed(o: SeedOpts): Promise<string> {
   if (o.reviewRequested) fm.push('reviewRequested: true');
   if (o.updated) fm.push(`updated: "${o.updated}"`);
   if (o.created) fm.push(`created: "${o.created}"`);
-  if (o.planApproval) {
-    fm.push('planApproval:');
-    fm.push(`  file: ${o.planApproval.file}`);
-    fm.push(`  digest: ${o.planApproval.digest}`);
-    fm.push('  by: human');
+  if (o.plan) {
+    fm.push('plan:');
+    fm.push(`  file: ${o.plan.file}`);
+    fm.push(`  approvedDigest: ${o.plan.approvedDigest}`);
+    fm.push('  approvedBy: human');
     fm.push('  at: "2026-06-16T00:00:00Z"');
   }
   if (o.statusHistory) {
@@ -289,7 +289,7 @@ describe('computeInbox — exclusions', () => {
       status: 'ready_for_planning',
       project: 'p1',
       planFiles: { 'plan.md': content },
-      planApproval: { file: 'plan.md', digest: planDigest(content) },
+      plan: { file: 'plan.md', approvedDigest: planDigest(content) },
     });
     const r = await run();
     expect(r.total).toBe(0);

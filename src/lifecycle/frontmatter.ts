@@ -4,7 +4,7 @@ import type {
   ExternalId,
   FrozenCheck,
   GateOverride,
-  PlanApproval,
+  PlanBlock,
   Solicitation,
   StatusHistoryEntry,
   StatusOverride,
@@ -36,11 +36,11 @@ function parseSimpleValue(raw: string): string | null {
 }
 
 function parseDependsOn(frontmatter: string): string[] {
-  const inlineMatch = frontmatter.match(/^dependsOn:\s*\[\s*\]/m);
+  const inlineMatch = frontmatter.match(/^depends_on:\s*\[\s*\]/m);
   if (inlineMatch) return [];
 
   const results: string[] = [];
-  const blockMatch = frontmatter.match(/^dependsOn:\s*\n((?:\s+-\s+.*\n?)*)/m);
+  const blockMatch = frontmatter.match(/^depends_on:\s*\n((?:\s+-\s+.*\n?)*)/m);
   if (blockMatch) {
     const items = blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm);
     for (const item of items) {
@@ -182,7 +182,7 @@ function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
 /**
  * Parse a flat nested mapping block (`header:` + indented `key: value` lines)
  * into a string map. Returns null when the header is absent or explicitly null.
- * Shared by `planApproval` / `override` parsing; mirrors `parseWorkspace`'s
+ * Shared by `plan` / `override` parsing; mirrors `parseWorkspace`'s
  * field scanning but generically.
  */
 function parseNestedBlock(frontmatter: string, header: string): Record<string, string | null> | null {
@@ -204,14 +204,21 @@ function parseNestedBlock(frontmatter: string, header: string): Record<string, s
   return Object.keys(out).length > 0 ? out : null;
 }
 
-function parsePlanApproval(frontmatter: string): PlanApproval | null {
-  const block = parseNestedBlock(frontmatter, 'planApproval');
-  if (!block || !block['file'] || !block['digest']) return null;
+export const EMPTY_PLAN_BLOCK: PlanBlock = {
+  file: null,
+  approvedDigest: null,
+  approvedAt: null,
+  approvedBy: null,
+};
+
+function parsePlanBlock(frontmatter: string): PlanBlock {
+  const block = parseNestedBlock(frontmatter, 'plan');
+  if (!block) return { ...EMPTY_PLAN_BLOCK };
   return {
-    file: block['file'],
-    digest: block['digest'],
-    by: block['by'] ?? null,
-    at: block['at'] ?? '',
+    file: block['file'] ?? null,
+    approvedDigest: block['approvedDigest'] ?? null,
+    approvedAt: block['approvedAt'] ?? null,
+    approvedBy: block['approvedBy'] ?? null,
   };
 }
 
@@ -457,7 +464,7 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     slug: getField('slug') ?? '',
     title: getField('title') ?? '',
     project: getField('project'),
-    type: getField('type'),
+    template: getField('template'),
     workflow: getField('workflow'),
     status: getField('status') ?? 'pending',
     priority: (getField('priority') ?? 'medium') as TicketFrontmatter['priority'],
@@ -466,7 +473,7 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     assignee: getField('assignee'),
     externalIds: parseExternalIds(frontmatter),
     statusHistory: parseStatusHistory(frontmatter),
-    dependsOn: parseDependsOn(frontmatter),
+    depends_on: parseDependsOn(frontmatter),
     links: parseLinks(frontmatter),
     blockedReason: getField('blockedReason'),
     workspace: parseWorkspace(frontmatter),
@@ -476,7 +483,7 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     archivedReason: getField('archivedReason'),
     phase: getField('phase'),
     disposition: getField('disposition'),
-    planApproval: parsePlanApproval(frontmatter),
+    plan: parsePlanBlock(frontmatter),
     parked: getField('parked') === 'true',
     reviewRequested: getField('reviewRequested') === 'true',
     reworkRequested: getField('reworkRequested') === 'true',
@@ -530,6 +537,7 @@ export function updateTicketFile(
     Pick<
       TicketFrontmatter,
       | 'status'
+      | 'template'
       | 'workflow'
       | 'assignee'
       | 'blockedReason'
@@ -773,7 +781,7 @@ function tryJson(raw: string): unknown {
  * Set or clear a flat nested mapping block (`header:` + indented `key: value`
  * lines) in ticket frontmatter. `record = null` writes `header: null`
  * (preserving the key so future sets edit in place). Creates the block before
- * the closing `---` when absent. Used for `planApproval` and `override`.
+ * the closing `---` when absent. Used for `plan` and `override`.
  *
  * Duplicate headers: only the FIRST block is edited — consistent with
  * parseNestedBlock, which also reads the first. This writer never creates a
@@ -824,14 +832,16 @@ export function updateNestedBlock(
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
 }
 
-export function updatePlanApproval(fileContent: string, approval: PlanApproval | null): string {
-  return updateNestedBlock(
-    fileContent,
-    'planApproval',
-    approval === null
-      ? null
-      : { file: approval.file, digest: approval.digest, by: approval.by, at: approval.at },
-  );
+export function updatePlanBlock(fileContent: string, patch: Partial<PlanBlock>): string {
+  const [fm] = extractFrontmatter(fileContent);
+  const current = parsePlanBlock(fm);
+  const merged: PlanBlock = { ...current, ...patch };
+  return updateNestedBlock(fileContent, 'plan', {
+    file: merged.file,
+    approvedDigest: merged.approvedDigest,
+    approvedAt: merged.approvedAt,
+    approvedBy: merged.approvedBy,
+  });
 }
 
 export function updateOverride(fileContent: string, override: StatusOverride | null): string {
@@ -848,7 +858,7 @@ export function updateOverride(fileContent: string, override: StatusOverride | n
  * Set one custom fact value in the `facts:` map (read-modify-write the whole
  * map through {@link updateNestedBlock}). `value` must already be the CANONICAL
  * serialization (`'true'`/`'false'` / `String(n)`) — the CLI coerces before
- * calling. Dedicated block writer (like {@link updatePlanApproval}); no
+ * calling. Dedicated block writer (like {@link updatePlanBlock}); no
  * `updateTicketFile` whitelist entry needed.
  */
 export function updateFactsMap(fileContent: string, name: string, value: string): string {

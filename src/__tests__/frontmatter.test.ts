@@ -16,7 +16,7 @@ created: "2026-03-18T10:00:00Z"
 updated: "2026-03-18T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -45,7 +45,7 @@ externalIds:
   - system: jira
     id: AUTH-43
     url: https://jira.example.com/browse/AUTH-43
-dependsOn:
+depends_on:
   - design-auth-schema
 links:
   - other-project/some-ticket
@@ -76,7 +76,7 @@ describe('parseTicketFrontmatter', () => {
     expect(fm.updated).toBe('2026-03-18T10:00:00Z');
     expect(fm.assignee).toBeNull();
     expect(fm.externalIds).toEqual([]);
-    expect(fm.dependsOn).toEqual([]);
+    expect(fm.depends_on).toEqual([]);
     expect(fm.links).toEqual([]);
     expect(fm.blockedReason).toBeNull();
     expect(fm.workspace.repository).toBeNull();
@@ -90,7 +90,7 @@ describe('parseTicketFrontmatter', () => {
     const fm = parseTicketFrontmatter(COMPLEX_TICKET);
     expect(fm.status).toBe('in_progress');
     expect(fm.assignee).toBe('claude-1');
-    expect(fm.dependsOn).toEqual(['design-auth-schema']);
+    expect(fm.depends_on).toEqual(['design-auth-schema']);
     expect(fm.links).toEqual(['other-project/some-ticket', 'my-project/another-task']);
     expect(fm.workspace.repository).toBe('/Users/brennen/projects/auth-service');
     expect(fm.workspace.branch).toBe('feat/complex-task');
@@ -123,7 +123,7 @@ externalIds:
   - system: jira
     id: PROJ-99
     url: https://jira.example.com/browse/PROJ-99
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -172,7 +172,7 @@ externalIds:
   - system: jira
     id: A-5
     url:
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -317,7 +317,7 @@ statusHistory:
     command: block
     by: claude-1
     reason: waiting on API
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: waiting on API
 workspace:
@@ -382,7 +382,7 @@ statusHistory:
     to: draft
     command: create
     by: null
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -414,7 +414,7 @@ created: "2026-03-18T10:00:00Z"
 updated: "2026-03-18T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -504,7 +504,7 @@ describe('appendStatusHistoryEntry', () => {
     expect(fm.assignee).toBe('claude-1');
     expect(fm.blockedReason).toBe('waiting on API');
     expect(fm.status).toBe('blocked');
-    expect(fm.dependsOn).toEqual([]);
+    expect(fm.depends_on).toEqual([]);
     expect(fm.tags).toEqual([]);
     // body intact
     expect(appended).toContain('# With History');
@@ -552,7 +552,7 @@ statusHistory:
     to: completed
     command: complete
     by: claude
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -685,7 +685,7 @@ describe('archive frontmatter fields', () => {
 
 // ── derived-status v3: dimension-aware history + asserted-fact fields ──────
 
-import { updateOverride, updatePlanApproval } from '../lifecycle/frontmatter.js';
+import { updateOverride, updatePlanBlock } from '../lifecycle/frontmatter.js';
 
 describe('dimension-aware statusHistory (v3)', () => {
   it('round-trips an entry with phase/disposition keys', () => {
@@ -748,7 +748,8 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     const parsed = parseTicketFrontmatter(SIMPLE_TICKET);
     expect(parsed.phase).toBeNull();
     expect(parsed.disposition).toBeNull();
-    expect(parsed.planApproval).toBeNull();
+    expect(parsed.plan.file).toBeNull();
+    expect(parsed.plan.approvedDigest).toBeNull();
     expect(parsed.override).toBeNull();
     expect(parsed.parked).toBe(false);
     expect(parsed.reviewRequested).toBe(false);
@@ -756,24 +757,29 @@ describe('asserted-fact frontmatter fields (v3)', () => {
     expect(parsed.implementationStarted).toBe(false);
   });
 
-  it('updatePlanApproval writes and clears a nested record', () => {
+  it('updatePlanBlock writes and clears a nested record', () => {
     const approval = {
       file: 'plan-v2.md',
-      digest: 'abc123',
-      by: 'human',
-      at: '2026-06-09T12:00:00Z',
+      approvedDigest: 'abc123',
+      approvedBy: 'human',
+      approvedAt: '2026-06-09T12:00:00Z',
     };
-    let content = updatePlanApproval(SIMPLE_TICKET, approval);
-    expect(parseTicketFrontmatter(content).planApproval).toEqual(approval);
+    let content = updatePlanBlock(SIMPLE_TICKET, approval);
+    expect(parseTicketFrontmatter(content).plan).toMatchObject(approval);
     // set again in place (edit, not duplicate)
-    content = updatePlanApproval(content, { ...approval, file: 'plan-v3.md' });
+    content = updatePlanBlock(content, { ...approval, file: 'plan-v3.md' });
     const reparsed = parseTicketFrontmatter(content);
-    expect(reparsed.planApproval?.file).toBe('plan-v3.md');
-    expect(content.match(/^planApproval:/gm)).toHaveLength(1);
+    expect(reparsed.plan?.file).toBe('plan-v3.md');
+    expect(content.match(/^plan:/gm)).toHaveLength(1);
     // clear → null, key preserved
-    content = updatePlanApproval(content, null);
-    expect(parseTicketFrontmatter(content).planApproval).toBeNull();
-    expect(content).toMatch(/^planApproval: null$/m);
+    content = updatePlanBlock(content, {
+      approvedDigest: null,
+      approvedAt: null,
+      approvedBy: null,
+    });
+    const cleared = parseTicketFrontmatter(content).plan;
+    expect(cleared.approvedDigest).toBeNull();
+    expect(cleared.file).toBe('plan-v3.md');
   });
 
   it('updateOverride writes and clears the pin record', () => {

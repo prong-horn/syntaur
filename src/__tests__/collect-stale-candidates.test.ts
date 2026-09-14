@@ -20,7 +20,7 @@ created: "2026-01-01T10:00:00Z"
 updated: "2026-01-05T10:00:00Z"
 assignee: codex
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: waiting on infra
 disposition: blocked
 statusHistory:
@@ -50,7 +50,7 @@ created: "2026-06-17T10:00:00Z"
 updated: "2026-06-17T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 blockedReason: null
 workspace:
   repository: null

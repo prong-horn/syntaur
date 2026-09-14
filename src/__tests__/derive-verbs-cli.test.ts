@@ -42,7 +42,7 @@ created: "2026-06-09T10:00:00Z"
 updated: "2026-06-09T10:00:00Z"
 assignee: null
 externalIds: []
-dependsOn: []
+depends_on: []
 links: []
 blockedReason: null
 workspace:
@@ -102,7 +102,7 @@ A real objective.
     expect(r.code).toBe(0);
     let f = await fm();
     expect(f.status).toBe('ready_to_implement'); // the motivating rule
-    expect(f.planApproval?.file).toBe('plan.md');
+    expect(f.plan?.file).toBe('plan.md');
 
     // implement asserts the fact; derived → in_progress
     r = await runCli(['implement', 'VRB-1', '--project', 'p1'], home);

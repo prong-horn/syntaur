@@ -37,7 +37,7 @@ export interface WorkflowConfigView {
 /** The binding-relevant subset of a ticket's frontmatter. */
 export interface TicketBindingFields {
   workflow?: string | null;
-  type?: string | null;
+  template?: string | null;
 }
 
 export interface WorkflowContext {
@@ -106,7 +106,7 @@ export function resolveTicketWorkflowId(
 ): string {
   return resolveWorkflowId({
     ticketWorkflow: ticket.workflow ?? null,
-    ticketType: ticket.type ?? null,
+    ticketType: ticket.template ?? null,
     projectDefaultWorkflow: binding.defaultWorkflow,
     projectWorkflowByType: binding.workflowByType,
     globalDefaultWorkflow: config.defaultWorkflow ?? null,

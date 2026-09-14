@@ -21,7 +21,7 @@ import {
   updateTicketFile,
   updateFactsMap,
   updateOverride,
-  updatePlanApproval,
+  updatePlanBlock,
   upsertAttestation,
 } from '../lifecycle/frontmatter.js';
 import { canonicalizeFactValue, latestPlanFile, planDigest } from '../lifecycle/facts.js';
@@ -239,11 +239,11 @@ export async function planApproveCommand(ticket: string, options: DeriveVerbOpti
       }
       approvedFile = planFile;
       const planContent = await readFile(resolve(target.ticketDir, planFile), 'utf-8');
-      return updatePlanApproval(content, {
+      return updatePlanBlock(content, {
         file: planFile,
-        digest: planDigest(planContent),
-        by: await inferActor(options),
-        at: nowTimestamp(),
+        approvedDigest: planDigest(planContent),
+        approvedBy: await inferActor(options),
+        approvedAt: nowTimestamp(),
       });
     },
     'Plan approved (revision-bound)',
@@ -254,7 +254,14 @@ export async function planApproveCommand(ticket: string, options: DeriveVerbOpti
 }
 
 export async function planUnapproveCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
-  await assertFact(ticket, options, 'plan-unapprove', (content) => updatePlanApproval(content, null), 'Plan approval cleared');
+  await assertFact(
+    ticket,
+    options,
+    'plan-unapprove',
+    (content) =>
+      updatePlanBlock(content, { approvedDigest: null, approvedAt: null, approvedBy: null }),
+    'Plan approval cleared',
+  );
 }
 
 // ── custom asserted facts + attestations ────────────────────────────────────
@@ -543,8 +550,8 @@ export async function implementStartedCommand(ticket: string, options: DeriveVer
   // could trap legitimate work; the divergence is surfaced (here + as a
   // needs-attention reason) rather than faked in the phase ladder.
   const fm = parseTicketFrontmatter(await readFile(target.ticketPath, 'utf-8'));
-  if (fm.dependsOn.length > 0 && target.projectDir) {
-    const dep = await checkDependencies(target.projectDir, fm.dependsOn, context.terminalStatuses);
+  if (fm.depends_on.length > 0 && target.projectDir) {
+    const dep = await checkDependencies(target.projectDir, fm.depends_on, context.terminalStatuses);
     if (!dep.satisfied) {
       console.warn(`Warning: starting with unmet dependencies: ${dep.unmet.join(', ')}`);
     }

@@ -510,13 +510,13 @@ const EMPTY_BINDING: ProjectWorkflowBinding = { defaultWorkflow: null, workflowB
  * project binding (from the already-parsed project record — no extra read).
  * Uses the cached workflow-library meta. First-hit-wins precedence. */
 async function resolveWorkflowIdWithBinding(
-  ticket: { workflow?: string | null; type?: string | null },
+  ticket: { workflow?: string | null; template?: string | null },
   binding: ProjectWorkflowBinding,
 ): Promise<string> {
   const meta = await getWorkflowMeta();
   return resolveWorkflowId({
     ticketWorkflow: ticket.workflow ?? null,
-    ticketType: ticket.type ?? null,
+    ticketType: ticket.template ?? null,
     projectDefaultWorkflow: binding.defaultWorkflow,
     projectWorkflowByType: binding.workflowByType,
     globalDefaultWorkflow: meta.defaultWorkflow,
@@ -528,7 +528,7 @@ async function resolveWorkflowIdWithBinding(
  * (single-record paths where the parsed project isn't already in hand).
  * Standalone (no projectDir) → binding-less resolution. */
 async function resolveWorkflowIdByDir(
-  ticket: { workflow?: string | null; type?: string | null },
+  ticket: { workflow?: string | null; template?: string | null },
   projectDir: string | null,
 ): Promise<string> {
   const binding = projectDir ? await readProjectBinding(projectDir) : EMPTY_BINDING;
@@ -538,7 +538,7 @@ async function resolveWorkflowIdByDir(
 /** The per-ticket resolved status config (its OWN workflow). Convenience over
  * {@link resolveWorkflowIdByDir} + {@link getStatusConfig}. */
 async function statusConfigForTicket(
-  ticket: { workflow?: string | null; type?: string | null },
+  ticket: { workflow?: string | null; template?: string | null },
   projectDir: string | null,
 ): Promise<ResolvedStatusConfig> {
   return getStatusConfig(await resolveWorkflowIdByDir(ticket, projectDir));
@@ -812,7 +812,7 @@ function toArchivedTicketItem(
     slug: ticket.slug,
     title: ticket.title,
     status: ticket.status,
-    type: ticket.type,
+    template: ticket.template,
     priority: ticket.priority as ArchivedTicketItem['priority'],
     projectSlug,
     projectTitle,
@@ -1166,14 +1166,14 @@ export async function getTicketDetail(
     slug: ticket.slug || ticketSlug,
     title: ticket.title,
     status: ticket.status,
-    type: ticket.type,
+    template: ticket.template,
     workflow: ticket.workflow,
     resolvedWorkflow: wfConfig.workflowId,
     workflowLabel: wfConfig.label,
     statusLabel: statusLabelFor(wfConfig, ticket.status),
     priority: ticket.priority as TicketDetail['priority'],
     assignee: ticket.assignee,
-    dependsOn: ticket.dependsOn,
+    depends_on: ticket.depends_on,
     links: ticket.links,
     reverseLinks: [],
     enrichedLinks: [],
@@ -1823,14 +1823,14 @@ function toTicketSummary(
     slug: ticket.slug,
     title: ticket.title,
     status: ticket.status,
-    type: ticket.type,
+    template: ticket.template,
     workflow: ticket.workflow,
     resolvedWorkflow: config.workflowId,
     workflowLabel: config.label,
     statusLabel: statusLabelFor(config, ticket.status),
     priority: ticket.priority as TicketSummary['priority'],
     assignee: ticket.assignee,
-    dependsOn: ticket.dependsOn,
+    depends_on: ticket.depends_on,
     links: ticket.links,
     tags: ticket.tags,
     externalIds: ticket.externalIds,
@@ -1906,7 +1906,7 @@ function buildDependencyGraph(tickets: TicketRecord[]): string | null {
   const usedStatuses = new Set<string>();
 
   for (const ticket of tickets) {
-    for (const dependency of ticket.dependsOn) {
+    for (const dependency of ticket.depends_on) {
       const depStatus = findTicketStatus(tickets, dependency);
       usedStatuses.add(depStatus);
       usedStatuses.add(ticket.status);
@@ -1965,11 +1965,11 @@ async function getAvailableTransitions(
       warning = 'No assignee set — consider assigning before starting.';
     }
 
-    if (definition.command === 'start' && ticket.dependsOn.length > 0) {
+    if (definition.command === 'start' && ticket.depends_on.length > 0) {
       const t0 = traces ? performance.now() : 0;
       const unmetDependencies = await getUnmetDependencies(
         projectPath,
-        ticket.dependsOn,
+        ticket.depends_on,
         config.terminalStatuses,
         options?.dependencyStatusMap,
       );
@@ -1996,14 +1996,14 @@ async function getAvailableTransitions(
 
 async function getUnmetDependencies(
   projectPath: string,
-  dependsOn: string[],
+  depends_on: string[],
   terminalStatuses?: ReadonlySet<string>,
   dependencyStatusMap?: ReadonlyMap<string, string>,
 ): Promise<string[]> {
   const terminals = terminalStatuses ?? new Set(['completed']);
   const unmet: string[] = [];
 
-  for (const dependency of dependsOn) {
+  for (const dependency of depends_on) {
     // Fast path: in-memory map (built once by the overview pass over already-parsed records).
     if (dependencyStatusMap) {
       const mappedStatus = dependencyStatusMap.get(dependency);
@@ -2148,9 +2148,9 @@ export async function collectStaleCandidates(projectsDir: string,
         await resolveWorkflowIdWithBinding(ticket, binding),
       );
       const depsSatisfied =
-        ticket.dependsOn.length === 0
+        ticket.depends_on.length === 0
           ? true
-          : (await getUnmetDependencies(projectPath, ticket.dependsOn, terminalStatuses, depMap)).length === 0;
+          : (await getUnmetDependencies(projectPath, ticket.depends_on, terminalStatuses, depMap)).length === 0;
       const lastActivityMs = await readProgressActivityMs(
         resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
         now,
@@ -2224,9 +2224,9 @@ async function buildOverviewSegmentBuckets(
         // + one progress.md stat). depsSatisfied via the in-memory depMap; no
         // extra disk read when there are no deps.
         const depsSatisfied =
-          ticket.dependsOn.length === 0
+          ticket.depends_on.length === 0
             ? true
-            : (await getUnmetDependencies(projectPath, ticket.dependsOn, ticketTerminal, depMap))
+            : (await getUnmetDependencies(projectPath, ticket.depends_on, ticketTerminal, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
           resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),

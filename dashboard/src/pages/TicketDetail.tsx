@@ -21,7 +21,7 @@ import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { StatusBadge } from '../components/StatusBadge';
 import { TicketStatusPill } from '../components/TicketStatusPill';
-import { TypeChip } from '../components/TypeChip';
+import { TemplateChip } from '../components/TemplateChip';
 import { ContentTabs } from '../components/ContentTabs';
 import { SectionCard } from '../components/SectionCard';
 import { MarkdownRenderer } from '../components/MarkdownRenderer';
@@ -156,7 +156,7 @@ export function TicketDetail() {
   const enrichedDeps = useMemo(() => {
     if (!ticket || !project) return [];
     const map = new Map(project.tickets.map((a) => [a.slug, a]));
-    return ticket.dependsOn.map((depSlug) => {
+    return ticket.depends_on.map((depSlug) => {
       const s = map.get(depSlug);
       return {
         id: s?.id ?? depSlug,
@@ -851,9 +851,9 @@ export function TicketDetail() {
               <DetailRow label="ID" value={ticket.id} copyable />
               <DetailRow label="Priority" value={ticket.priority} />
               {ticket.assignee && <DetailRow label="Assignee" value={ticket.assignee} />}
-              {ticket.type && (
+              {ticket.template && (
                 <DetailNodeRow label="Type">
-                  <TypeChip type={ticket.type} compact />
+                  <TemplateChip template={ticket.template} compact />
                 </DetailNodeRow>
               )}
               {ticket.projectSlug ? (

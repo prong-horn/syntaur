@@ -540,7 +540,7 @@ export async function recomputeDependents(
     try {
       const fm = parseTicketFrontmatter(await readFile(path, 'utf-8'));
       if (fm.id === changedTicketId) continue;
-      if (!fm.dependsOn.includes(changedTicketId)) continue;
+      if (!fm.depends_on.includes(changedTicketId)) continue;
       results.push(await recomputeAndWrite(path, { ...opts, projectDir, workflowResolver }));
     } catch {
       // unparseable sibling — doctor's territory, not ours
