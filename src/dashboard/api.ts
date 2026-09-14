@@ -175,10 +175,10 @@ const STATUS_TO_SEGMENT: Readonly<Record<string, OverviewSegmentId>> = {
 
 const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
   ['readyForReview', 'review'],
-  ['readyToImplement', 'ready_to_implement'],
-  ['readyForPlanning', 'ready_for_planning'],
+  ['readyToImplement', 'ready'],
+  ['readyForPlanning', 'planning'],
   ['inProgress', 'in_progress'],
-  ['drafts', 'draft'],
+  ['drafts', 'backlog'],
   ['blocked', 'blocked'],
   ['stale', 'stale'],
 ];

@@ -145,7 +145,6 @@ describe('AC2 — getValueSuggestions returns the right candidates per field', (
   it('a bool field → true / false', () => {
     expect(getValueSuggestions('blocked', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
     expect(getValueSuggestions('parked', '', SOURCES, REGISTRY)).toEqual(['true', 'false']);
-    expect(getValueSuggestions('archived', 't', SOURCES, REGISTRY)).toEqual(['true']);
   });
 
   it('a freeform / non-enumerable field → empty list', () => {

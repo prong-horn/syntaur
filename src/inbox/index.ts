@@ -86,13 +86,9 @@ export interface InboxStatusConfig {
   /** Statuses whose disposition is terminal. */
   terminalStatuses: ReadonlySet<string>;
   /**
-   * The configured blocked + parked HEADLINE status ids — statuses that are NOT
-   * valid active "reopen" targets. Callers build this from the resolved derive
-   * config's `headline.{blocked,parked}` (defaulting to `DEFAULT_DERIVE_CONFIG`
-   * when the user has no custom derive rules). Optional: when absent,
-   * `deriveReviewVerbs` treats it as the empty set (no extra exclusion).
-   * Used by `deriveReviewVerbs` so a malformed `review:start -> blocked`/`parked`
-   * is correctly NOT labeled "Reopen".
+   * Status ids that are not valid active "reopen" targets (blocked/parked
+   * headline stages). Optional: when absent, `deriveReviewVerbs` treats it as
+   * the empty set.
    */
   blockedParkedStatuses?: ReadonlySet<string>;
 }
@@ -257,7 +253,7 @@ export function computeAgeMs(since: string, now: number): number {
 /**
  * The lifecycle verbs that `src/index.ts` registers as real CLI subcommands. A
  * derived review verb is only RUNNABLE (CLI `syntaur <verb>` + dashboard
- * `POST transitions/<verb>`) when it is one of these — there is no generic
+ * `POST verbs/<verb>`) when it is one of these — there is no generic
  * `syntaur transition` fallback. Anything outside this set is non-runnable, so
  * the derivation rejects it (e.g. a custom `review→shipped` command named
  * `ship`).

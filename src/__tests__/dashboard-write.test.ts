@@ -2086,4 +2086,42 @@ tags: []
     expect(response.statusCode).toBe(404);
   });
 
+  it('POST /api/tickets/:id/verbs/approve returns next from show context', async () => {
+    await seedProjectPlanTicket();
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'approve' },
+      {},
+    );
+    expect(response.statusCode).toBe(200);
+    const payload = response.payload as { next: string | null; ticket: { status: string } };
+    expect(payload.ticket.status).toBe('ready');
+    expect(payload.next).toBeTruthy();
+    expect(payload.next).toBe(payload.ticket.next);
+  });
+
+  it('POST /api/tickets/:id/verbs/approve passes agent into the verb', async () => {
+    const { seedMissingBuiltins } = await import('../ticket-templates/builtins.js');
+    if (process.env.SYNTAUR_HOME) {
+      await seedMissingBuiltins(process.env.SYNTAUR_HOME);
+    }
+    await seedProjectPlanTicket();
+    const { initEventsDb, listEventsByTicket } = await import('../db/events-db.js');
+    initEventsDb();
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'approve' },
+      { agent: 'dashboard-bot' },
+    );
+    expect(response.statusCode).toBe(200);
+    const moved = listEventsByTicket('PP-1').find((e) => e.type === 'moved');
+    expect(moved?.actor).toBe('dashboard-bot');
+  });
+
 });

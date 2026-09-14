@@ -101,9 +101,6 @@ export interface ProjectDetail {
   title: string;
   status: string;
   statusOverride: string | null;
-  /** Project-level workflow binding (Task 2). */
-  defaultWorkflow?: string | null;
-  workflowByType?: Record<string, string>;
   archived: boolean;
   archivedAt: string | null;
   archivedReason: string | null;
@@ -288,10 +285,10 @@ export interface AttentionItem {
 
 export type OverviewHeroKind =
   | 'review'
-  | 'ready_to_implement'
-  | 'ready_for_planning'
+  | 'ready'
+  | 'planning'
   | 'in_progress'
-  | 'draft'
+  | 'backlog'
   | 'blocked'
   | 'stale'
   | 'clean';

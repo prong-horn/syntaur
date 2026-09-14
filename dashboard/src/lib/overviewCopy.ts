@@ -10,14 +10,14 @@
 export type HeroCopyKey =
   | 'review'
   | 'review.singular'
-  | 'ready_to_implement'
-  | 'ready_to_implement.singular'
-  | 'ready_for_planning'
-  | 'ready_for_planning.singular'
+  | 'ready'
+  | 'ready.singular'
+  | 'planning'
+  | 'planning.singular'
   | 'in_progress'
   | 'in_progress.singular'
-  | 'draft'
-  | 'draft.singular'
+  | 'backlog'
+  | 'backlog.singular'
   | 'blocked'
   | 'blocked.singular'
   | 'stale'
@@ -27,14 +27,14 @@ export type HeroCopyKey =
 export const HERO_COPY: Record<HeroCopyKey, string> = {
   review: '{total} items ready for your review',
   'review.singular': 'Review {title}',
-  ready_to_implement: '{total} plans ready to implement — start with {title}',
-  'ready_to_implement.singular': 'Start implementing {title}',
-  ready_for_planning: '{total} tickets ready to plan — start with {title}',
-  'ready_for_planning.singular': 'Plan {title}',
+  ready: '{total} plans ready to implement — start with {title}',
+  'ready.singular': 'Start implementing {title}',
+  planning: '{total} tickets ready to plan — start with {title}',
+  'planning.singular': 'Plan {title}',
   in_progress: 'Resume {title} ({total} in progress)',
   'in_progress.singular': 'Resume {title}',
-  draft: 'Shape your {total} drafts — start with {title}',
-  'draft.singular': 'Shape {title}',
+  backlog: 'Shape your {total} drafts — start with {title}',
+  'backlog.singular': 'Shape {title}',
   blocked: 'Unblock {title} ({total} blocked)',
   'blocked.singular': 'Unblock {title}',
   stale: 'Triage {total} stale items',
@@ -87,8 +87,9 @@ export const SEGMENT_TITLE: Record<SegmentId, string> = {
 
 export const DIALOG_COPY = {
   claimAsTitle: 'Claim tickets as',
-  claimAsHint: 'Used when you claim a ticket from this dashboard. You can change it later.',
+  claimAsHint: 'Used when you claim a ticket from this dashboard. You can change it later in settings.',
   claimAsSubmit: 'Save',
+  claimAsRemember: 'Remember this choice',
   quickCommentTitle: 'Add a quick note',
   quickCommentPlaceholder: 'Note…',
   quickCommentSubmit: 'Post',

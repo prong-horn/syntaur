@@ -90,7 +90,7 @@ export interface InboxItem {
   /**
    * Review-only: the derived CLI verb that ACCEPTS the review (terminal target),
    * or `null` when none qualifies. Carried structurally so the dashboard POSTs
-   * `transitions/<acceptCommand>` without re-parsing `action.command`.
+   * `verbs/<acceptCommand>` without re-parsing `action.command`.
    */
   acceptCommand?: string | null;
   /**

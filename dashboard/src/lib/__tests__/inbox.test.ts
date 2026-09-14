@@ -151,12 +151,12 @@ describe('planApproveEndpoint', () => {
     const proj = makeItem({ category: 'plan-approval' });
     expect(planApproveEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-1/plan/approve',
+      url: '/api/tickets/uuid-1/verbs/approve',
     });
     const standalone = makeItem({ category: 'plan-approval', project: null, ticketId: 'uuid-pa' });
     expect(planApproveEndpoint(standalone)).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-pa/plan/approve',
+      url: '/api/tickets/uuid-pa/verbs/approve',
     });
   });
 });
@@ -181,18 +181,18 @@ describe('formatAge', () => {
 
 describe('transitionEndpoint', () => {
   it('maps review accept for a project item by ticket id', () => {
-    const item = makeItem({ category: 'review' });
-    expect(transitionEndpoint(item, 'complete')).toEqual({
+    const item = makeItem({ category: 'review', acceptCommand: 'done' });
+    expect(transitionEndpoint(item, 'done')).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-1/transitions/complete',
+      url: '/api/tickets/uuid-1/verbs/done',
     });
   });
 
   it('maps review accept for a standalone item (UUID-keyed)', () => {
     const item = makeItem({ category: 'review', project: null, ticketId: 'uuid-99' });
-    expect(transitionEndpoint(item, 'complete')).toEqual({
+    expect(transitionEndpoint(item, 'done')).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-99/transitions/complete',
+      url: '/api/tickets/uuid-99/verbs/done',
     });
   });
 });

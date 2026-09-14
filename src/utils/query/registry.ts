@@ -22,7 +22,6 @@ export function queryFieldNames(): string[] {
     'project',
     'tag',
     'tags',
-    'archived',
     'title',
     'search',
     'created',

@@ -27,11 +27,6 @@ export interface ProjectSummary {
   externalIds: ExternalIdInfo[];
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
-  /** Project-level default workflow id (binding); absent when unset. Populated
-   * by the API materializer once binding is surfaced (Task 9/13). */
-  defaultWorkflow?: string | null;
-  /** Project `type → workflow id` binding map; absent/empty when unset. */
-  workflowByType?: Record<string, string>;
 }
 
 export interface EnrichedLink {
@@ -131,11 +126,6 @@ export interface ProjectDetail {
   dependencyGraph: string | null;
   /** Repository paths the project spans. Empty array when the project.md frontmatter omits the field. */
   repositories: string[];
-  /** Project-level default workflow id (binding); absent when unset. Populated
-   * by the API materializer once binding is surfaced (Task 9/13). */
-  defaultWorkflow?: string | null;
-  /** Project `type → workflow id` binding map; absent/empty when unset. */
-  workflowByType?: Record<string, string>;
 }
 
 export interface WorkspaceInfo {
@@ -334,10 +324,10 @@ export interface AttentionItem {
 /** Hero category — drives both copy lookup and the row reference. */
 export type OverviewHeroKind =
   | 'review'
-  | 'ready_to_implement'
-  | 'ready_for_planning'
+  | 'ready'
+  | 'planning'
   | 'in_progress'
-  | 'draft'
+  | 'backlog'
   | 'blocked'
   | 'stale'
   | 'clean';

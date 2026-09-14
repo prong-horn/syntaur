@@ -244,17 +244,17 @@ export function transitionEndpoint(
   item: RouteIdentity,
   command: string,
 ): EndpointDescriptor {
-  const cmd = encodeURIComponent(command);
+  const verb = encodeURIComponent(command);
   return {
     method: 'POST',
-    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/transitions/${cmd}`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/verbs/${verb}`,
   };
 }
 
 export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
   return {
     method: 'POST',
-    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/plan/approve`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/verbs/approve`,
   };
 }
 

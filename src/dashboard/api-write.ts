@@ -1440,10 +1440,12 @@ const id = getParam(req.params.id);
 
       const body = req.body ?? {};
       const reason = typeof body.reason === 'string' ? body.reason : undefined;
+      const agent = typeof body.agent === 'string' ? body.agent : undefined;
       const force = Boolean(body.force);
       const options = {
         force,
         reason,
+        agent,
         project: resolved.projectSlug ?? undefined,
       };
 
@@ -1457,7 +1459,7 @@ const id = getParam(req.params.id);
       }
 
       const ticket = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket, next: null });
+      res.json({ ticket, next: ticket?.next ?? null });
     } catch (error) {
       if (error instanceof GateFailedError) {
         res.status(409).json({ error: error.message, next: error.next });
