@@ -14,35 +14,11 @@ import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { fileState } from '../ticket-templates/roles.js';
 import { loadTemplate } from '../ticket-templates/registry.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { objectiveOneLiner } from '../ticket-templates/content.js';
 
 let home: string;
 
 const NOW = new Date('2026-09-11T00:40:00Z');
-
-/** Apply the four driver-allowed substitutions to a §7.2/§7.3 spec example. */
-function expectSpecShowText(
-  text: string,
-  model: ShowModel,
-  spec: string,
-  specObjective: string,
-  specLogState: string,
-  specStageSuffix: string,
-  specCommands: string,
-): void {
-  const kernelDesc = model.files.find((f) => f.path === 'ticket.md')!.description;
-  const logRole = model.files.find((f) => f.role === 'log');
-  const logStateLine = logRole ? `journal.md  log · ${logRole.state}` : '';
-  const stage = model.ticket.stage;
-  const commandsLine = `Commands: ${model.commands.join('; ')}`;
-
-  const expected = spec
-    .replace(specObjective, `    ${kernelDesc}`)
-    .replace(specLogState, logStateLine)
-    .replace(specStageSuffix, ` · ${model.ticket.template} · ${stage}`)
-    .replace(specCommands, commandsLine);
-
-  expect(text).toBe(expected);
-}
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -81,6 +57,16 @@ async function writeProjectTicket(
   }
   return ticketDir;
 }
+
+describe('objectiveOneLiner', () => {
+  it('caps the first Objective sentence at 100 characters with an ellipsis', () => {
+    const sentence =
+      'This is a deliberately long first sentence that exceeds one hundred characters when written out in full for the kernel one-liner test case here.';
+    const body = `## Objective\n\n${sentence}\n\n## Acceptance Criteria\n\n- [ ] one`;
+    expect(objectiveOneLiner(body)).toBe(`${sentence.slice(0, 99)}…`);
+    expect(objectiveOneLiner(body).length).toBe(100);
+  });
+});
 
 describe('parseLogEntries', () => {
   it('parses v2 headings and legacy progress headings', () => {
@@ -236,16 +222,15 @@ More5
 `,
     });
 
-    const model = await buildShow(home, ticketDir);
-    const text = renderShowText(model);
-    const specSyn142 = `SYN-142 · Needs me: age out the backlog with a max-age filter and snooze · feature · in_progress
+    const text = renderShowText(await buildShow(home, ticketDir));
+    expect(text).toBe(`SYN-142 · Needs me: age out the backlog with a max-age filter and snooze · feature · in_progress
 Objective: Keep the Needs me queue from being dominated by reviews and plan approvals on parked projects.
 Acceptance: 5 of 5 checked
 Workspace: /Users/brennen/syntaur · feat/needs-me-backlog-aging · /Users/brennen/syntaur/.worktrees/feat/needs-me-backlog-aging
 Depends: SYN-138 done
 Files:
   ticket.md  kernel · editable
-    Age filter and snooze for Needs me queue
+    Keep the Needs me queue from being dominated by reviews and plan approvals on parked projects.
   plan.md  plan · approved
     Implementation plan with tasks and verify steps; requires human approval before start.
   journal.md  log · 8 entries · last progress 2h
@@ -257,16 +242,7 @@ Log: last 3 entries
   ## 2026-09-10T12:15:00Z · progress · cursor — Started implementation
 Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.
 Next: syntaur review SYN-142
-Commands: syntaur log SYN-142 -t progress "..."; syntaur block SYN-142 "reason"; ask via question log or @mention in chat`;
-    expectSpecShowText(
-      text,
-      model,
-      specSyn142,
-      '    Age filter and snooze for Needs me queue',
-      'journal.md  log · 8 entries · last progress 2h',
-      ' · feature · in_progress',
-      'Commands: syntaur log SYN-142 -t progress "..."; syntaur block SYN-142 "reason"; ask via question log or @mention in chat',
-    );
+Commands: syntaur progress log --ticket SYN-142 "..."; syntaur show SYN-142; ask via @mention in chat`);
   });
 });
 
@@ -325,30 +301,20 @@ Add skills.sh install path to README.
 `,
     });
 
-    const model = await buildShow(home, ticketDir);
-    const text = renderShowText(model);
-    const specScr7 = `SCR-7 · Update README install section · quick · backlog
+    const text = renderShowText(await buildShow(home, ticketDir));
+    expect(text).toBe(`SCR-7 · Update README install section · quick · backlog
 Objective: Add skills.sh install path to README.
 Acceptance: 0 of 1 checked
 Workspace: none (template does not require one)
 Depends: none
 Files:
   ticket.md  kernel · editable
-    README install update
+    Add skills.sh install path to README.
 Handoff: none
 Log: last 0 entries
 Stage: backlog. Do the work described in the objective, then syntaur done.
 Next: syntaur done SCR-7
-Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via question log or @mention in chat`;
-    expectSpecShowText(
-      text,
-      model,
-      specScr7,
-      '    README install update',
-      'journal.md  log · 8 entries · last progress 2h',
-      ' · quick · backlog',
-      'Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via question log or @mention in chat',
-    );
+Commands: syntaur show SCR-7; ask via @mention in chat`);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile, stat, cp } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -13,6 +13,8 @@ import {
   migrateBackfillSourceKey,
   mapTicketRef,
   rekeyDatabase,
+  readMarkerSteps,
+  pendingMigrationSteps,
 } from '../commands/migrate-v2.js';
 import {
   closeSessionDb,
@@ -721,6 +723,43 @@ describe('migrateV2Command', () => {
     await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(/half-applied/);
   });
 
+  it('dry-run prints templates step counts without writing files', async () => {
+    const { lines } = await migrateV2Command({ root: home, apply: false });
+    expect(await hashTree(home)).toBe(fixtureHash);
+    expect(lines.some((l) => l.includes('templates: seeded'))).toBe(true);
+    expect(lines.some((l) => l === '[dry-run] template legacy: 0 tickets')).toBe(true);
+    expect(lines.some((l) => l.includes('status mapping deferred to lifecycle-verbs'))).toBe(
+      true,
+    );
+    expect(
+      lines.filter((l) => l.includes('status mapping deferred')).length,
+    ).toBe(1);
+  });
+
+  it('apply runs rename-ids then templates and writes a step ledger', async () => {
+    await migrateV2Command({ root: home, apply: true });
+    const marker = await readFile(resolve(home, V2_MIGRATED_MARKER), 'utf-8');
+    expect(marker).toContain('rename-ids ');
+    expect(marker).toContain('templates ');
+    const steps = await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER));
+    expect(pendingMigrationSteps(steps)).toEqual([]);
+    expect(await fileExists(resolve(home, 'templates', 'feature', 'template.md'))).toBe(true);
+  });
+
+  it('bare-timestamp marker runs templates only on id-prefixed folders', async () => {
+    await migrateV2Command({ root: home, apply: true });
+    const bareTs = '2026-09-12T12:46:05.342Z';
+    await writeFile(resolve(home, V2_MIGRATED_MARKER), `${bareTs}\n`);
+    const hashBefore = await hashTree(home);
+    const { lines } = await migrateV2Command({ root: home, apply: true });
+    expect(await hashTree(home)).not.toBe(hashBefore);
+    expect(lines.some((l) => l.startsWith('[apply] templates:'))).toBe(true);
+    expect(lines.some((l) => l.includes('project p1: prefix'))).toBe(false);
+    const marker = await readFile(resolve(home, V2_MIGRATED_MARKER), 'utf-8');
+    expect(marker).toContain(bareTs);
+    expect(marker).toContain('templates ');
+  });
+
   it('aborts with restore message, leaves no marker, and keeps files unchanged on database failure', async () => {
     const hashBefore = await hashTree(home);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -742,6 +781,158 @@ describe('migrateV2Command', () => {
     } finally {
       logSpy.mockRestore();
     }
+  });
+});
+
+function v1TicketMd(opts: {
+  id: string;
+  slug: string;
+  project: string;
+  type?: string;
+  dependsOn?: string[];
+  planApproval?: { file: string; digest: string; by: string; at: string } | null;
+}): string {
+  const dependsOn =
+    opts.dependsOn === undefined
+      ? 'dependsOn: []'
+      : opts.dependsOn.length === 0
+        ? 'dependsOn: []'
+        : `dependsOn:\n${opts.dependsOn.map((d) => `  - ${d}`).join('\n')}`;
+  const planApproval = opts.planApproval
+    ? `planApproval:
+  file: ${opts.planApproval.file}
+  digest: ${opts.planApproval.digest}
+  by: ${opts.planApproval.by}
+  at: "${opts.planApproval.at}"`
+    : '';
+  const typeLine = opts.type ? `type: ${opts.type}` : 'type: feature';
+  return `---
+id: ${opts.id}
+slug: ${opts.slug}
+title: ${opts.slug}
+project: ${opts.project}
+${typeLine}
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+${dependsOn}
+links: []
+${planApproval}
+---
+
+## Objective
+
+Test ticket.
+`;
+}
+
+describe('migrate v2 templates step', () => {
+  let tplHome: string;
+
+  beforeEach(async () => {
+    tplHome = await mkdtemp(join(tmpdir(), 'syntaur-migrate-templates-'));
+    process.env.SYNTAUR_HOME = tplHome;
+    const projectDir = resolve(tplHome, 'projects', 'demo', 'tickets', 'DEM-1-alpha');
+    await mkdir(projectDir, { recursive: true });
+    await mkdir(resolve(tplHome, 'projects', 'demo'), { recursive: true });
+    await writeFile(
+      resolve(tplHome, 'projects', 'demo', 'project.md'),
+      renderProject({
+        id: 'demo-id',
+        slug: 'demo',
+        title: 'Demo',
+        timestamp: '2026-01-01T00:00:00Z',
+        prefix: 'DEM',
+        nextTicket: 2,
+      }),
+    );
+  });
+
+  afterEach(async () => {
+    await rm(tplHome, { recursive: true, force: true });
+  });
+
+  it('rewrites depends_on, plan block, template legacy and drops type per ticket', async () => {
+    const digest = createHash('sha256').update('# Plan\n', 'utf-8').digest('hex');
+    const ticketDir = resolve(tplHome, 'projects', 'demo', 'tickets', 'DEM-1-alpha');
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      v1TicketMd({
+        id: 'DEM-1',
+        slug: 'alpha',
+        project: 'demo',
+        type: 'bug',
+        dependsOn: ['DEM-0'],
+        planApproval: {
+          file: 'plan.md',
+          digest,
+          by: 'human',
+          at: '2026-09-01T00:00:00Z',
+        },
+      }),
+    );
+    await writeFile(resolve(ticketDir, 'plan.md'), '# Plan\n');
+
+    await writeFile(resolve(tplHome, V2_MIGRATED_MARKER), '2026-09-12T12:46:05.342Z\n');
+    await migrateV2Command({ root: tplHome, apply: true });
+
+    const ticketMd = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    expect(ticketMd.indexOf('project: demo\n')).toBeGreaterThan(-1);
+    expect(ticketMd).toMatch(/project: demo\ntemplate: legacy/);
+    expect(ticketMd).toContain('depends_on:\n  - DEM-0');
+    expect(ticketMd).not.toContain('dependsOn:');
+    expect(ticketMd).not.toContain('type:');
+    expect(ticketMd).not.toContain('planApproval:');
+    expect(ticketMd).toContain('plan:\n  file: plan.md');
+    expect(ticketMd).toContain(`approvedDigest: ${digest}`);
+    expect(ticketMd).toContain('status: draft');
+  });
+
+  it('drops superseded plan approvals when a newer plan revision exists', async () => {
+    const oldDigest = createHash('sha256').update('# Old\n', 'utf-8').digest('hex');
+    const ticketDir = resolve(tplHome, 'projects', 'demo', 'tickets', 'DEM-1-alpha');
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      v1TicketMd({
+        id: 'DEM-1',
+        slug: 'alpha',
+        project: 'demo',
+        planApproval: {
+          file: 'plan.md',
+          digest: oldDigest,
+          by: 'human',
+          at: '2026-09-01T00:00:00Z',
+        },
+      }),
+    );
+    await writeFile(resolve(ticketDir, 'plan.md'), '# Old\n');
+    await writeFile(resolve(ticketDir, 'plan-v2.md'), '# New\n');
+
+    await writeFile(resolve(tplHome, V2_MIGRATED_MARKER), 'rename-ids 2026-09-12T12:46:05.342Z\n');
+    const { lines } = await migrateV2Command({ root: tplHome, apply: true });
+    const ticketMd = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    expect(ticketMd).toContain('file: plan-v2.md');
+    expect(ticketMd).toContain('approvedDigest: null');
+    expect(
+      lines.some((l) => l.includes('1 superseded approvals dropped')),
+    ).toBe(true);
+  });
+
+  it('isolates --root copies from the default home', async () => {
+    const copyHome = await mkdtemp(join(tmpdir(), 'syntaur-migrate-root-copy-'));
+    await cp(tplHome, copyHome, { recursive: true });
+    const ticketDir = resolve(copyHome, 'projects', 'demo', 'tickets', 'DEM-1-alpha');
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      v1TicketMd({ id: 'DEM-1', slug: 'alpha', project: 'demo', type: 'chore' }),
+    );
+    await writeFile(resolve(copyHome, V2_MIGRATED_MARKER), '2026-09-12T12:46:05.342Z\n');
+    await migrateV2Command({ root: copyHome, apply: true });
+    expect(await fileExists(resolve(copyHome, 'templates', 'legacy', 'template.md'))).toBe(true);
+    const ticketMd = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
+    expect(ticketMd).toContain('template: legacy');
+    await rm(copyHome, { recursive: true, force: true });
   });
 });
 

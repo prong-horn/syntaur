@@ -28,8 +28,16 @@ import {
 } from '../dashboard/session-db.js';
 import { closeEventsDb, initEventsDb, resetEventsDb } from '../db/events-db.js';
 import { closeUsageDb, initUsageDb, resetUsageDb } from '../db/usage-db.js';
+import { BUILTIN_TEMPLATE_IDS, seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import { latestPlanRevision } from '../ticket-templates/roles.js';
 
 export const V2_MIGRATED_MARKER = 'v2-migrated';
+
+const MIGRATION_STEPS = ['rename-ids', 'templates'] as const;
+export type MigrationStep = (typeof MIGRATION_STEPS)[number];
+
+const ISO_TIMESTAMP_LINE_RE =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -168,6 +176,299 @@ function mapListField(
     return `  - ${mapper(trimmed)}`;
   });
   return content.replace(block, `${field}:\n${mapped}`);
+}
+
+function renameFrontmatterKey(content: string, oldKey: string, newKey: string): string {
+  if (!new RegExp(`^${oldKey}:`, 'm').test(content)) return content;
+  return content.replace(new RegExp(`^${oldKey}:`, 'gm'), `${newKey}:`);
+}
+
+function dropFrontmatterScalar(content: string, key: string): string {
+  return content.replace(new RegExp(`^${key}:.*\\n`, 'm'), '');
+}
+
+function setTemplateLegacy(content: string): string {
+  if (/^template:\s*/m.test(content)) {
+    return content.replace(/^template:\s*.*$/m, 'template: legacy');
+  }
+  const projectMatch = content.match(/^project:.*$/m);
+  if (!projectMatch) return content;
+  return content.replace(/^project:.*$/m, `${projectMatch[0]}\ntemplate: legacy`);
+}
+
+interface PlanApprovalV1 {
+  file: string | null;
+  digest: string | null;
+  by: string | null;
+  at: string | null;
+}
+
+function parseNestedFrontmatterBlock(
+  fm: string,
+  key: string,
+): Record<string, string | null> | null {
+  const blockRe = new RegExp(`^${key}:\\s*\\n((?:  \\w+:.*\\n?)*)`, 'm');
+  const match = fm.match(blockRe);
+  if (!match) return null;
+  const out: Record<string, string | null> = {};
+  for (const line of match[1].split('\n')) {
+    const m = line.match(/^\s{2}(\w+):\s*(.*)$/);
+    if (!m) continue;
+    let val = m[2].trim();
+    if (val === 'null' || val === '~') {
+      out[m[1]] = null;
+    } else {
+      val = val.replace(/^["']|["']$/g, '');
+      out[m[1]] = val;
+    }
+  }
+  return out;
+}
+
+function parsePlanApprovalV1(content: string): PlanApprovalV1 | null {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return null;
+  const block = parseNestedFrontmatterBlock(fmMatch[1], 'planApproval');
+  if (!block) return null;
+  return {
+    file: block.file ?? null,
+    digest: block.digest ?? null,
+    by: block.by ?? null,
+    at: block.at ?? null,
+  };
+}
+
+function renderPlanBlockYaml(plan: {
+  file: string | null;
+  approvedDigest: string | null;
+  approvedAt: string | null;
+  approvedBy: string | null;
+}): string {
+  const fileLine = plan.file === null ? 'null' : plan.file;
+  const digestLine = plan.approvedDigest === null ? 'null' : plan.approvedDigest;
+  const atLine =
+    plan.approvedAt === null ? 'null' : `"${plan.approvedAt.replace(/"/g, '\\"')}"`;
+  const byLine = plan.approvedBy === null ? 'null' : plan.approvedBy;
+  return `plan:
+  file: ${fileLine}
+  approvedDigest: ${digestLine}
+  approvedAt: ${atLine}
+  approvedBy: ${byLine}`;
+}
+
+function replacePlanApprovalWithPlanBlock(
+  content: string,
+  planYaml: string,
+): string {
+  let next = content.replace(/^planApproval:\s*\n(?:  \w+:.*\n?)*/m, '');
+  if (/^plan:\s*\n(?:  \w+:.*\n?)*/m.test(next)) {
+    next = next.replace(/^plan:\s*\n(?:  \w+:.*\n?)*/m, planYaml);
+  } else {
+    const closeIdx = next.indexOf('\n---', 4);
+    if (closeIdx === -1) return next;
+    next = `${next.slice(0, closeIdx)}\n${planYaml}${next.slice(closeIdx)}`;
+  }
+  return next;
+}
+
+export async function readMarkerSteps(
+  markerPath: string,
+): Promise<Map<MigrationStep, string>> {
+  const completed = new Map<MigrationStep, string>();
+  if (!(await fileExists(markerPath))) return completed;
+  const raw = await readFile(markerPath, 'utf-8');
+  for (const line of raw.split('\n').map((l) => l.trim()).filter(Boolean)) {
+    const ledger = line.match(/^(rename-ids|templates)\s+(.+)$/);
+    if (ledger) {
+      completed.set(ledger[1] as MigrationStep, ledger[2]);
+      continue;
+    }
+    if (ISO_TIMESTAMP_LINE_RE.test(line)) {
+      completed.set('rename-ids', line);
+    }
+  }
+  return completed;
+}
+
+export function pendingMigrationSteps(
+  completed: Map<MigrationStep, string>,
+): MigrationStep[] {
+  return MIGRATION_STEPS.filter((step) => !completed.has(step));
+}
+
+async function appendMarkerStep(markerPath: string, step: MigrationStep): Promise<void> {
+  const ts = new Date().toISOString();
+  if (step === 'rename-ids') {
+    await writeFileForce(markerPath, `rename-ids ${ts}\n`);
+    return;
+  }
+  let prefix = '';
+  if (await fileExists(markerPath)) {
+    prefix = await readFile(markerPath, 'utf-8');
+    if (prefix.length > 0 && !prefix.endsWith('\n')) prefix += '\n';
+  }
+  await writeFileForce(markerPath, `${prefix}templates ${ts}\n`);
+}
+
+interface TemplatesStepCounts {
+  seeded: string[];
+  templateLegacy: number;
+  dependsOnRenamed: number;
+  planBlock: number;
+  approvalsCarried: number;
+  supersededDropped: number;
+  typeDropped: number;
+}
+
+async function collectTicketMdPaths(home: string): Promise<string[]> {
+  const paths: string[] = [];
+  const projectsDir = resolve(home, 'projects');
+  if (!(await fileExists(projectsDir))) return paths;
+  const projects = await readdir(projectsDir, { withFileTypes: true });
+  for (const project of projects) {
+    if (!project.isDirectory()) continue;
+    const ticketsDir = resolve(projectsDir, project.name, 'tickets');
+    if (!(await fileExists(ticketsDir))) continue;
+    const folders = await readdir(ticketsDir, { withFileTypes: true });
+    for (const folder of folders) {
+      if (!folder.isDirectory()) continue;
+      const ticketMd = resolve(ticketsDir, folder.name, 'ticket.md');
+      if (await fileExists(ticketMd)) paths.push(ticketMd);
+    }
+  }
+  return paths.sort();
+}
+
+async function transformTicketTemplatesFrontmatter(
+  content: string,
+  ticketDir: string,
+): Promise<{ content: string; counts: TemplatesStepCounts }> {
+  const counts: TemplatesStepCounts = {
+    seeded: [],
+    templateLegacy: 0,
+    dependsOnRenamed: 0,
+    planBlock: 0,
+    approvalsCarried: 0,
+    supersededDropped: 0,
+    typeDropped: 0,
+  };
+
+  let next = content;
+  next = setTemplateLegacy(next);
+  counts.templateLegacy += 1;
+
+  if (/^dependsOn:/m.test(next)) {
+    next = renameFrontmatterKey(next, 'dependsOn', 'depends_on');
+    counts.dependsOnRenamed += 1;
+  }
+
+  if (/^type:/m.test(next)) {
+    next = dropFrontmatterScalar(next, 'type');
+    counts.typeDropped += 1;
+  }
+
+  const approval = parsePlanApprovalV1(next);
+  const fmMatch = next.match(/^---\n([\s\S]*?)\n---/);
+  const existingPlan = fmMatch ? parseNestedFrontmatterBlock(fmMatch[1], 'plan') : null;
+  const latestPlan = await latestPlanRevision(ticketDir, 'plan');
+  const planBlock = {
+    file: latestPlan,
+    approvedDigest: null as string | null,
+    approvedAt: null as string | null,
+    approvedBy: null as string | null,
+  };
+
+  if (approval?.file && approval.file === latestPlan && approval.digest) {
+    planBlock.approvedDigest = approval.digest;
+    planBlock.approvedAt = approval.at;
+    planBlock.approvedBy = approval.by;
+    counts.approvalsCarried += 1;
+  } else if (approval?.file && latestPlan && approval.file !== latestPlan) {
+    counts.supersededDropped += 1;
+  } else if (!approval && existingPlan?.file === latestPlan && existingPlan.approvedDigest) {
+    planBlock.approvedDigest = existingPlan.approvedDigest;
+    planBlock.approvedAt = existingPlan.approvedAt;
+    planBlock.approvedBy = existingPlan.approvedBy;
+  }
+
+  next = replacePlanApprovalWithPlanBlock(next, renderPlanBlockYaml(planBlock));
+  counts.planBlock += 1;
+
+  return { content: next, counts };
+}
+
+function mergeTemplateCounts(
+  total: TemplatesStepCounts,
+  partial: TemplatesStepCounts,
+): void {
+  total.templateLegacy += partial.templateLegacy;
+  total.dependsOnRenamed += partial.dependsOnRenamed;
+  total.planBlock += partial.planBlock;
+  total.approvalsCarried += partial.approvalsCarried;
+  total.supersededDropped += partial.supersededDropped;
+  total.typeDropped += partial.typeDropped;
+}
+
+async function listMissingBuiltinTemplates(home: string): Promise<string[]> {
+  const missing: string[] = [];
+  for (const id of BUILTIN_TEMPLATE_IDS) {
+    if (!(await fileExists(resolve(home, 'templates', id, 'template.md')))) {
+      missing.push(id);
+    }
+  }
+  return missing;
+}
+
+async function runTemplatesStep(
+  home: string,
+  apply: boolean,
+  lines: string[],
+  mode: string,
+): Promise<void> {
+  const seeded = apply ? await seedMissingBuiltins(home) : await listMissingBuiltinTemplates(home);
+  const counts: TemplatesStepCounts = {
+    seeded,
+    templateLegacy: 0,
+    dependsOnRenamed: 0,
+    planBlock: 0,
+    approvalsCarried: 0,
+    supersededDropped: 0,
+    typeDropped: 0,
+  };
+
+  if (seeded.length > 0) {
+    logLine(
+      lines,
+      mode,
+      apply ? `templates: seeded ${seeded.join(', ')}` : `templates: seeded ${seeded.join(', ')}`,
+    );
+  } else {
+    logLine(lines, mode, 'templates: present');
+  }
+
+  const ticketPaths = await collectTicketMdPaths(home);
+  for (const ticketMdPath of ticketPaths) {
+    const content = await readFile(ticketMdPath, 'utf-8');
+    const ticketDir = resolve(ticketMdPath, '..');
+    const { content: next, counts: partial } = await transformTicketTemplatesFrontmatter(
+      content,
+      ticketDir,
+    );
+    mergeTemplateCounts(counts, partial);
+    if (apply && next !== content) {
+      await writeFileForce(ticketMdPath, next);
+    }
+  }
+
+  logLine(lines, mode, `template legacy: ${counts.templateLegacy} tickets`);
+  logLine(lines, mode, `depends_on: ${counts.dependsOnRenamed} renamed`);
+  logLine(
+    lines,
+    mode,
+    `plan block: ${counts.planBlock} tickets (${counts.approvalsCarried} approvals carried, ${counts.supersededDropped} superseded approvals dropped)`,
+  );
+  logLine(lines, mode, `dropped type: ${counts.typeDropped}`);
+  logLine(lines, mode, 'status mapping deferred to lifecycle-verbs');
 }
 
 function updateProjectMd(
@@ -1404,21 +1705,13 @@ async function rewriteConfigDefaultProjectDir(home: string, root: string): Promi
   if (next !== content) await writeFileForce(configPath, next);
 }
 
-export async function migrateV2Command(
+async function runRenameIdsStep(
+  home: string,
   options: MigrateV2Options,
-): Promise<MigrateV2Transcript> {
-  process.env.SYNTAUR_HOME = resolve(expandHome(options.root ?? syntaurRoot()));
-  const home = syntaurRoot();
+  lines: string[],
+  mode: string,
+): Promise<void> {
   const projectsDir = resolve(home, 'projects');
-  const mode = options.apply ? '[apply] ' : '[dry-run] ';
-  const lines: string[] = [];
-
-  const markerPath = resolve(home, V2_MIGRATED_MARKER);
-  if (await fileExists(markerPath)) {
-    throw new Error(
-      'v2 migration already completed (v2-migrated marker present). Remove the marker only if you have restored from backup.',
-    );
-  }
 
   if (options.apply && (await hasHalfAppliedTicketFolders(projectsDir))) {
     throw new Error(
@@ -1478,7 +1771,6 @@ export async function migrateV2Command(
 
   const maps = buildMaps(plans, standalone);
   const allTickets = [...plans.flatMap((p) => p.tickets), ...standalone];
-  let backupPath = '';
 
   for (const plan of plans) {
     logLine(lines, mode, `project ${plan.slug}: prefix ${plan.prefix}, ${plan.tickets.length} tickets`);
@@ -1539,101 +1831,123 @@ export async function migrateV2Command(
     if (options.root) {
       logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
     }
+    logLine(lines, mode, `totals: ${projectCount} projects, ${allTickets.length} tickets`);
+    return;
+  }
+
+  if (await fileExists(dbPath)) {
+    if (options.injectDbFailure) options.injectDbFailure();
+    const counts = rekeyDatabase(dbPath, maps);
+    logLine(lines, mode, `re-keyed events.ticket_id: ${counts.events}  (project_slug dropped)`);
+    if (counts.eventsSourceKey > 0) {
+      logLine(lines, mode, `re-keyed events.source_key: ${counts.eventsSourceKey}`);
+    }
     logLine(
       lines,
       mode,
-      'status mapping and template: legacy deferred to templates ticket',
+      `re-keyed engagement.ticket_id: ${counts.engagementByUuid}  (project_slug, assignment_slug dropped)`,
+    );
+    if (counts.engagementBySlug > 0) {
+      logLine(
+        lines,
+        mode,
+        `re-keyed engagement.ticket_id (by slug): ${counts.engagementBySlug}`,
+      );
+    }
+    logLine(
+      lines,
+      mode,
+      `re-keyed chat_sessions.ticket_id: ${counts.chatSessionsTicket}  (project_slug, assignment_slug dropped)`,
+    );
+    logLine(lines, mode, `re-keyed chat_sessions.session_key: ${counts.chatSessionsKey}`);
+    logLine(lines, mode, `re-keyed chat_items.session_key: ${counts.chatItemsSessionKey}`);
+    logLine(lines, mode, `re-keyed chat_items.ticket_id: ${counts.chatItemsTicket}`);
+    logLine(
+      lines,
+      mode,
+      `re-keyed usage_events.ticket_id: ${counts.usageEvents}  (assignment_slug dropped; project_slug kept)`,
     );
     logLine(
       lines,
       mode,
-      `totals: ${projectCount} projects, ${allTickets.length} tickets`,
+      `re-keyed usage_daily.ticket_id: ${counts.usageDaily}  (assignment_slug dropped; project_slug kept)`,
     );
-    return { lines };
+    if (counts.usageDailyMerged > 0) {
+      logLine(lines, mode, `merged usage_daily rows: ${counts.usageDailyMerged}`);
+    }
+    for (const slug of counts.skippedStandaloneSlugRekeys) {
+      logLine(
+        lines,
+        mode,
+        `skipped standalone slug re-key: ${slug} (duplicate slug among standalone tickets)`,
+      );
+    }
+  }
+
+  await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
+
+  for (const warning of maps.refWarnings) {
+    logLine(lines, mode, warning);
+  }
+
+  if (options.root) {
+    logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
+    await rewriteConfigDefaultProjectDir(home, home);
+  }
+
+  await migrateChatAndRebuild(allTickets, maps);
+  await rewriteInboxSnoozes(home, maps);
+  logLine(lines, mode, `totals: ${projectCount} projects, ${allTickets.length} tickets`);
+}
+
+export async function migrateV2Command(
+  options: MigrateV2Options,
+): Promise<MigrateV2Transcript> {
+  process.env.SYNTAUR_HOME = resolve(expandHome(options.root ?? syntaurRoot()));
+  const home = syntaurRoot();
+  const mode = options.apply ? '[apply] ' : '[dry-run] ';
+  const lines: string[] = [];
+
+  const markerPath = resolve(home, V2_MIGRATED_MARKER);
+  const completed = await readMarkerSteps(markerPath);
+  const pending = pendingMigrationSteps(completed);
+
+  if (pending.length === 0) {
+    throw new Error(
+      'v2 migration already completed (v2-migrated marker present). Remove the marker only if you have restored from backup.',
+    );
+  }
+
+  let backupPath = '';
+  if (options.apply) {
+    try {
+      backupPath = await createBackup(home);
+      logLine(lines, mode, `backup: ${backupPath}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `${msg}\nMigration aborted. Restore from backup at ${backupPath || '<none>'}.`,
+      );
+    }
   }
 
   try {
-    backupPath = await createBackup(home);
-    logLine(lines, mode, `backup: ${backupPath}`);
-
-    if (await fileExists(dbPath)) {
-      if (options.injectDbFailure) options.injectDbFailure();
-      const counts = rekeyDatabase(dbPath, maps);
-      logLine(lines, mode, `re-keyed events.ticket_id: ${counts.events}  (project_slug dropped)`);
-      if (counts.eventsSourceKey > 0) {
-        logLine(lines, mode, `re-keyed events.source_key: ${counts.eventsSourceKey}`);
-      }
-      logLine(
-        lines,
-        mode,
-        `re-keyed engagement.ticket_id: ${counts.engagementByUuid}  (project_slug, assignment_slug dropped)`,
-      );
-      if (counts.engagementBySlug > 0) {
-        logLine(
-          lines,
-          mode,
-          `re-keyed engagement.ticket_id (by slug): ${counts.engagementBySlug}`,
-        );
-      }
-      logLine(
-        lines,
-        mode,
-        `re-keyed chat_sessions.ticket_id: ${counts.chatSessionsTicket}  (project_slug, assignment_slug dropped)`,
-      );
-      logLine(lines, mode, `re-keyed chat_sessions.session_key: ${counts.chatSessionsKey}`);
-      logLine(lines, mode, `re-keyed chat_items.session_key: ${counts.chatItemsSessionKey}`);
-      logLine(lines, mode, `re-keyed chat_items.ticket_id: ${counts.chatItemsTicket}`);
-      logLine(
-        lines,
-        mode,
-        `re-keyed usage_events.ticket_id: ${counts.usageEvents}  (assignment_slug dropped; project_slug kept)`,
-      );
-      logLine(
-        lines,
-        mode,
-        `re-keyed usage_daily.ticket_id: ${counts.usageDaily}  (assignment_slug dropped; project_slug kept)`,
-      );
-      if (counts.usageDailyMerged > 0) {
-        logLine(lines, mode, `merged usage_daily rows: ${counts.usageDailyMerged}`);
-      }
-      for (const slug of counts.skippedStandaloneSlugRekeys) {
-        logLine(
-          lines,
-          mode,
-          `skipped standalone slug re-key: ${slug} (duplicate slug among standalone tickets)`,
-        );
+    for (const step of pending) {
+      if (step === 'rename-ids') {
+        await runRenameIdsStep(home, options, lines, mode);
+        if (options.apply) {
+          await appendMarkerStep(markerPath, 'rename-ids');
+        }
+      } else if (step === 'templates') {
+        await runTemplatesStep(home, options.apply ?? false, lines, mode);
+        if (options.apply) {
+          await appendMarkerStep(markerPath, 'templates');
+        }
       }
     }
-
-    await applyFilesystemMigration(home, plans, standalone, maps, scratchPrefix);
-
-    for (const warning of maps.refWarnings) {
-      logLine(lines, mode, warning);
-    }
-
-    if (options.root) {
-      logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
-      await rewriteConfigDefaultProjectDir(home, home);
-    }
-
-    await migrateChatAndRebuild(allTickets, maps);
-    await rewriteInboxSnoozes(home, maps);
-
-    await writeFileForce(markerPath, `${new Date().toISOString()}\n`);
-    logLine(
-      lines,
-      mode,
-      'status mapping and template: legacy deferred to templates ticket',
-    );
-    logLine(
-      lines,
-      mode,
-      `totals: ${projectCount} projects, ${allTickets.length} tickets`,
-    );
     return { lines };
   } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : String(err);
+    const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
       `${msg}\nMigration aborted. Restore from backup at ${backupPath || '<none>'}.`,
     );
