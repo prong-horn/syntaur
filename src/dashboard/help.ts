@@ -380,9 +380,9 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'Underscore-prefixed files are derived projections that can be rebuilt from canonical markdown sources. Editing them would create drift, so the UI treats them as read-only.',
       },
       {
-        question: 'Why can a ticket be pending even when nothing looks broken?',
+        question: 'Why can a ticket stay in backlog even when nothing looks broken?',
         answer:
-          'Pending often just means the work has not started yet or it is waiting on declared dependencies. Blocked is reserved for exceptional runtime obstacles that need intervention.',
+          'Backlog often just means the work has not started yet or it is waiting on unmet `depends_on` links. Use `syntaur block` only for exceptional runtime obstacles that need intervention.',
       },
       {
         question: 'How do I change a ticket\'s status?',

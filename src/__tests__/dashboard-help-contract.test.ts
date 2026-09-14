@@ -57,5 +57,9 @@ describe('dashboard help contract', () => {
 
     const planCmd = help.commands.find((command) => command.command === 'syntaur plan');
     expect(planCmd?.example).toContain('plan create');
+
+    const backlogFaq = help.faq.find((item) => item.question.includes('stay in backlog'));
+    expect(backlogFaq?.answer).toContain('depends_on');
+    expect(backlogFaq?.answer).not.toContain('pending even');
   });
 });
