@@ -19,7 +19,6 @@ import { useStatusConfig, useWorkflows } from '../hooks/useStatusConfig';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
-import { StatusBadge } from '../components/StatusBadge';
 import { TicketStatusPill } from '../components/TicketStatusPill';
 import { TemplateChip } from '../components/TemplateChip';
 import { ContentTabs } from '../components/ContentTabs';
