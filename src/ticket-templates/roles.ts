@@ -91,8 +91,8 @@ export async function resolvePlanFileOnDisk(
 }
 
 /**
- * Resolve an existing plan file for reads/indexing. Tolerates unknown template ids
- * by falling back to `plan.file` then the latest `plan` stem revision.
+ * Resolve an existing plan file for reads/indexing via `planFileFor` when that
+ * path exists. Unknown templates fall back to `plan.file` only (no revision scan).
  */
 export async function resolvePlanReadPath(
   ticketDir: string,

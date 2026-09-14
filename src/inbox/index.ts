@@ -131,10 +131,9 @@ export function unresolvedQuestions(comments: ParsedComment[]): ParsedComment[] 
 }
 
 /**
- * plan-approval = `status === 'ready_for_planning'` AND a latest plan file
- * exists AND it is not yet approved. The status guard is load-bearing (see the
- * Category Inventory). Async because it reuses `latestPlanFile`/`isPlanApproved`
- * (facts.ts) — do NOT reimplement digest logic.
+ * plan-approval = `status === 'ready_for_planning'` AND `plan.file` is set AND
+ * that path exists on disk AND it is not yet approved (`isPlanApproved`).
+ * No latest-revision fallback — `plan.file` is required (decision 12).
  */
 export async function isPlanAwaitingApproval(
   a: ParsedTicketFull,

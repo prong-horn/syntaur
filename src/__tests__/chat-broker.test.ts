@@ -240,6 +240,50 @@ describe('first message', () => {
     expect(fake.prompts[1].prompt.filter((b) => b.type === 'resource')).toHaveLength(0);
   });
 
+  it('records a system warn when standing context degrades for an unknown template', async () => {
+    await writeFile(
+      join(ticketDir, 'ticket.md'),
+      [
+        '---',
+        `id: ${TICKET_ID}`,
+        'slug: chat-demo',
+        'title: "Chat demo"',
+        'template: not-a-real-template',
+        'status: ready_to_implement',
+        'project: syntaur-meta',
+        'depends_on: []',
+        'links: []',
+        'plan:',
+        '  file: null',
+        '  approvedDigest: null',
+        '  approvedAt: null',
+        '  approvedBy: null',
+        'workspace:',
+        `  repository: ${worktree}`,
+        `  worktreePath: ${worktree}`,
+        '  branch: feat/chat-demo',
+        '  parentBranch: main',
+        '---',
+        '',
+        '# Chat demo',
+      ].join('\n'),
+      'utf-8',
+    );
+
+    makeBroker({
+      turns: [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }], usage: usage(1, 1) }],
+    });
+
+    await broker.send({ ticket: ticket(), text: 'hello' });
+    await idle();
+
+    const warns = itemsOfType('system').filter((s) =>
+      /show context degraded/.test((s as { text: string }).text),
+    );
+    expect(warns.length).toBeGreaterThanOrEqual(1);
+    expect((warns[0] as { level?: string }).level).toBe('warn');
+  });
+
   it('renders the reply and a turn.status carrying usage', async () => {
     makeBroker({
       turns: [
