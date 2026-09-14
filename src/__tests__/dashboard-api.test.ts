@@ -450,6 +450,84 @@ tags: []
     const detail = await getTicketDetailById(testDir, 'no-such-id');
     expect(detail).toBeNull();
   });
+
+  it('returns show JSON from getTicketShowById', async () => {
+    const { seedMissingBuiltins } = await import('../ticket-templates/builtins.js');
+    if (process.env.SYNTAUR_HOME) {
+      await seedMissingBuiltins(process.env.SYNTAUR_HOME);
+    }
+    const ticketId = 'SHW-1';
+    await createProjectFiles(
+      testDir,
+      'p1',
+      `---
+id: p1-id
+slug: p1
+title: P1
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+prefix: SHW
+nextTicket: 2
+---`,
+      [
+        {
+          slug: `${ticketId}-show-me`,
+          ticketMd: `---
+id: ${ticketId}
+slug: show-me
+title: Show Me
+project: p1
+template: quick
+status: draft
+priority: low
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Show route test.
+`,
+        },
+      ],
+    );
+    const { getTicketShowById } = await import('../dashboard/api.js');
+    const show = await getTicketShowById(testDir, ticketId);
+    expect(show).not.toBeNull();
+    expect(show!.ticket.id).toBe(ticketId);
+    expect(show!.ticket.stage).toBe('backlog');
+    expect(show!.next).toContain('syntaur done');
+  });
 });
 
 describe('referencedBy backlinks', () => {

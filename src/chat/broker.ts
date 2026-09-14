@@ -112,6 +112,7 @@ import {
   buildTurnPrompt,
   selectChatHistory,
   standingFingerprint,
+  readTicketStandingMeta,
   agentStandingInputsChanged,
   type TurnPromptTrigger,
 } from './prompt-framing.js';
@@ -1189,6 +1190,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function ensureSession(
     ticket: ResolvedTicket,
     agentId?: string | null,
+    sessionOptions: { autoDrive?: boolean } = {},
   ): Promise<Session> {
     const builtAtRev = definitionsRev;
     const { definitions, errors } = await loadDefs();
@@ -1219,7 +1221,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     );
     const attachedAtBuild = participantsAtBuild.agents.includes(definition.id);
 
-    const build = buildSession(ticket, definition, key, builtAtRev, attachedAtBuild).finally(() => {
+    const build = buildSession(
+      ticket,
+      definition,
+      key,
+      builtAtRev,
+      attachedAtBuild,
+      sessionOptions,
+    ).finally(() => {
       constructing.delete(key);
     });
     constructing.set(key, build);
@@ -1232,6 +1241,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     key: string,
     builtAtRev: number,
     attachedAtBuild: boolean,
+    sessionOptions: { autoDrive?: boolean } = {},
   ): Promise<Session> {
     if (pendingAgentDeletes.has(definition.id)) {
       throw new ChatSendError(`No agent definition ${JSON.stringify(definition.id)}`, 404);
@@ -1254,10 +1264,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       ticket.ticketDir,
       defsForStanding,
     );
+    const standingMeta = await readTicketStandingMeta(ticket.ticketDir);
     const currentStandingFingerprint = standingFingerprint(
       definition,
       defsForStanding,
       participantsForStanding,
+      standingMeta,
     );
     let standingGen = 0;
     let standingSent = Boolean(row?.acp_session_id);
@@ -1421,10 +1433,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return session;
     }
     if (row?.acp_session_id) {
+      const publishStandingMeta = await readTicketStandingMeta(ticket.ticketDir);
       const publishStandingFingerprint = standingFingerprint(
         session.definition,
         defsForPublish,
         participantsForPublish,
+        publishStandingMeta,
       );
       if ((row.standing_fingerprint ?? null) !== publishStandingFingerprint) {
         invalidateStanding(session);
@@ -1437,7 +1451,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // type something new — the docs promise they are "re-queued and sent in
     // order", and opening the Chat tab only calls `getSession` (round 2,
     // finding 2).
-    if (session.queue.length > 0 && !session.inFlight && !stopping) void drive(session);
+    if (
+      session.queue.length > 0 &&
+      !session.inFlight &&
+      !stopping &&
+      (sessionOptions.autoDrive ?? true)
+    ) {
+      void drive(session);
+    }
     return session;
   }
 
@@ -1788,7 +1809,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * `cancel` and `answerPermission` see the rehydrated queue and permission
    * state after a restart instead of an empty in-memory map (finding 8).
    */
-  async function ensureTicketSessions(ticket: ResolvedTicket): Promise<Session[]> {
+  async function ensureTicketSessions(
+    ticket: ResolvedTicket,
+    sessionOptions: { autoDrive?: boolean } = {},
+  ): Promise<Session[]> {
     const agentIds = new Set(listChatSessions(ticket.id).map((row) => row.agent_id));
     // Attached agents count even before they have a row: `withdraw`, `cancel`
     // and the SPA's initial load must all see the same set (round 1, finding
@@ -1803,7 +1827,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const key = chatSessionKey(ticket.id, agentId);
       if (constructing.has(key)) continue;
       try {
-        await ensureSession(ticket, agentId);
+        await ensureSession(ticket, agentId, sessionOptions);
       } catch {
         // A definition that has since been deleted or broken must not stop the
         // others from being reachable.
@@ -2807,9 +2831,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       definition: session.definition,
       harness: session.harness,
       ticketDir: session.ticket.ticketDir,
+      syntaurRoot: syntaurHome(),
       context: {
         projectSlug: session.ticket.projectSlug,
         ticketSlug: session.ticket.ticketSlug,
+        ticketDir: session.ticket.ticketDir,
         worktreePath: session.cwd,
         branch: session.branch,
         cwdTier: session.cwdTier,
@@ -2817,9 +2843,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         roster,
       },
     });
+    const standingMeta = await readTicketStandingMeta(session.ticket.ticketDir);
     return {
       blocks,
-      fingerprint: standingFingerprint(session.definition, definitions, participants),
+      fingerprint: standingFingerprint(session.definition, definitions, participants, standingMeta),
       gen,
     };
   }
@@ -3674,7 +3701,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // A fan-out message sits in EVERY target's queue, so all of them are
       // searched — and after a restart none of them are in memory until they
       // are materialised (round 1, finding 4).
-      const all = await ensureTicketSessions(ticket);
+      const all = await ensureTicketSessions(ticket, { autoDrive: false });
       const scope = await ticketScope(ticket);
       const item = scope.messages.get(messageId);
       // Once any target has started, the message has reached an agent and

@@ -30,6 +30,7 @@ import {
 } from '../utils/ticket-resolver.js';
 import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
 import { resolvePlanReadPath, planFileFor } from '../ticket-templates/roles.js';
+import { buildShow, type ShowModel } from '../ticket-templates/show.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { invalidateIndex } from '../search/index.js';
 
@@ -1436,6 +1437,19 @@ export async function getTicketDetailById(
     projectsDir,
   );
   return detail;
+}
+
+/**
+ * Rendered ticket summary (`syntaur show --json`).
+ * GET /api/tickets/:id/show
+ */
+export async function getTicketShowById(
+  projectsDir: string,
+  id: string,
+): Promise<ShowModel | null> {
+  const resolved = await resolveTicketById(projectsDir, id);
+  if (!resolved) return null;
+  return await buildShow(syntaurRoot(), resolved.ticketDir);
 }
 
 // Guard so legacy-file renames run at most once per `projectsDir` per process

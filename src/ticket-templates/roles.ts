@@ -1,11 +1,14 @@
-import { readdir } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
-import type { TemplateManifest } from './manifest.js';
+import type { TemplateFile, TemplateManifest } from './manifest.js';
 import { planRoleFile } from './manifest.js';
 import type { TicketFrontmatter } from '../lifecycle/types.js';
+import { isPlanApproved, planDigest } from '../lifecycle/facts.js';
 import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { syntaurRoot } from '../utils/paths.js';
+import { nonEmptyBeyondScaffold } from './content.js';
+import { parseLogEntries } from './log-reader.js';
 
 export interface PlanRevisionEntry {
   fileName: string;
@@ -108,4 +111,58 @@ export async function resolvePlanReadPath(
     /* custom/unknown template id */
   }
   return await latestPlanRevision(ticketDir, DEFAULT_PLAN_STEM);
+}
+
+function formatLogAge(timestamp: string, now = Date.now()): string {
+  const then = Date.parse(timestamp);
+  if (Number.isNaN(then)) return 'unknown';
+  const minutes = Math.max(0, Math.floor((now - then) / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
+/** Rendered file-state string for the Files block (§7.1). */
+export async function fileState(
+  entry: TemplateFile,
+  ticketDir: string,
+  fm: Pick<TicketFrontmatter, 'plan' | 'template'>,
+  manifest: TemplateManifest,
+  now = Date.now(),
+): Promise<string> {
+  const path = resolve(ticketDir, entry.path);
+  const exists = await fileExists(path);
+
+  if (entry.role === 'plan') {
+    const planPath = planFileFor(fm, manifest);
+    if (!planPath) return 'missing';
+    const planFull = resolve(ticketDir, planPath);
+    if (!(await fileExists(planFull))) return 'missing';
+    const content = await readFile(planFull, 'utf-8');
+    if (!nonEmptyBeyondScaffold(content)) return 'unapproved';
+    if (!fm.plan.approvedDigest) return 'unapproved';
+    if (await isPlanApproved(ticketDir, fm)) return 'approved';
+    const digest = planDigest(content);
+    if (fm.plan.approvedDigest === digest) return 'approved';
+    return 'stale';
+  }
+
+  if (entry.role === 'log') {
+    if (!exists) return '0 entries · last none';
+    const entries = parseLogEntries(await readFile(path, 'utf-8'));
+    if (entries.length === 0) return '0 entries · last none';
+    const latest = entries[0];
+    return `${entries.length} entries · last ${latest.type} ${formatLogAge(latest.timestamp, now)}`;
+  }
+
+  if (entry.role === 'deliverable') {
+    if (!exists) return 'empty';
+    const content = await readFile(path, 'utf-8');
+    return nonEmptyBeyondScaffold(content) ? 'present' : 'empty';
+  }
+
+  if (!exists) return 'missing';
+  return 'editable';
 }

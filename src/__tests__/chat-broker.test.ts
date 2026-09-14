@@ -33,6 +33,7 @@ import { readEvents } from '../chat/store.js';
 import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { parseProgress } from '../dashboard/parser.js';
 import { parseComments } from '../dashboard/parser.js';
 
@@ -148,8 +149,16 @@ async function writeTicket(workspace: { worktreePath?: string; repository?: stri
     `id: ${TICKET_ID}`,
     'slug: chat-demo',
     'title: "Chat demo"',
+    'template: legacy',
     'status: ready_to_implement',
     'project: syntaur-meta',
+    'depends_on: []',
+    'links: []',
+    'plan:',
+    '  file: null',
+    '  approvedDigest: null',
+    '  approvedAt: null',
+    '  approvedBy: null',
     'workspace:',
     `  repository: ${workspace.repository ?? worktree}`,
     `  worktreePath: ${workspace.worktreePath ?? worktree}`,
@@ -172,6 +181,7 @@ beforeEach(async () => {
   worktree = join(sandbox, 'worktree');
   await mkdir(ticketDir, { recursive: true });
   await mkdir(worktree, { recursive: true });
+  await seedMissingBuiltins(sandbox);
   await writeTicket();
   await writeFile(
     join(ticketDir, 'progress.md'),
@@ -215,7 +225,10 @@ describe('first message', () => {
     expect(fake.newSessionRequests[0]._meta).toMatchObject({ systemPrompt: { append: expect.any(String) } });
 
     const first = fake.prompts[0].prompt;
-    expect(first.filter((b) => b.type === 'resource').length).toBeGreaterThanOrEqual(2);
+    expect(first.filter((b) => b.type === 'resource').length).toBeGreaterThanOrEqual(1);
+    expect(first.some((b) => b.type === 'text' && (b as { text: string }).text.includes(TICKET_ID))).toBe(
+      true,
+    );
     expect(first[first.length - 1]).toMatchObject({ type: 'text' });
     expect((first[first.length - 1] as { text: string }).text).toContain('<chat-event author="human"');
     expect((first[first.length - 1] as { text: string }).text).toContain('hello');

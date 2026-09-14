@@ -15,15 +15,31 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { logRoleFile } from '../ticket-templates/manifest.js';
 import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
 import { planFileFor } from '../ticket-templates/roles.js';
+import { buildShow, renderShowText } from '../ticket-templates/show.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import type { AgentDefinition, ChatItem, ContentBlock, HarnessSpec } from './types.js';
 import { HUMAN_AGENT_ID } from './types.js';
 
-/** Tail of `progress.md` carried into the standing context. */
-const PROGRESS_TAIL_LINES = 40;
+export interface TicketStandingMeta {
+  status: string;
+  template: string | null;
+}
+
+/** Read ticket status and template id for standing fingerprint inputs. */
+export async function readTicketStandingMeta(ticketDir: string): Promise<TicketStandingMeta | null> {
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return null;
+  try {
+    const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+    return { status: fm.status, template: fm.template };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * How much of the room's conversation one turn carries (Decision 4). Both caps
@@ -38,6 +54,9 @@ export interface ContextSectionInput {
   projectSlug: string | null;
   ticketSlug: string;
   ticketTitle?: string | null;
+  ticketDir?: string | null;
+  /** Log-role path when the template declares one. */
+  logRolePath?: string | null;
   worktreePath: string | null;
   branch?: string | null;
   /** Which tier of the resolution chain produced the cwd. */
@@ -53,6 +72,8 @@ export interface StandingContextInput {
   harness: HarnessSpec;
   ticketDir: string;
   context: ContextSectionInput;
+  /** Override Syntaur home (broker sandboxes pass their syntaurHome). */
+  syntaurRoot?: string;
 }
 
 /**
@@ -68,28 +89,38 @@ export async function buildStandingContext(input: StandingContextInput): Promise
     blocks.push(textBlock(`<system>\n${input.definition.systemPrompt.trim()}\n</system>`));
   }
 
-  const ticket = await readResource(input.ticketDir, 'ticket.md');
-  if (ticket) blocks.push(ticket);
+  const root = input.syntaurRoot ?? syntaurRoot();
+  let contextInput = { ...input.context, ticketDir: input.ticketDir };
 
   const ticketMdPath = resolve(input.ticketDir, 'ticket.md');
   if (await fileExists(ticketMdPath)) {
     try {
+      const showModel = await buildShow(root, input.ticketDir);
+      blocks.push(textBlock(renderShowText(showModel)));
+
       const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
-      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+      const manifest = await loadTemplate(root, resolveTemplateForTicket(fm));
+      const logRole = logRoleFile(manifest);
+      contextInput = {
+        ...contextInput,
+        logRolePath: logRole?.path ?? null,
+      };
+
+      const ticket = await readResource(input.ticketDir, 'ticket.md');
+      if (ticket) blocks.push(ticket);
+
       const planName = planFileFor(fm, manifest);
       if (planName && (await fileExists(resolve(input.ticketDir, planName)))) {
         const plan = await readResource(input.ticketDir, planName);
         if (plan) blocks.push(plan);
       }
     } catch {
-      /* ticket.md without frontmatter — no plan resource */
+      const ticket = await readResource(input.ticketDir, 'ticket.md');
+      if (ticket) blocks.push(ticket);
     }
   }
 
-  const progress = await readProgressTail(input.ticketDir);
-  if (progress) blocks.push(progress);
-
-  blocks.push(textBlock(buildContextSection(input.context)));
+  blocks.push(textBlock(buildContextSection(contextInput)));
   return blocks;
 }
 
@@ -104,9 +135,13 @@ export function buildContextSection(context: ContextSectionInput): string {
   const cwdLabel = context.worktreePath
     ? `${context.worktreePath} (${tier ?? 'worktree'})`
     : '(unresolved)';
+  const progressLine = context.logRolePath
+    ? `Reply in chat. Syntaur records each turn that edits files or runs commands in ${context.logRolePath}; do not log progress yourself.`
+    : 'Reply in chat.';
   const lines = [
     `Project: ${context.projectSlug ?? '(standalone)'}`,
     `Ticket: ${context.ticketSlug}${context.ticketTitle ? ` — ${escapeAngles(context.ticketTitle)}` : ''}`,
+    ...(context.ticketDir ? [`Ticket folder: ${escapeAngles(context.ticketDir)}`] : []),
     `Working directory: ${cwdLabel}`,
     ...(context.branch ? [`Branch: ${context.branch}`] : []),
     ...(tier === 'home'
@@ -116,7 +151,7 @@ export function buildContextSection(context: ContextSectionInput): string {
     ...(others.length > 0
       ? ['Participants:', ...(context.roster ?? []).map(rosterLine), 'Human: the ticket owner']
       : []),
-    'Reply in chat. Syntaur records each turn that edits files or runs commands in progress.md; do not log progress yourself.',
+    progressLine,
     'The ticket owner files decisions and comments from the chat.',
     ...(others.length > 0
       ? [
@@ -161,12 +196,17 @@ export function standingFingerprint(
   agent: AgentDefinition,
   definitions: readonly AgentDefinition[],
   participants: { agents: readonly string[] },
+  ticketMeta?: TicketStandingMeta | null,
 ): string {
   const roster = participants.agents
     .map((id) => definitions.find((d) => d.id === id))
     .filter((d): d is AgentDefinition => d !== undefined);
   const lines = roster.map(rosterLine);
-  return createHash('sha256').update([...lines, agent.systemPrompt].join('\n')).digest('hex');
+  const parts = [...lines, agent.systemPrompt];
+  if (ticketMeta) {
+    parts.push(ticketMeta.status, ticketMeta.template ?? 'legacy');
+  }
+  return createHash('sha256').update(parts.join('\n')).digest('hex');
 }
 
 /**
@@ -416,29 +456,4 @@ export function resourceBlock(path: string, text: string): ContentBlock {
     type: 'resource',
     resource: { uri: `file://${path}`, mimeType: 'text/markdown', text },
   } as ContentBlock;
-}
-
-/**
- * The last {@link PROGRESS_TAIL_LINES} lines of `progress.md`. Entries are
- * reverse-chronological (newest first) but the frontmatter is at the top, so the
- * HEAD of the file is what carries the recent work — the "tail" the plan asks for
- * is the newest entries, which live first.
- */
-async function readProgressTail(dir: string): Promise<ContentBlock | null> {
-  const path = resolve(dir, 'progress.md');
-  let text: string;
-  try {
-    text = await readFile(path, 'utf-8');
-  } catch {
-    return null;
-  }
-  const lines = text.split('\n');
-  if (lines.length <= PROGRESS_TAIL_LINES) {
-    return text.trim().length > 0 ? resourceBlock(path, text) : null;
-  }
-  const head = lines.slice(0, PROGRESS_TAIL_LINES).join('\n');
-  return resourceBlock(
-    path,
-    `${head}\n\n<!-- truncated: ${lines.length - PROGRESS_TAIL_LINES} older lines omitted -->\n`,
-  );
 }

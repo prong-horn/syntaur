@@ -1,13 +1,19 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import {
   buildContextSection,
+  buildStandingContext,
   buildTurnPrompt,
   selectChatHistory,
   agentStandingInputsChanged,
   rosterLine,
+  standingFingerprint,
   HISTORY_MAX_CHARS,
   HISTORY_MAX_ITEMS,
 } from '../chat/prompt-framing.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { BASE_SYSTEM_PROMPT } from '../chat/agents.js';
 import type { AgentDefinition, ChatItem, ContentBlock } from '../chat/types.js';
 
@@ -121,12 +127,134 @@ describe('buildContextSection', () => {
   });
 
   it('tells agents Syntaur writes progress and the owner files decisions from chat', () => {
-    const section = buildContextSection({ ...context, agent: def('planner'), roster: [def('planner')] });
+    const section = buildContextSection({
+      ...context,
+      agent: def('planner'),
+      roster: [def('planner')],
+      logRolePath: 'journal.md',
+    });
     expect(section).toContain(
-      'Syntaur records each turn that edits files or runs commands in progress.md; do not log progress yourself.',
+      'Syntaur records each turn that edits files or runs commands in journal.md; do not log progress yourself.',
     );
     expect(section).toContain('The ticket owner files decisions and comments from the chat.');
     expect(section).not.toContain('syntaur` CLI');
+  });
+
+  it('omits the progress-recording line when the template has no log role', () => {
+    const section = buildContextSection({
+      ...context,
+      agent: def('planner'),
+      roster: [def('planner')],
+      logRolePath: null,
+    });
+    expect(section).toContain('Reply in chat.');
+    expect(section).not.toContain('Syntaur records each turn');
+  });
+});
+
+describe('standing context show block', () => {
+  let sandbox: string;
+
+  beforeEach(async () => {
+    sandbox = await mkdtemp(join(tmpdir(), 'chat-prompt-show-'));
+    process.env.SYNTAUR_HOME = sandbox;
+    await writeFile(
+      join(sandbox, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${join(sandbox, 'projects')}\n---\n`,
+    );
+    await seedMissingBuiltins(sandbox);
+  });
+
+  afterEach(async () => {
+    delete process.env.SYNTAUR_HOME;
+    await rm(sandbox, { recursive: true, force: true });
+  });
+
+  it('includes show text and omits progress.md tail resource', async () => {
+    const dir = join(sandbox, 'ticket');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'ticket.md'),
+      `---
+id: PF-1
+slug: pf
+title: Prompt framing
+project: p
+template: legacy
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Prompt framing ticket.
+`,
+      'utf-8',
+    );
+    await writeFile(join(dir, 'progress.md'), '# Progress\n\n## 2026-01-01T00:00:00Z\n\nold\n', 'utf-8');
+
+    const blocks = await buildStandingContext({
+      definition: def('planner'),
+      harness: { id: 'claude', systemPromptTransport: 'meta' } as never,
+      ticketDir: dir,
+      context: {
+        projectSlug: 'p',
+        ticketSlug: 'pf',
+        ticketDir: dir,
+        worktreePath: '/tmp/wt',
+      },
+    });
+    const textBlocks = blocks.filter((b) => b.type === 'text');
+    expect(textBlocks.some((b) => (b as { text: string }).text.includes('PF-1 · Prompt framing'))).toBe(
+      true,
+    );
+    expect(
+      blocks.some((b) => b.type === 'resource' && b.resource.uri.endsWith('progress.md')),
+    ).toBe(false);
+  });
+
+  it('changes fingerprint when status changes', () => {
+    const agent = def('planner');
+    const roster = [agent];
+    const participants = { agents: ['planner'] };
+    const a = standingFingerprint(agent, roster, participants, { status: 'draft', template: 'feature' });
+    const b = standingFingerprint(agent, roster, participants, {
+      status: 'in_progress',
+      template: 'feature',
+    });
+    expect(a).not.toBe(b);
   });
 });
 

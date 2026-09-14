@@ -16,7 +16,9 @@ import {
   buildStandingContext,
   buildTurnPrompt,
   escapeAngles,
+  standingFingerprint,
 } from '../chat/prompt-framing.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { connectAcpClient } from '../chat/acp-client.js';
 import { createFakeAgent } from '../chat/fake-agent.js';
 import type { AgentDefinition, ContentBlock } from '../chat/types.js';
@@ -38,9 +40,16 @@ let sandbox: string;
 
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-chat-profile-'));
+  process.env.SYNTAUR_HOME = sandbox;
+  await writeFile(
+    join(sandbox, 'config.md'),
+    `---\nversion: "2.0"\ndefaultProjectDir: ${join(sandbox, 'projects')}\n---\n`,
+  );
+  await seedMissingBuiltins(sandbox);
 });
 
 afterEach(async () => {
+  delete process.env.SYNTAUR_HOME;
   await rm(sandbox, { recursive: true, force: true });
 });
 
@@ -215,42 +224,185 @@ describe('prompt framing', () => {
     branch: 'feat/chat',
   };
 
-  it('claude gets resource blocks and a <context> section, but no <system> block', async () => {
+  it('claude gets show text, ticket/plan resources, and <context>, but no <system> block', async () => {
     const dir = await seedTicket({
-      'ticket.md': '# Ticket\n',
-      'plan.md': '# Plan v1\n',
+      'ticket.md': `---
+id: CH-1
+slug: ticket-chat-single-agent
+title: Ticket chat
+project: syntaur-meta
+template: legacy
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Ticket chat
+`,
+      'plan.md': '# Plan v1\n\nReal plan content.\n',
       'progress.md': '# Progress\n',
     });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
-      context,
+      context: { ...context, ticketDir: dir },
     });
-    expect(blocks.map((b) => b.type)).toEqual(['resource', 'resource', 'resource', 'text']);
+    expect(blocks[0].type).toBe('text');
+    expect(text(blocks[0])).toContain('CH-1 · Ticket chat · legacy · backlog');
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'resource', 'resource', 'text']);
     expect(text(blocks[3])).toContain('<context>');
     expect(text(blocks[3])).toContain('Project: syntaur-meta');
+    expect(text(blocks[3])).toContain(`Ticket folder: ${dir}`);
+    expect(text(blocks[3])).toContain('progress.md');
     expect(text(blocks[3])).toContain('Branch: feat/chat');
     expect(blocks.some((b) => b.type === 'text' && b.text.includes('<system>'))).toBe(false);
   });
 
   it('codex gets a <system> block first', async () => {
-    const dir = await seedTicket({ 'ticket.md': '# Ticket\n' });
+    const dir = await seedTicket({
+      'ticket.md': `---
+id: CH-2
+slug: ticket-chat-single-agent
+title: Ticket chat
+project: syntaur-meta
+template: quick
+status: draft
+priority: low
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Ticket chat
+`,
+    });
     const blocks = await buildStandingContext({
       definition: { ...BASE, harness: 'codex' },
       harness: HARNESSES.codex,
       ticketDir: dir,
-      context,
+      context: { ...context, ticketDir: dir },
     });
     expect(blocks[0].type).toBe('text');
     expect(text(blocks[0])).toBe('<system>\nYou are the ticket agent.\n</system>');
-    expect(blocks.map((b) => b.type)).toEqual(['text', 'resource', 'text']);
+    expect(blocks[1].type).toBe('text');
+    expect(text(blocks[1])).toContain('CH-2');
+    expect(blocks.map((b) => b.type)).toEqual(['text', 'text', 'resource', 'text']);
   });
 
   it('uses the plan role path, not superseded revisions', async () => {
     const dir = await seedTicket({
-      'ticket.md': '# Ticket\n',
-      'plan.md': '# Plan v1\n',
+      'ticket.md': `---
+id: CH-3
+slug: ticket-chat-single-agent
+title: Ticket chat
+project: syntaur-meta
+template: legacy
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Ticket chat
+`,
+      'plan.md': '# Plan v1\n\nContent.\n',
       'plan-v2.md': '# Plan v2\n',
       'plan-v10.md': '# Plan v10\n',
     });
@@ -258,40 +410,96 @@ describe('prompt framing', () => {
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
-      context,
+      context: { ...context, ticketDir: dir },
     });
     const plans = blocks.filter(
       (b) => b.type === 'resource' && 'text' in b.resource && b.resource.text.startsWith('# Plan'),
     );
     expect(plans).toHaveLength(1);
     expect(plans[0].type === 'resource' && 'text' in plans[0].resource && plans[0].resource.text).toBe(
-      '# Plan v1\n',
+      '# Plan v1\n\nContent.\n',
     );
     expect(
       plans[0].type === 'resource' ? plans[0].resource.uri : '',
     ).toBe(`file://${join(dir, 'plan.md')}`);
   });
 
-  it('truncates a long progress.md to its newest entries', async () => {
+  it('carries the show log tail instead of a progress.md resource', async () => {
     const dir = await seedTicket({
-      'ticket.md': '# Ticket\n',
-      'progress.md': Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n'),
+      'ticket.md': `---
+id: CH-4
+slug: ticket-chat-single-agent
+title: Ticket chat
+project: syntaur-meta
+template: legacy
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Ticket chat
+`,
+      'progress.md': `---
+ticket: legacy
+entryCount: 1
+generated: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+---
+
+# Progress
+
+## 2026-09-01T00:00:00Z
+
+Recent work line.
+`,
     });
     const blocks = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
-      context,
+      context: { ...context, ticketDir: dir },
     });
-    const progress = blocks.find(
-      (b) => b.type === 'resource' && b.resource.uri.endsWith('progress.md'),
-    );
-    expect(progress).toBeDefined();
-    const body = progress?.type === 'resource' && 'text' in progress.resource ? progress.resource.text : '';
-    expect(body).toContain('line 0');
-    expect(body).toContain('line 39');
-    expect(body).not.toContain('line 40');
-    expect(body).toContain('160 older lines omitted');
+    expect(
+      blocks.some(
+        (b) => b.type === 'resource' && b.resource.uri.endsWith('progress.md'),
+      ),
+    ).toBe(false);
+    const show = blocks.find((b) => b.type === 'text' && text(b).includes('Log: last'));
+    expect(show).toBeDefined();
+    expect(text(show!)).toContain('Recent work line');
   });
 
   it('skips records that are missing or empty', async () => {
@@ -300,9 +508,23 @@ describe('prompt framing', () => {
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
-      context,
+      context: { ...context, ticketDir: dir },
     });
     expect(blocks.map((b) => b.type)).toEqual(['text']);
+  });
+
+  it('changes standing fingerprint when ticket status changes', () => {
+    const roster = [BASE];
+    const participants = { agents: ['claude'] };
+    const before = standingFingerprint(BASE, roster, participants, {
+      status: 'draft',
+      template: 'feature',
+    });
+    const after = standingFingerprint(BASE, roster, participants, {
+      status: 'in_progress',
+      template: 'feature',
+    });
+    expect(before).not.toBe(after);
   });
 
   it('escapes angle brackets so a message cannot forge a section', () => {

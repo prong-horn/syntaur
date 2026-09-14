@@ -578,6 +578,21 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  app.get('/api/tickets/:id/show', async (req, res) => {
+    try {
+      const { getTicketShowById } = await import('./api.js');
+      const show = await getTicketShowById(projectsDir, req.params.id);
+      if (!show) {
+        res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
+        return;
+      }
+      res.json(show);
+    } catch (error) {
+      console.error('Error getting ticket show:', error);
+      res.status(500).json({ error: 'Failed to get ticket show' });
+    }
+  });
+
   app.get('/api/tickets/:id/sessions', async (req, res) => {
     try {
       const resolved = await resolveTicketById(projectsDir, req.params.id);
