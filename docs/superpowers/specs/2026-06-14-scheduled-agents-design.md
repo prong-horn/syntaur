@@ -24,8 +24,8 @@ limits reset) and state-driven automation (the lifecycle becomes a set of trigge
   intent-as-document a human edits/reviews. Crash-safety is bought with temp+rename +
   a per-job advisory lock (mirrors `src/lifecycle/recompute.ts` `acquireLock`), not WAL.
 - **Triggers (`src/schedules/triggers.ts`)** — PURE over an injected `now` + the watched
-  assignment's persisted frontmatter. Clock via `croner`; state via `statusHistory`
-  cursor; plan-lands via the `planApproval` field. Reports a due edge + a **dedupe key**;
+  assignment's persisted frontmatter. Clock via `croner`; state via `legacyHistory`
+  cursor; plan-lands via the `planBlock` field. Reports a due edge + a **dedupe key**;
   never mutates.
 - **Reset window (`src/schedules/reset-window.ts`)** — `after-reset` is a **prediction**
   from a user-supplied anchor, re-verified at fire time (reschedule if not yet matured).

@@ -183,7 +183,7 @@ Four sources appear in the queue:
 1. **Reply questions.** After a human-triggered turn ends normally, if the agent's last paragraph ends with `?` or asks for a decision (for example "Say if you want a commit or a review"), Syntaur files a `question` comment with a hidden marker linking to the reply in the Chat tab. When the last paragraph is a short plain statement, the paragraph before it is also checked (so a question followed by "I have not created anything yet…" still files). Hand-off replies and replies that `@mention` another attached agent do not file. **Clears when** you send a message to that agent from the row (or from Chat).
 2. **Permission cards.** A card still pending after ~30 seconds files `Waiting for your permission to run **…**` with a marker on the permission item. **Clears when** you allow or deny from the row (including **Allow all this session** or `permissions: auto`); if a card times out, its grace row is resolved first, so only the denial question remains.
 3. **Cursor questions.** A parked `ask_question` card uses the same grace; the row shows the prompt and its choices. **Clears when** you pick an option or type an answer from the row.
-4. **Plans and reviews.** A latest unapproved plan in `ready_for_planning`, or a ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
+4. **Plans and reviews.** A latest unapproved plan in `planning`, or a ticket in `review`, also appears. **Clears when** you approve the plan or accept/reopen the review from the row.
 
 The Comments tab shows the question text only (the marker is hidden). Chat rows show who is waiting, the full question body, and an **Open chat** link. You can still **Resolve** by hand on plain question rows or the Comments tab; setting a question to its current resolved state returns success without error.
 
@@ -254,7 +254,7 @@ shows the exact command.
 `curl https://cursor.com/install -fsS | bash` (see [cursor.com/docs/cli/installation](https://cursor.com/docs/cli/installation)).
 Then run `cursor-agent login` (or `agent login`) before chatting.
 
-**The agent is running from home** — the ticket has no `workspace.worktreePath`,
+**The agent is running from home** — the ticket has no `workspace.worktree`,
 `workspace.repository`, or project `repositories` entry that exists on disk, so
 the agent falls back to the home directory (`~`). A system row in the chat says
 so and suggests creating a worktree from the ticket header. At the home tier

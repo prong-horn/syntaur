@@ -616,7 +616,7 @@ interface WorkspaceRecord {
   projectSlug: string;
   assignmentSlug: string;
   assignmentTitle: string;
-  worktreePath: string | null;
+  worktree: string | null;
   branch: string | null;
 }
 
@@ -646,7 +646,7 @@ async function loadWorkspaceRecords(projectsDir: string): Promise<WorkspaceRecor
             projectSlug: project.slug,
             assignmentSlug: aslug,
             assignmentTitle: getField(fm, 'title') ?? aslug,
-            worktreePath: getNestedField(fm, 'workspace', 'worktreePath') ?? null,
+            worktree: getNestedField(fm, 'workspace', 'worktree') ?? null,
             branch: getNestedField(fm, 'workspace', 'branch') ?? null,
           });
         } catch {
@@ -674,11 +674,11 @@ async function autoLinkPane(
   branch: string | null,
   records: WorkspaceRecord[],
 ): Promise<AssignmentLink | null> {
-  // First try: exact cwd match against worktreePath (resolve symlinks per spec)
+  // First try: exact cwd match against worktree (resolve symlinks per spec)
   const normalizedCwd = await resolveAndNormalize(cwd);
   for (const rec of records) {
-    if (rec.worktreePath) {
-      const normalizedWt = await resolveAndNormalize(rec.worktreePath);
+    if (rec.worktree) {
+      const normalizedWt = await resolveAndNormalize(rec.worktree);
       if (normalizedCwd === normalizedWt) {
         return { project: rec.projectSlug, slug: rec.assignmentSlug, title: rec.assignmentTitle };
       }
@@ -1884,7 +1884,7 @@ export async function getAttention(projectsDir: string, serversDir?: string): Pr
             updated: session.lastRefreshed,
             href: '/servers',
             stale: false,
-            blockedReason: null,
+            blocked: null,
           });
         }
       }

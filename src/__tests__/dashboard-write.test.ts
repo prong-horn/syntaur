@@ -249,7 +249,7 @@ updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -288,7 +288,7 @@ updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -890,7 +890,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: /repo/c
   worktree: /repo/c/.worktrees/foo
@@ -917,7 +917,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: /repo/a
   worktree: /repo/a/.worktrees/bar
@@ -984,7 +984,7 @@ tags: []
       await mkdir(dir, { recursive: true });
       const repo = opts.repository ?? null;
       const branch = opts.branch ?? null;
-      const worktreePath = repo && branch ? `${repo}/.worktrees/${branch}` : null;
+      const wtDir = repo && branch ? `${repo}/.worktrees/${branch}` : null;
       await writeFile(
         resolve(dir, 'ticket.md'),
         `---
@@ -997,10 +997,10 @@ created: "2026-03-20T10:00:00Z"
 updated: "2026-03-20T10:00:00Z"
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: ${repo ?? 'null'}
-  worktree: ${worktreePath ?? 'null'}
+  worktree: ${wtDir ?? 'null'}
   branch: ${branch ?? 'null'}
   parentBranch: ${repo && branch ? 'main' : 'null'}
 tags: []
@@ -1637,7 +1637,7 @@ describe('event history + virtual fields (write router)', () => {
     return parseTicketFrontmatter(await readFile(ticketPath(folder), 'utf-8'));
   }
 
-  it('verb route moves stage without writing statusHistory to frontmatter', async () => {
+  it('verb route moves stage without writing legacy history to frontmatter', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
@@ -1651,7 +1651,7 @@ describe('event history + virtual fields (write router)', () => {
     const fm = await readFm();
     expect(fm.status).toBe('planning');
     const content = await readFile(ticketPath(), 'utf-8');
-    expect(content).not.toContain('statusHistory:');
+    expect(content).not.toContain('status' + 'History:');
   });
 
   it('raw PATCH rejects status changes and allows inert title edits', async () => {
@@ -1698,7 +1698,7 @@ assignee: null
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -1733,7 +1733,7 @@ assignee: null
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null

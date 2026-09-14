@@ -60,7 +60,7 @@ async function writeProjectTicket(opts: {
       'externalIds: []',
       'depends_on: []',
       'links: []',
-      'blockedReason: null',
+      'blocked: null',
       'workspace:',
       `  repository: ${opts.repository}`,
       `  worktree: ${opts.worktree}`,

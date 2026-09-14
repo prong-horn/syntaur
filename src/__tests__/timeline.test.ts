@@ -36,7 +36,7 @@ assignee: null
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null

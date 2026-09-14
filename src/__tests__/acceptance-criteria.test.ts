@@ -12,7 +12,7 @@ updated: "2026-03-20T10:00:00Z"
 assignee: codex-1
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null

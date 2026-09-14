@@ -27,7 +27,7 @@ describe('resolveChatCwd', () => {
     await rm(base, { recursive: true, force: true });
   });
 
-  it('prefers worktreePath → tier worktree', () => {
+  it('prefers worktree → tier worktree', () => {
     const r = resolveChatCwd({
       worktree: worktree,
       repository: repo,

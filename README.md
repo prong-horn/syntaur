@@ -256,17 +256,9 @@ Key flags: `--project <slug>`, `--type <list>` (comma-separated; `question`, `re
 
 The dashboard **Needs me** page is the live reply queue — tiered order (live cards pinned first), inline actions, browser notifications for new chat rows, project filter, and a nav badge equal to the unfiltered total.
 
-### Migrate events (one-time backfill)
+### Migrate events (retired in v0.80)
 
-`syntaur migrate-events` synthesizes audit events from existing `statusHistory` and legacy plan-approval frontmatter already in your `ticket.md` files. Dry-run by default; pass `--apply` to write. The command is idempotent — deterministic `source_key` values mean re-running after `--apply` inserts 0 new events.
-
-```bash
-# Preview the backfill (dry-run)
-syntaur migrate-events
-
-# Apply it
-syntaur migrate-events --apply
-```
+The standalone `syntaur migrate-events` command is retired. Event backfill from legacy ticket frontmatter now runs as part of `syntaur migrate v2` step **`statuses`** (dry-run by default; `--apply` to write).
 
 Key flags: `--apply`, `--dir <path>` (project directory override).
 

@@ -39,7 +39,6 @@ function baseFm(overrides: Partial<TicketFrontmatter> = {}): TicketFrontmatter {
     updated: '2026-01-01T00:00:00Z',
     assignee: null,
     externalIds: [],
-    statusHistory: [],
     depends_on: [],
     links: [],
     blocked: null,

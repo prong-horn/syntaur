@@ -84,9 +84,9 @@ Skip `start` when already `in_progress`, `review`, `done`, or `dropped`.
 
 ## Step 5: Write the workspace marker
 
-`cd` into the new worktree path. Write `<worktreePath>/.syntaur/context.json`
+`cd` into the new worktree path. Write `<worktree>/.syntaur/context.json`
 mirroring the WORKSPACE-MARKER format produced by `/grab-ticket`:
-`repository`, `branch`, `worktreePath`, `workspaceRoot`, `ticketId`, `ticketDir`,
+`repository`, `branch`, `worktree`, `workspaceRoot`, `ticketId`, `ticketDir`,
 `grabbedAt`, plus `sessionId` / `transcriptPath` when known. Write `ticketId`
 and `ticketDir` so doctor and the statusline can resolve the workspace ticket
 folder. Do NOT write `projectSlug` / `ticketSlug` / `projectDir` / `title` —

@@ -185,7 +185,7 @@ describe('resolveSince', () => {
     expect(resolveSince('review', a, now)).toBe('2026-06-06T00:00:00Z');
   });
 
-  it('fallback: no statusHistory, no updated → created', () => {
+  it('fallback: no moved events, no updated → created', () => {
     const a = ticket('status: review\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-01T00:00:00Z');
   });

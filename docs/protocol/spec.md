@@ -330,18 +330,18 @@ This applies to every timestamp field in frontmatter (`created`, `updated`, `gen
 
 ### Filesystem Paths
 
-**Local filesystem path fields** (`workspace.worktreePath`, `defaultProjectDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
+**Local filesystem path fields** (`workspace.worktree`, `defaultProjectDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
 
 **Note:** `workspace.repository` is exempt from this rule — it may be either a local absolute path or a remote URL (e.g., `https://github.com/org/repo.git`, `git@github.com:org/repo.git`). Only local filesystem paths require absolute expansion.
 
 ```yaml
 # Correct
 workspace:
-  worktreePath: /Users/brennen/worktrees/build-auth-system/implement-jwt-middleware
+  worktree: /Users/brennen/worktrees/build-auth-system/implement-jwt-middleware
 
 # Incorrect
 workspace:
-  worktreePath: ~/worktrees/build-auth-system/implement-jwt-middleware
+  worktree: ~/worktrees/build-auth-system/implement-jwt-middleware
 ```
 
 **Intra-project markdown links** (links between files within the same project folder) use **relative paths** for portability. If a project folder is moved or renamed, relative links remain valid.

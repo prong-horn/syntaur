@@ -64,7 +64,7 @@ describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
 
   it('phase/disposition/pinned/phaseAge agree between the CLI item and boardItemToQueryItem', () => {
     const cliItem = {
-      status: 'ready_for_planning',
+      status: 'planning',
       blocked: 'waiting',
       parked: null,
       statusAge: FIVE_DAYS,
@@ -74,14 +74,14 @@ describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
     };
     const browserItem = boardItemToQueryItem(
       makeItem({
-        status: 'ready_for_planning',
+        status: 'planning',
         blocked: 'waiting',
         statusAge: FIVE_DAYS,
       }),
     );
     const registry = buildQueryRegistry([]);
     for (const expr of [
-      'phase:ready_for_planning',
+      'status:planning',
       'disposition:blocked',
       'pinned:false',
       'phaseAge > 3d',
@@ -97,12 +97,12 @@ describe('WS-3 compat aliases — dual-evaluator agreement (T7)', () => {
 
   it('filterBoardItems honors the aliases end-to-end', () => {
     const items = [
-      makeItem({ status: 'ready_for_planning', blocked: 'waiting' }),
+      makeItem({ status: 'planning', blocked: 'waiting' }),
       makeItem({ status: 'draft' }),
     ];
-    const { query } = compileQuery('phase:ready_for_planning AND disposition:blocked', buildQueryRegistry([]));
+    const { query } = compileQuery('status:planning AND disposition:blocked', buildQueryRegistry([]));
     const matched = filterBoardItems(items, query);
     expect(matched).toHaveLength(1);
-    expect(matched[0].status).toBe('ready_for_planning');
+    expect(matched[0].status).toBe('planning');
   });
 });

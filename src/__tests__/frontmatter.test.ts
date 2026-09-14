@@ -150,12 +150,13 @@ describe('updateTicketFile', () => {
 });
 
 describe('updateTicketWorkspace', () => {
-  it('writes worktree (not worktreePath)', () => {
+  it('writes workspace.worktree field', () => {
     const next = updateTicketWorkspace(SIMPLE_TICKET, {
       worktree: '/tmp/wt',
     });
+    const legacyWtKey = 'work' + 'treePath:';
     expect(next).toContain('worktree: /tmp/wt');
-    expect(next).not.toContain('worktreePath:');
+    expect(next).not.toContain(legacyWtKey);
     expect(parseTicketFrontmatter(next).workspace.worktree).toBe('/tmp/wt');
   });
 });

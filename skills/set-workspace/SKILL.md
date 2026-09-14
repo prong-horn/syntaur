@@ -1,7 +1,7 @@
 ---
 name: set-workspace
 description: >-
-  Populate the four `workspace.*` fields (repository, worktreePath, branch,
+  Populate the four `workspace.*` fields (repository, worktree, branch,
   parentBranch) in the active ticket's `ticket.md` frontmatter
   before any implementation code is written. Use after creating a worktree,
   picking a branch, or any time the user wants to "set the workspace",
@@ -58,7 +58,7 @@ Defaults to auto-detect when not supplied:
 
 - `repository` ← `git -C $(pwd) rev-parse --show-toplevel`.
 - `branch` ← `git -C $(pwd) rev-parse --abbrev-ref HEAD`.
-- `worktreePath` ← `$(pwd)` (when invoked from the worktree itself).
+- `worktree` ← `$(pwd)` (when invoked from the worktree itself).
 - `parentBranch` ← prompt the user; do not invent.
 
 ## Step 3: Write via the CLI

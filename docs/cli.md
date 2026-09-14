@@ -160,7 +160,7 @@ Three steps, recorded in the `v2-migrated` marker ledger:
 
 1. **`rename-ids`** — Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
 2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`.
-3. **`lifecycle-verbs`** — Maps v1 statuses to v2 stages (`draft→backlog`, `ready_for_planning→planning`, `ready_to_implement→ready`, `completed→done`, `failed→dropped`, etc.); folds `blockedReason` into `blocked` flag; adds `parked: null`; drops engine frontmatter (`statusHistory`, `planApproval`, `facts`, `attestations`, and the rest of the §3.3 dropped-field list).
+3. **`statuses`** — Maps v1 statuses to v2 stages (`draft→backlog`, legacy planning→`planning`, legacy ready→`ready`, `completed→done`, `failed→dropped`, etc.); folds the legacy blocked-reason scalar into the `blocked` flag; adds `parked: null`; re-renders each ticket to the 17-field v2 frontmatter shape; backfills missing audit rows from legacy frontmatter history then rewrites `status-change` / `plan-approval` events to `moved` / `plan-approved`.
 
 Dry-run / apply transcript lines (representative):
 
@@ -170,7 +170,14 @@ Dry-run / apply transcript lines (representative):
 [dry-run] depends_on: 8 renamed
 [dry-run] plan block: 5 tickets (3 approvals carried, 1 superseded approvals dropped)
 [dry-run] dropped type: 12
-[dry-run] lifecycle-verbs: 12 tickets · draft→backlog: 3 · ready_for_planning→planning: 2 · completed→done: 4
+[dry-run] statuses: 12 tickets mapped (backlog 3, planning 2, ready 1, in_progress 0, review 0, done 4, dropped 2)
+[dry-run] archived → dropped: 0
+[dry-run] flags: blocked 1, parked 0
+[dry-run] history: 5 backfilled, 3 status-change and 2 plan-approval rows rewritten
+[dry-run] mapped: draft→backlog 3, …→planning 2, completed→done 4
+[dry-run] worktree: 0 renamed
+[dry-run] dropped fields: 48
+[dry-run] removed: derive-migrated, stages-migrated, workflows/
 ```
 
 `--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step.
@@ -293,34 +300,6 @@ syntaur timeline API-3 --project my-api \
 
 # Emit JSON, capped at 10 events
 syntaur timeline API-3 --project my-api --json --limit 10
-```
-
-## `syntaur migrate-events`
-
-One-time backfill that synthesizes audit events from existing `statusHistory` and legacy plan-approval frontmatter already present in `ticket.md` files. Dry-run by default; pass `--apply` to write.
-
-```
-syntaur migrate-events [options]
-```
-
-The command is **idempotent**: each synthesized event is stored with a deterministic `source_key` derived from the originating record, so re-running the command after `--apply` inserts 0 new events.
-
-### Options
-
-- `--dir <path>` — Override the default project directory (defaults to `~/.syntaur`).
-- `--apply` — Write the backfilled events. Without this flag the command only prints what would be inserted.
-
-### Examples
-
-```bash
-# Preview what would be backfilled (dry-run)
-syntaur migrate-events
-
-# Apply the backfill
-syntaur migrate-events --apply
-
-# Target a non-default project directory
-syntaur migrate-events --apply --dir /path/to/my-projects
 ```
 
 ## `syntaur search <query>`
@@ -510,6 +489,7 @@ installed machine needs.
 
 Also removed: `syntaur status *` (custom status workflow in `config.md`),
 `syntaur complete` / `syntaur fail`, `syntaur fact set`, `syntaur attest`,
-and the `manage-statuses` skill. Lifecycle moves use the verbs in
+`syntaur migrate-events` (superseded by `migrate v2` step `statuses`), and the
+`manage-statuses` skill. Lifecycle moves use the verbs in
 [Lifecycle verbs](#lifecycle-verbs) above (`plan`, `approve`, `start`,
 `review`, `done`, `drop`, `reopen`, `block`, `unblock`, `park`, `unpark`).

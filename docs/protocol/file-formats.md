@@ -1226,7 +1226,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `onboarding.completed` | boolean | `true`, `false` | optional | `false` | Whether the first-run onboarding flow has completed. |
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
-| `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets a ticket with no `workspace.worktreePath`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
+| `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets a ticket with no `workspace.worktree`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
 | `terminal` | string (enum) or null | `terminal-app`, `iterm`, `ghostty`, `alacritty`, `warp`, `kitty`, `cmux` | optional | `null` (platform default) | Which terminal `syntaur open` opens at a worktree. |
 | `session.idleSweepHours` | number | > 0 | optional | `6` | How long an `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
 | `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |

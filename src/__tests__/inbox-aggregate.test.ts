@@ -61,10 +61,9 @@ interface SeedOpts {
   status: string;
   project?: string;
   archived?: boolean;
-  blockedReason?: string;
+  blocked?: string;
   reviewRequested?: boolean;
   plan?: { file: string; approvedDigest: string | null };
-  statusHistory?: string[]; // raw YAML lines under statusHistory:
   updated?: string;
   created?: string;
   extraFrontmatter?: string[];
@@ -96,7 +95,7 @@ async function seed(o: SeedOpts): Promise<string> {
   ];
   if (o.archived) fm.push('archived: true');
   fm.push('template: feature');
-  if (o.blockedReason) fm.push(`blocked: "${o.blockedReason}"`);
+  if (o.blocked) fm.push(`blocked: "${o.blocked}"`);
   if (o.reviewRequested) fm.push('reviewRequested: true');
   if (o.updated) fm.push(`updated: "${o.updated}"`);
   if (o.created) fm.push(`created: "${o.created}"`);
@@ -118,10 +117,6 @@ async function seed(o: SeedOpts): Promise<string> {
     );
     fm.push('  approvedAt: null');
     fm.push('  approvedBy: null');
-  }
-  if (o.statusHistory) {
-    fm.push('statusHistory:');
-    fm.push(...o.statusHistory.map((l) => `  ${l}`));
   }
   if (o.extraFrontmatter) fm.push(...o.extraFrontmatter);
 
@@ -256,7 +251,7 @@ describe('computeInbox — positive categories', () => {
   });
 
   it('does not emit a blocked ticket', async () => {
-    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blockedReason: 'waiting on api' });
+    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blocked: 'waiting on api' });
     const r = await run();
     expect(r.total).toBe(0);
     expect(r.counts).toEqual({ question: 0, review: 0, 'plan-approval': 0 });
@@ -408,7 +403,7 @@ describe('computeInbox — exclusions', () => {
       slug: 'blocked-d',
       status: 'in_progress',
       project: 'p1',
-      blockedReason: 'waiting',
+      blocked: 'waiting',
     });
     const r = await run();
     expect(r.total).toBe(0);
@@ -666,15 +661,15 @@ describe('computeInbox — tiered ordering with lookup', () => {
       status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
-      statusHistory: ['- at: "2026-06-11T00:00:00Z"', '  to: planning', '  command: shape'],
     });
+    seedMovedEvent(toTicketId('t-plan', 'tier-plan'), '2026-06-11T00:00:00Z', 'planning', 'backlog');
     await seed({
       id: 't-rev',
       slug: 'tier-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(toTicketId('t-rev', 'tier-rev'), '2026-06-01T00:00:00Z', 'review');
     const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 't-card')]]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null });
     expect(r.items.map((i) => i.ticketSlug)).toEqual([
@@ -755,8 +750,8 @@ describe('computeInbox — tiered ordering with lookup', () => {
       slug: 'rev-nolookup',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(toTicketId('a-rev-nl', 'rev-nolookup'), '2026-06-01T00:00:00Z', 'review');
     const r = await run();
     expect(r.items[0].ticketSlug).toBe('no-lookup-row');
     expect(r.items[0]).not.toHaveProperty('card');
@@ -814,8 +809,8 @@ describe('computeInbox — tiered ordering with lookup', () => {
       slug: 'limit-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(toTicketId('a-limit-rev', 'limit-rev'), '2026-06-01T00:00:00Z', 'review');
     const lookup = new Map<string, ChatItem>([[permId, permissionItem(permId, 'a-limit-card')]]);
     const r = await run({ lookupChatItem: (id) => lookup.get(id) ?? null, limit: 1 });
     expect(r.items).toHaveLength(1);
@@ -875,7 +870,7 @@ describe('computeInbox — filters', () => {
 
 describe('computeInbox — board parity', () => {
   it('blocked-flag tickets are excluded from the inbox queue', async () => {
-    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blockedReason: 'waiting' });
+    await seed({ id: 'b', slug: 'blk', status: 'in_progress', project: 'p1', blocked: 'waiting' });
     const r = await run();
     expect(r.total).toBe(0);
   });
@@ -1090,9 +1085,9 @@ describe('computeInbox — snoozes', () => {
       slug,
       status: 'review',
       project: 'p1',
-      statusHistory: [`- at: "${since}"`, '  to: review', '  command: review'],
       updated: '2026-06-01T00:00:00Z',
     });
+    seedMovedEvent(toTicketId(id, slug), since, 'review');
     const r = await run();
     return r.items.find((i) => i.ticketSlug === slug)!;
   }

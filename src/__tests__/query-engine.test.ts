@@ -12,7 +12,7 @@ function matches(query: string, item: QueryItem): boolean {
 
 const ITEM: QueryItem = {
   status: 'in_progress',
-  phase: 'ready_to_implement',
+  phase: 'ready',
   disposition: 'blocked',
   priority: 'high',
   type: 'feature',
@@ -120,7 +120,7 @@ describe('AQL booleans + precedence', () => {
   });
 
   it('the design doc flagship query', () => {
-    expect(matches('disposition:blocked AND phase:ready_to_implement', ITEM)).toBe(true);
+    expect(matches('disposition:blocked AND phase:ready', ITEM)).toBe(true);
     expect(matches('planApproved:true AND workspaceSet:false', ITEM)).toBe(false);
   });
 });

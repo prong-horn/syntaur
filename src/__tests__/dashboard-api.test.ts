@@ -144,7 +144,7 @@ updated: "${RECENT_DATE}"
 assignee: codex-1
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -429,7 +429,7 @@ updated: "2026-04-20T10:00:00Z"
 assignee: null
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -519,11 +519,10 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
-blockedReason: null
+blocked: null
 ---
 
 ## Objective
@@ -744,7 +743,7 @@ describe('overview', () => {
     expect(overview.segments.stale.offset).toBe(0);
     expect(typeof overview.segments.stale.hasMore).toBe('boolean');
 
-    // Hero rule: blocked beats stale (no review/ready_to_implement/ready_for_planning/in_progress
+    // Hero rule: blocked beats stale (no review/ready/planning/in_progress
     // would normally beat blocked, but in_progress is also present — `in_progress` is higher
     // priority than `blocked`). Confirm hero picks one of the two and references a real id.
     expect(['in_progress', 'blocked']).toContain(overview.hero.kind);
@@ -839,7 +838,7 @@ updated: "${RECENT_DATE}"
 assignee: bench
 externalIds: []
 depends_on: ${JSON.stringify(depends_on)}
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -1242,14 +1241,14 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   function asgMd(id: string, slug: string, opts: { archived?: boolean; status?: string } = {}): string {
     const archived = opts.archived ? 'true' : 'false';
     const archivedAt = opts.archived ? '"2026-05-31T00:00:00Z"' : 'null';
-    return `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: ${opts.status ?? 'in_progress'}\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived}\narchivedAt: ${archivedAt}\narchivedReason: null\n---\n\nBody`;
+    return `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: ${opts.status ?? 'in_progress'}\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblocked: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived}\narchivedAt: ${archivedAt}\narchivedReason: null\n---\n\nBody`;
   }
 
   async function writeStandalone(dir: string, id: string, slug: string, archived: boolean): Promise<void> {
     const adir = resolve(dir, id);
     await mkdir(adir, { recursive: true });
     await writeFile(resolve(adir, 'ticket.md'),
-      `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
+      `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblocked: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
       'utf-8');
   }
 
@@ -1364,7 +1363,7 @@ describe('archive hiding + cascade + listArchived + migration', () => {
 
 // ── AC5/AC6: board items carry a computed facts block (terminal items too) ────
 describe('board payload — terminal completedAt (AC5/AC6)', () => {
-  // A done ticket with a statusHistory entry transitioning INTO the
+  // A done ticket with a moved event transitioning INTO the
   // terminal `done` stage → deriveStatusVirtuals materializes completedAt.
   const COMPLETED_MD = `---
 id: done-1
@@ -1378,24 +1377,13 @@ updated: "2026-04-01T12:00:00Z"
 assignee: claude
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
   branch: null
   parentBranch: null
 tags: []
-statusHistory:
-  - at: "2026-04-01T10:00:00Z"
-    from: null
-    to: in_progress
-    command: create
-    by: human
-  - at: "2026-04-01T12:00:00Z"
-    from: in_progress
-    to: done
-    command: done
-    by: human
 ---
 
 # Done Task

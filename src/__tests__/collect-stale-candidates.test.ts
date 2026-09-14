@@ -13,7 +13,7 @@ let projectsDir: string;
 
 const PROJECT_MD = `---\nslug: p1\ntitle: P1\nstatus: active\n---\n# P1`;
 
-// Blocked for months (old statusHistory) → contradiction-stale via blocked_aging.
+// Blocked for months (stale updated) → contradiction-stale via blocked_aging.
 const STALE_MD = `---
 id: stale-1
 slug: stale-one

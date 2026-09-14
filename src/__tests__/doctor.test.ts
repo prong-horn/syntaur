@@ -70,7 +70,7 @@ updated: "2026-01-01T00:00:00Z"
 assignee: null
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
 workspace:
   repository: ${repo ?? 'null'}
   worktree: ${wpath ?? 'null'}

@@ -185,7 +185,7 @@ beforeEach(async () => {
       `id: ${TICKET_ID}`,
       'slug: chat-demo',
       'title: "Chat demo"',
-      'status: ready_to_implement',
+      'status: ready',
       'project: syntaur-meta',
       'workspace:',
       `  repository: ${worktree}`,

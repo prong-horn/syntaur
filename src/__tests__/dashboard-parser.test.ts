@@ -193,7 +193,7 @@ assignee: claude-2
 externalIds: []
 depends_on: []
 links: []
-blockedReason: null
+blocked: null
 workspace:
   repository: /Users/test/repo
   worktree: null

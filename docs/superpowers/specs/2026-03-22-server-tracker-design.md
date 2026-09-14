@@ -86,7 +86,7 @@ When a refresh is triggered, the server executes these steps:
    - `git -C <cwd> rev-parse --abbrev-ref HEAD` (branch)
    - `git -C <cwd> rev-parse --git-common-dir` (detect worktree — if the output is an absolute path pointing outside the cwd's own `.git`, then `worktree = true`)
 5. **Ports per pane PID:** Run `lsof -i -P -n -sTCP:LISTEN` once for all PIDs, then filter. To find all relevant PIDs, recursively walk the process tree using `pgrep -P <pid>` starting from the pane PID, up to 4 levels deep. This catches shell → npm → node chains.
-6. **Auto-link to assignments:** For each pane, compare its resolved absolute `cwd` against all assignments' `workspace.worktreePath` (exact match after path normalization — resolve symlinks, remove trailing slashes). If no path match, fall back to matching `branch` against `workspace.branch`. If multiple assignments match, prefer the one whose `workspace.worktreePath` matches (path is more specific than branch). Manual overrides from frontmatter always take precedence over auto-linking.
+6. **Auto-link to assignments:** For each pane, compare its resolved absolute `cwd` against all assignments' `workspace.worktree` (exact match after path normalization — resolve symlinks, remove trailing slashes). If no path match, fall back to matching `branch` against `workspace.branch`. If multiple assignments match, prefer the one whose `workspace.worktree` matches (path is more specific than branch). Manual overrides from frontmatter always take precedence over auto-linking.
 
 ### Caching
 

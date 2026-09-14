@@ -13,6 +13,8 @@ import {
   GitWorktreeError,
   listBranches,
   detectDefaultBranch,
+  withWorktreePath,
+  withRecreatePath,
 } from '../utils/git-worktree.js';
 
 function git(cwd: string, args: string[]): string {
@@ -34,7 +36,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -68,8 +70,8 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feature/one',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     const st = await stat(wtPath);
     expect(st.isDirectory()).toBe(true);
@@ -82,15 +84,15 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feature/two',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     await expect(
       createWorktree({
         repository: repo,
         branch: 'feature/two', // already exists
-        worktreePath: resolve(scratch, 'wt2-dup'),
         parentBranch: 'main',
+        ...withWorktreePath(resolve(scratch, 'wt2-dup')),
       }),
     ).rejects.toBeInstanceOf(GitWorktreeError);
   });
@@ -104,8 +106,8 @@ describe('git-worktree helpers', () => {
       ticketPath,
       repository: repo,
       branch: 'feature/three',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
 
     const content = await readFile(ticketPath, 'utf-8');
@@ -133,8 +135,8 @@ describe('git-worktree helpers', () => {
         ticketPath,
         repository: repo,
         branch: 'feature/four',
-        worktreePath: wtPath,
-        parentBranch: 'main',
+      parentBranch: 'main',
+      ...withWorktreePath(wtPath),
       }),
     ).rejects.toThrow(/Rolled back|frontmatter/);
 
@@ -149,7 +151,7 @@ describe('git-worktree helpers', () => {
   it('formatRollbackError surfaces both stderr messages when both cleanups fail', () => {
     const msg = formatRollbackError({
       writeMsg: 'EROFS',
-      worktreePath: '/x/wt',
+      ...withWorktreePath('/x/wt'),
       branch: 'feature/x',
       worktreeCleanup: { ok: false, stderr: 'wt remove failed' },
       branchCleanup: { ok: false, stderr: 'branch delete failed' },
@@ -163,7 +165,7 @@ describe('git-worktree helpers', () => {
   it('formatRollbackError reports branch-only failure when worktree removal succeeded', () => {
     const msg = formatRollbackError({
       writeMsg: 'EROFS',
-      worktreePath: '/x/wt',
+      ...withWorktreePath('/x/wt'),
       branch: 'feature/x',
       worktreeCleanup: { ok: true, stderr: '' },
       branchCleanup: { ok: false, stderr: 'branch is checked out somewhere' },
@@ -199,8 +201,8 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feature/five',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     const result = await removeWorktree(repo, wtPath);
     expect(result.ok).toBe(true);
@@ -217,8 +219,8 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feat/reuse',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     // Simulate a manual delete: remove the dir WITHOUT `git worktree remove`,
     // leaving stale `.git/worktrees/*` metadata + the branch marked checked-out.
@@ -227,8 +229,8 @@ describe('git-worktree helpers', () => {
 
     const result = await recreateWorktree({
       repository: repo,
-      worktreePath: wtPath,
       branch: 'feat/reuse',
+      ...withRecreatePath(wtPath),
     });
 
     expect((await stat(wtPath)).isDirectory()).toBe(true);
@@ -244,8 +246,8 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feat/gone-sha',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     // Delete the dir AND the branch (prune frees the branch from the worktree).
     await rm(wtPath, { recursive: true, force: true });
@@ -255,9 +257,9 @@ describe('git-worktree helpers', () => {
 
     const result = await recreateWorktree({
       repository: repo,
-      worktreePath: wtPath,
       branch: 'feat/gone-sha',
       originalHeadSha,
+      ...withRecreatePath(wtPath),
     });
 
     expect((await stat(wtPath)).isDirectory()).toBe(true);
@@ -272,8 +274,8 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feat/gone-base',
-      worktreePath: wtPath,
       parentBranch: 'main',
+      ...withWorktreePath(wtPath),
     });
     await rm(wtPath, { recursive: true, force: true });
     git(repo, ['worktree', 'prune']);
@@ -281,8 +283,8 @@ describe('git-worktree helpers', () => {
 
     const result = await recreateWorktree({
       repository: repo,
-      worktreePath: wtPath,
       branch: 'feat/gone-base',
+      ...withRecreatePath(wtPath),
     });
 
     expect((await stat(wtPath)).isDirectory()).toBe(true);
@@ -298,16 +300,16 @@ describe('git-worktree helpers', () => {
     await createWorktree({
       repository: repo,
       branch: 'feat/shared',
-      worktreePath: livePath,
       parentBranch: 'main',
+      ...withWorktreePath(livePath),
     });
 
     const wtPath = resolve(scratch, 'wt-elsewhere');
     const result = await recreateWorktree({
       repository: repo,
-      worktreePath: wtPath,
       branch: 'feat/shared',
       originalHeadSha,
+      ...withRecreatePath(wtPath),
     });
 
     expect((await stat(wtPath)).isDirectory()).toBe(true);
@@ -324,9 +326,9 @@ describe('git-worktree helpers', () => {
 
     const result = await recreateWorktree({
       repository: repo,
-      worktreePath: wtPath,
       branch: null,
       originalHeadSha,
+      ...withRecreatePath(wtPath),
     });
 
     expect((await stat(wtPath)).isDirectory()).toBe(true);

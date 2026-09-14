@@ -58,7 +58,7 @@ updated: "${RECENT}"
 assignee: bench
 externalIds: []
 depends_on: ${JSON.stringify(depends_on)}
-blockedReason: null
+blocked: null
 workspace:
   repository: null
   worktree: null
@@ -99,11 +99,11 @@ async function seedSyntheticWorkspace(
     'in_progress',
     'in_progress',
     'review',
-    'ready_to_implement',
-    'ready_for_planning',
-    'draft',
-    'blocked',
-    'completed',
+    'ready',
+    'planning',
+    'backlog',
+    'done',
+    'dropped',
   ];
 
   for (let p = 0; p < projects; p++) {

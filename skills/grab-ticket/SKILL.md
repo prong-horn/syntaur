@@ -86,7 +86,7 @@ Merge workspace markers into `.syntaur/context.json`. Preserve existing `session
 {
   "repository": "<workspace.repository or null>",
   "branch": "<workspace.branch or null>",
-  "worktreePath": "<workspace.worktree or null>",
+  "worktree": "<workspace.worktree or null>",
   "workspaceRoot": "<workspace path or current working directory>",
   "ticketId": "<ticket id from frontmatter>",
   "ticketDir": "<absolute path to the ticket folder>",

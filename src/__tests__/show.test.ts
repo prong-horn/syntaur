@@ -164,7 +164,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -284,7 +283,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -319,7 +317,7 @@ Commands: syntaur show SCR-7; ask via @mention in chat`);
 });
 
 describe('off-template stage', () => {
-  it('quick at ready_for_planning shows planning off-template and next declared stage', async () => {
+  it('quick at planning shows planning off-template and next declared stage', async () => {
     const ticketDir = await writeProjectTicket('scratch', 'SCR-9-planning', {
       'ticket.md': `---
 id: SCR-9
@@ -356,7 +354,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -419,7 +416,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -498,7 +494,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -576,7 +571,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -633,7 +627,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null
@@ -688,7 +681,6 @@ firedVerdicts: []
 frozenChecks: null
 hold: false
 gateOverrides: []
-statusHistory: []
 assignee: null
 externalIds: []
 workflow: null

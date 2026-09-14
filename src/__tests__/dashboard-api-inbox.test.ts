@@ -41,7 +41,6 @@ interface SeedOpts {
   title?: string;
   status: string;
   project?: string;
-  statusHistory?: string[];
   updated?: string;
   planFiles?: Record<string, string>;
 }
@@ -68,10 +67,6 @@ async function seed(o: SeedOpts): Promise<void> {
     `created: "2026-01-01T00:00:00Z"`,
     `updated: "${o.updated ?? '2026-01-01T00:00:00Z'}"`,
   ];
-  if (o.statusHistory) {
-    fm.push('statusHistory:');
-    fm.push(...o.statusHistory.map((l) => `  ${l}`));
-  }
   if (o.planFiles) {
     const planFile = Object.keys(o.planFiles)[0]!;
     fm.push('plan:');
@@ -787,7 +782,13 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
       status: 'review',
       project: 'p1',
       updated: '2025-01-01T00:00:00Z',
-      statusHistory: ['- at: "2025-01-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    recordEvent({
+      ticketId: toTicketId('old-r', 'old-review'),
+      type: 'moved',
+      actor: 'human',
+      at: '2025-01-01T00:00:00Z',
+      details: { from: 'in_progress', to: 'review' },
     });
     const inbox = (await (await fetch(`${baseUrl}/api/inbox`)).json()) as InboxResult;
     const row = inbox.items.find((i) => i.ticketSlug === 'old-review')!;

@@ -107,7 +107,7 @@ describe('syntaur doctor --ticket --json', () => {
     const data = JSON.parse(r.stdout);
     expect(data.ok).toBe(false);
     expect(
-      data.errors.some((e: string) => /worktreePath|branch|parentBranch/.test(e)),
+      data.errors.some((e: string) => /worktree|branch|parentBranch/.test(e)),
     ).toBe(true);
   });
 

@@ -48,10 +48,10 @@ function previousNonEmptyLine(lines: string[], index: number): string | null {
 function isCwdWorkspaceMarker(lines: string[], index: number, line: string): boolean {
   if (/['"]\.syntaur['"]\s*,\s*['"]context\.json['"]/.test(line)) return true;
   const prev = previousNonEmptyLine(lines, index)?.trim() ?? '';
-  if (/^(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktreePath)\s*,?\s*$/.test(prev)) {
+  if (/^(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktree)\s*,?\s*$/.test(prev)) {
     return true;
   }
-  return /(?:^|[,(]\s*)(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktreePath)\s*,\s*['"]\.syntaur['"]/.test(
+  return /(?:^|[,(]\s*)(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktree)\s*,\s*['"]\.syntaur['"]/.test(
     prev ? `${prev}\n${line}` : line,
   );
 }
@@ -69,7 +69,7 @@ function isSyntaurLiteralExempt(
   }
   if (/['"]\.syntaur['"]\s*,\s*['"]context\.json['"]/.test(text)) return true;
   if (
-    /(?:^|[,(]\s*)(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktreePath)\s*,\s*['"]\.syntaur['"]/.test(
+    /(?:^|[,(]\s*)(?:cwd|ctx\.cwd|opts\.cwd|process\.cwd\(\)|worktree)\s*,\s*['"]\.syntaur['"]/.test(
       text,
     )
   ) {

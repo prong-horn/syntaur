@@ -191,10 +191,10 @@ describe('renderTicket', () => {
       priority: 'medium',
       depends_on: [],
       links: [],
-      status: 'ready_for_planning',
+      status: 'planning',
       template: 'feature',
   });
-    expect(out).toContain('status: ready_for_planning');
+    expect(out).toContain('status: planning');
     expect(out).not.toContain('status: draft');
   });
 

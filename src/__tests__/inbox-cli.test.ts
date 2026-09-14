@@ -30,9 +30,8 @@ interface SeedOpts {
   title?: string;
   status: string;
   project?: string; // project slug required — standalone root removed
-  blockedReason?: string;
+  blocked?: string;
   comments?: Comment[];
-  statusHistory?: string[];
   updated?: string;
 }
 
@@ -49,12 +48,8 @@ async function seed(o: SeedOpts): Promise<void> {
     `status: ${o.status}`,
     `project: ${o.project}`,
   ];
-  if (o.blockedReason) fm.push(`blockedReason: ${o.blockedReason}`);
+  if (o.blocked) fm.push(`blocked: ${o.blocked}`);
   if (o.updated) fm.push(`updated: "${o.updated}"`);
-  if (o.statusHistory) {
-    fm.push('statusHistory:');
-    fm.push(...o.statusHistory.map((l) => `  ${l}`));
-  }
   await writeFile(join(dir, 'ticket.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
 
   if (o.comments && o.comments.length > 0) {
@@ -429,7 +424,13 @@ describe('runInbox — max-age and snoozes', () => {
       status: 'review',
       project: 'p1',
       updated: '2025-01-01T00:00:00Z',
-      statusHistory: ['- at: "2025-01-01T00:00:00Z"', '  to: review', '  command: review'],
+    });
+    recordEvent({
+      ticketId: 'lift-r',
+      type: 'moved',
+      actor: 'human',
+      at: '2025-01-01T00:00:00Z',
+      details: { from: 'in_progress', to: 'review' },
     });
     const before = await runInbox({});
     const row = before.items[0];

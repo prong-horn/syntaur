@@ -293,7 +293,7 @@ describe('queryToViewFilters — non-chip-representable → null', () => {
     expect(queryToViewFilters('planApproved:true')).toBeNull();
   });
   it('phase / disposition atoms', () => {
-    expect(queryToViewFilters('phase:ready_to_implement')).toBeNull();
+    expect(queryToViewFilters('phase:ready')).toBeNull();
     expect(queryToViewFilters('disposition:blocked')).toBeNull();
   });
   it('statusAge / completedAt comparisons outside dateRange shapes', () => {
