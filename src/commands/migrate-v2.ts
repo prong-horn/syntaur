@@ -26,14 +26,21 @@ import {
   initSessionDb,
   resetSessionDb,
 } from '../dashboard/session-db.js';
-import { closeEventsDb, initEventsDb, resetEventsDb } from '../db/events-db.js';
+import {
+  closeEventsDb,
+  getEventsDb,
+  initEventsDb,
+  insertEventOrThrow,
+  resetEventsDb,
+} from '../db/events-db.js';
+import { legacyStatusToStage } from '../ticket-templates/stages.js';
 import { closeUsageDb, initUsageDb, resetUsageDb } from '../db/usage-db.js';
 import { BUILTIN_TEMPLATE_IDS, seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { latestPlanRevision } from '../ticket-templates/roles.js';
 
 export const V2_MIGRATED_MARKER = 'v2-migrated';
 
-const MIGRATION_STEPS = ['rename-ids', 'templates'] as const;
+const MIGRATION_STEPS = ['rename-ids', 'templates', 'statuses'] as const;
 export type MigrationStep = (typeof MIGRATION_STEPS)[number];
 
 const ISO_TIMESTAMP_LINE_RE =
@@ -278,7 +285,7 @@ export async function readMarkerSteps(
   if (!(await fileExists(markerPath))) return completed;
   const raw = await readFile(markerPath, 'utf-8');
   for (const line of raw.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const ledger = line.match(/^(rename-ids|templates)\s+(.+)$/);
+    const ledger = line.match(/^(rename-ids|templates|statuses)\s+(.+)$/);
     if (ledger) {
       completed.set(ledger[1] as MigrationStep, ledger[2]);
       continue;
@@ -307,7 +314,7 @@ async function appendMarkerStep(markerPath: string, step: MigrationStep): Promis
     prefix = await readFile(markerPath, 'utf-8');
     if (prefix.length > 0 && !prefix.endsWith('\n')) prefix += '\n';
   }
-  await writeFileForce(markerPath, `${prefix}templates ${ts}\n`);
+  await writeFileForce(markerPath, `${prefix}${step} ${ts}\n`);
 }
 
 interface TemplatesStepCounts {
@@ -484,7 +491,480 @@ async function runTemplatesStep(
     `plan block: ${counts.planBlock} tickets (${counts.approvalsCarried} approvals carried, ${counts.supersededDropped} superseded approvals dropped)`,
   );
   logLine(lines, mode, `dropped type: ${counts.typeDropped}`);
-  logLine(lines, mode, 'status mapping deferred to lifecycle-verbs');
+}
+
+const V1_TERMINAL_STATUSES = new Set(['completed', 'failed', 'done', 'dropped']);
+
+const DROPPED_V1_FIELDS = [
+  'workflow',
+  'externalIds',
+  'statusHistory',
+  'archived',
+  'archivedAt',
+  'archivedReason',
+  'phase',
+  'disposition',
+  'reviewRequested',
+  'reworkRequested',
+  'implementationStarted',
+  'override',
+  'facts',
+  'attestations',
+  'solicitations',
+  'firedVerdicts',
+  'frozenChecks',
+  'hold',
+  'gateOverrides',
+  'workspaceGroup',
+  'blockedReason',
+  'planApproval',
+  'type',
+  'dependsOn',
+] as const;
+
+interface StatusHistoryEntryV1 {
+  at: string;
+  from: string | null;
+  to: string;
+  command: string;
+  by: string | null;
+}
+
+function parseScalarV1(fm: string, key: string): string | null {
+  const match = fm.match(new RegExp(`^${key}:\\s*(.*)$`, 'm'));
+  if (!match) return null;
+  const trimmed = match[1].trim();
+  if (trimmed === 'null' || trimmed === '~' || trimmed === '') return null;
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+function parseBoolV1(fm: string, key: string): boolean | null {
+  const matches = [...fm.matchAll(new RegExp(`^${key}:\\s*(.*)$`, 'gm'))];
+  if (matches.length === 0) return null;
+  const raw = matches[matches.length - 1][1].trim();
+  if (raw === 'null' || raw === '~' || raw === '') return null;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  return null;
+}
+
+function parseStatusHistoryV1(fm: string): StatusHistoryEntryV1[] {
+  const lines = fm.split('\n');
+  const start = lines.findIndex((l) => l.startsWith('statusHistory:'));
+  if (start < 0) return [];
+
+  const entries: StatusHistoryEntryV1[] = [];
+  let i = start + 1;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.length > 0 && !/^\s/.test(line)) break;
+    const atMatch = line.match(/^\s+-\s+at:\s*(.+)$/);
+    if (!atMatch) {
+      i += 1;
+      continue;
+    }
+    const entry: StatusHistoryEntryV1 = {
+      at: atMatch[1].trim().replace(/^["']|["']$/g, ''),
+      from: null,
+      to: '',
+      command: '',
+      by: null,
+    };
+    i += 1;
+    while (i < lines.length && /^\s{4}\w+:/.test(lines[i])) {
+      const sub = lines[i].match(/^\s{4}(\w+):\s*(.*)$/);
+      if (sub) {
+        const val = sub[2].trim();
+        const parsed =
+          val === 'null' || val === '~' ? null : val.replace(/^["']|["']$/g, '');
+        if (sub[1] === 'from') entry.from = parsed;
+        if (sub[1] === 'to') entry.to = parsed ?? '';
+        if (sub[1] === 'command') entry.command = parsed ?? '';
+        if (sub[1] === 'by') entry.by = parsed;
+      }
+      i += 1;
+    }
+    entries.push(entry);
+  }
+  return entries;
+}
+
+function dropFrontmatterField(content: string, key: string): { content: string; dropped: boolean } {
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return { content, dropped: false };
+  let fm = fmMatch[1];
+  if (!new RegExp(`^${key}:`, 'm').test(fm)) return { content, dropped: false };
+  fm = fm.replace(new RegExp(`^${key}:.*\\n`, 'm'), '');
+  fm = fm.replace(
+    new RegExp(`^${key}:\\s*\\n(?:(?:  [^\\n]*|  -[^\\n]*)\\n)*`, 'm'),
+    '',
+  );
+  fm = fm.replace(new RegExp(`^${key}:\\s*\\[[^\\]]*\\]\\s*\\n?`, 'm'), '');
+  return {
+    content: content.replace(fmMatch[0], `---\n${fm}---`),
+    dropped: true,
+  };
+}
+
+function setFrontmatterScalar(content: string, key: string, value: string | null): string {
+  const yamlValue =
+    value === null ? 'null' : /^[a-z0-9_]+$/i.test(value) ? value : `"${value.replace(/"/g, '\\"')}"`;
+  if (new RegExp(`^${key}:`, 'm').test(content)) {
+    return content.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: ${yamlValue}`);
+  }
+  const closeIdx = content.indexOf('\n---', 4);
+  if (closeIdx === -1) return content;
+  return `${content.slice(0, closeIdx)}\n${key}: ${yamlValue}${content.slice(closeIdx)}`;
+}
+
+function renameWorkspaceWorktreePath(content: string): { content: string; renamed: boolean } {
+  if (!/^\s+worktreePath:/m.test(content)) return { content, renamed: false };
+  return {
+    content: content.replace(/^(\s+)worktreePath:/gm, '$1worktree:'),
+    renamed: true,
+  };
+}
+
+function migrateArchivedSourceKey(ticketId: string): string {
+  return `migrate~${ticketId}~archived`;
+}
+
+interface StatusesStepCounts {
+  mapped: number;
+  stageCounts: Record<string, number>;
+  archivedToDropped: number;
+  blockedFlags: number;
+  parkedFlags: number;
+  historyBackfilled: number;
+  movedRewritten: number;
+  planApprovedRewritten: number;
+  worktreeRenamed: number;
+  fieldsDropped: number;
+}
+
+function transformTicketStatusesFrontmatter(
+  content: string,
+  ticketId: string,
+  applyEvents: boolean,
+): { content: string; counts: Partial<StatusesStepCounts>; archivedEvent?: {
+  from: string;
+  to: string;
+  at: string;
+} } {
+  const partial: Partial<StatusesStepCounts> = {
+    stageCounts: {
+      backlog: 0,
+      planning: 0,
+      ready: 0,
+      in_progress: 0,
+      review: 0,
+      done: 0,
+      dropped: 0,
+    },
+  };
+  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (!fmMatch) return { content, counts: partial };
+
+  const fm = fmMatch[1];
+  const legacyStatus = parseScalarV1(fm, 'status') ?? 'draft';
+  let nextStatus = legacyStatusToStage(legacyStatus);
+  const blockedReason = parseScalarV1(fm, 'blockedReason');
+  const parkedBool = parseBoolV1(fm, 'parked');
+  const archived = parseBoolV1(fm, 'archived') === true;
+
+  let blocked: string | null = blockedReason;
+  if (legacyStatus === 'blocked' && !blocked) {
+    blocked = 'blocked before v2';
+  }
+  let parked: string | null = null;
+  if (parkedBool === true) {
+    parked = 'parked before v2 (no reason recorded)';
+  }
+
+  let archivedEvent: { from: string; to: string; at: string } | undefined;
+  if (archived && !V1_TERMINAL_STATUSES.has(legacyStatus)) {
+    partial.archivedToDropped = 1;
+    archivedEvent = {
+      from: nextStatus,
+      to: 'dropped',
+      at: parseScalarV1(fm, 'updated') ?? new Date().toISOString(),
+    };
+    nextStatus = 'dropped';
+  }
+
+  partial.stageCounts![nextStatus] = (partial.stageCounts![nextStatus] ?? 0) + 1;
+  partial.mapped = 1;
+  if (blocked) partial.blockedFlags = 1;
+  if (parked) partial.parkedFlags = 1;
+
+  let next = content;
+  next = setFrontmatterScalar(next, 'status', nextStatus);
+  next = setFrontmatterScalar(next, 'blocked', blocked);
+  next = setFrontmatterScalar(next, 'parked', parked);
+
+  const workspaceRenamed = renameWorkspaceWorktreePath(next);
+  next = workspaceRenamed.content;
+  if (workspaceRenamed.renamed) partial.worktreeRenamed = 1;
+
+  let fieldsDropped = 0;
+  for (const key of DROPPED_V1_FIELDS) {
+    const dropped = dropFrontmatterField(next, key);
+    next = dropped.content;
+    if (dropped.dropped) fieldsDropped += 1;
+  }
+  partial.fieldsDropped = fieldsDropped;
+
+  if (applyEvents && archivedEvent) {
+    insertEventOrThrow({
+      ticketId,
+      type: 'moved',
+      actor: 'system',
+      at: archivedEvent.at,
+      sourceKey: migrateArchivedSourceKey(ticketId),
+      details: {
+        from: archivedEvent.from,
+        to: archivedEvent.to,
+        verb: 'drop',
+        by: 'system',
+        reason: 'archived',
+      },
+    });
+  }
+
+  return { content: next, counts: partial, archivedEvent };
+}
+
+function synthesizeBackfillEvents(
+  ticketId: string,
+  fm: string,
+): Array<{
+  type: string;
+  at: string;
+  actor: string;
+  details: Record<string, unknown>;
+  sourceKey: string;
+}> {
+  const events: Array<{
+    type: string;
+    at: string;
+    actor: string;
+    details: Record<string, unknown>;
+    sourceKey: string;
+  }> = [];
+
+  const history = parseStatusHistoryV1(fm);
+  history.forEach((entry, index) => {
+    if (entry.from === entry.to) return;
+    events.push({
+      type: 'status-change',
+      at: entry.at,
+      actor: entry.by ?? 'system',
+      details: { from: entry.from, to: entry.to, command: entry.command },
+      sourceKey: backfillStatusSourceKey(ticketId, index),
+    });
+  });
+
+  const plan = parseNestedFrontmatterBlock(fm, 'plan');
+  const approval = parsePlanApprovalV1(`---\n${fm}\n---`);
+  const approvedDigest = plan?.approvedDigest ?? approval?.digest ?? null;
+  const approvedFile = plan?.file ?? approval?.file ?? null;
+  const approvedAt = plan?.approvedAt ?? approval?.at ?? parseScalarV1(fm, 'updated');
+  const approvedBy = plan?.approvedBy ?? approval?.by ?? 'system';
+  if (approvedFile && approvedDigest) {
+    events.push({
+      type: 'plan-approval',
+      at: approvedAt ?? new Date().toISOString(),
+      actor: approvedBy ?? 'system',
+      details: { file: approvedFile, digest: approvedDigest },
+      sourceKey: backfillPlanApprovalSourceKey(ticketId),
+    });
+  }
+
+  return events;
+}
+
+function rewriteLegacyEvents(dbPath: string, apply: boolean): {
+  movedRewritten: number;
+  planApprovedRewritten: number;
+} {
+  const database = apply ? getEventsDb() : new Database(dbPath, { readonly: true });
+  let movedRewritten = 0;
+  let planApprovedRewritten = 0;
+
+  const statusRows = database
+    .prepare(
+      `SELECT event_id, details, actor FROM events WHERE type = 'status-change'`,
+    )
+    .all() as Array<{ event_id: string; details: string | null; actor: string }>;
+
+  for (const row of statusRows) {
+    let parsed: { from?: string; to?: string; command?: string } = {};
+    try {
+      parsed = JSON.parse(row.details ?? '{}') as typeof parsed;
+    } catch {
+      continue;
+    }
+    const from = legacyStatusToStage(parsed.from ?? '');
+    const to = legacyStatusToStage(parsed.to ?? '');
+    const verb = parsed.command ?? 'unknown';
+    const details = JSON.stringify({
+      from,
+      to,
+      verb,
+      by: row.actor,
+    });
+    if (apply) {
+      database
+        .prepare(`UPDATE events SET type = 'moved', details = ? WHERE event_id = ?`)
+        .run(details, row.event_id);
+    }
+    movedRewritten += 1;
+  }
+
+  const planRows = database
+    .prepare(`SELECT event_id, details FROM events WHERE type = 'plan-approval'`)
+    .all() as Array<{ event_id: string; details: string | null }>;
+
+  for (const row of planRows) {
+    if (apply) {
+      database
+        .prepare(`UPDATE events SET type = 'plan-approved', details = ? WHERE event_id = ?`)
+        .run(row.details, row.event_id);
+    }
+    planApprovedRewritten += 1;
+  }
+
+  if (!apply) {
+    database.close();
+  }
+
+  return { movedRewritten, planApprovedRewritten };
+}
+
+async function runStatusesStep(
+  home: string,
+  apply: boolean,
+  lines: string[],
+  mode: string,
+): Promise<void> {
+  const counts: StatusesStepCounts = {
+    mapped: 0,
+    stageCounts: {
+      backlog: 0,
+      planning: 0,
+      ready: 0,
+      in_progress: 0,
+      review: 0,
+      done: 0,
+      dropped: 0,
+    },
+    archivedToDropped: 0,
+    blockedFlags: 0,
+    parkedFlags: 0,
+    historyBackfilled: 0,
+    movedRewritten: 0,
+    planApprovedRewritten: 0,
+    worktreeRenamed: 0,
+    fieldsDropped: 0,
+  };
+
+  const dbPath = resolve(home, 'syntaur.db');
+  const hasDb = await fileExists(dbPath);
+  if (apply) {
+    initEventsDb(dbPath);
+  }
+
+  const ticketPaths = await collectTicketMdPaths(home);
+  for (const ticketMdPath of ticketPaths) {
+    const content = await readFile(ticketMdPath, 'utf-8');
+    if (!content.trimStart().startsWith('---')) continue;
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) continue;
+    const ticketId = parseScalarV1(fmMatch[1], 'id');
+    if (!ticketId) continue;
+
+    const backfillEvents = synthesizeBackfillEvents(ticketId, fmMatch[1]);
+    for (const event of backfillEvents) {
+      if (apply) {
+        const inserted = insertEventOrThrow({
+          ticketId,
+          type: event.type,
+          actor: event.actor,
+          at: event.at,
+          details: event.details,
+          sourceKey: event.sourceKey,
+        });
+        counts.historyBackfilled += inserted;
+      } else if (hasDb) {
+        const database = new Database(dbPath, { readonly: true });
+        const existing = database
+          .prepare('SELECT 1 FROM events WHERE source_key = ? LIMIT 1')
+          .get(event.sourceKey);
+        if (!existing) counts.historyBackfilled += 1;
+        database.close();
+      } else {
+        counts.historyBackfilled += 1;
+      }
+    }
+
+    const { content: next, counts: partial } = transformTicketStatusesFrontmatter(
+      content,
+      ticketId,
+      apply,
+    );
+    counts.mapped += partial.mapped ?? 0;
+    counts.archivedToDropped += partial.archivedToDropped ?? 0;
+    counts.blockedFlags += partial.blockedFlags ?? 0;
+    counts.parkedFlags += partial.parkedFlags ?? 0;
+    counts.worktreeRenamed += partial.worktreeRenamed ?? 0;
+    counts.fieldsDropped += partial.fieldsDropped ?? 0;
+    for (const [stage, n] of Object.entries(partial.stageCounts ?? {})) {
+      counts.stageCounts[stage] = (counts.stageCounts[stage] ?? 0) + n;
+    }
+    if (apply && next !== content) {
+      await writeFileForce(ticketMdPath, next);
+    }
+  }
+
+  const rewritten = hasDb ? rewriteLegacyEvents(dbPath, apply) : { movedRewritten: 0, planApprovedRewritten: 0 };
+  counts.movedRewritten = rewritten.movedRewritten;
+  counts.planApprovedRewritten = rewritten.planApprovedRewritten;
+
+  if (apply) {
+    const deriveMarker = resolve(home, 'derive-migrated');
+    const stagesMarker = resolve(home, 'stages-migrated');
+    const workflowsDirPath = resolve(home, 'workflows');
+    if (await fileExists(deriveMarker)) await rm(deriveMarker);
+    if (await fileExists(stagesMarker)) await rm(stagesMarker);
+    if (await fileExists(workflowsDirPath)) await rm(workflowsDirPath, { recursive: true });
+  }
+
+  const sc = counts.stageCounts;
+  logLine(
+    lines,
+    mode,
+    `statuses: ${counts.mapped} tickets mapped (backlog ${sc.backlog}, planning ${sc.planning}, ready ${sc.ready}, in_progress ${sc.in_progress}, review ${sc.review}, done ${sc.done}, dropped ${sc.dropped})`,
+  );
+  logLine(lines, mode, `archived → dropped: ${counts.archivedToDropped}`);
+  logLine(
+    lines,
+    mode,
+    `flags: blocked ${counts.blockedFlags}, parked ${counts.parkedFlags}`,
+  );
+  logLine(
+    lines,
+    mode,
+    `history: ${counts.historyBackfilled} entries backfilled, ${counts.movedRewritten} events rewritten to moved, ${counts.planApprovedRewritten} to plan-approved`,
+  );
+  logLine(lines, mode, `worktree: ${counts.worktreeRenamed} renamed`);
+  logLine(lines, mode, `dropped fields: ${counts.fieldsDropped}`);
+  logLine(lines, mode, 'removed: derive-migrated, stages-migrated, workflows/');
 }
 
 function updateProjectMd(
@@ -1979,6 +2459,11 @@ export async function migrateV2Command(
         await runTemplatesStep(home, options.apply ?? false, lines, mode);
         if (options.apply) {
           await appendMarkerStep(markerPath, 'templates');
+        }
+      } else if (step === 'statuses') {
+        await runStatusesStep(home, options.apply ?? false, lines, mode);
+        if (options.apply) {
+          await appendMarkerStep(markerPath, 'statuses');
         }
       }
     }

@@ -728,19 +728,15 @@ describe('migrateV2Command', () => {
     expect(await hashTree(home)).toBe(fixtureHash);
     expect(lines.some((l) => l.includes('templates: seeded'))).toBe(true);
     expect(lines.some((l) => l === '[dry-run] template legacy: 4 tickets')).toBe(true);
-    expect(lines.some((l) => l.includes('status mapping deferred to lifecycle-verbs'))).toBe(
-      true,
-    );
-    expect(
-      lines.filter((l) => l.includes('status mapping deferred')).length,
-    ).toBe(1);
+    expect(lines.some((l) => l.includes('statuses: 4 tickets mapped'))).toBe(true);
   });
 
-  it('apply runs rename-ids then templates and writes a step ledger', async () => {
+  it('apply runs rename-ids then templates then statuses and writes a step ledger', async () => {
     await migrateV2Command({ root: home, apply: true });
     const marker = await readFile(resolve(home, V2_MIGRATED_MARKER), 'utf-8');
     expect(marker).toContain('rename-ids ');
     expect(marker).toContain('templates ');
+    expect(marker).toContain('statuses ');
     const steps = await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER));
     expect(pendingMigrationSteps(steps)).toEqual([]);
     expect(await fileExists(resolve(home, 'templates', 'feature', 'template.md'))).toBe(true);
@@ -886,7 +882,7 @@ describe('migrate v2 templates step', () => {
     expect(ticketMd).not.toContain('planApproval:');
     expect(ticketMd).toContain('plan:\n  file: plan.md');
     expect(ticketMd).toContain(`approvedDigest: ${digest}`);
-    expect(ticketMd).toContain('status: draft');
+    expect(ticketMd).toContain('status: backlog');
   });
 
   it('drops superseded plan approvals when a newer plan revision exists', async () => {
@@ -1133,6 +1129,414 @@ async function buildDuplicateSlugFixture(root: string): Promise<void> {
   }
   db.close();
 }
+
+function v2StatusTicketMd(opts: {
+  id: string;
+  slug: string;
+  project: string;
+  status: string;
+  extra?: string;
+}): string {
+  return `---
+id: ${opts.id}
+slug: ${opts.slug}
+title: ${opts.slug}
+project: ${opts.project}
+template: legacy
+status: ${opts.status}
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-02T00:00:00Z"
+depends_on: []
+links: []
+tags: []
+blocked: null
+parked: null
+workspace:
+  repository: null
+  branch: null
+  worktree: null
+  parentBranch: null
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+${opts.extra ?? ''}
+---
+## Objective
+
+Test.
+`;
+}
+
+async function buildStatusesFixture(root: string): Promise<void> {
+  const projectDir = resolve(root, 'projects', 'demo');
+  await mkdir(resolve(projectDir, 'tickets'), { recursive: true });
+  await writeFile(
+    resolve(projectDir, 'project.md'),
+    renderProject({
+      id: 'demo-id',
+      slug: 'demo',
+      title: 'Demo',
+      timestamp: '2026-01-01T00:00:00Z',
+      prefix: 'DEM',
+      nextTicket: 20,
+    }),
+  );
+  await writeFile(
+    resolve(root, 'config.md'),
+    renderConfig({ defaultProjectDir: resolve(root, 'projects') }),
+  );
+
+  const tickets: Array<{ folder: string; body: string }> = [
+    {
+      folder: 'DEM-1-draft',
+      body: v2StatusTicketMd({
+        id: 'DEM-1',
+        slug: 'draft-ticket',
+        project: 'demo',
+        status: 'draft',
+        extra: `statusHistory:
+  - at: "2026-01-01T00:00:00Z"
+    from: null
+    to: draft
+    command: create
+    by: null
+`,
+      }),
+    },
+    {
+      folder: 'DEM-2-planning',
+      body: v2StatusTicketMd({
+        id: 'DEM-2',
+        slug: 'planning-ticket',
+        project: 'demo',
+        status: 'ready_for_planning',
+      }),
+    },
+    {
+      folder: 'DEM-3-ready',
+      body: v2StatusTicketMd({
+        id: 'DEM-3',
+        slug: 'ready-ticket',
+        project: 'demo',
+        status: 'ready_to_implement',
+      }),
+    },
+    {
+      folder: 'DEM-4-blocked',
+      body: v2StatusTicketMd({
+        id: 'DEM-4',
+        slug: 'blocked-ticket',
+        project: 'demo',
+        status: 'blocked',
+        extra: 'blockedReason: "waiting on API"\n',
+      }),
+    },
+    {
+      folder: 'DEM-5-done',
+      body: v2StatusTicketMd({
+        id: 'DEM-5',
+        slug: 'done-ticket',
+        project: 'demo',
+        status: 'completed',
+      }),
+    },
+    {
+      folder: 'DEM-6-dropped',
+      body: v2StatusTicketMd({
+        id: 'DEM-6',
+        slug: 'dropped-ticket',
+        project: 'demo',
+        status: 'failed',
+      }),
+    },
+    {
+      folder: 'DEM-7-archived',
+      body: v2StatusTicketMd({
+        id: 'DEM-7',
+        slug: 'archived-ticket',
+        project: 'demo',
+        status: 'in_progress',
+        extra: 'archived: true\nphase: in_progress\ndisposition: active\n',
+      }),
+    },
+    {
+      folder: 'DEM-8-parked',
+      body: `---
+id: DEM-8
+slug: parked-ticket
+title: parked-ticket
+project: demo
+template: legacy
+status: review
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-02T00:00:00Z"
+depends_on: []
+links: []
+tags: []
+blocked: null
+parked: true
+workspace:
+  repository: null
+  branch: null
+  worktree: null
+  parentBranch: null
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+---
+## Objective
+
+Test.
+`,
+    },
+    {
+      folder: 'DEM-9-worktree',
+      body: `---
+id: DEM-9
+slug: worktree-ticket
+title: worktree-ticket
+project: demo
+template: legacy
+status: in_progress
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-02T00:00:00Z"
+depends_on: []
+links: []
+tags: []
+blocked: null
+parked: null
+workspace:
+  repository: /tmp/repo
+  worktreePath: /tmp/wt
+  branch: feat
+  parentBranch: main
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+---
+## Objective
+
+Test.
+`,
+    },
+  ];
+
+  for (const t of tickets) {
+    const dir = resolve(projectDir, 'tickets', t.folder);
+    await mkdir(dir, { recursive: true });
+    await writeFile(resolve(dir, 'ticket.md'), t.body);
+  }
+
+  await mkdir(resolve(root, 'workflows'), { recursive: true });
+  await writeFile(resolve(root, 'workflows', 'default.md'), '# workflow\n');
+  await writeFile(resolve(root, 'derive-migrated'), '2026-01-01T00:00:00.000Z\n');
+  await writeFile(resolve(root, 'stages-migrated'), '2026-01-01T00:00:00.000Z\n');
+
+  const db = new Database(resolve(root, 'syntaur.db'));
+  db.exec(`
+    CREATE TABLE events (
+      event_id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL,
+      at TEXT NOT NULL,
+      actor TEXT NOT NULL,
+      type TEXT NOT NULL,
+      details TEXT,
+      source_key TEXT UNIQUE
+    );
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
+    INSERT INTO meta (key, value) VALUES ('events_schema_version', '2');
+  `);
+  db.prepare(
+    `INSERT INTO events (event_id, ticket_id, at, actor, type, details, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'evt-sc',
+    'DEM-2',
+    '2026-01-02T00:00:00Z',
+    'human',
+    'status-change',
+    JSON.stringify({ from: 'draft', to: 'ready_for_planning', command: 'derive' }),
+    'live-status-1',
+  );
+  db.prepare(
+    `INSERT INTO events (event_id, ticket_id, at, actor, type, details, source_key)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    'evt-pa',
+    'DEM-3',
+    '2026-01-02T00:00:00Z',
+    'human',
+    'plan-approval',
+    JSON.stringify({ file: 'plan.md', digest: 'abc' }),
+    'live-plan-1',
+  );
+  db.close();
+}
+
+describe('migrate v2 statuses step', () => {
+  let stHome: string;
+  let stConfigBefore: string;
+
+  beforeEach(async () => {
+    stHome = await mkdtemp(join(tmpdir(), 'syntaur-migrate-statuses-'));
+    process.env.SYNTAUR_HOME = stHome;
+    resetEventsDb();
+    await buildStatusesFixture(stHome);
+    stConfigBefore = await readFile(resolve(stHome, 'config.md'), 'utf-8');
+    await writeFile(
+      resolve(stHome, V2_MIGRATED_MARKER),
+      'rename-ids 2026-09-12T12:46:05.342Z\ntemplates 2026-09-12T12:47:00.000Z\n',
+    );
+  });
+
+  afterEach(async () => {
+    closeEventsDb();
+    resetEventsDb();
+    await rm(stHome, { recursive: true, force: true });
+  });
+
+  it('runs statuses only when rename-ids and templates are complete', async () => {
+    const hashBefore = await hashTree(stHome);
+    const { lines } = await migrateV2Command({ root: stHome, apply: true });
+    expect(lines.some((l) => l.startsWith('[apply] statuses:'))).toBe(true);
+    expect(lines.some((l) => l.includes('project p1: prefix'))).toBe(false);
+    const marker = await readFile(resolve(stHome, V2_MIGRATED_MARKER), 'utf-8');
+    expect(marker).toContain('statuses ');
+    expect(pendingMigrationSteps(await readMarkerSteps(resolve(stHome, V2_MIGRATED_MARKER)))).toEqual(
+      [],
+    );
+    expect(await readFile(resolve(stHome, 'config.md'), 'utf-8')).toBe(stConfigBefore);
+    expect(await hashTree(stHome)).not.toBe(hashBefore);
+  });
+
+  it('dry-run leaves files byte-identical and prints counts', async () => {
+    const hashBefore = await hashTree(stHome);
+    const { lines } = await migrateV2Command({ root: stHome, apply: false });
+    expect(await hashTree(stHome)).toBe(hashBefore);
+    expect(lines.some((l) => l.includes('statuses: 9 tickets mapped'))).toBe(true);
+    expect(lines.some((l) => l.includes('archived → dropped: 1'))).toBe(true);
+    expect(lines.some((l) => l.includes('flags: blocked 1, parked 1'))).toBe(true);
+  });
+
+  it('maps every legacy status, flags, worktree and drops engine fields', async () => {
+    await migrateV2Command({ root: stHome, apply: true });
+    const expectStatus = async (folder: string, status: string) => {
+      const md = await readFile(
+        resolve(stHome, 'projects', 'demo', 'tickets', folder, 'ticket.md'),
+        'utf-8',
+      );
+      expect(md).toContain(`status: ${status}`);
+      expect(md).not.toContain('statusHistory:');
+      expect(md).not.toContain('blockedReason:');
+      expect(md).not.toContain('worktreePath:');
+      expect(md).not.toContain('phase:');
+      expect(md).not.toContain('archived:');
+    };
+    await expectStatus('DEM-1-draft', 'backlog');
+    await expectStatus('DEM-2-planning', 'planning');
+    await expectStatus('DEM-3-ready', 'ready');
+    await expectStatus('DEM-4-blocked', 'in_progress');
+    await expectStatus('DEM-5-done', 'done');
+    await expectStatus('DEM-6-dropped', 'dropped');
+    await expectStatus('DEM-7-archived', 'dropped');
+    await expectStatus('DEM-8-parked', 'review');
+    await expectStatus('DEM-9-worktree', 'in_progress');
+
+    const blockedMd = await readFile(
+      resolve(stHome, 'projects', 'demo', 'tickets', 'DEM-4-blocked', 'ticket.md'),
+      'utf-8',
+    );
+    expect(blockedMd).toContain('blocked: "waiting on API"');
+
+    const parkedMd = await readFile(
+      resolve(stHome, 'projects', 'demo', 'tickets', 'DEM-8-parked', 'ticket.md'),
+      'utf-8',
+    );
+    expect(parkedMd).toContain('parked: "parked before v2 (no reason recorded)"');
+
+    const wtMd = await readFile(
+      resolve(stHome, 'projects', 'demo', 'tickets', 'DEM-9-worktree', 'ticket.md'),
+      'utf-8',
+    );
+    expect(wtMd).toContain('worktree: /tmp/wt');
+  });
+
+  it('rewrites events, backfills history idempotently and removes markers', async () => {
+    const draftFm = await readFile(
+      resolve(stHome, 'projects', 'demo', 'tickets', 'DEM-1-draft', 'ticket.md'),
+      'utf-8',
+    );
+    expect(draftFm).toContain('statusHistory:');
+    await migrateV2Command({ root: stHome, apply: true });
+    const db = new Database(resolve(stHome, 'syntaur.db'), { readonly: true });
+    const moved = db
+      .prepare(`SELECT details, source_key FROM events WHERE event_id = 'evt-sc'`)
+      .get() as { details: string; source_key: string };
+    expect(moved.source_key).toBe('live-status-1');
+    expect(JSON.parse(moved.details)).toEqual({
+      from: 'backlog',
+      to: 'planning',
+      verb: 'derive',
+      by: 'human',
+    });
+    const planApproved = db
+      .prepare(`SELECT type, source_key FROM events WHERE event_id = 'evt-pa'`)
+      .get() as { type: string; source_key: string };
+    expect(planApproved.type).toBe('plan-approved');
+    expect(planApproved.source_key).toBe('live-plan-1');
+    const allEvents = db
+      .prepare(`SELECT event_id, type, source_key FROM events ORDER BY event_id`)
+      .all() as Array<{ event_id: string; type: string; source_key: string | null }>;
+    expect(allEvents.some((e) => e.source_key === 'backfill~DEM-1~status~0')).toBe(true);
+    const backfill = allEvents.find((e) => e.source_key === 'backfill~DEM-1~status~0')!;
+    expect(backfill.type).toBe('moved');
+    const archived = db
+      .prepare(`SELECT details FROM events WHERE source_key = ?`)
+      .get('migrate~DEM-7~archived') as { details: string };
+    expect(JSON.parse(archived.details).reason).toBe('archived');
+    const backfillCountFirst = (
+      db
+        .prepare(`SELECT count(*) AS n FROM events WHERE source_key LIKE 'backfill~DEM-1~status~%'`)
+        .get() as { n: number }
+    ).n;
+    db.close();
+    closeEventsDb();
+    resetEventsDb();
+
+    expect(await fileExists(resolve(stHome, 'derive-migrated'))).toBe(false);
+    expect(await fileExists(resolve(stHome, 'stages-migrated'))).toBe(false);
+    expect(await fileExists(resolve(stHome, 'workflows'))).toBe(false);
+
+    await expect(migrateV2Command({ root: stHome, apply: true })).rejects.toThrow(
+      /already completed/,
+    );
+
+    await writeFile(
+      resolve(stHome, V2_MIGRATED_MARKER),
+      'rename-ids 2026-09-12T12:46:05.342Z\ntemplates 2026-09-12T12:47:00.000Z\n',
+    );
+    await migrateV2Command({ root: stHome, apply: true });
+    const countDb = new Database(resolve(stHome, 'syntaur.db'), { readonly: true });
+    const backfillCountSecond = (
+      countDb
+        .prepare(`SELECT count(*) AS n FROM events WHERE source_key LIKE 'backfill~DEM-1~status~%'`)
+        .get() as { n: number }
+    ).n;
+    countDb.close();
+    closeEventsDb();
+    resetEventsDb();
+    expect(backfillCountSecond).toBe(backfillCountFirst);
+  });
+});
 
 describe('migrateV2Command duplicate slugs', () => {
   let dupHome: string;

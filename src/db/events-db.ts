@@ -171,28 +171,43 @@ function insertEvent(row: InsertEventRow): void {
  */
 export function recordEvent(input: RecordEventInput): void {
   try {
-    if (!db) initEventsDb();
-    const ticketId = input.ticketId;
-    if (!ticketId) throw new Error('recordEvent requires ticketId');
-
-    let details: string | null = null;
-    if (input.details !== undefined && input.details !== null) {
-      details =
-        typeof input.details === 'string' ? input.details : JSON.stringify(input.details);
-    }
-
-    insertEvent({
-      event_id: generateId(),
-      ticket_id: ticketId,
-      at: input.at ?? new Date().toISOString(),
-      actor: input.actor,
-      type: input.type,
-      details,
-      source_key: input.sourceKey ?? null,
-    });
+    insertEventOrThrow(input);
   } catch (e) {
     console.warn('[events] failed to record event:', e);
   }
+}
+
+/**
+ * Strict writer for migrations. Throws on DB errors; returns `0` when a
+ * deterministic `sourceKey` already exists (`INSERT OR IGNORE` no-op).
+ */
+export function insertEventOrThrow(input: RecordEventInput): number {
+  if (!db) initEventsDb();
+  const ticketId = input.ticketId;
+  if (!ticketId) throw new Error('insertEventOrThrow requires ticketId');
+
+  let details: string | null = null;
+  if (input.details !== undefined && input.details !== null) {
+    details =
+      typeof input.details === 'string' ? input.details : JSON.stringify(input.details);
+  }
+
+  const database = getEventsDb();
+  const result = database
+    .prepare(
+      `INSERT OR IGNORE INTO events (event_id, ticket_id, at, actor, type, details, source_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      generateId(),
+      ticketId,
+      input.at ?? new Date().toISOString(),
+      input.actor,
+      input.type,
+      details,
+      input.sourceKey ?? null,
+    );
+  return result.changes;
 }
 
 /**
