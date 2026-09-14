@@ -66,7 +66,7 @@ describe('viewFiltersToQuery — no constraints', () => {
     expect(
       viewFiltersToQuery({
         status: 'all',
-        type: 'all',
+        template: 'all',
         priority: 'all',
         assignee: 'all',
         project: 'all',
@@ -350,7 +350,7 @@ describe('round-trip law', () => {
     { name: 'empty', f: {} },
     { name: 'status single', f: { status: 'in_progress' } },
     { name: 'status multi', f: { status: ['draft', 'in_progress', 'review'] } },
-    { name: 'type', f: { type: ['feature', 'bug'] } },
+    { name: 'template', f: { template: ['feature', 'bug'] } },
     { name: 'priority', f: { priority: 'high' } },
     { name: 'priority multi', f: { priority: ['high', 'critical'] } },
     { name: 'assignee', f: { assignee: ['claude', 'agent:codex'] } },

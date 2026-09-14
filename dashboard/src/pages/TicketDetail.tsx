@@ -244,8 +244,8 @@ export function TicketDetail() {
       if (!file.exists) {
         return (
           <EmptyState
-            title="Not created yet"
-            description={`createOn: ${file.createOn}`}
+            title={`Not created yet (createOn: ${file.createOn})`}
+            description=""
           />
         );
       }
@@ -285,12 +285,14 @@ export function TicketDetail() {
       if (file.role === 'plan') {
         return (
           <SectionCard title="Plan" description={file.description} actions={editAction}>
-            {file.planStatus ? (
-              <div className="mb-4">
-                <StatusBadge status={file.planStatus} />
-                <span className="ml-2 text-xs text-muted-foreground">{file.state}</span>
-              </div>
-            ) : null}
+            <div className="mb-4">
+              <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium capitalize">
+                {file.state}
+              </span>
+              {file.planStatus ? (
+                <span className="ml-2 text-xs text-muted-foreground">status: {file.planStatus}</span>
+              ) : null}
+            </div>
             <MarkdownRenderer content={file.body ?? ''} emptyState="No plan content yet." />
           </SectionCard>
         );
@@ -373,6 +375,7 @@ export function TicketDetail() {
           value: spec.value,
           label: spec.label,
           count: spec.count,
+          badge: spec.badge,
           content: renderFileTab(spec.file),
         };
       }

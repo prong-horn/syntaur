@@ -11,6 +11,8 @@ export interface TicketTabSpec {
   value: string;
   label: string;
   count?: number;
+  /** Plan-role tabs show file state (missing/unapproved/approved/stale). */
+  badge?: string;
   kind: TicketTabKind;
   file?: TicketTemplateFileDetail;
 }
@@ -20,11 +22,17 @@ function tabLabelForFile(file: TicketTemplateFileDetail): string {
 }
 
 function tabCountForFile(file: TicketTemplateFileDetail): number | undefined {
+  if (file.role === 'plan') return undefined;
   if (file.role === 'log') {
     const n = file.logEntries?.length ?? 0;
     return n > 0 ? n : undefined;
   }
   if (file.exists) return 1;
+  return undefined;
+}
+
+function tabBadgeForFile(file: TicketTemplateFileDetail): string | undefined {
+  if (file.role === 'plan') return file.state;
   return undefined;
 }
 
@@ -42,6 +50,7 @@ export function buildTicketTabs(
       value: `file:${file.path}`,
       label: tabLabelForFile(file),
       count: tabCountForFile(file),
+      badge: tabBadgeForFile(file),
       kind: 'template-file',
       file,
     });

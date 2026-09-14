@@ -29,7 +29,7 @@ describe('buildTicketTabs', () => {
     const tabs = buildTicketTabs(
       detail('feature', [
         file({ path: 'journal.md', role: 'log', logEntries: [{ timestamp: 't', type: 'progress', author: 'a', firstLine: 'x', body: 'x' }] }),
-        file({ path: 'plan.md', role: 'plan', createOn: 'planning', planStatus: 'approved' }),
+        file({ path: 'plan.md', role: 'plan', createOn: 'planning', state: 'approved', planStatus: 'approved' }),
       ]),
     );
     expect(tabs.map((t) => t.label)).toEqual([
@@ -41,6 +41,8 @@ describe('buildTicketTabs', () => {
       'Session Activity',
     ]);
     expect(tabs.find((t) => t.value === 'file:journal.md')?.count).toBe(1);
+    expect(tabs.find((t) => t.value === 'file:plan.md')?.badge).toBe('approved');
+    expect(tabs.find((t) => t.value === 'file:plan.md')?.count).toBeUndefined();
   });
 
   it('quick template has no file tabs', () => {

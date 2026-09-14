@@ -85,7 +85,7 @@ export function ProjectDetail() {
   const [statusFilter, setStatusFilter] = useState<string[]>(() => toFilterValues(prefs.filters.status));
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
   const [priorityFilter, setPriorityFilter] = useState<string[]>(() => toFilterValues(prefs.filters.priority));
-  const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
+  const [templateFilter, setTemplateFilter] = useState<string[]>(() => toFilterValues(prefs.filters.template));
   const [tagsFilter, setTagsFilter] = useState<string[]>(() => toFilterValues(prefs.filters.tags));
   // dateRange is a saved-view-only filter (ephemeral, not persisted to view-prefs).
   const [dateRange, setDateRange] = useState<DateRangeUiState | null>(null);
@@ -110,12 +110,12 @@ export function ProjectDetail() {
     setStatusFilter(toFilterValues(prefs.filters.status));
     setAssigneeFilter(toFilterValues(prefs.filters.assignee));
     setPriorityFilter(toFilterValues(prefs.filters.priority));
-    setTypeFilter(toFilterValues(prefs.filters.type));
+    setTemplateFilter(toFilterValues(prefs.filters.template));
     setTagsFilter(toFilterValues(prefs.filters.tags));
     setGrouping(prefs.grouping);
     setSortField(prefs.sortField);
     setSortDirection(prefs.sortDirection);
-  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.type, prefs.filters.tags, prefs.grouping, prefs.sortField, prefs.sortDirection]);
+  }, [slug, prefs.defaultView, prefs.filters.status, prefs.filters.assignee, prefs.filters.priority, prefs.filters.template, prefs.filters.tags, prefs.grouping, prefs.sortField, prefs.sortDirection]);
 
   const persistField = useCallback(
     (patch: Parameters<typeof saveScopeViewPrefs>[1]) => {
@@ -157,10 +157,10 @@ export function ProjectDetail() {
     },
     [persistField],
   );
-  const handleSetTypeFilter = useCallback(
+  const handleSetTemplateFilter = useCallback(
     (v: string[]) => {
-      setTypeFilter(v);
-      persistField({ filters: { type: v } });
+      setTemplateFilter(v);
+      persistField({ filters: { template: v } });
     },
     [persistField],
   );
@@ -295,7 +295,7 @@ export function ProjectDetail() {
     filterTicket(ticket, {
       status: statusFilter,
       priority: priorityFilter,
-      template: typeFilter,
+      template: templateFilter,
       assignee: assigneeFilter,
       tags: tagsFilter,
       dateRange: minimizeDateRange(dateRange),
@@ -489,8 +489,8 @@ export function ProjectDetail() {
                             className="max-w-[170px]"
                             allLabel="All types"
                             options={templatesConfig.definitions.map((t) => ({ value: t.id, label: getTemplateLabel(templatesConfig, t.id) }))}
-                            value={typeFilter}
-                            onChange={handleSetTypeFilter}
+                            value={templateFilter}
+                            onChange={handleSetTemplateFilter}
                           />
                           <MultiSelect
                             ariaLabel="Tags filter"

@@ -6,6 +6,7 @@ interface TabItem {
   value: string;
   label: string;
   count?: number;
+  badge?: string;
   problemCount?: number;
   content: ReactNode;
 }
@@ -66,6 +67,11 @@ export function ContentTabs({
               )}
             >
               <span>{item.label}</span>
+              {item.badge ? (
+                <span className="rounded-full bg-background/20 px-2 py-0.5 text-xs capitalize data-[state=active]:bg-background/20">
+                  {item.badge}
+                </span>
+              ) : null}
               {typeof item.count === 'number' ? (
                 <span className="rounded-full bg-background/20 px-2 py-0.5 text-xs data-[state=active]:bg-background/20">
                   {item.count}

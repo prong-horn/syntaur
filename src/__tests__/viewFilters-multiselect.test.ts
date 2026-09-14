@@ -50,7 +50,7 @@ describe('sameFilterValues', () => {
 describe('isViewFilters (back-compat + multi-value)', () => {
   it('accepts legacy scalar, arrays, and activity enum', () => {
     expect(isViewFilters({ status: 'in_progress' })).toBe(true);
-    expect(isViewFilters({ status: ['in_progress', 'review'], type: ['feature'] })).toBe(true);
+    expect(isViewFilters({ status: ['in_progress', 'review'], template: ['feature'] })).toBe(true);
     expect(isViewFilters({ activity: 'stale' })).toBe(true);
     expect(isViewFilters({})).toBe(true);
   });

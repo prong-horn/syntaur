@@ -173,7 +173,7 @@ export function TicketsPage() {
     () => parseStatusParam(statusParam),
   );
   const [priorityFilter, setPriorityFilter] = useState<string[]>(() => toFilterValues(prefs.filters.priority));
-  const [typeFilter, setTypeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.type));
+  const [templateFilter, setTemplateFilter] = useState<string[]>(() => toFilterValues(prefs.filters.template));
   const [assigneeFilter, setAssigneeFilter] = useState<string[]>(() => toFilterValues(prefs.filters.assignee));
   const [projectFilter, setProjectFilter] = useState<string[]>(() => toFilterValues(prefs.filters.project));
   const [tagsFilter, setTagsFilter] = useState<string[]>(() => toFilterValues(prefs.filters.tags));
@@ -190,7 +190,7 @@ export function TicketsPage() {
     viewFiltersToQuery({
       status: parseStatusParam(statusParam),
       priority: toFilterValues(prefs.filters.priority),
-      type: toFilterValues(prefs.filters.type),
+      template: toFilterValues(prefs.filters.template),
       assignee: toFilterValues(prefs.filters.assignee),
       project: toFilterValues(prefs.filters.project),
       tags: toFilterValues(prefs.filters.tags),
@@ -306,7 +306,7 @@ export function TicketsPage() {
   // another component, subscriber-set propagates here).
   useEffect(() => {
     setPriorityFilter(toFilterValues(prefs.filters.priority));
-    setTypeFilter(toFilterValues(prefs.filters.type));
+    setTemplateFilter(toFilterValues(prefs.filters.template));
     setAssigneeFilter(toFilterValues(prefs.filters.assignee));
     setProjectFilter(toFilterValues(prefs.filters.project));
     setTagsFilter(toFilterValues(prefs.filters.tags));
@@ -315,7 +315,7 @@ export function TicketsPage() {
     setGrouping(prefs.grouping);
   }, [
     prefs.filters.priority,
-    prefs.filters.type,
+    prefs.filters.template,
     prefs.filters.assignee,
     prefs.filters.project,
     prefs.filters.tags,
@@ -385,7 +385,7 @@ export function TicketsPage() {
         viewFiltersToQuery({
           status: effStatus,
           priority: toFilterValues(p.filters.priority),
-          type: toFilterValues(p.filters.type),
+          template: toFilterValues(p.filters.template),
           assignee: toFilterValues(p.filters.assignee),
           project: toFilterValues(p.filters.project),
           tags: toFilterValues(p.filters.tags),
@@ -442,7 +442,7 @@ export function TicketsPage() {
   const chipStateRef = useRef<{
     status: string[];
     priority: string[];
-    type: string[];
+    template: string[];
     assignee: string[];
     project: string[];
     tags: string[];
@@ -453,7 +453,7 @@ export function TicketsPage() {
   chipStateRef.current = {
     status: statusFilter,
     priority: priorityFilter,
-    type: typeFilter,
+    template: templateFilter,
     assignee: assigneeFilter,
     project: projectFilter,
     tags: tagsFilter,
@@ -470,7 +470,7 @@ export function TicketsPage() {
       return {
         status: c.status,
         priority: c.priority,
-        type: c.type,
+        template: c.template,
         assignee: c.assignee,
         project: c.project,
         tags: c.tags,
@@ -509,11 +509,11 @@ export function TicketsPage() {
     },
     [persistField, syncQueryFromChips],
   );
-  const handleSetTypeFilter = useCallback(
+  const handleSetTemplateFilter = useCallback(
     (v: string[]) => {
-      setTypeFilter(v);
-      persistField({ filters: { type: v } });
-      syncQueryFromChips({ type: v });
+      setTemplateFilter(v);
+      persistField({ filters: { template: v } });
+      syncQueryFromChips({ template: v });
     },
     [persistField, syncQueryFromChips],
   );
@@ -616,7 +616,7 @@ export function TicketsPage() {
       if (!vf) return; // not chip-representable → read-only fallback, chips frozen
       setStatusFilter(toFilterValues(vf.status));
       setPriorityFilter(toFilterValues(vf.priority));
-      setTypeFilter(toFilterValues(vf.type));
+      setTemplateFilter(toFilterValues(vf.template));
       setAssigneeFilter(toFilterValues(vf.assignee));
       setProjectFilter(toFilterValues(vf.project));
       setTagsFilter(toFilterValues(vf.tags));
@@ -1124,8 +1124,8 @@ export function TicketsPage() {
           allLabel="All types"
           disabled={!chipsRepresentable}
           options={templatesConfig.definitions.map((t) => ({ value: t.id, label: getTemplateLabel(templatesConfig, t.id) }))}
-          value={typeFilter}
-          onChange={handleSetTypeFilter}
+          value={templateFilter}
+          onChange={handleSetTemplateFilter}
         />
         <MultiSelect
           ariaLabel="Assignee filter"

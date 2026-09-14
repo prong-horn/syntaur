@@ -136,7 +136,7 @@ export type FilterValue = string | string[];
 
 export interface ViewFilters {
   status?: FilterValue;
-  type?: FilterValue;
+  template?: FilterValue;
   priority?: FilterValue;
   assignee?: FilterValue;
   project?: FilterValue;
@@ -208,7 +208,7 @@ export const DEFAULT_VIEW_PREFS: ViewPrefs = {
   grouping: 'none',
   filters: {
     status: 'all',
-    type: 'all',
+    template: 'all',
     priority: 'all',
     assignee: 'all',
     project: 'all',
@@ -353,7 +353,7 @@ export interface TableColumnVisibility {
 export function isViewFilters(value: unknown): value is ViewFilters {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const obj = value as Record<string, unknown>;
-  for (const key of ['status', 'type', 'priority', 'assignee', 'project', 'tags'] as const) {
+  for (const key of ['status', 'template', 'priority', 'assignee', 'project', 'tags'] as const) {
     if (obj[key] !== undefined && !isFilterValue(obj[key])) return false;
   }
   if (obj.activity !== undefined && !isActivity(obj.activity)) return false;

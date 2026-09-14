@@ -117,45 +117,37 @@ describe('view-prefs storage', () => {
     expect(next.projects.foo.defaultView).toBe('table'); // preserved sibling field
   });
 
-  it('(e2) mergePatch round-trips a filters.type patch without disturbing siblings', () => {
+  it('(e2) mergePatch round-trips a filters.template patch without disturbing siblings', () => {
     const current: ViewPrefsFile = {
       version: 1,
       global: {
         ...DEFAULT_VIEW_PREFS_FILE.global,
-        filters: { status: 'in_progress', priority: 'high', type: 'all', assignee: 'all', project: 'all', activity: 'all' },
+        filters: { status: 'in_progress', priority: 'high', template: 'all', assignee: 'all', project: 'all', activity: 'all' },
       },
       projects: {},
     };
-    const next = mergePatch(current, { global: { filters: { type: 'bug' } } });
-    expect(next.global.filters.type).toBe('bug');
+    const next = mergePatch(current, { global: { filters: { template: 'bug' } } });
+    expect(next.global.filters.template).toBe('bug');
     expect(next.global.filters.status).toBe('in_progress'); // preserved
     expect(next.global.filters.priority).toBe('high'); // preserved (the deep-merge proof)
   });
 
-  it('(e3) stale v1 prefs missing filters.type read cleanly — additive field is forward-compat', () => {
-    // Simulate a view-prefs.json written before filters.type existed: the
-    // schema's deep-merge should accept it, and downstream consumers fall back
-    // to 'all' via `?? 'all'`. This test pins mergeForScope() tolerance.
+  it('(e3) stale prefs missing filters.template read cleanly — additive field is forward-compat', () => {
     const stale: ViewPrefsFile = {
       version: 1,
       global: {
         ...DEFAULT_VIEW_PREFS_FILE.global,
-        // Manually omit `type` from the filters block (cast to bypass shape check on the literal).
         filters: { status: 'all', priority: 'all', assignee: 'all', project: 'all', activity: 'all' } as ViewPrefsFile['global']['filters'],
       },
       projects: { foo: { filters: { status: 'in_progress' } } },
     };
     const effective = mergeForScope(stale, 'foo');
-    expect(effective.filters.type).toBeUndefined();
-    // Consumers must treat undefined as 'all' — exercise that contract here:
-    expect(effective.filters.type ?? 'all').toBe('all');
+    expect(effective.filters.template).toBeUndefined();
+    expect(effective.filters.template ?? 'all').toBe('all');
     expect(effective.filters.status).toBe('in_progress');
   });
 
-  it('(e4) readViewPrefsFile tolerates a v1 on-disk file missing filters.type', async () => {
-    // Disk-level regression for the stale-prefs case: write a JSON file shaped
-    // like a v1 prefs file authored before `type` existed in filters, and confirm
-    // readViewPrefsFile returns it without throwing or marking the file corrupt.
+  it('(e4) readViewPrefsFile tolerates a on-disk file missing filters.template', async () => {
     const stalePayload = {
       version: 1,
       global: {
@@ -171,7 +163,7 @@ describe('view-prefs storage', () => {
     await writeFile(prefsPath, JSON.stringify(stalePayload));
     const result = await readViewPrefsFile();
     expect(result.version).toBe(1);
-    expect(result.global.filters.type).toBeUndefined();
+    expect(result.global.filters.template).toBeUndefined();
     // No corrupt-backup written:
     const entries = await readdir(resolve(homeDir, '.syntaur'));
     expect(entries.filter((e) => e.startsWith('view-prefs.corrupt-')).length).toBe(0);
