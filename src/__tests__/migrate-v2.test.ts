@@ -745,23 +745,34 @@ describe('migrateV2Command', () => {
     expect(marker).toContain('rename-ids ');
     expect(marker).toContain('templates ');
     expect(marker).toContain('statuses ');
-    const markerState = await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER));
-    expect(pendingMigrationSteps(markerState)).toEqual([]);
+    expect(pendingMigrationSteps(await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER)))).toEqual(
+      [],
+    );
     expect(await fileExists(resolve(home, 'templates', 'feature', 'template.md'))).toBe(true);
   });
 
-  it('bare-timestamp marker runs templates only on id-prefixed folders', async () => {
+  it('bare-timestamp marker leaves templates and statuses pending; one apply runs both', async () => {
     await migrateV2Command({ root: home, apply: true });
     const bareTs = '2026-09-12T12:46:05.342Z';
     await writeFile(resolve(home, V2_MIGRATED_MARKER), `${bareTs}\n`);
+    expect(pendingMigrationSteps(await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER)))).toEqual(
+      ['templates', 'statuses'],
+    );
+
     const hashBefore = await hashTree(home);
     const { lines } = await migrateV2Command({ root: home, apply: true });
     expect(await hashTree(home)).not.toBe(hashBefore);
     expect(lines.some((l) => l.startsWith('[apply] templates:'))).toBe(true);
+    expect(lines.some((l) => l.startsWith('[apply] statuses:'))).toBe(true);
     expect(lines.some((l) => l.includes('project p1: prefix'))).toBe(false);
     const marker = await readFile(resolve(home, V2_MIGRATED_MARKER), 'utf-8');
     expect(marker).toContain(bareTs);
     expect(marker).toContain('templates ');
+    expect(marker).toContain('statuses ');
+
+    await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(
+      /already completed/,
+    );
   });
 
   it('aborts with restore message, leaves no marker, and keeps files unchanged on database failure', async () => {
@@ -890,7 +901,7 @@ describe('migrate v2 templates step', () => {
     expect(ticketMd).not.toContain('planApproval:');
     expect(ticketMd).toContain('plan:\n  file: plan.md');
     expect(ticketMd).toContain(`approvedDigest: ${digest}`);
-    expect(ticketMd).toContain('status: draft');
+    expect(ticketMd).toContain('status: backlog');
   });
 
   it('drops superseded plan approvals when a newer plan revision exists', async () => {

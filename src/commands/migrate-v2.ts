@@ -303,23 +303,13 @@ function replacePlanApprovalWithPlanBlock(
   return next;
 }
 
-export interface MarkerState {
-  completed: Map<MigrationStep, string>;
-  /** Legacy bare-timestamp marker: rename-ids implied, templates not — skip statuses until templates ledger exists. */
-  barePreTemplates: boolean;
-}
-
-export async function readMarkerSteps(markerPath: string): Promise<MarkerState> {
+export async function readMarkerSteps(markerPath: string): Promise<Map<MigrationStep, string>> {
   const completed = new Map<MigrationStep, string>();
-  if (!(await fileExists(markerPath))) {
-    return { completed, barePreTemplates: false };
-  }
+  if (!(await fileExists(markerPath))) return completed;
   const raw = await readFile(markerPath, 'utf-8');
-  let sawLedgerRename = false;
   for (const line of raw.split('\n').map((l) => l.trim()).filter(Boolean)) {
     const ledger = line.match(/^(rename-ids|templates|statuses)\s+(.+)$/);
     if (ledger) {
-      if (ledger[1] === 'rename-ids') sawLedgerRename = true;
       completed.set(ledger[1] as MigrationStep, ledger[2]);
       continue;
     }
@@ -327,19 +317,11 @@ export async function readMarkerSteps(markerPath: string): Promise<MarkerState> 
       completed.set('rename-ids', line);
     }
   }
-  const barePreTemplates =
-    completed.has('rename-ids') && !sawLedgerRename && !completed.has('templates');
-  return { completed, barePreTemplates };
+  return completed;
 }
 
-export function pendingMigrationSteps(state: MarkerState | Map<MigrationStep, string>): MigrationStep[] {
-  const completed = state instanceof Map ? state : state.completed;
-  const barePreTemplates = state instanceof Map ? false : state.barePreTemplates;
-  const pending = MIGRATION_STEPS.filter((step) => !completed.has(step));
-  if (barePreTemplates && pending.includes('statuses')) {
-    return pending.filter((step) => step !== 'statuses');
-  }
-  return pending;
+export function pendingMigrationSteps(completed: Map<MigrationStep, string>): MigrationStep[] {
+  return MIGRATION_STEPS.filter((step) => !completed.has(step));
 }
 
 async function appendMarkerStep(markerPath: string, step: MigrationStep): Promise<void> {
@@ -2661,8 +2643,8 @@ export async function migrateV2Command(
   const lines: string[] = [];
 
   const markerPath = resolve(home, V2_MIGRATED_MARKER);
-  const markerState = await readMarkerSteps(markerPath);
-  const pending = pendingMigrationSteps(markerState);
+  const completed = await readMarkerSteps(markerPath);
+  const pending = pendingMigrationSteps(completed);
 
   if (pending.length === 0) {
     throw new Error(
@@ -2672,6 +2654,13 @@ export async function migrateV2Command(
 
   let backupPath = '';
   if (options.apply) {
+    // Release singleton DB handles so backup/SQLite backup does not hit WAL I/O errors.
+    closeSessionDb();
+    closeEventsDb();
+    closeUsageDb();
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
     try {
       backupPath = await createBackup(home);
       logLine(lines, mode, `backup: ${backupPath}`);
@@ -2709,8 +2698,20 @@ export async function migrateV2Command(
         }
       }
     }
+    closeSessionDb();
+    closeEventsDb();
+    closeUsageDb();
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
     return { lines };
   } catch (err) {
+    closeSessionDb();
+    closeEventsDb();
+    closeUsageDb();
+    resetSessionDb();
+    resetEventsDb();
+    resetUsageDb();
     if (backupPath && options.apply) {
       await rm(home, { recursive: true, force: true });
       await cp(backupPath, home, { recursive: true });
