@@ -320,23 +320,38 @@ interface TemplatesStepCounts {
   typeDropped: number;
 }
 
+/** All ticket markdown paths for the templates step (v1 assignments + v2 tickets). */
 async function collectTicketMdPaths(home: string): Promise<string[]> {
-  const paths: string[] = [];
+  const paths = new Set<string>();
   const projectsDir = resolve(home, 'projects');
-  if (!(await fileExists(projectsDir))) return paths;
-  const projects = await readdir(projectsDir, { withFileTypes: true });
-  for (const project of projects) {
-    if (!project.isDirectory()) continue;
-    const ticketsDir = resolve(projectsDir, project.name, 'tickets');
-    if (!(await fileExists(ticketsDir))) continue;
-    const folders = await readdir(ticketsDir, { withFileTypes: true });
-    for (const folder of folders) {
-      if (!folder.isDirectory()) continue;
-      const ticketMd = resolve(ticketsDir, folder.name, 'ticket.md');
-      if (await fileExists(ticketMd)) paths.push(ticketMd);
+  if (await fileExists(projectsDir)) {
+    const projects = await readdir(projectsDir, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      const projectDir = resolve(projectsDir, project.name);
+      if (!(await fileExists(resolve(projectDir, 'project.md')))) continue;
+
+      for (const t of await discoverProjectTickets(project.name, projectDir)) {
+        paths.add(t.ticketMdPath);
+      }
+
+      const ticketsDir = resolve(projectDir, 'tickets');
+      if (await fileExists(ticketsDir)) {
+        const folders = await readdir(ticketsDir, { withFileTypes: true });
+        for (const folder of folders) {
+          if (!folder.isDirectory()) continue;
+          const ticketMd = resolve(ticketsDir, folder.name, 'ticket.md');
+          if (await fileExists(ticketMd)) paths.add(ticketMd);
+        }
+      }
     }
   }
-  return paths.sort();
+
+  for (const t of await discoverStandaloneTickets(home)) {
+    paths.add(t.ticketMdPath);
+  }
+
+  return [...paths].sort();
 }
 
 async function transformTicketTemplatesFrontmatter(
@@ -1500,6 +1515,8 @@ async function createBackup(home: string): Promise<string> {
     const db = new Database(dbPath);
     await db.backup(resolve(backupDir, 'syntaur.db.pre-v2.bak'));
     db.close();
+    await rm(resolve(home, 'syntaur.db-wal'), { force: true });
+    await rm(resolve(home, 'syntaur.db-shm'), { force: true });
   }
   return backupDir;
 }
@@ -1828,9 +1845,6 @@ async function runRenameIdsStep(
   const projectCount = plans.length + (standalone.length > 0 ? 1 : 0);
 
   if (!options.apply) {
-    if (options.root) {
-      logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
-    }
     logLine(lines, mode, `totals: ${projectCount} projects, ${allTickets.length} tickets`);
     return;
   }
@@ -1890,11 +1904,6 @@ async function runRenameIdsStep(
     logLine(lines, mode, warning);
   }
 
-  if (options.root) {
-    logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
-    await rewriteConfigDefaultProjectDir(home, home);
-  }
-
   await migrateChatAndRebuild(allTickets, maps);
   await rewriteInboxSnoozes(home, maps);
   logLine(lines, mode, `totals: ${projectCount} projects, ${allTickets.length} tickets`);
@@ -1931,6 +1940,13 @@ export async function migrateV2Command(
     }
   }
 
+  if (options.root) {
+    logLine(lines, mode, `config defaultProjectDir → ${resolve(home, 'projects')}`);
+    if (options.apply) {
+      await rewriteConfigDefaultProjectDir(home, home);
+    }
+  }
+
   try {
     for (const step of pending) {
       if (step === 'rename-ids') {
@@ -1947,6 +1963,10 @@ export async function migrateV2Command(
     }
     return { lines };
   } catch (err) {
+    if (backupPath && options.apply) {
+      await rm(home, { recursive: true, force: true });
+      await cp(backupPath, home, { recursive: true });
+    }
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(
       `${msg}\nMigration aborted. Restore from backup at ${backupPath || '<none>'}.`,

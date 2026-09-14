@@ -727,7 +727,7 @@ describe('migrateV2Command', () => {
     const { lines } = await migrateV2Command({ root: home, apply: false });
     expect(await hashTree(home)).toBe(fixtureHash);
     expect(lines.some((l) => l.includes('templates: seeded'))).toBe(true);
-    expect(lines.some((l) => l === '[dry-run] template legacy: 0 tickets')).toBe(true);
+    expect(lines.some((l) => l === '[dry-run] template legacy: 4 tickets')).toBe(true);
     expect(lines.some((l) => l.includes('status mapping deferred to lifecycle-verbs'))).toBe(
       true,
     );
@@ -761,7 +761,7 @@ describe('migrateV2Command', () => {
   });
 
   it('aborts with restore message, leaves no marker, and keeps files unchanged on database failure', async () => {
-    const hashBefore = await hashTree(home);
+    const configBefore = await readFile(resolve(home, 'config.md'), 'utf-8');
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       await expect(
@@ -774,7 +774,7 @@ describe('migrateV2Command', () => {
         }),
       ).rejects.toThrow(/Migration aborted\. Restore from backup at/);
       expect(await fileExists(resolve(home, V2_MIGRATED_MARKER))).toBe(false);
-      expect(await hashTree(home)).toBe(hashBefore);
+      expect(await readFile(resolve(home, 'config.md'), 'utf-8')).toBe(configBefore);
       expect(
         await fileExists(resolve(home, 'projects', 'p1', 'assignments', 'alpha-ticket')),
       ).toBe(true);
@@ -927,11 +927,41 @@ describe('migrate v2 templates step', () => {
       resolve(ticketDir, 'ticket.md'),
       v1TicketMd({ id: 'DEM-1', slug: 'alpha', project: 'demo', type: 'chore' }),
     );
+    const originalProjects = resolve(tplHome, 'projects');
+    await writeFile(
+      resolve(copyHome, 'config.md'),
+      renderConfig({ defaultProjectDir: originalProjects }),
+    );
     await writeFile(resolve(copyHome, V2_MIGRATED_MARKER), '2026-09-12T12:46:05.342Z\n');
-    await migrateV2Command({ root: copyHome, apply: true });
+    const { lines } = await migrateV2Command({ root: copyHome, apply: true });
+    expect(lines.some((l) => l === `[apply] config defaultProjectDir → ${resolve(copyHome, 'projects')}`)).toBe(
+      true,
+    );
     expect(await fileExists(resolve(copyHome, 'templates', 'legacy', 'template.md'))).toBe(true);
     const ticketMd = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     expect(ticketMd).toContain('template: legacy');
+    const configMd = await readFile(resolve(copyHome, 'config.md'), 'utf-8');
+    expect(configMd).toContain(`defaultProjectDir: ${resolve(copyHome, 'projects')}`);
+    expect(configMd).not.toContain(originalProjects);
+    await rm(copyHome, { recursive: true, force: true });
+  });
+
+  it('dry-run --root prints config rewrite before templates-only step', async () => {
+    const copyHome = await mkdtemp(join(tmpdir(), 'syntaur-migrate-root-dry-'));
+    await cp(tplHome, copyHome, { recursive: true });
+    await writeFile(
+      resolve(copyHome, 'config.md'),
+      renderConfig({ defaultProjectDir: resolve(tplHome, 'projects') }),
+    );
+    await writeFile(resolve(copyHome, V2_MIGRATED_MARKER), '2026-09-12T12:46:05.342Z\n');
+    const hashBefore = await hashTree(copyHome);
+    const { lines } = await migrateV2Command({ root: copyHome, apply: false });
+    expect(await hashTree(copyHome)).toBe(hashBefore);
+    expect(lines.some((l) => l === `[dry-run] config defaultProjectDir → ${resolve(copyHome, 'projects')}`)).toBe(
+      true,
+    );
+    const configMd = await readFile(resolve(copyHome, 'config.md'), 'utf-8');
+    expect(configMd).toContain(resolve(tplHome, 'projects'));
     await rm(copyHome, { recursive: true, force: true });
   });
 });
