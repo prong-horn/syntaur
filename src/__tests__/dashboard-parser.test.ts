@@ -268,12 +268,6 @@ Body here.`;
     expect(parked.parked).toBe('on hold');
   });
 
-  it('reads legacy blockedReason as blocked', () => {
-    const legacy = parseTicketFull(
-      TICKET_WITH_DEPS.replace('blocked: null\nparked: null', 'blockedReason: legacy'),
-    );
-    expect(legacy.blocked).toBe('legacy');
-  });
 });
 
 describe('parsePlan', () => {

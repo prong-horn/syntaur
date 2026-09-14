@@ -97,13 +97,13 @@ function parseWorkspace(frontmatter: string): Workspace {
     parentBranch: null,
   };
 
-  const fields = ['repository', 'worktree', 'worktreePath', 'branch', 'parentBranch'] as const;
+  const fields = ['repository', 'worktree', 'branch', 'parentBranch'] as const;
   for (const field of fields) {
     const match = frontmatter.match(new RegExp(`^\\s+${field}:\\s*(.*)$`, 'm'));
     if (match) {
       const value = parseSimpleValue(match[1]);
-      if (field === 'worktree' || field === 'worktreePath') {
-        if (!defaults.worktree) defaults.worktree = value;
+      if (field === 'worktree') {
+        defaults.worktree = value;
       } else if (field === 'repository') {
         defaults.repository = value;
       } else if (field === 'branch') {
@@ -148,11 +148,10 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     template: getField('template'),
     status: getField('status') ?? 'backlog',
     priority: (getField('priority') ?? 'medium') as TicketFrontmatter['priority'],
-    blocked: getField('blocked') ?? getField('blockedReason'),
+    blocked: getField('blocked'),
     parked: (() => {
       const raw = getField('parked');
       if (raw === null || raw === 'false' || raw === 'null') return null;
-      if (raw === 'true') return 'parked';
       return raw;
     })(),
     depends_on: parseDependsOn(frontmatter),

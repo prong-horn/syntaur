@@ -191,10 +191,6 @@ export interface ParsedProject {
    */
   repositories: string[];
   externalIds: Array<{ system: string; id: string; url: string | null }>;
-  /** Project-level default workflow id; null when the field is absent. */
-  defaultWorkflow: string | null;
-  /** Project `type → workflow id` binding map; `{}` when the field is absent. */
-  workflowByType: Record<string, string>;
   body: string;
 }
 
@@ -226,8 +222,6 @@ export function parseProject(fileContent: string): ParsedProject {
     tags: parseListField(fm, 'tags'),
     repositories: parseListField(fm, 'repositories').map(unquoteYamlString),
     externalIds: parseExternalIds(fm),
-    defaultWorkflow: getField(fm, 'defaultWorkflow'),
-    workflowByType: parseNestedMap(fm, 'workflowByType'),
     body,
   };
 }
@@ -342,9 +336,7 @@ function parsePlanBlockD(fm: string): PlanBlock {
 }
 
 function parseWorkspaceBlock(fm: string): ParsedTicketFull['workspace'] {
-  const worktree =
-    getNestedField(fm, 'workspace', 'worktree') ??
-    getNestedField(fm, 'workspace', 'worktree');
+  const worktree = getNestedField(fm, 'workspace', 'worktree');
   return {
     repository: getNestedField(fm, 'workspace', 'repository'),
     worktree,
@@ -355,7 +347,7 @@ function parseWorkspaceBlock(fm: string): ParsedTicketFull['workspace'] {
 
 export function parseTicketFull(fileContent: string): ParsedTicketFull {
   const [fm, body] = extractFrontmatter(fileContent);
-  const blockedRaw = getField(fm, 'blocked') ?? getField(fm, 'blockedReason');
+  const blockedRaw = getField(fm, 'blocked');
   const parkedRaw = getField(fm, 'parked');
   return {
     id: getField(fm, 'id') ?? '',
@@ -367,11 +359,7 @@ export function parseTicketFull(fileContent: string): ParsedTicketFull {
     priority: getField(fm, 'priority') ?? 'medium',
     blocked: blockedRaw === 'null' ? null : blockedRaw,
     parked:
-      parkedRaw === null || parkedRaw === 'false' || parkedRaw === 'null'
-        ? null
-        : parkedRaw === 'true'
-          ? 'parked'
-          : parkedRaw,
+      parkedRaw === null || parkedRaw === 'false' || parkedRaw === 'null' ? null : parkedRaw,
     depends_on: parseListField(fm, 'depends_on'),
     assignee: getField(fm, 'assignee'),
     tags: parseListField(fm, 'tags'),

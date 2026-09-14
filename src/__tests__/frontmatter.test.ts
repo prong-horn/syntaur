@@ -112,21 +112,6 @@ describe('parseTicketFrontmatter', () => {
     expect(fm.workspace.parentBranch).toBe('main');
   });
 
-  it('reads legacy worktreePath as worktree', () => {
-    const legacy = SIMPLE_TICKET.replace(
-      'worktree: null',
-      'worktreePath: /legacy/wt',
-    );
-    const fm = parseTicketFrontmatter(legacy);
-    expect(fm.workspace.worktree).toBe('/legacy/wt');
-  });
-
-  it('reads legacy blockedReason as blocked', () => {
-    const legacy = SIMPLE_TICKET.replace('blocked: null', 'blockedReason: waiting');
-    const fm = parseTicketFrontmatter(legacy);
-    expect(fm.blocked).toBe('waiting');
-  });
-
   it('throws on content without frontmatter', () => {
     expect(() => parseTicketFrontmatter('no frontmatter here')).toThrow('No frontmatter found');
   });
