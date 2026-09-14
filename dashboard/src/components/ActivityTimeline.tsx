@@ -10,7 +10,7 @@ interface ActivityTimelineProps {
   error?: string | null;
 }
 
-/** Human label for a v1 event `type` (falls back to title-casing the raw type). */
+/** Human label for an audit event `type` (falls back to title-casing the raw type). */
 const TYPE_LABELS: Record<string, string> = {
   moved: 'Stage changed',
   flagged: 'Flagged',

@@ -43,4 +43,19 @@ describe('dashboard help contract', () => {
     const help = await getDashboardHelp();
     expect(help.commands.some((command) => command.command.includes('rebuild'))).toBe(false);
   });
+
+  it('documents v2 lifecycle verbs and fixed stages in the FAQ', async () => {
+    const help = await getDashboardHelp();
+    const statusAnswer = help.faq.find((item) => item.question.includes("change a ticket's status"));
+    expect(statusAnswer?.answer).toContain('syntaur plan create');
+    expect(statusAnswer?.answer).toContain('backlog');
+    expect(statusAnswer?.answer).not.toContain('Override Status');
+    expect(statusAnswer?.answer).not.toContain('syntaur complete');
+
+    const settingsNav = help.navigation.find((item) => item.label === 'Settings');
+    expect(settingsNav?.description).not.toContain('status definitions');
+
+    const planCmd = help.commands.find((command) => command.command === 'syntaur plan');
+    expect(planCmd?.example).toContain('plan create');
+  });
 });

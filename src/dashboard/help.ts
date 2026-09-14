@@ -38,7 +38,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur plan',
     description: 'Move a ticket into planning (or scaffold its plan file).',
-    example: 'syntaur plan UI-1 --project ui-overhaul',
+    example: 'syntaur plan create UI-1 --project ui-overhaul',
   },
   {
     command: 'syntaur approve',
@@ -359,7 +359,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Settings',
-        description: 'Customize status definitions, labels, colors, display order, and done states. Changes apply globally across the dashboard and CLI.',
+        description: 'Dashboard preferences: theme, keyboard shortcuts, default view filters, and search settings.',
         href: '/settings',
       },
       {
@@ -387,17 +387,17 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'How do I change a ticket\'s status?',
         answer:
-          'Use lifecycle CLI commands (syntaur start, syntaur complete, etc.), drag cards on the kanban board, or use the Override Status dropdown on the ticket page. Any status can be set from any other status.',
+          'Use lifecycle verbs: `syntaur plan create`, `approve`, `start`, `review`, `done`, `drop`, `reopen`, `block`/`unblock`, and `park`/`unpark`. Tickets move through the fixed stages backlog, planning, ready, in_progress, review, done, and dropped. On the kanban board, drag a card only when a verb reaches the target column — there is no direct status override.',
       },
       {
-        question: 'How do I customize statuses?',
+        question: 'Can I add or rename lifecycle stages?',
         answer:
-          'Open the Settings page from the sidebar. You can add, remove, rename, recolor, and reorder statuses. You can also mark statuses as done states. Changes are saved to ~/.syntaur/config.md and take effect immediately across the dashboard.',
+          'No. The stage vocabulary is fixed across the CLI and dashboard. Use templates, tags, and playbooks to vary workflow shape; use `block`, `park`, and `drop` for exceptions.',
       },
       {
-        question: 'What is a done state?',
+        question: 'What is a terminal stage?',
         answer:
-          'A done state (also called terminal status) means the ticket is finished. Done states fill the completed portion of progress bars and satisfy dependency requirements. By default, "completed" and "failed" are done states. You can configure which statuses are done states in Settings.',
+          'Terminal stages (`done` and `dropped`) mean the ticket is finished. They fill the completed portion of progress bars and satisfy dependency requirements.',
       },
       {
         question: 'What are playbooks and how do I use them?',

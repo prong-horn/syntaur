@@ -118,7 +118,7 @@ export function CreateTicket() {
         saving={saving}
         error={error}
         title="Create Ticket"
-        description="Tickets are the execution unit. Declare dependencies here, keep status pending until work starts, and use blocked later only for runtime obstacles."
+        description="Tickets are the execution unit. Declare dependencies here; new tickets start in backlog, and use blocked later only for runtime obstacles."
         onCancel={() => navigate(slug ? `/projects/${slug}` : `/projects`)}
         helpTitle="Ticket editing rules"
         helpBody="Use structured fields for priority, assignee, dependencies, and tags. Status can be changed through lifecycle actions, kanban drag, or the status override."

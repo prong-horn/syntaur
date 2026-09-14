@@ -14,6 +14,7 @@ import {
 } from '../lib/tickets';
 import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
 import { getTicketColumns } from '../lib/kanban';
+import { validateStageColumnDrop } from '../lib/kanbanDrop';
 import { sortTickets } from '../lib/sortTickets';
 import { formatDate } from '../lib/format';
 import { ticketDetailHref } from '../lib/ticketFilter';
@@ -811,7 +812,7 @@ export function TicketsPage() {
 
   async function applyMove({
     item,
-    toColumnId,
+    toColumnId: _toColumnId,
     action,
     reason,
   }: {
@@ -833,9 +834,7 @@ export function TicketsPage() {
         getTicketKey(candidate) === getTicketKey(item)
           ? {
               ...candidate,
-              status: toColumnId,
-              blocked: toColumnId === 'blocked' ? reason ?? candidate.blocked : null,
-              parked: toColumnId === 'parked' ? reason ?? candidate.parked : null,
+              status: action.targetStatus,
             }
           : candidate,
       ),
@@ -1376,23 +1375,13 @@ export function TicketsPage() {
                   : UNKNOWN_TYPE_COLUMN_ID)
               : item.status
           }
-          canDrop={({ item, fromColumnId, toColumnId }) => {
-            if (fromColumnId === toColumnId) {
-              return { allowed: true };
-            }
-
-            const action = getTicketAction(item, toColumnId);
-            if (action?.disabled) {
-              return { allowed: false, reason: action.disabledReason || action.description };
-            }
-
-            return {
-              allowed: true,
-              reason: action
-                ? (action.warning || action.description)
-                : `Move to ${toColumnId} (direct status change).`,
-            };
-          }}
+          canDrop={({ item, fromColumnId, toColumnId }) =>
+            validateStageColumnDrop({
+              fromColumnId,
+              toColumnId,
+              action: getTicketAction(item, toColumnId),
+            })
+          }
           onMove={effectiveKanbanGrouping === 'type' ? undefined : ({ item, toColumnId }) => handleMove({ item, toColumnId })}
           dragDisabled={effectiveKanbanGrouping === 'type'}
           onCardContextMenu={(item, event) => {
