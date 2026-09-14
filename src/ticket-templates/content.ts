@@ -35,3 +35,16 @@ export function sectionFirstParagraph(body: string, heading: string): string {
   const paragraph = section.split(/\n\s*\n/)[0]?.trim() ?? section;
   return paragraph.split('\n')[0]?.trim() ?? '';
 }
+
+/**
+ * Kernel one-liner for the Files block (§7.1): first sentence of Objective
+ * (through the first `. ` or end of paragraph), capped at 100 characters.
+ */
+export function objectiveOneLiner(body: string): string {
+  const paragraph = sectionFirstParagraph(body, 'Objective');
+  if (!paragraph) return '';
+  const dotSpace = paragraph.indexOf('. ');
+  const sentence = dotSpace >= 0 ? paragraph.slice(0, dotSpace + 1) : paragraph;
+  if (sentence.length <= 100) return sentence;
+  return `${sentence.slice(0, 99)}…`;
+}

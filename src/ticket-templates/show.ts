@@ -11,7 +11,7 @@ import type { ChatItem } from '../chat/types.js';
 import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { logRoleFile } from './manifest.js';
 import type { StageId, TemplateManifest } from './manifest.js';
-import { markdownBody, sectionFirstParagraph } from './content.js';
+import { markdownBody, objectiveOneLiner, sectionFirstParagraph } from './content.js';
 import {
   computeNextLine,
   hasCommentsFile,
@@ -201,12 +201,12 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
   };
 
   const files: ShowFile[] = [];
-  const kernelObjective = sectionFirstParagraph(body, 'Objective') || fm.title;
+  const kernelOneLiner = objectiveOneLiner(body) || fm.title;
   files.push({
     path: 'ticket.md',
     role: 'kernel',
     state: 'editable',
-    description: kernelObjective,
+    description: kernelOneLiner,
   });
 
   for (const entry of manifest.files) {
