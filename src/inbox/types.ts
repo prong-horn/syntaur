@@ -37,7 +37,7 @@ export type InboxCard =
     };
 
 /**
- * The three v1 "needs me" categories. A closed union — predicates and ordering
+ * The three "needs me" categories. A closed union — predicates and ordering
  * live in the pure aggregation module so they unit-test without a server.
  *
  * - `question`      — an unresolved `question` comment (awaiting an answer)

@@ -5,7 +5,7 @@ description: >-
   transitioning lifecycle state. Use when the user wants to drop, release,
   unclaim, abandon, or clear ticket context — e.g., "clear my ticket",
   "drop this ticket", "release context", "unclaim this", "I'm not actually
-  working on this anymore". Does not mark the ticket complete or failed.
+  working on this anymore". Does not mark the ticket done or dropped.
 license: MIT
 metadata:
   author: prong-horn
