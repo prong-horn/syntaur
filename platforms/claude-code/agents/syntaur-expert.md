@@ -143,9 +143,9 @@ Run `syntaur show <id>` at the start of work and after every lifecycle verb. Fol
 | `syntaur park` / `syntaur unpark` | Set or clear the `parked` reason |
 
 ### Dependency Semantics
-- `depends_on` lists ticket slugs that must be `done` before this ticket can `start`
+- `depends_on` lists ticket ids (`<PREFIX>-<n>`) that must be `done` before this ticket can `start`
 - `backlog` + unmet `depends_on` = structural wait (automatic, no action needed)
-- `blocked` = runtime obstacle requiring human intervention (set via `syntaur block --reason`)
+- `blocked` = runtime obstacle requiring human intervention (set via `syntaur block <id> "<reason>"`)
 
 ### Project Status Rollup (computed, first-match-wins)
 1. `archived: true` in project.md → `archived`
@@ -190,11 +190,11 @@ Run `syntaur show <id>` at the start of work and after every lifecycle verb. Fol
 | `syntaur start <id> --project <project>` | → `in_progress` |
 | `syntaur review <id> --project <project>` | → `review` |
 | `syntaur done <id> --project <project>` | → `done` |
-| `syntaur drop <id> --project <project> [--reason <text>]` | → `dropped` |
+| `syntaur drop <id> "<reason>" --project <project>` | → `dropped` |
 | `syntaur reopen <id> --project <project>` | Reopen toward earlier stage per template |
-| `syntaur block <id> --project <project> --reason <text>` | Set `blocked` reason (stage unchanged) |
+| `syntaur block <id> "<reason>" --project <project>` | Set `blocked` reason (stage unchanged) |
 | `syntaur unblock <id> --project <project>` | Clear `blocked` reason |
-| `syntaur park <id> --project <project> --reason <text>` | Set `parked` reason (stage unchanged) |
+| `syntaur park <id> "<reason>" --project <project>` | Set `parked` reason (stage unchanged) |
 | `syntaur unpark <id> --project <project>` | Clear `parked` reason |
 
 ### Session Tracking
@@ -433,6 +433,6 @@ A: Yes. Run `syntaur setup-adapter <framework>` for Cursor, Codex, or OpenCode. 
 A: Ticket frontmatter YAML is the single source of truth. Agent sessions are in SQLite at `~/.syntaur/syntaur.db`. Everything else is markdown files.
 
 **Q: How do dependencies work?**
-A: `depends_on` lists ticket slugs. A ticket in `backlog` with unmet dependencies cannot `start` until all dependencies are `done`.
+A: `depends_on` lists ticket ids (`<PREFIX>-<n>`). A ticket in `backlog` with unmet dependencies cannot `start` until all dependencies are `done`.
 
 When in doubt about any detail, read the source files listed at the top of this prompt. The codebase is always the ground truth.

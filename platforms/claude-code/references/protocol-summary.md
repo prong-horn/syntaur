@@ -90,7 +90,7 @@ Run `syntaur show <id>` (or `syntaur show` with an open engagement) at the start
 2. **Project-nested tickets** live at `projects/<slug>/tickets/<aslug>/` (folder name = slug). **Standalone tickets** live at `tickets/<uuid>/` (folder name = UUID, `project: null`, slug display-only).
 3. **Derived files** (underscore-prefixed) are never edited manually.
 4. **Slugs** are lowercase, hyphen-separated.
-5. **Dependencies** are declared via `depends_on` in ticket frontmatter. Only valid within the same project — standalone tickets cannot declare `depends_on`.
+5. **Dependencies** are declared via `depends_on` in ticket frontmatter (ticket ids such as `UI-1`). Only valid within the same project — standalone tickets cannot declare `depends_on`.
 6. A ticket cannot `start` while any dependency is not `done`.
 7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
 8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `ticket.md`.

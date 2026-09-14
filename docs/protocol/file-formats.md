@@ -977,7 +977,7 @@ Resource files live in the `resources/` folder and represent reference material 
 | `category` | string (enum) | `documentation`, `api`, `service`, `config`, `other` | required | — | Classification of the resource. |
 | `sourceUrl` | string or null | URL | optional | `null` | Link to the original external source, if any. |
 | `sourceTicket` | string or null | ticket slug | optional | `null` | The ticket that created this resource, if any. |
-| `relatedTickets` | array of strings | ticket slugs | optional | `[]` | Tickets that reference or use this resource. |
+| `relatedTickets` | array of strings | ticket ids | optional | `[]` | Tickets that reference or use this resource. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the resource was created. |
 | `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the resource was last modified. |
 
@@ -1046,7 +1046,7 @@ Memory files live in the `memories/` folder and represent learnings, patterns, o
 | `name` | string | any | required | — | Display name for the memory. |
 | `source` | string | agent name or `"human"` | required | — | Who created this memory. Tracks provenance. |
 | `sourceTicket` | string or null | ticket slug | optional | `null` | The ticket where this learning originated. |
-| `relatedTickets` | array of strings | ticket slugs | optional | `[]` | Tickets that benefit from this memory. |
+| `relatedTickets` | array of strings | ticket ids | optional | `[]` | Tickets that benefit from this memory. |
 | `scope` | string (enum) | `ticket`, `project`, `global` | required | — | How broadly this learning applies. |
 | `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was created. |
 | `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was last modified. |
