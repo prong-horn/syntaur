@@ -2,9 +2,15 @@ import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists, writeFileForce } from '../utils/fs.js';
-import { updatePlanBlock, parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
-import { emitPlanVersioned } from '../lifecycle/event-emit.js';
+import {
+  updatePlanBlock,
+  parseTicketFrontmatter,
+  updateTicketFile,
+} from '../lifecycle/frontmatter.js';
+import { emitMoved, emitPlanVersioned } from '../lifecycle/event-emit.js';
 import { GateFailedError, moveTicket, resolveVerbActor } from '../lifecycle/verbs.js';
+import type { StageId } from '../ticket-templates/manifest.js';
+import type { TemplateManifest } from '../ticket-templates/manifest.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -172,6 +178,41 @@ async function runPlanMove(
   }
 }
 
+function templateHasStage(manifest: TemplateManifest, stage: StageId): boolean {
+  return manifest.stages.some((s) => s.id === stage);
+}
+
+async function applyPlanVersionStageMove(
+  ticketDir: string,
+  manifest: TemplateManifest,
+  options: Pick<PlanVersionOptions, 'project' | 'dir' | 'agent'>,
+): Promise<void> {
+  if (!templateHasStage(manifest, 'planning')) {
+    return;
+  }
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  const content = await readFile(ticketMdPath, 'utf-8');
+  const fm = parseTicketFrontmatter(content);
+  if (fm.status === 'planning') {
+    return;
+  }
+  const now = isoNow();
+  await writeFileForce(
+    ticketMdPath,
+    updateTicketFile(content, { status: 'planning', updated: now }),
+  );
+  const actor = await resolveVerbActor({ agent: options.agent, dir: options.dir });
+  emitMoved({
+    ticketId: fm.id,
+    projectSlug: fm.project,
+    from: fm.status,
+    to: 'planning',
+    verb: 'plan-version',
+    by: actor,
+    at: now,
+  });
+}
+
 async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   const target = await resolveTicketContext(options);
   const ticketDir = target.ticketDir;
@@ -236,7 +277,7 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
 
-  const { planPath, stem, ticketSlug } = await resolvePlanRole(ticketDir);
+  const { manifest, planPath, stem, ticketSlug } = await resolvePlanRole(ticketDir);
   const planFiles = await planRevisions(ticketDir, stem);
   if (planFiles.length === 0) {
     throw new Error(
@@ -294,7 +335,7 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
     at: now,
   });
 
-  await runPlanMove(target.id, options);
+  await applyPlanVersionStageMove(ticketDir, manifest, options);
 }
 
 export const planCommand = new Command('plan')

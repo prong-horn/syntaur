@@ -8,14 +8,43 @@ export function markdownBody(content: string): string {
   return fmMatch ? fmMatch[1] : normalized;
 }
 
-/** At least one body line that is not blank, a heading, or an HTML comment. */
+/** Bold-label metadata line: `**Key:** value` */
+function isBoldLabelMetadata(line: string): boolean {
+  return /^\*\*[^*]+:\*\*\s*.+$/.test(line);
+}
+
+function isTableSeparatorRow(line: string): boolean {
+  return /^\|[\s\-:|]+\|$/.test(line);
+}
+
+function lineHasRealContent(line: string): boolean {
+  const trimmed = line.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('#')) return false;
+  if (isBoldLabelMetadata(trimmed)) return false;
+  const withoutComments = trimmed.replace(HTML_COMMENT_RE, '').trim();
+  if (!withoutComments) return false;
+
+  const listMatch = withoutComments.match(/^(?:[-*+]|\d+\.)\s+(.*)$/);
+  if (listMatch) {
+    const itemContent = listMatch[1].replace(HTML_COMMENT_RE, '').trim();
+    return itemContent.length > 0;
+  }
+
+  if (withoutComments.startsWith('|') && withoutComments.endsWith('|')) {
+    return !isTableSeparatorRow(withoutComments);
+  }
+
+  return true;
+}
+
+/**
+ * True when the markdown body has at least one paragraph, list item, or table row
+ * of real text. Headings, HTML comments, and bold-label metadata lines are scaffold.
+ */
 export function nonEmptyBeyondScaffold(content: string): boolean {
   for (const line of markdownBody(content).split('\n')) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith('#')) continue;
-    const withoutComments = trimmed.replace(HTML_COMMENT_RE, '').trim();
-    if (withoutComments.length > 0) return true;
+    if (lineHasRealContent(line)) return true;
   }
   return false;
 }

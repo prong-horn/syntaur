@@ -123,7 +123,7 @@ describe('gate evaluators', () => {
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'plan.md'),
-      '# Plan\n\n## Objective\n\n<!-- placeholder -->\n',
+      '# Plan\n\n**Date:** 2026-04-01\n\n## Objective\n\n<!-- placeholder -->\n',
       'utf-8',
     );
     const manifest = await loadBuiltin('feature');

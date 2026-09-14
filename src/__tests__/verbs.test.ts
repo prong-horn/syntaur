@@ -19,6 +19,7 @@ import {
   VerbRefusedError,
 } from '../lifecycle/verbs.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import { renderPlanStub } from '../templates/plan.js';
 
 let home: string;
 let projectsDir: string;
@@ -304,10 +305,30 @@ Fix it.
   });
 
   it('approve implies plan-exists even when manifest omits approve gates', async () => {
-    await writeFeatureTicket('FE-10', 'feat10', 'planning', { planBody: '# Plan\n\n<!-- placeholder -->\n' });
+    const stub = renderPlanStub({ ticketSlug: 'feat10', timestamp: '2026-01-01T00:00:00Z' });
+    await writeFeatureTicket('FE-10', 'feat10', 'planning', { planBody: stub });
     await expect(
       moveTicket('FE-10', 'approve', { project: 'p', dir: projectsDir }),
     ).rejects.toBeInstanceOf(GateFailedError);
+  });
+
+  it('approve right after plan create throws GateFailedError on plan-exists', async () => {
+    const stub = renderPlanStub({ ticketSlug: 'feat20', timestamp: '2026-01-01T00:00:00Z' });
+    await writeFeatureTicket('FE-20', 'feat20', 'planning', { planBody: stub });
+    await expect(
+      moveTicket('FE-20', 'approve', { project: 'p', dir: projectsDir }),
+    ).rejects.toBeInstanceOf(GateFailedError);
+  });
+
+  it('approve passes when stub plan has a real task line', async () => {
+    const stub = renderPlanStub({ ticketSlug: 'feat21', timestamp: '2026-01-01T00:00:00Z' });
+    const withTask = stub.replace(
+      '## Tasks\n\n<!-- Add the implementation tasks here. -->',
+      '## Tasks\n\n- [ ] Implement auth',
+    );
+    await writeFeatureTicket('FE-21', 'feat21', 'planning', { planBody: withTask });
+    const result = await moveTicket('FE-21', 'approve', { project: 'p', dir: projectsDir });
+    expect(result.to).toBe('ready');
   });
 
   it('reason is required for drop, block, and park', async () => {

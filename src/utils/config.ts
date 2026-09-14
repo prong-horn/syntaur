@@ -57,20 +57,7 @@ export interface HeadlineProjection {
   active: string;
 }
 
-/** @deprecated v2 — derive rules are no longer config-driven. */
-export interface DeriveConfig {
-  phaseLadder: PhaseRung[];
-  disposition: DispositionRule[];
-  headline: HeadlineProjection;
-}
-
-export const DEFAULT_DERIVE_CONFIG: DeriveConfig = {
-  phaseLadder: [],
-  disposition: [],
-  headline: { terminal: 'passthrough', parked: 'Parked', blocked: 'Blocked', active: 'phase' },
-};
-
-export function validateDeriveConfig(_config: DeriveConfig): string[] {
+export function validateDeriveConfig(_config: unknown): string[] {
   throw new Error(REMOVED_IN_V2);
 }
 
@@ -159,9 +146,6 @@ export interface StatusConfig {
   statuses: StatusDefinition[];
   order: string[];
   transitions: StatusTransition[];
-  /** Derived-status rules (v3). Null/absent → DEFAULT_DERIVE_CONFIG at resolve
-   * time. Persisted under `statuses:` so the Settings writer round-trips it. */
-  derive?: DeriveConfig | null;
   /** Custom-fact declarations (raw — see {@link RawFactDeclaration}). Persisted
    * under `statuses.facts`; preserved verbatim so invalid rows round-trip and
    * doctor can diagnose them. Null/absent → no custom vocabulary. */
