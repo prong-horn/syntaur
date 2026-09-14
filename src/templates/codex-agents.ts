@@ -24,7 +24,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`syntaur-operator\` agent -- use for broad Syntaur protocol work or when a task spans multiple lifecycle steps
 - \`syntaur-protocol\` -- background protocol and write-boundary rules
 - \`create-project\` -- scaffold a project
-- \`create-ticket\` -- create a new ticket (use \`--type <bug|feature|chore|...>\` to classify; defaults to the scratch project and allocates a \`<PREFIX>-<n>\` id)
+- \`create-ticket\` -- create a new ticket (use \`-t|--template <id>\`; defaults to the scratch project and allocates a \`<PREFIX>-<n>\` id)
 - \`grab-ticket\` -- claim work, create \`.syntaur/context.json\`, and register a session
 - \`plan-ticket\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
 - \`complete-ticket\` -- write the cross-ticket \`handoff.md\` entry, append a final entry to \`progress.md\`, close the session, and transition state
@@ -65,13 +65,8 @@ Edit only \`ticket.md\` and files \`show\` lists with writer \`agent\`. Use the 
       _status.md             # Derived (read-only)
       tickets/
         <ID>-<slug>/         # Folder name; ID is <PREFIX>-<n> from project.md
-          ticket.md      # Agent-writable: source of truth for state
-          plan*.md           # Agent-writable: versioned implementation plans (optional)
-          progress.md        # Agent-writable, append-only: timestamped progress log
-          comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
-          scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
-          decision-record.md # Agent-writable: append-only decision log
+          ticket.md          # Kernel: source of truth for state
+          …                  # Template-owned files (see \`syntaur show\`)
       resources/
         <resource-slug>.md   # Shared-writable
       memories/
@@ -84,7 +79,7 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 
 ### Files you may WRITE:
 1. **Your ticket folder** -- only the ticket you are currently working on:
-   - \`ticket.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\` (cross-ticket outbound at completion), \`decision-record.md\`
+   - \`ticket.md\` and any files \`syntaur show\` lists with writer \`agent\` (template-specific; never hardcode sidecar names)
    - Path: \`${params.ticketDir}/\`
 2. **Shared resources and memories** at the project level:
    - \`${params.projectDir}/resources/<slug>.md\`

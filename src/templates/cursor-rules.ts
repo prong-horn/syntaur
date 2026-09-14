@@ -31,13 +31,8 @@ You are working within the Syntaur protocol for multi-agent project coordination
       _status.md             # Derived (read-only)
       tickets/
         <ID>-<slug>/         # Folder name; ID is <PREFIX>-<n> from project.md
-          ticket.md      # Agent-writable: source of truth for state
-          plan*.md           # Agent-writable: versioned implementation plans (optional)
-          progress.md        # Agent-writable, append-only: timestamped progress log
-          comments.md        # CLI-mediated: threaded questions/notes/feedback (via \`syntaur comment\`)
-          scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
-          decision-record.md # Agent-writable: append-only decision log
+          ticket.md          # Kernel: source of truth for state
+          …                  # Template-owned files (see \`syntaur show\`)
       resources/
         <resource-slug>.md   # Shared-writable
       memories/
@@ -50,7 +45,7 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 
 ### Files you may WRITE:
 1. **Your ticket folder** -- only the ticket you are currently working on:
-   - \`ticket.md\`, \`plan*.md\` (0 or more versioned plan files), \`progress.md\`, \`scratchpad.md\`, \`handoff.md\` (cross-ticket outbound at completion), \`decision-record.md\`
+   - \`ticket.md\` and any files \`syntaur show\` lists with writer \`agent\` (template-specific; never hardcode sidecar names)
    - Path: \`~/.syntaur/projects/<project>/tickets/<ID>-<slug>/\`
 2. **Shared resources and memories** at the project level:
    - \`~/.syntaur/projects/<project>/resources/<slug>.md\`
@@ -105,7 +100,7 @@ Use the \`syntaur\` CLI for state transitions and coordination:
 - \`syntaur block <id> --project <project> --reason <text>\` -- block a ticket
 - \`syntaur unblock <id> --project <project>\` -- unblock
 - \`syntaur fail <id> --project <project>\` -- mark as failed
-- \`syntaur new "Title" [--type <type>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
+- \`syntaur new "Title" [-t|--template <id>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
 - \`syntaur rename <id> <new-slug>\` -- rename slug (folder becomes \`<ID>-<new-slug>\`)
 - \`syntaur comment <id> "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (questions support resolve toggle via dashboard)
 

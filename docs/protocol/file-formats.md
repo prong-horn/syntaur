@@ -196,7 +196,8 @@ The core unit of work and the **single source of truth** for ticket state. This 
 | Objective | Clear description of what needs to be done and why | Human (initial), agent may refine |
 | Acceptance Criteria | Checklist of requirements for completion | Human (initial), agent checks off |
 | Context | Links to relevant docs, code, or other tickets | Human or agent |
-| Links | Links to supporting files (progress, comments, scratchpad, handoff, decisions) | Scaffolding (initial) |
+
+Cross-ticket references live in frontmatter (`depends_on`, `links`) — not in a body section.
 
 **Q&A is now `comments.md`:** The former `## Questions & Answers` body section has moved out of `ticket.md` into a dedicated `comments.md` file. Comments support multiple types (question, note, feedback), reply threading, and a `resolved` flag on questions. All comment writes are CLI-mediated via `syntaur comment`. See section 9 for the full schema.
 
@@ -1137,29 +1138,56 @@ especially the JWT middleware refresh endpoint which will see high concurrency.
 
 Each installed template is a directory under `~/.syntaur/templates/<id>/` with a `template.md` manifest. The manifest's YAML frontmatter declares stages, file roles, gates, and defaults; the markdown body is human notes (often a single line for built-ins).
 
-### Frontmatter Schema
+### Manifest schema (§5.2)
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | required | Template id. Must match the directory name. |
-| `version` | number | required | Manifest schema version (currently `1`). |
-| `builtin` | string | optional | Shipped stamp (e.g. `feature@1`). Present on built-ins; removed when copied to a custom template. |
-| `description` | string | required | One-line summary for `syntaur template list`. |
-| `whenToUse` | string | required | Guidance for humans choosing a template. |
-| `workspace` | enum | required | `required`, `optional`, or `none`. |
-| `defaultPriority` | enum | required | Default priority for `syntaur new` (`low` \| `medium` \| `high` \| `critical`). |
-| `playbooks` | string[] | optional | Playbook slugs injected at grab/plan time. |
-| `stages` | array | required | Fixed stage ids (`backlog`, `planning`, `ready`, `in_progress`, `review`, `done`) with `label`, `instructions`, and optional `agent`/`reviewer`/`auto`. |
-| `files` | array | required | Declared ticket files. Each entry has `path`, `writer` (`agent` \| `cli` \| `human`), `createOn`, `description`, and optional `role` (`plan` \| `log` \| `notes` \| `deliverable`) and `entryTypes` (for log roles). |
-| `gates` | object | required | Gate ids required per lifecycle verb (`plan`, `approve`, `start`, `review`, `done`). |
+All fields below live in the YAML frontmatter of `template.md`.
 
-### Rules
+| Field | Type | Required | Default | Meaning |
+|---|---|---|---|---|
+| `id` | string | yes | — | Template id (directory name) |
+| `version` | integer | yes | — | Manifest schema version; always `1` in v2 |
+| `builtin` | string | on shipped | — | `name@n`; marks built-in; not overwritten on upgrade |
+| `description` | string | yes | — | For humans and `template list` |
+| `whenToUse` | string | yes | — | Agent-facing guidance for picking template |
+| `stages` | array | yes | — | Ordered subset of fixed stage ids |
+| `stages[].id` | stage id | yes | — | Must be in fixed vocabulary |
+| `stages[].label` | string | no | id | Display label |
+| `stages[].instructions` | string | yes | — | Shown in `show` at this stage |
+| `stages[].agent` | string | no | — | Agent id for hand-off default |
+| `stages[].reviewer` | string | no | — | Reviewer agent id |
+| `stages[].auto` | boolean | no | `true` for agent, `false` for reviewer | Auto-dispatch on stage entry |
+| `files` | array | yes | — | Template-owned files (not kernel) |
+| `files[].path` | string | yes | — | Relative path under ticket folder |
+| `files[].role` | role or omitted | no | plain | Omitted = plain (no kernel behaviour) |
+| `files[].writer` | enum | yes | — | `agent`, `cli`, or `human`; `log` forces `cli` |
+| `files[].createOn` | enum | no | `ticket-creation` | `ticket-creation`, `<stage id>`, or `never` |
+| `files[].description` | string | yes | — | Agent purpose; copied to `purpose:` in scaffold |
+| `files[].entryTypes` | string[] | no | all seven | Subset for log role |
+| `gates` | object | yes | `{}` | Map verb → list of gate ids |
+| `playbooks` | string[] | no | `[]` | Playbook slugs; documentary only (content lives in `stages[].instructions`) |
+| `workspace` | enum | no | `optional` | `required`, `optional`, or `none` |
+| `defaultPriority` | enum | no | `medium` | Default on `syntaur new` |
 
-- **Built-ins:** `feature`, `bug`, `spike`, `quick`, `legacy`. Seeded by `syntaur init` and the `migrate v2` templates step. `syntaur template reset <id>` restores shipped files; `syntaur template reset --missing` seeds only absent built-ins.
-- **Custom templates:** `syntaur template new <id> --from <builtin>` copies a built-in and strips the `builtin:` stamp.
-- **Validation:** `syntaur template check [id]` enforces manifest rules (stage ids, file paths, gate references). `syntaur template check --builtins` reports drift (`current`, `modified`, `outdated`, `missing`).
-- **Ticket binding:** `ticket.md` `template:` names the manifest. `syntaur show` and chat standing context render from the resolved manifest — agents edit only files `show` lists with `writer: agent`.
-- **Do not use `legacy` for new tickets.** It exists so migrated v1 tickets keep their sidecar files without rewriting.
+### Validation rules (§5.3)
+
+1. `id` matches directory name.
+2. `version` is `1`.
+3. Every `stages[].id` is in the fixed vocabulary §3.5.
+4. `stages` order matches global stage order (subset, no reordering violation).
+5. If `ready` is in `stages`, a `plan` role file exists.
+6. If `plan-approved` is declared, a `plan` role exists.
+7. If `review-clean` is declared, `review` is in `stages`.
+8. If `deliverable-present` is declared, a `deliverable` role exists.
+9. If `handoff-logged` or any log-reading gate is declared, a `log` role exists.
+10. At most one file per `plan`, `log`, `deliverable` role.
+11. Every `files[].description` is non-empty.
+12. `log` role files have `writer: cli`.
+13. `builtin` manifests: `template check --builtins` reports drift; `template reset <id>` restores.
+14. `createOn` values are `ticket-creation`, a declared stage id, or `never`.
+15. Kernel paths (`ticket.md`, `chat/`) do not appear in `files[]`.
+16. `dropped` does not appear in `stages[]`.
+
+`template check` implements rules 1–16. Built-ins (`feature`, `bug`, `spike`, `quick`, `legacy`) are seeded by `syntaur init` and `migrate v2`. Do not use `legacy` for new tickets.
 
 ### Example (abbreviated)
 

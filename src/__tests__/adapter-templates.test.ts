@@ -59,10 +59,12 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('syntaur new');
   });
 
-  it('references v2.0 protocol files', () => {
+  it('directs agents to syntaur show instead of hard-coded sidecar lists', () => {
     const out = renderCursorProtocol();
-    expect(out).toContain('progress.md');
-    expect(out).toContain('comments.md');
+    expect(out).toContain('syntaur show');
+    expect(out).toContain('writer `agent`');
+    expect(out).not.toContain('progress.md');
+    expect(out).not.toContain('decision-record.md');
   });
 
   it('documents scratch project and id-prefixed folders', () => {
