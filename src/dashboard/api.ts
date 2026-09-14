@@ -1724,7 +1724,7 @@ async function buildOverviewSegmentBuckets(
         status: ticket.status,
         updated: ticket.updated,
         href: `/t/${ticket.id}`,
-        blockedReason: ticket.blocked ?? null,
+        blocked: ticket.blocked ?? null,
         stale,
         agingMs,
         assignee: ticket.assignee ?? null,

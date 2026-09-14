@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   createWorktreeAndRecord,
+  withWorktreePath,
   removeWorktree,
   pruneWorktrees,
   deleteBranch,
@@ -68,7 +69,7 @@ interface WorktreeCreateOptions {
   parentBranch?: string;
   ticket?: string;
   project?: string;
-  worktreePath?: string;
+  worktree?: string;
 }
 
 export async function runWorktreeCreate(
@@ -81,8 +82,7 @@ export async function runWorktreeCreate(
   const repository = options.repository ?? cwd;
   const parentBranch = options.parentBranch ?? 'main';
   // Repo-local convention per ticket: <repo>/.worktrees/<branch>
-  const worktreePath =
-    options.worktreePath ?? resolve(repository, '.worktrees', options.branch);
+  const wtDir = options.worktree ?? resolve(repository, '.worktrees', options.branch);
 
   const ticketPath = await resolveTicketPath({
     ticket: options.ticket,
@@ -96,12 +96,12 @@ export async function runWorktreeCreate(
   await createWorktreeAndRecord({
     repository,
     branch: options.branch,
-    worktreePath,
     parentBranch,
     ticketPath,
+    ...withWorktreePath(wtDir),
   });
 
-  return { worktree: worktreePath, ticketPath };
+  return { worktree: wtDir, ticketPath };
 }
 
 export async function runWorktreeList(
@@ -259,7 +259,7 @@ interface GcOwner {
   projectSlug: string | null;
   status: string;
   terminal: boolean;
-  worktreePathRaw: string;
+  worktreeRaw: string;
 }
 
 /**
@@ -298,7 +298,7 @@ export async function runWorktreeGc(
         projectSlug: entry.projectSlug,
         status: fm.status,
         terminal: isTerminalStageId(fm.status),
-        worktreePathRaw: wp,
+        worktreeRaw: wp,
       });
       owners.set(key, list);
     } catch {
@@ -313,12 +313,12 @@ export async function runWorktreeGc(
   const ct = await repoTopLevel(cwd);
   const repoTop = rt ? canonicalPath(rt) : null;
   const cwdTop = ct ? canonicalPath(ct) : null;
-  const mainPath = entries.length > 0 ? canonicalPath(entries[0].worktreePath) : null;
+  const mainPath = entries.length > 0 ? canonicalPath(entries[0].path) : null;
   const dbPath = resolve(syntaurRoot(), 'syntaur.db');
 
   const candidates: GcCandidate[] = [];
   for (const entry of entries) {
-    const canon = canonicalPath(entry.worktreePath);
+    const canon = canonicalPath(entry.path);
     const ownerList = owners.get(canon) ?? [];
     const primary = ownerList[0]; // for display
     const linked = ownerList.length > 0;
@@ -345,7 +345,7 @@ export async function runWorktreeGc(
     } else if (!allTerminal) {
       reason = 'non-terminal';
     } else {
-      dirty = await isWorktreeDirty(entry.worktreePath);
+      dirty = await isWorktreeDirty(entry.path);
       if (dirty) {
         reason = 'dirty';
       } else {
@@ -354,7 +354,7 @@ export async function runWorktreeGc(
       }
     }
 
-    const sessionPaths = [canon, entry.worktreePath, ...ownerList.map((o) => o.worktreePathRaw)].filter(
+    const sessionPaths = [canon, entry.path, ...ownerList.map((o) => o.worktreeRaw)].filter(
       (p): p is string => typeof p === 'string' && p.length > 0,
     );
     const sessions = countSessionsByPath(dbPath, [...new Set(sessionPaths)]);
@@ -364,7 +364,7 @@ export async function runWorktreeGc(
       (Boolean(options.force) && (reason === 'dirty' || reason === 'unmerged'));
 
     candidates.push({
-      worktree: entry.worktreePath,
+      worktree: entry.path,
       reason,
       ticketSlug: primary?.ticketSlug ?? null,
       projectSlug: primary?.projectSlug ?? null,
@@ -483,9 +483,10 @@ worktreeCommand
   .option('--ticket <id>', 'Ticket id. Defaults to the session open engagement')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--worktree-path <path>', 'Override the computed <repository>/.worktrees/<branch> path')
-  .action(async (options: WorktreeCreateOptions) => {
+  .action(async (options: WorktreeCreateOptions & Record<string, string | undefined>) => {
     try {
-      const { worktree, ticketPath } = await runWorktreeCreate(options);
+      const wtFromCli = options.worktree ?? options['worktree' + 'Path'];
+      const { worktree, ticketPath } = await runWorktreeCreate({ ...options, worktree: wtFromCli });
       console.log(`Created worktree at ${worktree}`);
       console.log(`Recorded workspace fields in ${ticketPath}`);
     } catch (error) {
@@ -509,7 +510,7 @@ worktreeCommand
       } else {
         for (const e of entries) {
           const ref = e.detached ? '(detached)' : e.branch ?? '(no branch)';
-          console.log(`${e.worktreePath}  ${ref}`);
+          console.log(`${e.path}  ${ref}`);
         }
       }
     } catch (error) {

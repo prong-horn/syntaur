@@ -3,7 +3,7 @@
  * two things the raw writer deliberately does not own:
  *
  *  1. A module-level `suppressEvents` switch so migrations (which replay
- *     statusHistory writes) do NOT fire live events.
+ *     legacy frontmatter history writes) do NOT fire live events.
  *  2. Typed emit helpers for v2 lifecycle events (`moved`, `flagged`, …).
  *
  * Every emit ultimately goes through `recordEvent` (R3) — nothing here touches

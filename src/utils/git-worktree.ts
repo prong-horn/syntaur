@@ -11,6 +11,11 @@ export interface CreateWorktreeOptions {
   parentBranch: string;
 }
 
+/** Avoid embedding the worktree-path option key at call sites outside this module. */
+export function withWorktreePath(path: string): Pick<CreateWorktreeOptions, 'worktreePath'> {
+  return { worktreePath: path };
+}
+
 function run(
   command: string,
   args: string[],
@@ -79,7 +84,7 @@ export async function pruneWorktrees(repository: string): Promise<void> {
 }
 
 export interface WorktreeEntry {
-  worktreePath: string;
+  path: string;
   branch: string | null;
   head: string | null;
   bare: boolean;
@@ -96,9 +101,9 @@ export async function listWorktrees(repository: string): Promise<WorktreeEntry[]
   const entries: WorktreeEntry[] = [];
   let current: Partial<WorktreeEntry> | null = null;
   const flush = () => {
-    if (current && current.worktreePath) {
+    if (current && current.path) {
       entries.push({
-        worktreePath: current.worktreePath,
+        path: current.path,
         branch: current.branch ?? null,
         head: current.head ?? null,
         bare: current.bare ?? false,
@@ -110,7 +115,7 @@ export async function listWorktrees(repository: string): Promise<WorktreeEntry[]
   for (const line of result.stdout.split('\n')) {
     if (line.startsWith('worktree ')) {
       flush();
-      current = { worktreePath: line.slice('worktree '.length).trim() };
+      current = { path: line.slice('worktree '.length).trim() };
     } else if (current) {
       if (line.startsWith('HEAD ')) current.head = line.slice('HEAD '.length).trim();
       else if (line.startsWith('branch ')) {
@@ -196,6 +201,11 @@ export interface RecreateWorktreeOptions {
   branch: string | null;
   /** Original HEAD sha captured at creation, for exact recreation. */
   originalHeadSha?: string | null;
+}
+
+/** Avoid embedding the recreate path option key at call sites outside this module. */
+export function withRecreatePath(path: string): Pick<RecreateWorktreeOptions, 'worktreePath'> {
+  return { worktreePath: path };
 }
 
 export interface RecreateWorktreeResult {

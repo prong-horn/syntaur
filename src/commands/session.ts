@@ -32,7 +32,7 @@ interface ContextFile {
   workspaceRoot?: string;
   title?: string;
   branch?: string;
-  worktreePath?: string;
+  worktree?: string;
   repository?: string;
   boundAt?: string;
 }

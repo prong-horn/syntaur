@@ -276,7 +276,7 @@ export interface AttentionItem {
   updated: string;
   href: string;
   stale: boolean;
-  blockedReason: string | null;
+  blocked: string | null;
   segment: OverviewSegmentId;
   agingMs: number;
   assignee: string | null;

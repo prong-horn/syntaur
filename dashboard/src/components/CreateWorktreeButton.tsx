@@ -201,7 +201,7 @@ export function CreateWorktreeButton({
 
   const branchValidationError = validateBranchName(branch.trim());
 
-  const worktreePath = useMemo(() => {
+  const wtPreview = useMemo(() => {
     if (!repository || !branch.trim()) return '';
     return `${repository.replace(/\/+$/, '')}/.worktrees/${branch.trim()}`;
   }, [repository, branch]);
@@ -462,7 +462,7 @@ export function CreateWorktreeButton({
           <div className="grid gap-1">
             <span className="text-xs font-medium text-muted-foreground">Worktree path</span>
             <code className="rounded-md border border-border bg-muted px-2 py-1 text-xs break-all">
-              {worktreePath || <span className="opacity-60">— pick a repo & branch —</span>}
+              {wtPreview || <span className="opacity-60">— pick a repo & branch —</span>}
             </code>
           </div>
 

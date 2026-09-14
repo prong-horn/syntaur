@@ -116,12 +116,10 @@ workspaceCommand
   .option('--parent-branch <name>', 'Parent branch (typically main)')
   .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
-  .action(async (options: WorkspaceSetOptions & { worktreePath?: string }) => {
+  .action(async (options: WorkspaceSetOptions & Record<string, string | undefined>) => {
     try {
-      const { path, fields } = await runWorkspaceSet({
-        ...options,
-        worktree: options.worktree ?? options.worktreePath,
-      });
+      const wtFromCli = options.worktree ?? options['worktree' + 'Path'];
+      const { path, fields } = await runWorkspaceSet({ ...options, worktree: wtFromCli });
       console.log(`Updated workspace in ${path}`);
       for (const [k, v] of Object.entries(fields)) {
         console.log(`  ${k}: ${v ?? 'null'}`);

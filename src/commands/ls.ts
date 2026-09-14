@@ -204,7 +204,7 @@ export const lsCommand = new Command('ls')
   .option('--age <duration>', 'Only include tickets updated within duration (e.g. 7d, 24h, 2w, 1m)')
   .option(
     '--query <expr>',
-    'AQL boolean filter over fields + facts (e.g. "disposition:blocked AND phase:ready_to_implement", "planApproved:true AND workspaceSet:false", "phase:planning AND statusAge > 3d")',
+    'AQL boolean filter over fields + facts (e.g. "status:review AND statusAge > 3d", "disposition:blocked AND status:planning")',
   )
   .option('--json', 'Emit JSON instead of a table')
   .action(async (options: LsOptions) => {

@@ -20,7 +20,7 @@ export interface ContextJsonShape {
   ticketId?: string | null;
   ticketDir?: string | null;
   branch?: string | null;
-  worktreePath?: string | null;
+  worktree?: string | null;
   repository?: string | null;
   boundAt?: string | null;
 }

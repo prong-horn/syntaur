@@ -24,6 +24,7 @@ import {
   GitWorktreeError,
   listBranches,
   detectDefaultBranch,
+  withWorktreePath,
 } from '../utils/git-worktree.js';
 import { computeWorktreeDefaults } from '../utils/worktree-defaults.js';
 import { validateBranchName } from '../utils/branch-name.js';
@@ -107,8 +108,8 @@ function emitDashboardEvent(
  * PATCH must not be a hidden mover. Default-deny allow-list — only inert
  * scalar-metadata edits pass; any field that moves a ticket or alters derived/
  * gate/pause state is rejected (the caller uses the move/transition path). `null`
- * = no violation. `blockedReason` is NOT inert (it derives the `blocked` fact the
- * engine's `isPaused` reads), so it is rejected too.
+ * = no violation. The `blocked` flag is NOT inert (the engine's `isPaused` reads
+ * it), so it is rejected too.
  */
 export function rawPatchMoverViolation(
   current: ReturnType<typeof parseTicketFull>,
@@ -134,8 +135,8 @@ interface TrackedFields {
 /**
  * Emit events for every tracked frontmatter field that changed between `before`
  * and `after` on a raw-edit/create route (R1 diff path). `status-change` is
- * already emitted inline at the four raw-edit sites (it needs the seeded
- * statusHistory `command`), so it is NOT re-emitted here. All actor `'human'`.
+ * already emitted inline at the four raw-edit sites, so it is NOT re-emitted
+ * here. All actor `'human'`.
  */
 function emitTrackedFieldDiffs(
   before: TrackedFields,
@@ -377,7 +378,7 @@ async function handleWorktreeCreate(
       typeof bodyBranch === 'string' && bodyBranch.trim() ? bodyBranch.trim() : defaults.branch!;
     const parentBranch =
       typeof bodyParent === 'string' && bodyParent.trim() ? bodyParent.trim() : defaults.parentBranch!;
-    const worktreePath = resolve(repo, '.worktrees', branch);
+    const wtDir = resolve(repo, '.worktrees', branch);
 
     // Authoritative branch-name validation (catches anything the JS validator
     // misses, and covers a server-derived default branch) — before any mutation.
@@ -406,9 +407,9 @@ async function handleWorktreeCreate(
 
     // Worktree-path disk collision.
     try {
-      await fsStat(worktreePath);
+      await fsStat(wtDir);
       res.status(409).json({
-        error: `A file or directory already exists at ${worktreePath}. Remove it or choose a different branch.`,
+        error: `A file or directory already exists at ${wtDir}. Remove it or choose a different branch.`,
       });
       return;
     } catch {
@@ -433,8 +434,8 @@ async function handleWorktreeCreate(
         ticketPath: ctx.ticketPath,
         repository: repo,
         branch,
-        worktreePath,
         parentBranch,
+        ...withWorktreePath(wtDir),
       });
     } catch (error) {
       if (error instanceof GitWorktreeError) {

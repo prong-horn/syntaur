@@ -16,7 +16,6 @@ interface ContextFile {
   workspaceRoot?: string;
   branch?: string;
   worktree?: string;
-  worktreePath?: string;
   repository?: string;
   boundAt?: string;
 }

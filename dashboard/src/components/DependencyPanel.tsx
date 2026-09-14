@@ -16,11 +16,11 @@ interface DependencyInfo {
 interface DependencyPanelProps {
   projectSlug: string;
   dependencies: DependencyInfo[];
-  blockedReason: string | null;
+  blocked: string | null;
   onTicketChange?: () => void;
 }
 
-export function DependencyPanel({ projectSlug, dependencies, blockedReason, onTicketChange }: DependencyPanelProps) {
+export function DependencyPanel({ projectSlug, dependencies, blocked, onTicketChange }: DependencyPanelProps) {
   const [expanded, setExpanded] = useState(false);
 
   if (dependencies.length === 0) return null;
@@ -55,9 +55,9 @@ export function DependencyPanel({ projectSlug, dependencies, blockedReason, onTi
             <strong>
               {unmetDeps.length} {unmetDeps.length === 1 ? 'dependency is' : 'dependencies are'} not yet completed.
             </strong>
-            {blockedReason && (
+            {blocked && (
               <p className="mt-1 text-warning-foreground/80">
-                Blocked reason: {blockedReason}
+                Blocked: {blocked}
               </p>
             )}
           </div>

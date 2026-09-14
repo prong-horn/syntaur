@@ -310,7 +310,7 @@ export interface AttentionItem {
   updated: string;
   href: string;
   stale: boolean;
-  blockedReason: string | null;
+  blocked: string | null;
   /** Which Overview segment this row was bucketed into. */
   segment: OverviewSegmentId;
   /** Milliseconds since the row was last updated, relative to response time. */

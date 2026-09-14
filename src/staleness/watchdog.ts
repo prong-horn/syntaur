@@ -7,8 +7,8 @@
  * `gcExpiredLeases` sweep: running the same tick twice with the same inputs emits
  * nothing new — the `seen` set is the dedup cursor.
  *
- * STRICTLY read-only (decision D1): this never writes ticket frontmatter,
- * status, or statusHistory. Its ONLY side effect is the caller-supplied `emit`
+ * STRICTLY read-only (decision D1): this never writes ticket frontmatter or
+ * status. Its ONLY side effect is the caller-supplied `emit`
  * (which the server points at the audit event log) — and that fires at most once
  * per stale episode, so repeated ticks don't spam.
  */

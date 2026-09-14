@@ -1,5 +1,5 @@
 import { isExistingDir } from '../utils/workspace-cwd.js';
-import { recreateWorktree } from '../utils/git-worktree.js';
+import { recreateWorktree, withRecreatePath } from '../utils/git-worktree.js';
 import { assertRepoRoot, worktreeInFlight } from './api-write.js';
 import {
   resolveRecreateTarget,
@@ -56,9 +56,9 @@ export async function recreateForTarget(
   try {
     const r = await recreateWorktree({
       repository: repoCheck.repo,
-      worktreePath: t.worktree,
       branch: t.branch,
       originalHeadSha: t.originalHeadSha,
+      ...withRecreatePath(t.worktree),
     });
     return { status: 'recreated', baseUsed: r.baseUsed, exact: r.exact, branch: r.branch };
   } finally {

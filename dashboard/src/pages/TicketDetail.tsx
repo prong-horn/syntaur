@@ -648,7 +648,7 @@ export function TicketDetail() {
         <DependencyPanel
           projectSlug={projectSlug}
           dependencies={enrichedDeps}
-          blockedReason={ticket.blocked}
+          blocked={ticket.blocked}
           onTicketChange={() => refetch()}
         />
       )}
