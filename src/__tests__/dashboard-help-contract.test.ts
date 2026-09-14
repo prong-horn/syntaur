@@ -61,5 +61,12 @@ describe('dashboard help contract', () => {
     const backlogFaq = help.faq.find((item) => item.question.includes('stay in backlog'));
     expect(backlogFaq?.answer).toContain('depends_on');
     expect(backlogFaq?.answer).not.toContain('pending even');
+
+    const blockCmd = help.commands.find((command) => command.command === 'syntaur block');
+    const parkCmd = help.commands.find((command) => command.command === 'syntaur park');
+    expect(blockCmd?.example).toContain('UI-1 "Waiting on API spec"');
+    expect(blockCmd?.example).not.toContain('--reason');
+    expect(parkCmd?.example).toContain('UI-1 "Waiting on design"');
+    expect(parkCmd?.example).not.toContain('--reason');
   });
 });

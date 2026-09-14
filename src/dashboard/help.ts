@@ -73,7 +73,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur block',
     description: 'Mark a ticket blocked and record the explicit reason.',
-    example: 'syntaur block UI-1 --project ui-overhaul --reason "Waiting on API spec"',
+    example: 'syntaur block UI-1 "Waiting on API spec" --project ui-overhaul',
   },
   {
     command: 'syntaur unblock',
@@ -83,7 +83,7 @@ const CLI_COMMANDS: HelpCommand[] = [
   {
     command: 'syntaur park',
     description: 'Park a ticket with a required reason (pauses work without dropping).',
-    example: 'syntaur park UI-1 --project ui-overhaul --reason "Waiting on design"',
+    example: 'syntaur park UI-1 "Waiting on design" --project ui-overhaul',
   },
   {
     command: 'syntaur unpark',
