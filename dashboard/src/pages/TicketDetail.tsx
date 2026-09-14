@@ -32,6 +32,7 @@ import {
   runTicketVerb,
   transitionNeedsReason,
 } from '../lib/tickets';
+import { pickPrimaryVerb, pickSecondaryVerbs } from '../lib/verbActions';
 import { splitTicketSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
@@ -46,8 +47,6 @@ import { useHotkey, useHotkeyScope } from '../hotkeys';
 import { useHashScroll } from '../hooks/useHashScroll';
 import { cn } from '../lib/utils';
 import { useToast, Toaster } from '../components/Toast';
-
-const TRANSITION_PRECEDENCE = ['review', 'complete', 'shape', 'plan-ready', 'implement', 'unblock', 'start', 'block', 'fail', 'reopen'] as const;
 
 /** Ticket detail for project-nested tickets at `/t/:id`. */
 export function TicketDetail() {
@@ -381,17 +380,15 @@ export function TicketDetail() {
   const progress = criteria.length > 0 ? { checked: checkedCount, total: criteria.length } : undefined;
 
   const transitions = ticket.availableVerbs ?? [];
-  // Exclude same-target transitions: the backend currently returns every command as enabled
-  // even when the targetStatus equals the current status, which would produce a meaningless
-  // idempotent primary action. Filter those out for the primary slot; they still surface in
-  // the overflow menu as disabled with "Already in this status".
-  const enabledTransitions = transitions.filter(
-    (a) => !a.disabled && a.targetStatus !== ticket.status,
+  const primaryTransition = pickPrimaryVerb(ticket.next, transitions);
+  const secondaryTransitions = pickSecondaryVerbs(transitions, primaryTransition);
+  const overflowTransitions = transitions.filter(
+    (a) =>
+      a !== primaryTransition &&
+      !secondaryTransitions.includes(a) &&
+      !a.disabled &&
+      a.targetStatus !== ticket.status,
   );
-  const primaryTransition =
-    TRANSITION_PRECEDENCE.map((cmd) => enabledTransitions.find((a) => a.command === cmd)).find(Boolean) ??
-    enabledTransitions[0] ??
-    null;
 
   async function handleDeleteTicket() {
     setDeleteLoading(true);
@@ -470,16 +467,20 @@ export function TicketDetail() {
   }
 
   const overflowItems: OverflowMenuItem[] = [
-    ...enabledTransitions
-      .filter((a) => a !== primaryTransition)
-      .map<OverflowMenuItem>((action) => ({
-        key: `transition-${action.command}`,
-        label: action.label,
-        onSelect: () => handleTransitionClick(action),
-        disabled: transitioning === action.command,
-      })),
+    ...overflowTransitions.map<OverflowMenuItem>((action) => ({
+      key: `transition-${action.command}`,
+      label: action.label,
+      onSelect: () => handleTransitionClick(action),
+      disabled: transitioning === action.command,
+    })),
     ...transitions
-      .filter((a) => a.disabled || a.targetStatus === ticket.status)
+      .filter(
+        (a) =>
+          a.disabled ||
+          a.targetStatus === ticket.status ||
+          a === primaryTransition ||
+          secondaryTransitions.includes(a),
+      )
       .map<OverflowMenuItem>((action) => ({
         key: `transition-${action.command}`,
         label: action.label,
@@ -545,12 +546,25 @@ export function TicketDetail() {
             progress={progress}
             onChange={() => refetch()}
           />
-          <h1
-            className="min-w-0 flex-1 truncate text-lg font-semibold text-foreground"
-            title={ticket.title}
-          >
-            {ticket.title}
-          </h1>
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-lg font-semibold text-foreground" title={ticket.title}>
+              {ticket.title}
+            </h1>
+            {(ticket.blocked || ticket.parked) && (
+              <div className="mt-1 flex flex-wrap gap-2 text-xs">
+                {ticket.blocked ? (
+                  <span className="rounded border border-status-blocked-foreground/30 bg-status-blocked px-2 py-0.5 text-status-blocked-foreground">
+                    Blocked: {ticket.blocked}
+                  </span>
+                ) : null}
+                {ticket.parked ? (
+                  <span className="rounded border border-status-archived-foreground/30 bg-status-archived px-2 py-0.5 text-status-archived-foreground">
+                    Parked: {ticket.parked}
+                  </span>
+                ) : null}
+              </div>
+            )}
+          </div>
           {unmetDeps.length > 0 && (
             <span
               className="shrink-0 whitespace-nowrap text-xs text-warning-foreground"
@@ -576,7 +590,7 @@ export function TicketDetail() {
                 key={primaryIsReview ? `review-${reviewGlowKey}` : primaryTransition.command}
                 type="button"
                 title={primaryTransition.warning || primaryTransition.description}
-                disabled={transitioning === primaryTransition.command}
+                disabled={transitioning === primaryTransition.command || primaryTransition.disabled}
                 onClick={() => handleTransitionClick(primaryTransition)}
                 className={cn(
                   'shell-action disabled:cursor-not-allowed disabled:opacity-50',
@@ -589,6 +603,18 @@ export function TicketDetail() {
                 </span>
               </button>
             )}
+            {secondaryTransitions.map((action) => (
+              <button
+                key={action.command}
+                type="button"
+                title={action.description}
+                disabled={transitioning === action.command || action.disabled}
+                onClick={() => handleTransitionClick(action)}
+                className="rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {transitioning === action.command ? 'Working…' : action.label}
+              </button>
+            ))}
             <OverflowMenu items={overflowItems} align="end" />
           </span>
         </div>

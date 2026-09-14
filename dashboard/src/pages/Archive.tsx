@@ -44,8 +44,7 @@ export function Archive() {
   if (error) return <ErrorState error={error} />;
 
   const projects = data?.projects ?? [];
-  const tickets = data?.tickets ?? [];
-  const isEmpty = projects.length === 0 && tickets.length === 0;
+  const isEmpty = projects.length === 0;
 
   return (
     <div className="space-y-6">

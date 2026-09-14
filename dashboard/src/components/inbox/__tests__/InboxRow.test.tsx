@@ -154,7 +154,7 @@ describe('InboxRow', () => {
         <InboxRow
           item={makeItem({
             category: 'review',
-            acceptCommand: 'complete',
+            acceptCommand: 'done',
             reopenCommand: 'start',
           })}
           agents={[]}
@@ -253,7 +253,7 @@ describe('InboxRow', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <InboxRow
-          item={makeItem({ category: 'review', acceptCommand: 'complete', reopenCommand: 'start' })}
+          item={makeItem({ category: 'review', acceptCommand: 'done', reopenCommand: 'start' })}
           agents={[]}
           onMutated={noop}
           onError={noop}
@@ -297,7 +297,7 @@ describe('InboxRow', () => {
         <InboxRow
           item={makeItem({
             category: 'review',
-            acceptCommand: 'complete',
+            acceptCommand: 'done',
             reopenCommand: 'start',
             snoozed: { until: '2026-06-20T00:00:00Z' },
           })}

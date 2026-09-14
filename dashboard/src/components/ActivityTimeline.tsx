@@ -12,15 +12,14 @@ interface ActivityTimelineProps {
 
 /** Human label for a v1 event `type` (falls back to title-casing the raw type). */
 const TYPE_LABELS: Record<string, string> = {
-  'status-change': 'Status changed',
+  moved: 'Stage changed',
+  flagged: 'Flagged',
+  unflagged: 'Flag cleared',
+  'plan-approved': 'Plan approved',
+  'plan-versioned': 'Plan versioned',
+  created: 'Created',
   'assignee-change': 'Assignee changed',
   'priority-change': 'Priority changed',
-  archived: 'Archived',
-  restored: 'Restored',
-  'plan-approval': 'Plan approved',
-  'fact-set': 'Fact set',
-  'fact-clear': 'Fact cleared',
-  attestation: 'Attestation',
   'comment-added': 'Comment added',
   'comment-resolved': 'Comment resolved',
 };

@@ -34,7 +34,7 @@ describe('InboxPage', () => {
     vi.doMock('../../hooks/useInbox', () => ({
       useInbox: () => ({
         items: [
-          { ...base, category: 'review' as const, acceptCommand: 'complete', reopenCommand: 'start' },
+          { ...base, category: 'review' as const, acceptCommand: 'done', reopenCommand: 'start' },
           base,
         ],
         counts: { question: 1, review: 1, 'plan-approval': 0 },
@@ -288,7 +288,7 @@ describe('InboxPage', () => {
             ...base,
             category: 'review' as const,
             commentId: undefined,
-            acceptCommand: 'complete',
+            acceptCommand: 'done',
             reopenCommand: 'start',
           },
           {
