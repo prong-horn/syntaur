@@ -23,6 +23,7 @@ describe('appendProgressLog', () => {
       ticketDir: testDir,
       ticketRef: 'demo',
       text: 'First entry',
+      author: 'human',
     });
 
     const content = await readFile(path, 'utf-8');
@@ -37,11 +38,13 @@ describe('appendProgressLog', () => {
       ticketDir: testDir,
       ticketRef: 'demo',
       text: 'First entry',
+      author: 'human',
     });
     await appendProgressLog({
       ticketDir: testDir,
       ticketRef: 'demo',
       text: 'Second entry',
+      author: 'human',
     });
 
     const content = await readFile(join(testDir, 'progress.md'), 'utf-8');

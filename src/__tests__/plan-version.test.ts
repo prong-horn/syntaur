@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -31,6 +32,7 @@ id: PD-1
 slug: demo
 title: "Demo"
 project: p
+template: legacy
 status: in_progress
 priority: medium
 created: "2026-04-23T12:00:00Z"
@@ -89,6 +91,7 @@ describe('syntaur plan version', () => {
 
   beforeEach(async () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-planv-'));
+    await seedMissingBuiltins(syntaurHome);
     projectsDir = resolve(syntaurHome, 'projects');
     await mkdir(projectsDir, { recursive: true });
     await writeFile(

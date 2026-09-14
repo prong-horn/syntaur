@@ -273,9 +273,9 @@ describe('renderPlan', () => {
     expect(out).toContain('status: draft');
     expect(out).toContain('ticket: test');
     expect(out).toContain('# Plan: Test');
-    expect(out).toContain('## Approach');
+    expect(out).toContain('## Objective');
     expect(out).toContain('## Tasks');
-    expect(out).toContain('## Risks & Mitigations');
+    expect(out).toContain('## Verification');
   });
 });
 

@@ -15,7 +15,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
-import { latestPlanFile } from '../lifecycle/facts.js';
+import { resolvePlanReadPath } from '../ticket-templates/roles.js';
 import {
   parseTicketFull,
   parsePlan,
@@ -118,8 +118,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     // ticket.md itself
     docs.push(makeTicketDoc(ticketMdPath, 'ticket', ticket.title, ticket.body, identity));
 
-    // latest plan only
-    const planName = await latestPlanFile(entry.ticketDir);
+    const planName = await resolvePlanReadPath(entry.ticketDir, ticket);
     if (planName) {
       const planPath = join(entry.ticketDir, planName);
       if (await fileExists(planPath)) {

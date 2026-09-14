@@ -176,6 +176,7 @@ export async function fileChatRecord(input: {
       ticketDir: input.ticketDir,
       ticketRef: input.ticketRef,
       text: body,
+      author: source.agentId,
     });
     return {
       kind: 'progress',

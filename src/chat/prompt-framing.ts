@@ -14,7 +14,11 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { latestPlanFile } from '../lifecycle/facts.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { planFileFor } from '../ticket-templates/roles.js';
+import { syntaurRoot } from '../utils/paths.js';
+import { fileExists } from '../utils/fs.js';
 import type { AgentDefinition, ChatItem, ContentBlock, HarnessSpec } from './types.js';
 import { HUMAN_AGENT_ID } from './types.js';
 
@@ -67,10 +71,19 @@ export async function buildStandingContext(input: StandingContextInput): Promise
   const ticket = await readResource(input.ticketDir, 'ticket.md');
   if (ticket) blocks.push(ticket);
 
-  const planName = await latestPlanFile(input.ticketDir);
-  if (planName) {
-    const plan = await readResource(input.ticketDir, planName);
-    if (plan) blocks.push(plan);
+  const ticketMdPath = resolve(input.ticketDir, 'ticket.md');
+  if (await fileExists(ticketMdPath)) {
+    try {
+      const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+      const planName = planFileFor(fm, manifest);
+      if (planName && (await fileExists(resolve(input.ticketDir, planName)))) {
+        const plan = await readResource(input.ticketDir, planName);
+        if (plan) blocks.push(plan);
+      }
+    } catch {
+      /* ticket.md without frontmatter — no plan resource */
+    }
   }
 
   const progress = await readProgressTail(input.ticketDir);

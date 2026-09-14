@@ -8,6 +8,7 @@ import {
   closeSessionDb,
   resetSessionDb,
 } from '../dashboard/session-db.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { openEngagement } from '../db/engagement-db.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
@@ -82,7 +83,12 @@ describe('syntaur progress log', () => {
       resolve(home, 'projects', 'p', 'project.md'),
       '---\nslug: p\ntitle: P\nprefix: PX\nnextTicket: 2\n---\n',
     );
-    await writeFile(resolve(dir, 'ticket.md'), '---\nid: PX-1\nslug: a\nstatus: in_progress\n---\n# A\n', 'utf-8');
+    await writeFile(
+      resolve(dir, 'ticket.md'),
+      '---\nid: PX-1\nslug: a\ntemplate: legacy\nstatus: in_progress\n---\n# A\n',
+      'utf-8',
+    );
+    await seedMissingBuiltins(home);
     progressPath = resolve(dir, 'progress.md');
     await writeFile(progressPath, PROGRESS, 'utf-8');
   });

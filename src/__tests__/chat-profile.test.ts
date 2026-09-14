@@ -194,7 +194,15 @@ describe('prompt framing', () => {
     const dir = join(sandbox, 'ticket');
     await mkdir(dir, { recursive: true });
     for (const [name, content] of Object.entries(files)) {
-      await writeFile(join(dir, name), content, 'utf-8');
+      let body = content;
+      if (
+        name === 'ticket.md' &&
+        !content.trimStart().startsWith('---') &&
+        content.trim().length > 0
+      ) {
+        body = `---\ntemplate: legacy\n---\n\n${content}`;
+      }
+      await writeFile(join(dir, name), body, 'utf-8');
     }
     return dir;
   }
@@ -239,7 +247,7 @@ describe('prompt framing', () => {
     expect(blocks.map((b) => b.type)).toEqual(['text', 'resource', 'text']);
   });
 
-  it('picks the highest plan version', async () => {
+  it('uses the plan role path, not superseded revisions', async () => {
     const dir = await seedTicket({
       'ticket.md': '# Ticket\n',
       'plan.md': '# Plan v1\n',
@@ -257,11 +265,11 @@ describe('prompt framing', () => {
     );
     expect(plans).toHaveLength(1);
     expect(plans[0].type === 'resource' && 'text' in plans[0].resource && plans[0].resource.text).toBe(
-      '# Plan v10\n',
+      '# Plan v1\n',
     );
     expect(
       plans[0].type === 'resource' ? plans[0].resource.uri : '',
-    ).toBe(`file://${join(dir, 'plan-v10.md')}`);
+    ).toBe(`file://${join(dir, 'plan.md')}`);
   });
 
   it('truncates a long progress.md to its newest entries', async () => {

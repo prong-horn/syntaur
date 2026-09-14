@@ -36,6 +36,7 @@ id: VRB-1
 slug: verb-test
 title: "Verb Test"
 project: p1
+template: legacy
 status: draft
 priority: medium
 created: "2026-06-09T10:00:00Z"

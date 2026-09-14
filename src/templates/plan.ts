@@ -4,7 +4,17 @@ export interface PlanParams {
   timestamp: string;
 }
 
-export function renderPlan(params: PlanParams): string {
+/** Unified initial plan stub (scaffold + plan create). */
+export function renderPlanStub(params: {
+  ticketSlug: string;
+  title?: string;
+  timestamp: string;
+}): string {
+  const date = params.timestamp.slice(0, 10);
+  const heading = params.title
+    ? `# Plan: ${params.title}`
+    : `# ${params.ticketSlug} — Implementation Plan`;
+
   return `---
 ticket: ${params.ticketSlug}
 status: draft
@@ -12,22 +22,29 @@ created: "${params.timestamp}"
 updated: "${params.timestamp}"
 ---
 
-# Plan: ${params.title}
+${heading}
 
-## Approach
+**Date:** ${date}
 
-<!-- High-level description of how to accomplish the objective. -->
+## Objective
+
+<!-- Describe the goal and success criteria. -->
 
 ## Tasks
 
-- [ ] <!-- step 1 -->
-- [ ] <!-- step 2 -->
-- [ ] <!-- step 3 -->
+<!-- Add the implementation tasks here. -->
 
-## Risks & Mitigations
+## Verification
 
-| Risk | Mitigation |
-|------|------------|
-| <!-- risk --> | <!-- mitigation --> |
+<!-- Add verification steps here. -->
 `;
+}
+
+/** @deprecated Use renderPlanStub — kept for callers that pass title. */
+export function renderPlan(params: PlanParams): string {
+  return renderPlanStub({
+    ticketSlug: params.ticketSlug,
+    title: params.title,
+    timestamp: params.timestamp,
+  });
 }

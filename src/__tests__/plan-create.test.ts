@@ -3,6 +3,7 @@ import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -25,6 +26,7 @@ const TICKET = `---
 id: PX-1
 slug: a
 title: "A"
+template: legacy
 status: in_progress
 created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
@@ -42,6 +44,7 @@ describe('syntaur plan create', () => {
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), 'syntaur-plan-'));
+    await seedMissingBuiltins(home);
     await writeFile(resolve(home, 'config.md'), `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(home, 'projects')}\n---\n`, 'utf-8');
     ticketDir = resolve(home, 'projects', 'p', 'tickets', 'PX-1-a');
     await mkdir(ticketDir, { recursive: true });

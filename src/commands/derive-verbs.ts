@@ -24,7 +24,11 @@ import {
   updatePlanBlock,
   upsertAttestation,
 } from '../lifecycle/frontmatter.js';
-import { canonicalizeFactValue, latestPlanFile, planDigest } from '../lifecycle/facts.js';
+import { canonicalizeFactValue, planDigest } from '../lifecycle/facts.js';
+import { latestPlanRevision, planStemFromPath } from '../ticket-templates/roles.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { planRoleFile } from '../ticket-templates/manifest.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { captureHeadSha } from '../utils/git-worktree.js';
 import type { AttestationRecord } from '../lifecycle/types.js';
 import {
@@ -226,6 +230,15 @@ async function assertFact(
 
 // ── plan approval ───────────────────────────────────────────────────────────
 
+async function resolvePlanStemForTicket(ticketDir: string, content: string): Promise<string> {
+  const fm = parseTicketFrontmatter(content);
+  const templateId = resolveTemplateForTicket(fm);
+  const manifest = await loadTemplate(syntaurRoot(), templateId);
+  const role = planRoleFile(manifest);
+  if (!role) throw new Error(`template ${templateId} has no plan role`);
+  return planStemFromPath(role.path);
+}
+
 export async function planApproveCommand(ticket: string, options: DeriveVerbOptions): Promise<void> {
   let approvedFile: string | null = null;
   await assertFact(
@@ -233,7 +246,8 @@ export async function planApproveCommand(ticket: string, options: DeriveVerbOpti
     options,
     'plan-approve',
     async (content, target) => {
-      const planFile = await latestPlanFile(target.ticketDir);
+      const stem = await resolvePlanStemForTicket(target.ticketDir, content);
+      const planFile = await latestPlanRevision(target.ticketDir, stem);
       if (!planFile) {
         throw new Error('No plan file found (plan.md / plan-v*.md). Write a plan before approving.');
       }
@@ -345,7 +359,8 @@ export async function attestCommand(
         ...(options.note ? { note: options.note } : {}),
       };
       if (binds === 'plan') {
-        const planFile = await latestPlanFile(target.ticketDir);
+        const stem = await resolvePlanStemForTicket(target.ticketDir, content);
+        const planFile = await latestPlanRevision(target.ticketDir, stem);
         if (!planFile) {
           throw new Error(
             'No plan file found (plan.md / plan-v*.md). Write a plan before attesting a binds:plan fact.',

@@ -9,17 +9,19 @@ import { readConfig } from '../utils/config.js';
 import { ensureScratchProject } from '../utils/scratch-project.js';
 import { formatTicketFolderName } from '../utils/ticket-folder.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
-import { listTemplates } from '../ticket-templates/registry.js';
-import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
-import { parseProject } from '../dashboard/parser.js';
 import {
-  renderTicket,
-  renderScratchpad,
-  renderHandoff,
-  renderDecisionRecord,
-  renderProgress,
-  renderComments,
-} from '../templates/index.js';
+  listTemplates,
+  loadTemplate,
+  resolveTemplateContentDir,
+} from '../ticket-templates/registry.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import {
+  scaffoldTemplateFiles,
+  scaffoldedPlanPaths,
+} from '../ticket-templates/scaffold.js';
+import { parseProject } from '../dashboard/parser.js';
+import { renderTicket } from '../templates/index.js';
+import { updatePlanBlock } from '../lifecycle/frontmatter.js';
 
 export interface NewTicketOptions {
   project?: string;
@@ -40,6 +42,7 @@ export interface NewTicketResult {
   slug: string;
   projectSlug: string;
   ticketDir: string;
+  written: string[];
 }
 
 async function resolveDefaultTemplate(projectDir: string): Promise<string> {
@@ -129,13 +132,16 @@ export async function newCommand(
   await seedMissingBuiltins(root);
   const templates = await listTemplates(root);
   const templateIds = templates.map((t) => t.id);
-  const template =
+  const templateId =
     options.template ?? (await resolveDefaultTemplate(projectDir));
-  if (!templateIds.includes(template)) {
+  if (!templateIds.includes(templateId)) {
     throw new Error(
-      `Unknown template "${template}". Available: ${templateIds.join(', ')} (syntaur template list)`,
+      `Unknown template "${templateId}". Available: ${templateIds.join(', ')} (syntaur template list)`,
     );
   }
+
+  const manifest = await loadTemplate(root, templateId);
+  const templateDir = await resolveTemplateContentDir(root, templateId);
 
   const id = await allocateTicketId(projectDir);
   const folderName = formatTicketFolderName(id, ticketSlug);
@@ -149,49 +155,44 @@ export async function newCommand(
 
   await ensureDir(ticketDir);
 
-  const files: Array<[string, string]> = [
-    [
-      resolve(ticketDir, 'ticket.md'),
-      renderTicket({
-        id,
-        slug: ticketSlug,
-        title,
-        timestamp,
-        priority,
-        depends_on,
-        links,
-        project: projectSlug,
-        template,
-        workflow: options.workflow ?? null,
-        status: options.ready ? 'ready_for_planning' : 'draft',
-        acceptanceCriteria: options.acceptanceCriteria,
-      }),
-    ],
-    [
-      resolve(ticketDir, 'scratchpad.md'),
-      renderScratchpad({ ticketSlug, timestamp }),
-    ],
-    [
-      resolve(ticketDir, 'handoff.md'),
-      renderHandoff({ ticketSlug, timestamp }),
-    ],
-    [
-      resolve(ticketDir, 'decision-record.md'),
-      renderDecisionRecord({ ticketSlug, timestamp }),
-    ],
-    [
-      resolve(ticketDir, 'progress.md'),
-      renderProgress({ ticket: ticketSlug, timestamp }),
-    ],
-    [
-      resolve(ticketDir, 'comments.md'),
-      renderComments({ ticket: ticketSlug, timestamp }),
-    ],
-  ];
+  let ticketContent = renderTicket({
+    id,
+    slug: ticketSlug,
+    title,
+    timestamp,
+    priority,
+    depends_on,
+    links,
+    project: projectSlug,
+    template: templateId,
+    workflow: options.workflow ?? null,
+    status: options.ready ? 'ready_for_planning' : 'draft',
+    acceptanceCriteria: options.acceptanceCriteria,
+  });
 
-  for (const [filePath, content] of files) {
-    await writeFileForce(filePath, content);
+  const written = await scaffoldTemplateFiles({
+    ticketDir,
+    templateDir,
+    template: manifest,
+    ticketSlug,
+    ticketTitle: title,
+    timestamp,
+    when: 'ticket-creation',
+  });
+
+  const planWritten = scaffoldedPlanPaths(written, manifest);
+  if (planWritten.length > 0) {
+    ticketContent = updatePlanBlock(ticketContent, {
+      file: planWritten[0],
+      approvedDigest: null,
+      approvedAt: null,
+      approvedBy: null,
+    });
   }
+
+  await writeFileForce(resolve(ticketDir, 'ticket.md'), ticketContent);
+
+  const allWritten = ['ticket.md', ...written];
 
   if (!options.silent) {
     console.log(
@@ -200,7 +201,7 @@ export async function newCommand(
     console.log(`  Id: ${id}`);
     console.log(`  Slug: ${ticketSlug}`);
     console.log(`  Priority: ${priority}`);
-    console.log(`  Template: ${template}`);
+    console.log(`  Template: ${templateId}`);
     if (depends_on.length > 0) {
       console.log(`  Depends on: ${depends_on.join(', ')}`);
     }
@@ -208,16 +209,10 @@ export async function newCommand(
       console.log(`  Links: ${links.join(', ')}`);
     }
     console.log(`  Files created:`);
-    console.log(`    ticket.md`);
-    console.log(`    scratchpad.md`);
-    console.log(`    handoff.md`);
-    console.log(`    decision-record.md`);
-    console.log(`    progress.md`);
-    console.log(`    comments.md`);
-    console.log(
-      `  Plan files (plan.md, plan-v2.md, ...) are created on demand by /plan-ticket.`,
-    );
+    for (const f of allWritten) {
+      console.log(`    ${f}`);
+    }
   }
 
-  return { id, slug: ticketSlug, projectSlug, ticketDir };
+  return { id, slug: ticketSlug, projectSlug, ticketDir, written: allWritten };
 }

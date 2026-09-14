@@ -28,7 +28,9 @@ import {
   resolveTicketSlugInProject,
   type ResolvedTicket,
 } from '../utils/ticket-resolver.js';
-import { latestPlanFile } from '../lifecycle/facts.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { resolvePlanReadPath, planFileFor } from '../ticket-templates/roles.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { invalidateIndex } from '../search/index.js';
 
 import {
@@ -876,6 +878,18 @@ export async function getHelp(): Promise<HelpResponse> {
 /**
  * Get a raw editable document for dashboard editor pages.
  */
+async function resolvePlanEditPath(ticketDir: string): Promise<string | null> {
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return null;
+  const ticket = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
+  const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+  const planPath = planFileFor(ticket, manifest);
+  if (!planPath) return null;
+  const full = resolve(ticketDir, planPath);
+  if (!(await fileExists(full))) return null;
+  return full;
+}
+
 export async function getEditableDocument(
   projectsDir: string,
   documentType: EditableDocumentResponse['documentType'],
@@ -886,13 +900,17 @@ export async function getEditableDocument(
   if (ticketSlug && documentType !== 'project' && documentType !== 'playbook') {
     const resolved = await resolveTicketSlugInProject(projectsDir, projectSlug, ticketSlug);
     if (resolved) {
-      const resolvedPath = getDocumentPath(
-        projectsDir,
-        documentType,
-        projectSlug,
-        basename(resolved.ticketDir),
-      );
-      if (resolvedPath) filePath = resolvedPath;
+      if (documentType === 'plan') {
+        filePath = await resolvePlanEditPath(resolved.ticketDir);
+      } else {
+        const resolvedPath = getDocumentPath(
+          projectsDir,
+          documentType,
+          projectSlug,
+          basename(resolved.ticketDir),
+        );
+        if (resolvedPath) filePath = resolvedPath;
+      }
     }
   }
   if (!filePath || !(await fileExists(filePath))) {
@@ -933,11 +951,13 @@ export async function getEditableDocumentById(
     );
   }
 
-  const fileName =
-    documentType === 'ticket'
-      ? 'ticket.md'
-      : documentType === 'plan'
-        ? 'plan.md'
+  let filePath: string | null;
+  if (documentType === 'plan') {
+    filePath = await resolvePlanEditPath(resolved.ticketDir);
+  } else {
+    const fileName =
+      documentType === 'ticket'
+        ? 'ticket.md'
         : documentType === 'scratchpad'
           ? 'scratchpad.md'
           : documentType === 'handoff'
@@ -945,9 +965,10 @@ export async function getEditableDocumentById(
             : documentType === 'decision-record'
               ? 'decision-record.md'
               : null;
-  if (!fileName) return null;
-  const filePath = resolve(resolved.ticketDir, fileName);
-  if (!(await fileExists(filePath))) return null;
+    filePath = fileName ? resolve(resolved.ticketDir, fileName) : null;
+    if (filePath && !(await fileExists(filePath))) filePath = null;
+  }
+  if (!filePath) return null;
 
   const content = await readFile(filePath, 'utf-8');
   const label = resolved.id;
@@ -1086,7 +1107,7 @@ export async function getTicketDetail(
   const ticket = parseTicketFull(ticketContent);
 
   let plan: TicketDetail['plan'] = null;
-  const planFile = await latestPlanFile(ticketDir);
+  const planFile = await resolvePlanReadPath(ticketDir, ticket);
   if (planFile) {
     const planPath = resolve(ticketDir, planFile);
     if (await fileExists(planPath)) {

@@ -9,7 +9,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
 import { resolveTicketMdPathInProject } from '../utils/ticket-resolver.js';
@@ -19,6 +19,14 @@ import { parseTicketFrontmatter } from './frontmatter.js';
 import type { TicketFrontmatter, AttestationRecord } from './types.js';
 import type { FactDeclaration } from '../utils/config.js';
 import type { StageWorkflow } from '../utils/stage-model.js';
+import {
+  DEFAULT_PLAN_STEM,
+  latestPlanRevision,
+  planStemFromPath,
+} from '../ticket-templates/roles.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { planRoleFile } from '../ticket-templates/manifest.js';
+import { syntaurRoot } from '../utils/paths.js';
 
 /** Matches the ticket template's placeholder list items / comments. */
 const HTML_COMMENT_RE = /<!--[\s\S]*?-->/g;
@@ -62,24 +70,18 @@ export function countRealAcceptanceCriteria(body: string): { total: number; chec
   return { total, checked };
 }
 
-const PLAN_FILE_RE = /^plan(?:-v(\d+))?\.md$/;
-
-/** Latest plan revision in a ticket dir (`plan.md` = v1 < `plan-v2.md` < …). */
-export async function latestPlanFile(ticketDir: string): Promise<string | null> {
-  let entries: string[];
+async function resolvePlanStem(
+  frontmatter: Pick<TicketFrontmatter, 'template'>,
+): Promise<string> {
+  const templateId = resolveTemplateForTicket(frontmatter);
   try {
-    entries = await readdir(ticketDir);
+    const manifest = await loadTemplate(syntaurRoot(), templateId);
+    const role = planRoleFile(manifest);
+    if (role) return planStemFromPath(role.path);
   } catch {
-    return null;
+    /* fall through */
   }
-  let best: { name: string; version: number } | null = null;
-  for (const name of entries) {
-    const m = name.match(PLAN_FILE_RE);
-    if (!m) continue;
-    const version = m[1] ? parseInt(m[1], 10) : 1;
-    if (!best || version > best.version) best = { name, version };
-  }
-  return best?.name ?? null;
+  return DEFAULT_PLAN_STEM;
 }
 
 export function planDigest(content: string): string {
@@ -272,7 +274,7 @@ export function isSolicitationCurrent(
  */
 export async function resolveBindingEnv(
   workflow: StageWorkflow,
-  frontmatter: Pick<TicketFrontmatter, 'workspace'>,
+  frontmatter: Pick<TicketFrontmatter, 'workspace' | 'template'>,
   ticketDir: string,
 ): Promise<AttestationEnv> {
   let needsCommit = false;
@@ -283,7 +285,8 @@ export async function resolveBindingEnv(
       else if (check.binds === 'plan') needsPlan = true;
     }
   }
-  const planFile = needsPlan ? await latestPlanFile(ticketDir) : null;
+  const planStem = needsPlan ? await resolvePlanStem(frontmatter) : DEFAULT_PLAN_STEM;
+  const planFile = needsPlan ? await latestPlanRevision(ticketDir, planStem) : null;
   const [planFileContent, headSha] = await Promise.all([
     needsPlan && planFile
       ? readFile(resolve(ticketDir, planFile), 'utf-8').catch(() => null)
@@ -323,7 +326,8 @@ export async function computeFactsDetailed(input: ComputeFactsInput): Promise<Co
   const needsPlanAttestationDigest = declarations.some(
     (d) => d.type === 'attestation' && d.binds === 'plan',
   );
-  const planFile = await latestPlanFile(ticketDir);
+  const planStem = await resolvePlanStem(frontmatter);
+  const planFile = await latestPlanRevision(ticketDir, planStem);
   const [approvalPlanContent, latestPlanContent, unresolvedQuestions, depsSatisfied] =
     await Promise.all([
       needsPlanApprovalDigest && plan.file

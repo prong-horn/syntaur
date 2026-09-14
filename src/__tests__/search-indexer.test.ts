@@ -32,7 +32,7 @@ beforeEach(async () => {
   );
   await write(
     join(aDir, 'plan.md'),
-    `---\nticket: ALP-1\n---\n# Old Plan v1\n\nObsolete approach.\n`,
+    `---\nticket: ALP-1\n---\n# Old Plan v1\n\nThe approved strawberry approach.\n`,
   );
   await write(
     join(aDir, 'plan-v2.md'),
@@ -88,13 +88,13 @@ describe('buildIndex', () => {
     expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual(['build-widget', 'oneoff']);
   });
 
-  it('indexes only the latest plan (plan-v2, not plan.md)', async () => {
+  it('indexes the plan role path (plan.md), not superseded revisions', async () => {
     const docs = await buildIndex({ projectsDir });
     const planDocs = docs.filter((d) => d.fileKind === 'plan');
     expect(planDocs).toHaveLength(1);
-    expect(planDocs[0].path).toMatch(/plan-v2\.md$/);
+    expect(planDocs[0].path).toMatch(/plan\.md$/);
     expect(planDocs[0].body).toContain('strawberry');
-    expect(planDocs[0].body).not.toContain('Obsolete');
+    expect(planDocs[0].body).not.toContain('Plan v2');
   });
 
   it('excludes archived tickets unless includeArchived', async () => {
@@ -173,7 +173,7 @@ describe('FuseProvider.query', () => {
   it('attributes the nearest section heading', async () => {
     const p = await provider();
     const hits = p.query({ query: 'strawberry' }, 20);
-    expect(hits[0].section).toBe('Plan v2');
+    expect(hits[0].section).toBe('Old Plan v1');
   });
 
   it('respects the --in filter, including the plural alias resolution upstream', async () => {

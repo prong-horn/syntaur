@@ -25,6 +25,7 @@ id: PRC-1
 slug: pr-test
 title: "Plan Recompute Test"
 project: p1
+template: legacy
 status: draft
 priority: medium
 created: "2026-06-09T10:00:00Z"

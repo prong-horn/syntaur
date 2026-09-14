@@ -48,7 +48,7 @@ import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { appendComment } from '../lifecycle/comment-append.js';
 import { resolveQuestionComments } from '../lifecycle/comment-resolve.js';
-import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { appendProgressLog, ticketHasLogRole } from '../lifecycle/progress-append.js';
 import { type ParsedComment } from '../dashboard/parser.js';
 import {
   detectOpenQuestion,
@@ -527,11 +527,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         turnId: turn.turnId,
       });
       if (!text) return;
+      if (!(await ticketHasLogRole(session.ticket.ticketDir))) return;
       await withRecordLock(session.ticket.ticketDir, () =>
         appendProgressLog({
           ticketDir: session.ticket.ticketDir,
           ticketRef: session.ticket.ticketSlug,
           text,
+          author: session.agentId,
         }),
       );
     } catch (err) {

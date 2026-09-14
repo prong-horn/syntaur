@@ -3,6 +3,15 @@ import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { formatProgressEntry, renderProgress } from '../templates/index.js';
+import { parseTicketFrontmatter } from './frontmatter.js';
+import { syntaurRoot } from '../utils/paths.js';
+import {
+  loadTemplate,
+  resolveTemplateForTicket,
+  LEGACY_TEMPLATE_ID,
+} from '../ticket-templates/registry.js';
+import { logRoleFile } from '../ticket-templates/manifest.js';
+import { injectPurpose } from '../ticket-templates/scaffold.js';
 
 /**
  * Insert a new entry immediately after the `# Progress` H1 (reverse-chronological),
@@ -18,7 +27,6 @@ export function appendProgressEntry(content: string, entry: string, now: string)
   }
   const [, open, fmBody, close, body] = fmMatch;
 
-  // Bump entryCount (default 0 → 1) and updated; preserve everything else.
   let newFm = fmBody;
   const countMatch = newFm.match(/^entryCount:\s*(\d+)\s*$/m);
   const nextCount = countMatch ? parseInt(countMatch[1], 10) + 1 : 1;
@@ -35,8 +43,6 @@ export function appendProgressEntry(content: string, entry: string, now: string)
 
   const entryBlock = formatProgressEntry(entry, now);
 
-  // Body handling: drop the placeholder, then insert the new entry right after the
-  // `# Progress` H1 so newest is first.
   let newBody = body.replace(/\n?No progress yet\.\s*\n?/, '\n');
   const h1 = newBody.match(/^#\sProgress\s*$/m);
   if (h1) {
@@ -52,24 +58,87 @@ export function appendProgressEntry(content: string, entry: string, now: string)
   return `${open}${newFm}${close.startsWith('\n') ? close : `\n${close}`}${newBody}`;
 }
 
+function appendJournalEntry(content: string, entry: string, now: string, author: string): string {
+  const heading = `## ${now} · progress · ${author}`;
+  const block = `${heading}\n\n${entry.trim()}\n`;
+  const trimmed = content.trimEnd();
+  if (trimmed.length === 0) {
+    return `${block}\n`;
+  }
+  return `${trimmed}\n\n${block}\n`;
+}
+
+async function resolveLogRole(ticketDir: string): Promise<{
+  templateId: string;
+  logPath: string;
+  description: string;
+  legacyProgress: boolean;
+}> {
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  let templateId = LEGACY_TEMPLATE_ID;
+  if (await fileExists(ticketMdPath)) {
+    const content = await readFile(ticketMdPath, 'utf-8');
+    const fm = parseTicketFrontmatter(content);
+    templateId = resolveTemplateForTicket(fm);
+  }
+
+  const manifest = await loadTemplate(syntaurRoot(), templateId);
+  const logRole = logRoleFile(manifest);
+  if (!logRole) {
+    throw new Error(`template ${templateId} has no log role; use the chat`);
+  }
+
+  return {
+    templateId,
+    logPath: logRole.path,
+    description: logRole.description,
+    legacyProgress: logRole.path === 'progress.md',
+  };
+}
+
 export interface AppendProgressLogInput {
   ticketDir: string;
   ticketRef: string;
   text: string;
+  author: string;
 }
 
-/** Read-or-scaffold `progress.md`, append one entry, write atomically. */
+/** Append a progress entry to the template's log-role file. */
 export async function appendProgressLog(
   input: AppendProgressLogInput,
 ): Promise<{ path: string; timestamp: string }> {
-  const path = resolve(input.ticketDir, 'progress.md');
+  const { logPath, description, legacyProgress } = await resolveLogRole(input.ticketDir);
+  const path = resolve(input.ticketDir, logPath);
   const now = nowTimestamp();
 
-  const content = (await fileExists(path))
-    ? await readFile(path, 'utf-8')
-    : renderProgress({ ticket: input.ticketRef, timestamp: now });
+  if (legacyProgress) {
+    const content = (await fileExists(path))
+      ? await readFile(path, 'utf-8')
+      : renderProgress({ ticket: input.ticketRef, timestamp: now });
 
-  const next = appendProgressEntry(content, input.text, now);
+    const next = appendProgressEntry(content, input.text, now);
+    await writeFileForce(path, next);
+    return { path, timestamp: now };
+  }
+
+  let content: string;
+  if (await fileExists(path)) {
+    content = await readFile(path, 'utf-8');
+  } else {
+    content = injectPurpose(`---\n---\n`, description);
+  }
+
+  const next = appendJournalEntry(content, input.text, now, input.author);
   await writeFileForce(path, next);
   return { path, timestamp: now };
+}
+
+/** Whether the ticket template declares a log role (for broker skip). */
+export async function ticketHasLogRole(ticketDir: string): Promise<boolean> {
+  try {
+    await resolveLogRole(ticketDir);
+    return true;
+  } catch {
+    return false;
+  }
 }

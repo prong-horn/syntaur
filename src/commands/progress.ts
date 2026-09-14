@@ -51,10 +51,26 @@ export async function runProgressLog(
   if (!(await fileExists(resolve(dir, 'ticket.md')))) {
     throw new Error(`No ticket found at ${dir} (missing ticket.md).`);
   }
+  let author = 'human';
+  try {
+    const { initSessionDb } = await import('../dashboard/session-db.js');
+    const { resolveSessionEngagement } = await import('../utils/engagement-binding.js');
+    initSessionDb();
+    const se = await resolveSessionEngagement(cwd);
+    if (se?.session.id) {
+      const { getSessionById } = await import('../dashboard/agent-sessions.js');
+      const row = getSessionById(se.session.id);
+      if (row?.agent) author = row.agent;
+    }
+  } catch {
+    /* no session db — human */
+  }
+
   const { path } = await appendProgressLog({
     ticketDir: dir,
     ticketRef: slug,
     text,
+    author,
   });
   return path;
 }

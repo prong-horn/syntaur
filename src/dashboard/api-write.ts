@@ -66,6 +66,19 @@ import {
 import { parseComments } from './parser.js';
 import { appendLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
 import { setCommentResolved } from '../lifecycle/comment-resolve.js';
+import { updatePlanBlock } from '../lifecycle/frontmatter.js';
+import { syntaurRoot } from '../utils/paths.js';
+import {
+  listTemplates,
+  loadTemplate,
+  resolveTemplateContentDir,
+} from '../ticket-templates/registry.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import {
+  scaffoldTemplateFiles,
+  scaffoldedPlanPaths,
+} from '../ticket-templates/scaffold.js';
+import { planFileFor } from '../ticket-templates/roles.js';
 
 export { setTopLevelField } from '../lifecycle/log-append.js';
 
@@ -622,16 +635,31 @@ export function createWriteRouter(projectsDir: string): Router {
         });
         return;
       }
-      const contentWithId = /^id:\s/m.test(content)
+      const projectContent = await readFile(projectMdPath, 'utf-8');
+      const project = parseProject(projectContent);
+      const root = syntaurRoot();
+      await seedMissingBuiltins(root);
+      const availableTemplates = await listTemplates(root);
+      const templateId = fields.template || project.defaultTemplate || 'feature';
+      if (!availableTemplates.some((t) => t.id === templateId)) {
+        res.status(400).json({
+          error: `Unknown template "${templateId}". Available: ${availableTemplates.map((t) => t.id).join(', ')}`,
+        });
+        return;
+      }
+
+      let contentWithId = /^id:\s/m.test(content)
         ? content.replace(/^id:\s*.*$/m, `id: ${ticketId}`)
         : content.replace(/^(---\n)/, `---\nid: ${ticketId}\n`);
 
+      if (!/^template:\s/m.test(contentWithId)) {
+        contentWithId = contentWithId.replace(/^(---\n)/, `---\ntemplate: ${templateId}\n`);
+      }
+
       await ensureDir(ticketDir);
-      // Raw create bypasses renderTicket, so seed the statusHistory here
-      // (only when the body didn't already supply one — never double-seed).
       const parsedCreate = parseTicketFull(contentWithId);
       const seededHere = parsedCreate.statusHistory.length === 0;
-      const seededContent = seededHere
+      let seededContent = seededHere
         ? appendStatusHistoryEntry(contentWithId, {
             at: timestamp,
             from: null,
@@ -640,18 +668,30 @@ export function createWriteRouter(projectsDir: string): Router {
             by: null,
           })
         : contentWithId;
-      await writeFileForce(resolve(ticketDir, 'ticket.md'), seededContent);
 
       try {
-        const companions: Array<[string, string]> = [
-          [resolve(ticketDir, 'scratchpad.md'), renderScratchpad({ ticketSlug, timestamp })],
-          [resolve(ticketDir, 'handoff.md'), renderHandoff({ ticketSlug, timestamp })],
-          [resolve(ticketDir, 'decision-record.md'), renderDecisionRecord({ ticketSlug, timestamp })],
-        ];
-
-        for (const [filePath, fileContent] of companions) {
-          await writeFileForce(filePath, fileContent);
+        const manifest = await loadTemplate(root, templateId);
+        const templateDir = await resolveTemplateContentDir(root, templateId);
+        const scaffolded = await scaffoldTemplateFiles({
+          ticketDir,
+          templateDir,
+          template: manifest,
+          ticketSlug,
+          ticketTitle: fields.title,
+          timestamp,
+          when: 'ticket-creation',
+        });
+        const planWritten = scaffoldedPlanPaths(scaffolded, manifest);
+        if (planWritten.length > 0) {
+          seededContent = updatePlanBlock(seededContent, {
+            file: planWritten[0],
+            approvedDigest: null,
+            approvedAt: null,
+            approvedBy: null,
+          });
         }
+
+        await writeFileForce(resolve(ticketDir, 'ticket.md'), seededContent);
       } catch (companionError) {
         try {
           await rm(ticketDir, { recursive: true, force: true });
@@ -1331,7 +1371,16 @@ const id = getParam(req.params.id);
         return;
       }
 
-      const planPath = resolve(resolved.ticketDir, 'plan.md');
+      const ticketMdPath = resolve(resolved.ticketDir, 'ticket.md');
+      const ticketFm = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
+      const root = syntaurRoot();
+      const manifest = await loadTemplate(root, ticketFm.template ?? 'legacy');
+      const planRel = planFileFor(ticketFm, manifest);
+      if (!planRel) {
+        res.status(404).json({ error: 'Plan not found' });
+        return;
+      }
+      const planPath = resolve(resolved.ticketDir, planRel);
       const currentContent = await readCurrentDocument(planPath);
       if (!currentContent) {
         res.status(404).json({ error: 'Plan not found' });

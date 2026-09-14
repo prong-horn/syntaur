@@ -14,7 +14,6 @@ import {
   countRealAcceptanceCriteria,
   hasRealObjective,
   isPlanApproved,
-  latestPlanFile,
   planDigest,
 } from '../lifecycle/facts.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
@@ -237,14 +236,15 @@ describe('fact computation', () => {
     expect(countRealAcceptanceCriteria(REAL_BODY)).toEqual({ total: 3, checked: 2 });
   });
 
-  it('latestPlanFile picks the highest revision', async () => {
+  it('latestPlanRevision picks the highest revision', async () => {
+    const { latestPlanRevision } = await import('../ticket-templates/roles.js');
     const dir = await makeTicketDir();
-    expect(await latestPlanFile(dir)).toBeNull();
+    expect(await latestPlanRevision(dir, 'plan')).toBeNull();
     await writeFile(join(dir, 'plan.md'), '# plan');
-    expect(await latestPlanFile(dir)).toBe('plan.md');
+    expect(await latestPlanRevision(dir, 'plan')).toBe('plan.md');
     await writeFile(join(dir, 'plan-v2.md'), '# plan v2');
     await writeFile(join(dir, 'plan-v10.md'), '# plan v10');
-    expect(await latestPlanFile(dir)).toBe('plan-v10.md');
+    expect(await latestPlanRevision(dir, 'plan')).toBe('plan-v10.md');
   });
 
   it('isPlanApproved is revision-bound: replan or edit invalidates', async () => {
