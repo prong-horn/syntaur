@@ -8,7 +8,7 @@ import {
   resetEventsDb,
   recordEvent,
 } from '../db/events-db.js';
-import { runTimeline } from '../commands/timeline.js';
+import { runTimeline, summarizeTimelineEvent } from '../commands/timeline.js';
 
 let home: string;
 let projectsDir: string;
@@ -90,30 +90,42 @@ afterEach(async () => {
 describe('runTimeline', () => {
   it('returns events newest-first with parsed details', async () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    recordEvent({
+      ticketId: TICKET_ID,
+      type: 'moved',
+      actor: 'human',
+      at: T1,
+      details: { from: 'backlog', to: 'in_progress', verb: 'work-start' },
+    });
     recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'agent:x', at: T2, details: { name: 'foo', value: 'bar' } });
-    recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
+    recordEvent({ ticketId: TICKET_ID, type: 'plan-approved', actor: 'agent:y', at: T3, details: { file: 'plan.md' } });
 
     const events = await runTimeline(TICKET_ID, { project: PROJECT });
     expect(events.map((e) => e.at)).toEqual([T3, T2, T1]);
-    expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set', 'status-change']);
+    expect(events.map((e) => e.type)).toEqual(['plan-approved', 'fact-set', 'moved']);
     // details parsed into an object, not a raw string
-    expect(events[2].details).toEqual({ from: null, to: 'in_progress', command: 'create' });
+    expect(events[2].details).toEqual({ from: 'backlog', to: 'in_progress', verb: 'work-start' });
     expect(typeof events[0].details).toBe('object');
   });
 
   it('--json shape: each event has parsed details + the core columns', async () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1, details: { from: null, to: 'in_progress', command: 'create' } });
+    recordEvent({
+      ticketId: TICKET_ID,
+      type: 'moved',
+      actor: 'human',
+      at: T1,
+      details: { from: 'backlog', to: 'in_progress', verb: 'work-start' },
+    });
 
     const events = await runTimeline(TICKET_ID, { project: PROJECT });
     expect(events).toHaveLength(1);
     const e = events[0];
     expect(e.ticket_id).toBe(TICKET_ID);
     expect(e.actor).toBe('human');
-    expect(e.type).toBe('status-change');
+    expect(e.type).toBe('moved');
     expect(e.at).toBe(T1);
-    expect(e.details).toEqual({ from: null, to: 'in_progress', command: 'create' });
+    expect(e.details).toEqual({ from: 'backlog', to: 'in_progress', verb: 'work-start' });
     // JSON serialization round-trips cleanly (this is what --json prints).
     const parsed = JSON.parse(JSON.stringify(events));
     expect(parsed[0].details.to).toBe('in_progress');
@@ -121,9 +133,9 @@ describe('runTimeline', () => {
 
   it('--since filters out events strictly before the bound', async () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T2 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T3 });
 
     const events = await runTimeline(TICKET_ID, { project: PROJECT, since: T2 });
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
@@ -131,28 +143,55 @@ describe('runTimeline', () => {
 
   it('--type filters to the requested event types', async () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T1 });
     recordEvent({ ticketId: TICKET_ID, type: 'fact-set', actor: 'human', at: T2 });
-    recordEvent({ ticketId: TICKET_ID, type: 'plan-approval', actor: 'human', at: T3 });
+    recordEvent({ ticketId: TICKET_ID, type: 'plan-approved', actor: 'human', at: T3 });
 
-    const events = await runTimeline(TICKET_ID, { project: PROJECT, type: ['fact-set', 'plan-approval'] });
-    expect(events.map((e) => e.type)).toEqual(['plan-approval', 'fact-set']);
+    const events = await runTimeline(TICKET_ID, { project: PROJECT, type: ['fact-set', 'plan-approved'] });
+    expect(events.map((e) => e.type)).toEqual(['plan-approved', 'fact-set']);
   });
 
   it('--limit caps the number of events returned', async () => {
     await seedProject(PROJECT, SLUG, TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T2 });
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T3 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T2 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T3 });
 
     const events = await runTimeline(TICKET_ID, { project: PROJECT, limit: 2 });
     // newest-first, so the two newest survive
     expect(events.map((e) => e.at)).toEqual([T3, T2]);
   });
 
+  it('summarizes moved and plan-approved rows for the table view', () => {
+    expect(
+      summarizeTimelineEvent({
+        ticket_id: TICKET_ID,
+        project_slug: PROJECT,
+        type: 'moved',
+        actor: 'human',
+        at: T1,
+        details: { from: 'ready', to: 'in_progress', verb: 'work-start' },
+        source_key: null,
+        event_id: 'e1',
+      }),
+    ).toBe('ready → in_progress (work-start)');
+    expect(
+      summarizeTimelineEvent({
+        ticket_id: TICKET_ID,
+        project_slug: PROJECT,
+        type: 'plan-approved',
+        actor: 'human',
+        at: T2,
+        details: { file: 'plan.md' },
+        source_key: null,
+        event_id: 'e2',
+      }),
+    ).toBe('plan.md');
+  });
+
   it('resolves a ticket by id and returns its events', async () => {
     await seedProject(PROJECT, 'solo', TICKET_ID);
-    recordEvent({ ticketId: TICKET_ID, type: 'status-change', actor: 'human', at: T1 });
+    recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T1 });
 
     const events = await runTimeline(TICKET_ID, {});
     expect(events).toHaveLength(1);

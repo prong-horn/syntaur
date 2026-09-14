@@ -8,7 +8,7 @@ export interface TimelineOptions {
   project?: string;
   json?: boolean;
   since?: string;
-  /** Comma-split list of event types (e.g. `status-change,plan-approval`). */
+  /** Comma-split list of event types (e.g. `moved,plan-approved`). */
   type?: string[];
   /** Max rows returned (default 50). */
   limit?: number;
@@ -70,17 +70,23 @@ function parseLimit(raw: string): number {
 }
 
 /**
- * One-line summary of an event for the table view. `status-change` renders
- * `from → to`; everything else renders a compact gist of `details` (key=value
- * pairs), or the bare type when there are no details.
+ * One-line summary of an event for the table view. `moved` renders
+ * `from → to (verb)`; `plan-approved` renders the plan file when present;
+ * everything else renders a compact gist of `details` (key=value pairs), or the
+ * bare type when there are no details.
  */
-function summarize(event: TimelineEvent): string {
+export function summarizeTimelineEvent(event: TimelineEvent): string {
   const d = event.details;
-  if (event.type === 'status-change' && d && typeof d === 'object') {
+  if (event.type === 'moved' && d && typeof d === 'object') {
     const obj = d as Record<string, unknown>;
     const from = obj.from == null ? '∅' : String(obj.from);
     const to = obj.to == null ? '∅' : String(obj.to);
-    return `${from} → ${to}`;
+    const verb = obj.verb != null ? ` (${String(obj.verb)})` : '';
+    return `${from} → ${to}${verb}`;
+  }
+  if (event.type === 'plan-approved' && d && typeof d === 'object') {
+    const obj = d as Record<string, unknown>;
+    if (obj.file != null) return String(obj.file);
   }
   if (d && typeof d === 'object') {
     const pairs = Object.entries(d as Record<string, unknown>)
@@ -103,7 +109,7 @@ function renderTable(events: TimelineEvent[]): string {
     e.at,
     e.actor,
     e.type,
-    summarize(e),
+    summarizeTimelineEvent(e),
   ]);
   const header = ['AT', 'ACTOR', 'TYPE', 'SUMMARY'];
   const all = [header, ...rows];
@@ -130,7 +136,7 @@ export const timelineCommand = new Command('timeline')
   .option('--since <date>', 'Only events at or after this UTC ISO timestamp (at >= since)')
   .option(
     '--type <list>',
-    'Comma-separated event-type filter (e.g. status-change,plan-approval)',
+    'Comma-separated event-type filter (e.g. moved,plan-approved)',
     (v) => v.split(',').map((s) => s.trim()).filter(Boolean),
   )
   .option('--limit <n>', 'Maximum number of events to show (default 50)', parseLimit)
