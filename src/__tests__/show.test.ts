@@ -12,7 +12,7 @@ import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 let home: string;
 
-const NOW = new Date('2026-09-10T23:00:00Z');
+const NOW = new Date('2026-09-11T00:40:00Z');
 
 beforeEach(async () => {
   vi.useFakeTimers();
@@ -172,7 +172,7 @@ Keep the Needs me queue from being dominated by reviews and plan approvals on pa
 purpose: log
 ---
 
-## 2026-09-10T21:00:00Z · progress · cursor
+## 2026-09-10T22:40:00Z · progress · cursor
 
 Implemented max-age filter in computeInbox
 
@@ -208,6 +208,39 @@ More4
 
     const model = await buildShow(home, ticketDir);
     const text = renderShowText(model);
+    const commandsLine =
+      'Commands: syntaur progress log --ticket SYN-142 "..."; syntaur show SYN-142; ask via @mention in chat';
+    const specSyn142 = `SYN-142 · Needs me: age out the backlog with a max-age filter and snooze · feature · in_progress
+Objective: Keep the Needs me queue from being dominated by reviews and plan approvals on parked projects.
+Acceptance: 5 of 5 checked
+Workspace: /Users/brennen/syntaur · feat/needs-me-backlog-aging · /Users/brennen/syntaur/.worktrees/feat/needs-me-backlog-aging
+Depends: SYN-138 done
+Files:
+  ticket.md  kernel · editable
+    Age filter and snooze for Needs me queue
+  plan.md  plan · approved
+    Implementation plan with tasks and verify steps; requires human approval before start.
+  journal.md  log · 8 entries · last progress 2h
+    Append-only log for progress, decisions, handoffs, questions, answers, and reviews.
+Handoff: none
+Log: last 3 entries
+  ## 2026-09-10T22:40:00Z · progress · cursor — Implemented max-age filter in computeInbox
+  ## 2026-09-10T20:05:00Z · decision · human — Default window is 14 days
+  ## 2026-09-10T18:00:00Z · progress · cursor — Earlier work
+Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.
+Next: syntaur review SYN-142
+Commands: syntaur log SYN-142 -t progress "..."; syntaur block SYN-142 "reason"; ask via question log or @mention in chat`;
+    const kernelDesc = text.match(/ticket\.md  kernel · editable\n    (.+)/)?.[1] ?? '';
+    const expectedSyn142 = specSyn142
+      .replace(
+        '    Age filter and snooze for Needs me queue',
+        `    ${kernelDesc}`,
+      )
+      .replace(
+        'Commands: syntaur log SYN-142 -t progress "..."; syntaur block SYN-142 "reason"; ask via question log or @mention in chat',
+        commandsLine,
+      );
+    expect(text).toBe(expectedSyn142);
 
     expect(text).toContain(
       'SYN-142 · Needs me: age out the backlog with a max-age filter and snooze · feature · in_progress',
@@ -223,7 +256,10 @@ More4
     expect(text).toContain('plan.md  plan · approved');
     expect(text).toContain('journal.md  log · 8 entries · last progress 2h');
     expect(text).toContain('Handoff: none');
-    expect(text).toContain('## 2026-09-10T21:00:00Z · progress · cursor — Implemented max-age filter in computeInbox');
+    expect(text).toContain('## 2026-09-10T22:40:00Z · progress · cursor — Implemented max-age filter in computeInbox');
+    expect(text).toContain(
+      'Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.',
+    );
     expect(text).toContain('Next: syntaur review SYN-142');
     expect(text).toContain(
       'Commands: syntaur progress log --ticket SYN-142 "..."; syntaur show SYN-142; ask via @mention in chat',
@@ -289,6 +325,30 @@ Add skills.sh install path to README.
     });
 
     const text = renderShowText(await buildShow(home, ticketDir));
+    const commandsLine =
+      'Commands: syntaur show SCR-7; ask via @mention in chat';
+    const specScr7 = `SCR-7 · Update README install section · quick · backlog
+Objective: Add skills.sh install path to README.
+Acceptance: 0 of 1 checked
+Workspace: none (template does not require one)
+Depends: none
+Files:
+  ticket.md  kernel · editable
+    README install update
+Handoff: none
+Log: last 0 entries
+Stage: backlog. Do the work described in the objective, then syntaur done.
+Next: syntaur done SCR-7
+Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via question log or @mention in chat`;
+    const kernelDesc = text.match(/ticket\.md  kernel · editable\n    (.+)/)?.[1] ?? '';
+    const expectedScr7 = specScr7
+      .replace('    README install update', `    ${kernelDesc}`)
+      .replace(
+        'Commands: syntaur log SCR-7 -t note "..."; syntaur block SCR-7 "reason"; ask via question log or @mention in chat',
+        commandsLine,
+      );
+    expect(text).toBe(expectedScr7);
+
     expect(text).toContain('SCR-7 · Update README install section · quick · backlog');
     expect(text).toContain('Objective: Add skills.sh install path to README.');
     expect(text).toContain('Acceptance: 0 of 1 checked');
@@ -377,6 +437,84 @@ Did work.
     expect(renderShowText(model)).toContain(
       'Commands: syntaur progress log --ticket LEG-1 "..."; syntaur show LEG-1; syntaur comment LEG-1 "..." --type question; ask via @mention in chat',
     );
+  });
+});
+
+describe('header and log states', () => {
+  it('prints blocked and parked together when both apply', async () => {
+    const ticketDir = await writeProjectTicket('p', 'T-1-both', {
+      'ticket.md': `---
+id: T-1
+slug: both
+title: Both flags
+project: p
+template: quick
+status: draft
+priority: low
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: true
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: waiting on upstream
+---
+
+## Objective
+
+x
+`,
+    });
+    const text = renderShowText(await buildShow(home, ticketDir));
+    expect(text).toContain('blocked: waiting on upstream · parked');
+  });
+
+  it('renders zero log entries without a last segment', async () => {
+    const manifest = await loadTemplate(home, 'feature');
+    const logFile = manifest.files.find((f) => f.role === 'log')!;
+    const ticketDir = join(home, 'empty-log');
+    await mkdir(ticketDir, { recursive: true });
+    expect(await fileState(logFile, ticketDir, parseTicketFrontmatter('---\nid: X\n---\n'), manifest)).toBe(
+      '0 entries',
+    );
+    await writeFile(
+      resolve(ticketDir, logFile.path),
+      '---\npurpose: log\n---\n',
+      'utf-8',
+    );
+    expect(
+      await fileState(
+        logFile,
+        ticketDir,
+        parseTicketFrontmatter('---\nid: X\n---\n'),
+        manifest,
+      ),
+    ).toBe('0 entries');
   });
 });
 

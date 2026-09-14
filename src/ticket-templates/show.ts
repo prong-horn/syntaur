@@ -88,11 +88,11 @@ const LOG_TAIL_COUNT = 3;
 
 async function loadDependencyStages(
   root: string,
-  dependsOn: string[],
+  depends: string[],
 ): Promise<Map<string, StageId | 'dropped'>> {
   const projectsDir = resolve(root, 'projects');
   const map = new Map<string, StageId | 'dropped'>();
-  for (const dep of dependsOn) {
+  for (const dep of depends) {
     const resolved = await resolveTicketById(projectsDir, dep);
     if (!resolved) {
       map.set(dep, 'backlog');
@@ -264,7 +264,8 @@ export function renderShowText(model: ShowModel): string {
   ];
   if (model.ticket.blockedReason) {
     headerParts.push(`blocked: ${model.ticket.blockedReason}`);
-  } else if (model.ticket.parked) {
+  }
+  if (model.ticket.parked) {
     headerParts.push('parked');
   }
   lines.push(headerParts.join(' · '));
@@ -317,7 +318,8 @@ export function renderShowText(model: ShowModel): string {
       `Stage: ${model.stage.id} (not declared by template ${model.ticket.template})`,
     );
   } else if (model.stage.instructions) {
-    lines.push(`Stage: ${model.stage.id}. ${model.stage.instructions}`);
+    const instructions = model.stage.instructions.replace(/\s+/g, ' ').trim();
+    lines.push(`Stage: ${model.stage.id}. ${instructions}`);
   } else {
     lines.push(`Stage: ${model.stage.id}`);
   }
