@@ -8,6 +8,7 @@ import type { Server } from 'node:http';
 import { createInboxRouter } from '../dashboard/api-inbox.js';
 import { clearStageTableCache } from '../dashboard/api.js';
 import { initSessionDb, closeSessionDb } from '../dashboard/session-db.js';
+import { closeEventsDb, initEventsDb, recordEvent, resetEventsDb } from '../db/events-db.js';
 import { upsertChatItem } from '../db/chat-db.js';
 import { inboxRowKey } from '../inbox/index.js';
 import type { InboxResult } from '../inbox/types.js';
@@ -133,7 +134,10 @@ beforeEach(async () => {
   // getStageTableConfig() caches module-globally; clear so each test resolves fresh.
   clearStageTableCache();
   closeSessionDb();
+  closeEventsDb();
+  resetEventsDb();
   initSessionDb(join(sandbox, 'syntaur.db'));
+  initEventsDb(join(sandbox, 'syntaur.db'));
 
   const app = express();
   app.use(express.json());
@@ -149,6 +153,8 @@ beforeEach(async () => {
 afterEach(async () => {
   await new Promise<void>((res) => server.close(() => res()));
   closeSessionDb();
+  closeEventsDb();
+  resetEventsDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
   clearStageTableCache();
@@ -571,14 +577,26 @@ describe('GET /api/inbox — maxAgeDays', () => {
       slug: 'old-review',
       status: 'review',
       project: 'p1',
-      statusHistory: [`- at: "${oldAt}"`, '  to: review', '  command: review'],
+    });
+    recordEvent({
+      ticketId: toTicketId('old-r', 'old-review'),
+      type: 'moved',
+      actor: 'human',
+      at: oldAt,
+      details: { from: 'in_progress', to: 'review', verb: 'review' },
     });
     await seed({
       id: 'new-r',
       slug: 'new-review',
       status: 'review',
       project: 'p1',
-      statusHistory: [`- at: "${freshAt}"`, '  to: review', '  command: review'],
+    });
+    recordEvent({
+      ticketId: toTicketId('new-r', 'new-review'),
+      type: 'moved',
+      actor: 'human',
+      at: freshAt,
+      details: { from: 'in_progress', to: 'review', verb: 'review' },
     });
   });
 

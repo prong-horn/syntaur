@@ -8,6 +8,7 @@ import { runInbox, inboxCommand } from '../commands/inbox.js';
 import { inboxRowKey, rowFingerprint, setSnooze, snoozeFilePath } from '../inbox/index.js';
 import { readFile } from 'node:fs/promises';
 import { clearStageTableCache } from '../dashboard/api.js';
+import { closeEventsDb, initEventsDb, recordEvent, resetEventsDb } from '../db/events-db.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 
@@ -79,12 +80,16 @@ beforeEach(async () => {
 
   origSyntaurHome = process.env.SYNTAUR_HOME;
   process.env.SYNTAUR_HOME = root;
+  resetEventsDb();
+  initEventsDb(join(root, 'syntaur.db'));
   // getStageTableConfig() caches module-globally; clear so each test resolves fresh
   // against the temp SYNTAUR_HOME (default status config here).
   clearStageTableCache();
 });
 
 afterEach(async () => {
+  closeEventsDb();
+  resetEventsDb();
   if (origSyntaurHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = origSyntaurHome;
   clearStageTableCache();
@@ -327,19 +332,21 @@ describe('runInbox — max-age and snoozes', () => {
   const freshAt = new Date(now - 12 * 3_600_000).toISOString().replace(/\.\d{3}Z$/, 'Z');
 
   it('--max-age 1 hides an old review', async () => {
-    await seed({
-      id: 'old-r',
-      slug: 'old-rev',
-      status: 'review',
-      project: 'p1',
-      statusHistory: [`- at: "${oldAt}"`, '  to: review', '  command: review'],
+    await seed({ id: 'old-r', slug: 'old-rev', status: 'review', project: 'p1' });
+    recordEvent({
+      ticketId: 'old-r',
+      type: 'moved',
+      actor: 'human',
+      at: oldAt,
+      details: { from: 'in_progress', to: 'review', verb: 'review' },
     });
-    await seed({
-      id: 'new-r',
-      slug: 'new-rev',
-      status: 'review',
-      project: 'p1',
-      statusHistory: [`- at: "${freshAt}"`, '  to: review', '  command: review'],
+    await seed({ id: 'new-r', slug: 'new-rev', status: 'review', project: 'p1' });
+    recordEvent({
+      ticketId: 'new-r',
+      type: 'moved',
+      actor: 'human',
+      at: freshAt,
+      details: { from: 'in_progress', to: 'review', verb: 'review' },
     });
     const result = await runInbox({ maxAge: '1' });
     expect(result.items.map((i) => i.ticketSlug)).toEqual(['new-rev']);

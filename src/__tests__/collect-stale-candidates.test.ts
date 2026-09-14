@@ -3,6 +3,10 @@ import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { collectStaleCandidates } from '../dashboard/api.js';
+import { closeEventsDb, initEventsDb, resetEventsDb } from '../db/events-db.js';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+useHermeticSyntaurHome();
 
 let testDir: string;
 let projectsDir: string;
@@ -14,24 +18,18 @@ const STALE_MD = `---
 id: stale-1
 slug: stale-one
 title: Stale One
-status: blocked
+status: in_progress
 priority: medium
 created: "2026-01-01T10:00:00Z"
 updated: "2026-01-05T10:00:00Z"
 assignee: codex
 externalIds: []
 depends_on: []
-blockedReason: waiting on infra
-disposition: blocked
-statusHistory:
-  - at: "2026-01-05T10:00:00Z"
-    from: in_progress
-    to: blocked
-    command: block
-    by: human
+blocked: waiting on infra
+parked: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -44,17 +42,18 @@ const FRESH_MD = `---
 id: fresh-1
 slug: fresh-one
 title: Fresh One
-status: draft
+status: backlog
 priority: medium
 created: "2026-06-17T10:00:00Z"
 updated: "2026-06-17T10:00:00Z"
 assignee: null
 externalIds: []
 depends_on: []
-blockedReason: null
+blocked: null
+parked: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -63,7 +62,10 @@ tags: []
 # Fresh One`;
 
 beforeEach(async () => {
+  closeEventsDb();
+  resetEventsDb();
   testDir = await mkdtemp(join(tmpdir(), 'syntaur-collect-'));
+  initEventsDb(join(testDir, 'syntaur.db'));
   projectsDir = resolve(testDir, 'projects');
   const aDir = resolve(projectsDir, 'p1', 'tickets');
   await mkdir(resolve(aDir, 'stale-one'), { recursive: true });
@@ -74,12 +76,14 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  closeEventsDb();
+  resetEventsDb();
   await rm(testDir, { recursive: true, force: true });
 });
 
 describe('collectStaleCandidates', () => {
   it('returns only contradiction-stale tickets, keyed by id with reasons', async () => {
-    const candidates = await collectStaleCandidates(projectsDir, resolve(testDir, 'standalone'));
+    const candidates = await collectStaleCandidates(projectsDir);
     const ids = candidates.map((c) => c.ticketId);
     expect(ids).toContain('stale-1');
     expect(ids).not.toContain('fresh-1');

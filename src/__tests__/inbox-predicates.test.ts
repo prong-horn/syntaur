@@ -115,20 +115,20 @@ describe('isPlanAwaitingApproval', () => {
   });
 
   it('negative: planning WITHOUT a plan file', async () => {
-    const a = ticket('status: planning');
+    const a = ticket('status: planning\ntemplate: feature');
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
-  it('negative: plan on disk without plan.file set', async () => {
+  it('positive: backlog WITH plan role file on disk and no plan.file set', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
-    const a = ticket('status: planning');
-    expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
+    const a = ticket('status: backlog\ntemplate: feature');
+    expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
 
   it('positive: planning WITH plan.file and an unapproved plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
     const a = ticket(
-      'status: planning\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
+      'status: planning\ntemplate: feature\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
@@ -138,16 +138,24 @@ describe('isPlanAwaitingApproval', () => {
     await writeFile(join(dir, 'plan.md'), content);
     const digest = planDigest(content);
     const a = ticket(
-      `status: planning\nplan:\n  file: plan.md\n  approvedDigest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
+      `status: planning\ntemplate: feature\nplan:\n  file: plan.md\n  approvedDigest: ${digest}\n  by: human\n  at: "2026-06-16T00:00:00Z"`,
     );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
-  it('negative: wrong status even with an unapproved plan', async () => {
+  it('negative: terminal status even with an unapproved plan', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
-    for (const s of ['ready', 'in_progress', 'backlog']) {
-      expect(await isPlanAwaitingApproval(ticket(`status: ${s}`), dir)).toBe(false);
+    for (const s of ['done', 'dropped']) {
+      expect(await isPlanAwaitingApproval(ticket(`status: ${s}\ntemplate: feature`), dir)).toBe(false);
     }
+  });
+
+  it('positive: in_progress with an unapproved plan still qualifies', async () => {
+    await writeFile(join(dir, 'plan.md'), '# plan content\n');
+    const a = ticket(
+      'status: in_progress\ntemplate: feature\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
+    );
+    expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
 });
 
@@ -156,22 +164,8 @@ describe('isPlanAwaitingApproval', () => {
 describe('resolveSince', () => {
   const now = Date.parse('2026-06-16T12:00:00Z');
 
-  it('review: picks latest statusHistory entry with to===review', () => {
-    const a = ticket(
-      [
-        'status: review',
-        'statusHistory:',
-        '  - at: "2026-06-10T00:00:00Z"',
-        '    to: in_progress',
-        '    command: start',
-        '  - at: "2026-06-11T00:00:00Z"',
-        '    to: review',
-        '    command: review',
-        '  - at: "2026-06-12T00:00:00Z"',
-        '    to: review',
-        '    command: review',
-      ].join('\n'),
-    );
+  it('review: falls back to updated when no moved events exist', () => {
+    const a = ticket('status: review\nupdated: "2026-06-12T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-12T00:00:00Z');
   });
 
@@ -181,37 +175,12 @@ describe('resolveSince', () => {
     expect(resolveSince('question', a, now, c)).toBe('2026-06-09T08:00:00Z');
   });
 
-  it('plan-approval: uses latest statusHistory .at', () => {
-    const a = ticket(
-      [
-        'status: planning',
-        'statusHistory:',
-        '  - at: "2026-06-05T00:00:00Z"',
-        '    to: backlog',
-        '    command: ""',
-        '  - at: "2026-06-08T00:00:00Z"',
-        '    to: planning',
-        '    command: plan',
-      ].join('\n'),
-    );
+  it('plan-approval: falls back to updated when no moved events exist', () => {
+    const a = ticket('status: planning\nupdated: "2026-06-08T00:00:00Z"');
     expect(resolveSince('plan-approval', a, now)).toBe('2026-06-08T00:00:00Z');
   });
 
-  it('fallback: category entry missing → latest statusHistory .at', () => {
-    const a = ticket(
-      [
-        'status: review',
-        'statusHistory:',
-        '  - at: "2026-06-07T00:00:00Z"',
-        '    to: in_progress',
-        '    command: start',
-      ].join('\n'),
-    );
-    // no to===review entry → falls back to latest statusHistory .at
-    expect(resolveSince('review', a, now)).toBe('2026-06-07T00:00:00Z');
-  });
-
-  it('fallback: no statusHistory → frontmatter updated', () => {
+  it('fallback: no moved events → frontmatter updated', () => {
     const a = ticket('status: review\nupdated: "2026-06-06T00:00:00Z"\ncreated: "2026-06-01T00:00:00Z"');
     expect(resolveSince('review', a, now)).toBe('2026-06-06T00:00:00Z');
   });
@@ -266,8 +235,16 @@ describe('computeAgeMs', () => {
 
 describe('deriveReviewVerbs', () => {
   it('returns fixed v2 review verbs regardless of status config', () => {
-    expect(deriveReviewVerbs(defaultStatusConfig())).toEqual({ accept: 'done', reopen: 'reopen' });
-    expect(deriveReviewVerbs()).toEqual({ accept: 'done', reopen: 'reopen' });
+    expect(deriveReviewVerbs(defaultStatusConfig())).toEqual({
+      accept: 'done',
+      reopen: null,
+      logReviewHint: 'Log an approving review',
+    });
+    expect(deriveReviewVerbs()).toEqual({
+      accept: 'done',
+      reopen: null,
+      logReviewHint: 'Log an approving review',
+    });
   });
 });
 
@@ -289,13 +266,19 @@ describe('buildAction', () => {
       command: 'syntaur done uuid-2',
     });
   });
-  it('review: falls back to Reopen when accept is null', () => {
-    expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: 'reopen' })).toEqual({
-      verb: 'Reopen',
-      command: 'syntaur reopen my-slug --project proj',
+  it('review: falls back to log-review hint when accept is null', () => {
+    expect(
+      buildAction('review', projItem, {
+        acceptCommand: null,
+        reopenCommand: null,
+        logReviewHint: 'Log an approving review',
+      }),
+    ).toEqual({
+      verb: 'Log review',
+      command: 'Log an approving review',
     });
   });
-  it('review: inspect fallback when neither accept nor reopen resolves', () => {
+  it('review: inspect fallback when no review action resolves', () => {
     expect(buildAction('review', projItem, { acceptCommand: null, reopenCommand: null })).toEqual({
       verb: 'Review',
       command: 'syntaur timeline my-slug --project proj',
@@ -310,7 +293,7 @@ describe('buildAction', () => {
   it('plan-approval: Approve plan command', () => {
     expect(buildAction('plan-approval', projItem, {})).toEqual({
       verb: 'Approve plan',
-      command: 'syntaur plan approve my-slug --project proj',
+      command: 'syntaur approve my-slug --project proj',
     });
   });
 });

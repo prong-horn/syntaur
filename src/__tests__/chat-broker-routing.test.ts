@@ -189,7 +189,7 @@ beforeEach(async () => {
       'project: syntaur-meta',
       'workspace:',
       `  repository: ${worktree}`,
-      `  worktreePath: ${worktree}`,
+      `  worktree: ${worktree}`,
       '  branch: feat/chat-demo',
       '---',
       '',

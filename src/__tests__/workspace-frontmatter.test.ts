@@ -12,7 +12,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -25,13 +25,13 @@ describe('updateTicketWorkspace', () => {
   it('updates all nested fields in place', () => {
     const next = updateTicketWorkspace(SAMPLE, {
       repository: '/Users/x/repo',
-      worktreePath: '/Users/x/repo/.worktrees/demo',
+      worktree: '/Users/x/repo/.worktrees/demo',
       branch: 'feature/demo',
       parentBranch: 'main',
     });
     const parsed = parseTicketFrontmatter(next);
     expect(parsed.workspace.repository).toBe('/Users/x/repo');
-    expect(parsed.workspace.worktreePath).toBe('/Users/x/repo/.worktrees/demo');
+    expect(parsed.workspace.worktree).toBe('/Users/x/repo/.worktrees/demo');
     expect(parsed.workspace.branch).toBe('feature/demo');
     expect(parsed.workspace.parentBranch).toBe('main');
   });
@@ -51,10 +51,10 @@ describe('updateTicketWorkspace', () => {
 
   it('updates only the provided field, leaving others untouched', () => {
     const next = updateTicketWorkspace(SAMPLE, {
-      worktreePath: '/tmp/wt',
+      worktree: '/tmp/wt',
     });
     const parsed = parseTicketFrontmatter(next);
-    expect(parsed.workspace.worktreePath).toBe('/tmp/wt');
+    expect(parsed.workspace.worktree).toBe('/tmp/wt');
     expect(parsed.workspace.branch).toBeNull();
     expect(parsed.workspace.parentBranch).toBeNull();
   });
@@ -81,7 +81,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -107,7 +107,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: /tmp/r
-  worktreePath: /tmp/w
+  worktree: /tmp/w
   branch: old
   parentBranch: main
   customField: keep-me
@@ -134,7 +134,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: /tmp/r
-  worktreePath: /tmp/w
+  worktree: /tmp/w
   branch: old
   parentBranch: main
 tags: []

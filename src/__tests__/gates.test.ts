@@ -8,8 +8,10 @@ import {
   computeNextLine,
   evaluateGate,
   evaluateVerbGates,
+  freshnessThresholdMs,
   GATE_HINTS,
   type GateContext,
+  type MovedEvent,
 } from '../ticket-templates/gates.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
@@ -44,7 +46,7 @@ function baseFm(overrides: Partial<TicketFrontmatter> = {}): TicketFrontmatter {
     workspace: {
       repository: null,
       branch: null,
-      worktreePath: null,
+      worktree: null,
       parentBranch: null,
     },
     tags: [],
@@ -77,6 +79,7 @@ function ctx(
   body: string,
   log = '',
   deps = new Map<string, 'done' | 'dropped'>(),
+  moves: MovedEvent[] = [],
 ): GateContext {
   return {
     ticketDir,
@@ -85,6 +88,7 @@ function ctx(
     ticketBody: body,
     logEntries: parseLogEntries(log),
     dependencyStages: deps,
+    moves,
   };
 }
 
@@ -141,7 +145,7 @@ describe('gate evaluators', () => {
     expect(done.pass).toBe(true);
   });
 
-  it('handoff-logged passes on any handoff entry (transitional rule)', async () => {
+  it('handoff-logged passes on any handoff when no in_progress/reopen moves exist', async () => {
     const manifest = await loadBuiltin('feature');
     const log = `## 2026-09-01T00:00:00Z · handoff · human\n\nBatoning to review.\n`;
     const result = await evaluateGate(
@@ -149,6 +153,43 @@ describe('gate evaluators', () => {
       ctx(join(home, 't'), baseFm(), manifest, '', log),
     );
     expect(result.pass).toBe(true);
+  });
+
+  it('handoff-logged fails when handoff predates the last move into in_progress', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = [
+      '## 2026-09-01T00:00:00Z · handoff · human',
+      '',
+      'Old handoff.',
+      '',
+      '## 2026-09-03T00:00:00Z · progress · human',
+      '',
+      'More work.',
+    ].join('\n');
+    const moves: MovedEvent[] = [
+      { at: '2026-09-02T00:00:00Z', from: 'ready', to: 'in_progress', verb: 'start' },
+    ];
+    const result = await evaluateGate(
+      'handoff-logged',
+      ctx(join(home, 't'), baseFm(), manifest, '', log, new Map(), moves),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/after the current work cycle/);
+  });
+
+  it('handoff-logged passes when handoff is after the last reopen', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-04T00:00:00Z · handoff · human\n\nFresh handoff.\n`;
+    const moves: MovedEvent[] = [
+      { at: '2026-09-01T00:00:00Z', from: 'ready', to: 'in_progress', verb: 'start' },
+      { at: '2026-09-03T00:00:00Z', from: 'done', to: 'review', verb: 'reopen' },
+    ];
+    const result = await evaluateGate(
+      'handoff-logged',
+      ctx(join(home, 't'), baseFm(), manifest, '', log, new Map(), moves),
+    );
+    expect(result.pass).toBe(true);
+    expect(freshnessThresholdMs(moves, 'in_progress')).toBe(Date.parse('2026-09-03T00:00:00Z'));
   });
 
   it('handoff-logged fails when the log has no handoff entry', async () => {
@@ -168,6 +209,34 @@ describe('gate evaluators', () => {
     const result = await evaluateGate(
       'review-clean',
       ctx(join(home, 't'), baseFm(), manifest, '', log),
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  it('review-clean fails when the latest review predates the last move into review', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-01T00:00:00Z · review · pi\nverdict: approve · open: high=0 medium=0\n\nStale.\n`;
+    const moves: MovedEvent[] = [
+      { at: '2026-09-02T00:00:00Z', from: 'in_progress', to: 'review', verb: 'review' },
+    ];
+    const result = await evaluateGate(
+      'review-clean',
+      ctx(join(home, 't'), baseFm(), manifest, '', log, new Map(), moves),
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reason).toMatch(/before the current review cycle/);
+  });
+
+  it('review-clean passes when review is after reopen into review', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = `## 2026-09-04T00:00:00Z · review · pi\nverdict: approve · open: high=0 medium=0\n\nFresh.\n`;
+    const moves: MovedEvent[] = [
+      { at: '2026-09-02T00:00:00Z', from: 'in_progress', to: 'review', verb: 'review' },
+      { at: '2026-09-03T00:00:00Z', from: 'done', to: 'review', verb: 'reopen' },
+    ];
+    const result = await evaluateGate(
+      'review-clean',
+      ctx(join(home, 't'), baseFm(), manifest, '', log, new Map(), moves),
     );
     expect(result.pass).toBe(true);
   });
@@ -265,7 +334,7 @@ describe('Next line per built-in stage', () => {
 workspace:
   repository: /repo
   branch: main
-  worktreePath: /tmp/wt
+  worktree: /tmp/wt
   parentBranch: main
 `;
       await writeFile(resolve(dir, 'ticket.md'), updated, 'utf-8');
@@ -316,7 +385,7 @@ describe('all gate ids pass and fail', () => {
           workspace: {
             repository: '/repo',
             branch: 'main',
-            worktreePath: '/wt',
+            worktree: '/wt',
             parentBranch: 'main',
           },
         }),

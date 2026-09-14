@@ -182,9 +182,8 @@ program
 
 program
   .command('archive')
-  .description('Archive a ticket or a project (hidden from normal views; restorable)')
-  .argument('<target>', 'Ticket id, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as a ticket id within this project')
+  .description('Archive a project (hidden from normal views; restorable)')
+  .argument('<target>', 'Project slug')
   .option('--reason <text>', 'Optional reason recorded with the archive')
   .option('--dir <path>', 'Override default project directory')
   .action(
@@ -195,9 +194,8 @@ program
 
 program
   .command('restore')
-  .description('Restore an archived ticket or project (preserves prior status)')
-  .argument('<target>', 'Ticket id, or a project slug')
-  .option('--project <slug>', 'Resolve <target> as a ticket id within this project')
+  .description('Restore an archived project')
+  .argument('<target>', 'Project slug')
   .option('--dir <path>', 'Override default project directory')
   .action(
     runCommand(async (target, options) => {

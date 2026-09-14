@@ -57,7 +57,7 @@ export interface ContextSectionInput {
   ticketDir?: string | null;
   /** Log-role path when the template declares one. */
   logRolePath?: string | null;
-  worktreePath: string | null;
+  worktree: string | null;
   branch?: string | null;
   /** Which tier of the resolution chain produced the cwd. */
   cwdTier?: 'worktree' | 'repository' | 'project' | 'home' | null;
@@ -149,9 +149,9 @@ export async function buildStandingContext(
  */
 export function buildContextSection(context: ContextSectionInput): string {
   const others = (context.roster ?? []).filter((entry) => entry.id !== context.agent?.id);
-  const tier = context.cwdTier ?? (context.worktreePath ? 'worktree' : null);
-  const cwdLabel = context.worktreePath
-    ? `${context.worktreePath} (${tier ?? 'worktree'})`
+  const tier = context.cwdTier ?? (context.worktree ? 'worktree' : null);
+  const cwdLabel = context.worktree
+    ? `${context.worktree} (${tier ?? 'worktree'})`
     : '(unresolved)';
   const progressLine = context.logRolePath
     ? `Reply in chat. Syntaur records each turn that edits files or runs commands in ${context.logRolePath}; do not log progress yourself.`

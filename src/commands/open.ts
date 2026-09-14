@@ -26,7 +26,7 @@ interface OpenOptions {
 export async function runOpen(
   ticketArg: string | undefined,
   options: OpenOptions,
-): Promise<{ worktreePath: string; recreated: boolean; copied: boolean; launched: 'editor' | 'terminal' | null }> {
+): Promise<{ worktree: string; recreated: boolean; copied: boolean; launched: 'editor' | 'terminal' | null }> {
   // A UUID (--id) is globally unique, so it must resolve WITHOUT a project
   // narrow (the resolver's project branch would otherwise treat it as a slug
   // under that project). --project only applies to a positional slug.
@@ -45,8 +45,8 @@ export async function runOpen(
     });
   }
   const fm = parseTicketFrontmatter(await readFile(ticketPath, 'utf-8'));
-  const worktreePath = fm.workspace?.worktreePath;
-  if (!worktreePath) {
+  const worktree = fm.workspace?.worktree;
+  if (!worktree) {
     throw new SyntaurError('No worktree recorded for this ticket.', {
       remediation: 'create one with `syntaur worktree create`',
     });
@@ -54,13 +54,13 @@ export async function runOpen(
 
   // If the directory is gone (e.g. cleaned up by `worktree gc`), recover it.
   let recreated = false;
-  if (!(await fileExists(worktreePath))) {
+  if (!(await fileExists(worktree))) {
     const allowRecreate =
       Boolean(options.recreate) ||
       (isInteractiveTerminal() &&
-        (await confirmPrompt(`Worktree dir is missing (${worktreePath}). Recreate it now?`, true)));
+        (await confirmPrompt(`Worktree dir is missing (${worktree}). Recreate it now?`, true)));
     if (!allowRecreate) {
-      throw new SyntaurError(`Worktree directory is missing: ${worktreePath}`, {
+      throw new SyntaurError(`Worktree directory is missing: ${worktree}`, {
         remediation: 're-run with --recreate to rebuild it at the recorded path',
       });
     }
@@ -81,15 +81,15 @@ export async function runOpen(
     recreated = outcome.status === 'recreated';
   }
 
-  const copied = copyToClipboard(worktreePath);
+  const copied = copyToClipboard(worktree);
   let launched: 'editor' | 'terminal' | null = null;
   if (options.editor) {
-    launched = openInEditor(worktreePath) ? 'editor' : null;
+    launched = openInEditor(worktree) ? 'editor' : null;
   } else if (options.terminal) {
-    launched = openInTerminal(worktreePath, await readConfig()) ? 'terminal' : null;
+    launched = openInTerminal(worktree, await readConfig()) ? 'terminal' : null;
   }
 
-  return { worktreePath, recreated, copied, launched };
+  return { worktree, recreated, copied, launched };
 }
 
 export const openCommand = new Command('open')
@@ -105,12 +105,12 @@ export const openCommand = new Command('open')
   .option('--json', 'Output as JSON')
   .action(async (ticketArg: string | undefined, options: OpenOptions) => {
     try {
-      const { worktreePath, recreated, copied, launched } = await runOpen(ticketArg, options);
+      const { worktree, recreated, copied, launched } = await runOpen(ticketArg, options);
       if (options.json) {
-        console.log(JSON.stringify({ worktreePath, recreated, copied, launched }, null, 2));
+        console.log(JSON.stringify({ worktree, recreated, copied, launched }, null, 2));
         return;
       }
-      console.log(worktreePath);
+      console.log(worktree);
       if (recreated) console.log('(recreated the missing worktree)');
       if (copied) console.log('(copied to clipboard)');
       if (launched) console.log(`(opened in ${launched})`);

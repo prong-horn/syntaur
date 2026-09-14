@@ -15,6 +15,7 @@ interface ContextFile {
   ticketDir?: string;
   workspaceRoot?: string;
   branch?: string;
+  worktree?: string;
   worktreePath?: string;
   repository?: string;
   boundAt?: string;
@@ -24,7 +25,7 @@ const TICKET_FIELDS = ['ticketId', 'ticketDir'] as const;
 // context.json is a WORKSPACE MARKER now — these are the fields the launcher/grab
 // flow writes. The active ticket resolves from the session's open engagement,
 // NOT from this file (the legacy ticket scalars were removed).
-const WORKSPACE_MARKER_FIELDS = ['repository', 'worktreePath', 'workspaceRoot', 'branch'] as const;
+const WORKSPACE_MARKER_FIELDS = ['repository', 'worktree', 'workspaceRoot', 'branch'] as const;
 
 function hasAnyTicketField(ctx: ContextFile | null): boolean {
   if (!ctx) return false;

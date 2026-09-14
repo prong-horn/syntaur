@@ -1,10 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  Archive,
-  ArchiveRestore,
   ArrowUpRight,
-  ExternalLink,
   FilePenLine,
   Hammer,
   NotebookPen,
@@ -12,7 +9,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { CopyButton } from '../components/CopyButton';
-import { useTicket, useProject, useTicketSessions, useTicketUsage, type TicketTransitionAction, type ExternalIdInfo } from '../hooks/useProjects';
+import { useTicket, useProject, useTicketSessions, useTicketUsage, type TicketTransitionAction } from '../hooks/useProjects';
 import { ticketEditHref, ticketPageHref } from '../lib/routes';
 import { useTicketEvents } from '../hooks/useTicketEvents';
 import { formatShortDate, formatShortDateTime } from '../lib/format';
@@ -396,25 +393,6 @@ export function TicketDetail() {
     enabledTransitions[0] ??
     null;
 
-  async function handleArchiveTicket(archived: boolean) {
-    setTransitionError(null);
-    try {
-      const response = await fetch(
-        `/api/tickets/${id}/${archived ? 'archive' : 'unarchive'}`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json' } },
-      );
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.error || `HTTP ${response.status}`);
-      }
-      refetch();
-      refetchEvents();
-      showToast(archived ? 'Ticket archived' : 'Ticket restored', 'success');
-    } catch (err) {
-      setTransitionError((err as Error).message);
-    }
-  }
-
   async function handleDeleteTicket() {
     setDeleteLoading(true);
     try {
@@ -542,12 +520,6 @@ export function TicketDetail() {
       href: ticketEditHref(id, 'decision-record'),
     },
     {
-      key: ticket.archived ? 'unarchive' : 'archive',
-      label: ticket.archived ? 'Restore ticket' : 'Archive ticket',
-      icon: ticket.archived ? ArchiveRestore : Archive,
-      onSelect: () => handleArchiveTicket(!ticket.archived),
-    },
-    {
       key: 'delete',
       label: 'Delete ticket',
       icon: Trash2,
@@ -588,7 +560,7 @@ export function TicketDetail() {
             </span>
           )}
           <span className="flex shrink-0 items-center gap-2">
-            {!ticket.workspace?.worktreePath && (
+            {!ticket.workspace?.worktree && (
               <CreateWorktreeButton
                 ticketId={ticket.id}
                 defaultBranch={
@@ -627,27 +599,21 @@ export function TicketDetail() {
           </p>
         ) : null}
 
-        {ticket.blockedReason ? (
+        {ticket.blocked ? (
           <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
-            <strong>Blocked reason:</strong> {ticket.blockedReason}
+            <strong>Blocked:</strong> {ticket.blocked}
           </div>
         ) : null}
 
-        {/* Pin divergence: the always-visible "would otherwise be Y" (v3) */}
-        {ticket.override && ticket.derived &&
-          ticket.derived.derivedStatus !== ticket.status ? (
+        {ticket.parked ? (
           <div className="mt-4 rounded-md border border-warning-foreground/30 bg-warning px-4 py-3 text-sm text-warning-foreground">
-            <strong>Pinned to {ticket.status}</strong> by {ticket.override.source}
-            {ticket.override.reason ? <> — “{ticket.override.reason}”</> : null}
-            {' · '}would otherwise be <strong>{ticket.derived.derivedStatus}</strong>
+            <strong>Parked:</strong> {ticket.parked}
           </div>
         ) : null}
 
-        {/* Next action from the phase ladder */}
-        {ticket.derived?.nextAction ? (
+        {ticket.next ? (
           <p className="mt-3 text-xs text-muted-foreground">
-            <span className="font-medium text-foreground">Next:</span>{' '}
-            {ticket.derived.nextAction}
+            <span className="font-medium text-foreground">Next:</span> {ticket.next}
           </p>
         ) : null}
       </div>
@@ -656,7 +622,7 @@ export function TicketDetail() {
         <DependencyPanel
           projectSlug={projectSlug}
           dependencies={enrichedDeps}
-          blockedReason={ticket.blockedReason}
+          blockedReason={ticket.blocked}
           onTicketChange={() => refetch()}
         />
       )}
@@ -713,16 +679,6 @@ export function TicketDetail() {
                   <TemplateChip template={ticket.template} compact />
                 </DetailNodeRow>
               )}
-              {ticket.disposition && ticket.disposition !== 'active' && (
-                <DetailNodeRow label="Disposition">
-                  <span
-                    className="rounded-full border border-warning-foreground/40 px-2 py-0.5 text-[11px] text-warning-foreground"
-                    title="Disposition dimension — orthogonal to phase"
-                  >
-                    {ticket.disposition}
-                  </span>
-                </DetailNodeRow>
-              )}
               <DetailRow
                 label="Updated"
                 value={`${formatShortDateTime(ticket.updated)} · Created ${formatShortDate(ticket.created)}`}
@@ -730,8 +686,8 @@ export function TicketDetail() {
               {ticket.workspace.repository && (
                 <DetailRow label="Repository" value={ticket.workspace.repository} copyable />
               )}
-              {ticket.workspace.worktreePath && (
-                <DetailRow label="Worktree" value={ticket.workspace.worktreePath} copyable />
+              {ticket.workspace.worktree && (
+                <DetailRow label="Worktree" value={ticket.workspace.worktree} copyable />
               )}
               {ticket.workspace.branch && (
                 <DetailRow label="Branch" value={ticket.workspace.branch} copyable />
@@ -739,9 +695,6 @@ export function TicketDetail() {
               {ticket.workspace.parentBranch && (
                 <DetailRow label="Parent branch" value={ticket.workspace.parentBranch} copyable />
               )}
-              {ticket.externalIds.map((entry, idx) => (
-                <ExternalIdRow key={`${entry.system}:${entry.id}:${idx}`} entry={entry} />
-              ))}
             </dl>
           </SectionCard>
 
@@ -823,27 +776,3 @@ function DetailNodeRow({ label, children }: { label: string; children: ReactNode
   );
 }
 
-function ExternalIdRow({ entry }: { entry: ExternalIdInfo }) {
-  const hasUrl = entry.url != null && entry.url.length > 0;
-  return (
-    <div className="flex items-start justify-between gap-3">
-      <dt className="text-muted-foreground">{entry.system}</dt>
-      <dd className="flex items-center gap-1.5 max-w-[60%] text-right text-foreground break-all">
-        {hasUrl ? (
-          <a
-            href={entry.url ?? undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label={`Open ${entry.system}:${entry.id} in ${entry.system}`}
-            className="flex items-center gap-1.5 min-w-0 text-primary hover:underline"
-          >
-            <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
-            <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-          </a>
-        ) : (
-          <span className="truncate min-w-0" title={entry.id}>{entry.id}</span>
-        )}
-      </dd>
-    </div>
-  );
-}

@@ -32,8 +32,8 @@ files:
     description: Work log for the bug fix.
     entryTypes: [progress, decision, handoff, note, question, answer, review]
 gates:
-  start: [deps-done, workspace-set]
-  done: [criteria-checked, handoff-logged, review-clean]
+  start: [workspace-set]
+  done: [criteria-checked, handoff-logged, review-clean, deps-done]
 ---
 
 Built-in template; copy the directory to customise

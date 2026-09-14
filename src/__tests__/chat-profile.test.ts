@@ -262,7 +262,7 @@ Ticket chat
     projectSlug: 'syntaur-meta',
     ticketSlug: 'ticket-chat-single-agent',
     ticketTitle: 'Ticket chat',
-    worktreePath: '/tmp/worktree',
+    worktree: '/tmp/worktree',
     branch: 'feat/chat',
   };
 

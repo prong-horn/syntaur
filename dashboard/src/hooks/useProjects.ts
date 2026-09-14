@@ -47,48 +47,23 @@ export interface TicketSummary {
   title: string;
   status: string;
   template: string | null;
-  /** Explicit `workflow:` override (null → resolved via binding). */
-  workflow: string | null;
-  /** The workflow id this ticket resolves to. */
-  resolvedWorkflow: string;
-  /** Human label of the resolved workflow. */
-  workflowLabel: string;
-  /** Display label of the current status WITHIN the resolved workflow. */
   statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   depends_on: string[];
   links: string[];
   tags: string[];
-  externalIds: ExternalIdInfo[];
+  blocked: string | null;
+  parked: string | null;
   created: string;
   updated: string;
-  archived: boolean;
-  archivedAt: string | null;
-  archivedReason: string | null;
-  /** Loader-derived: timestamp of terminal transition, null otherwise. */
   completedAt: string | null;
-  /** Loader-derived: ms in current headline status; null when no history. */
   statusAge: number | null;
-  /** Loader-derived: ms since last phase change; null when never recorded. */
-  phaseAge: number | null;
-  /** Cached phase dimension (null pre-migration). */
-  phase: string | null;
-  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
-  disposition: string | null;
-  /** A sticky status override (pin) is active. */
-  pinned: boolean;
-  /**
-   * Evaluator facts for AQL board filtering; omitted on compute error or for
-   * ProjectDetail's summary path (chips-only by design).
-   */
-  facts?: Record<string, boolean | number | string[]>;
 }
 
 export interface TicketBoardItem extends TicketSummary {
   projectSlug: string | null;
   projectTitle: string | null;
-  blockedReason: string | null;
   availableVerbs: TicketTransitionAction[];
 }
 
@@ -147,7 +122,7 @@ export interface ProjectDetail {
 
 export interface WorkspaceInfo {
   repository: string | null;
-  worktreePath: string | null;
+  worktree: string | null;
   branch: string | null;
   parentBranch: string | null;
 }
@@ -218,13 +193,6 @@ export interface TicketDetail {
   title: string;
   status: string;
   template: string | null;
-  /** Explicit `workflow:` override (null → resolved via binding). */
-  workflow: string | null;
-  /** The workflow id this ticket resolves to. */
-  resolvedWorkflow: string;
-  /** Human label of the resolved workflow. */
-  workflowLabel: string;
-  /** Display label of the current status WITHIN the resolved workflow. */
   statusLabel: string;
   priority: TicketSummary['priority'];
   assignee: string | null;
@@ -232,13 +200,13 @@ export interface TicketDetail {
   links: string[];
   reverseLinks: string[];
   enrichedLinks: EnrichedLink[];
-  blockedReason: string | null;
+  blocked: string | null;
+  parked: string | null;
   workspace: WorkspaceInfo;
-  externalIds: ExternalIdInfo[];
   tags: string[];
-  archived: boolean;
-  archivedAt: string | null;
-  archivedReason: string | null;
+  completedAt: string | null;
+  statusAge: number | null;
+  next: string | null;
   created: string;
   updated: string;
   body: string;
@@ -249,38 +217,9 @@ export interface TicketDetail {
   progress: TicketProgress | null;
   comments: TicketComments | null;
   referencedBy: TicketReference[];
-  /** Full per-session stage-attribution history (oldest first); empty when the server's session DB is uninitialized. */
   engagements: EngagementInfo[];
   availableVerbs: TicketTransitionAction[];
   templateBlock: TicketTemplateBlock;
-  // ── derived-status v3 (server-materialized; may be absent on old servers) ──
-  /** Cached phase dimension (null pre-migration). */
-  phase?: string | null;
-  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
-  disposition?: string | null;
-  /** The active sticky pin, when present. */
-  override?: { status: string; source: string; reason: string | null; at: string } | null;
-  /** Server-materialized derivation: pre-override headline + next action + facts.
-   * Null for terminal tickets (derivation defers). */
-  derived?: {
-    derivedStatus: string;
-    nextAction: string | null;
-    facts: Record<string, boolean | number | string[]>;
-    /** Declared bool/number custom facts only (server pre-separated them). */
-    customFacts?: Record<string, boolean | number>;
-    /** Per-attestation-fact state with per-actor verdicts + staleness. */
-    attestations?: Array<{
-      fact: string;
-      binds: 'plan' | 'commit' | 'none';
-      records: Array<{
-        actor: string;
-        verdict: 'approved' | 'changes-requested';
-        at: string;
-        note: string | null;
-        stale: boolean;
-      }>;
-    }>;
-  } | null;
 }
 
 export interface TicketReference {

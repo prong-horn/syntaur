@@ -57,7 +57,7 @@ describe('resolveWorkspaceCwd', () => {
   it('prefers an existing worktreePath with no warning', () => {
     expect(
       resolveWorkspaceCwd({
-        worktreePath: worktree,
+        worktree: worktree,
         repository: repo,
         branch: 'main',
         ticketSlug: 'a',
@@ -67,20 +67,20 @@ describe('resolveWorkspaceCwd', () => {
 
   it('falls back to repository with a missing-field warning when worktreePath is null', () => {
     const r = resolveWorkspaceCwd({
-      worktreePath: null,
+      worktree: null,
       repository: repo,
       branch: 'main',
       ticketSlug: 'a',
     });
     expect(r.cwd).toBe(repo);
-    expect(r.fallbackWarning).toMatch(/worktreePath/);
+    expect(r.fallbackWarning).toMatch(/worktree/);
     expect(r.invalidReason).toBeNull();
   });
 
   it('falls back to repository with a distinct warning when worktreePath is present but not a real dir', () => {
     const bogus = resolve(base, 'gone');
     const r = resolveWorkspaceCwd({
-      worktreePath: bogus,
+      worktree: bogus,
       repository: repo,
       branch: 'main',
       ticketSlug: 'a',
@@ -93,7 +93,7 @@ describe('resolveWorkspaceCwd', () => {
 
   it('returns cwd null + invalidReason when neither worktree nor repo is a real dir', () => {
     const r = resolveWorkspaceCwd({
-      worktreePath: resolve(base, 'x'),
+      worktree: resolve(base, 'x'),
       repository: resolve(base, 'y'),
       branch: null,
       ticketSlug: 'demo',

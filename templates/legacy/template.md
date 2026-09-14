@@ -50,8 +50,8 @@ files:
     description: v1 comments; historical read-only after migration.
 gates:
   approve: [plan-exists]
-  start: [deps-done]
-  done: [criteria-checked, handoff-logged]
+  start: []
+  done: [criteria-checked, handoff-logged, deps-done]
 ---
 
 Built-in template; copy the directory to customise

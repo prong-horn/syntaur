@@ -5,6 +5,8 @@ import { listTicketsBoard } from '../dashboard/api.js';
 import { defaultProjectDir } from '../utils/paths.js';
 import { fileExists } from '../utils/fs.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { initEventsDb } from '../db/events-db.js';
+import { deriveStatusVirtualsForTicket, loadTicketHistoryMaps } from '../lifecycle/history-from-events.js';
 import { buildQueryRegistry } from '../utils/query/registry.js';
 import { compileQuery, type QueryItem } from '../utils/query/index.js';
 import { isTerminalStageId } from '../dashboard/stage-config.js';
@@ -17,7 +19,6 @@ interface LsOptions {
   age?: string;
   query?: string;
   json?: boolean;
-  archived?: boolean;
 }
 
 const AGE_PATTERN = /^(\d+)([dhwm])$/i;
@@ -69,10 +70,7 @@ async function loadTags(item: TicketBoardItem): Promise<string[]> {
 export async function runLs(
   options: LsOptions,
 ): Promise<{ items: TicketBoardItem[] }> {
-  const board = await listTicketsBoard(
-    defaultProjectDir(),
-    { archived: options.archived ? 'only' : 'exclude' },
-  );
+  const board = await listTicketsBoard(defaultProjectDir());
   let items = board.tickets;
 
   if (options.status) {
@@ -139,12 +137,13 @@ async function loadQueryItem(
   try {
     const content = await readFile(path, 'utf-8');
     const fm = parseTicketFrontmatter(content);
-    const updatedMs = Date.parse(fm.updated);
-    const statusAge = Number.isNaN(updatedMs) ? null : now - updatedMs;
-    const completedAt =
-      isTerminalStageId(fm.status) && fm.status === 'done' && !Number.isNaN(updatedMs)
-        ? fm.updated
-        : null;
+    initEventsDb();
+    const maps = loadTicketHistoryMaps([fm.id]);
+    const { statusAge, completedAt } = deriveStatusVirtualsForTicket(
+      { id: fm.id, status: fm.status, updated: fm.updated },
+      maps,
+      now,
+    );
 
     return {
       status: fm.status,
@@ -153,7 +152,6 @@ async function loadQueryItem(
       assignee: fm.assignee,
       project: item.projectSlug,
       tags: fm.tags,
-      archived: fm.archived,
       title: fm.title,
       created: fm.created,
       updated: fm.updated,
@@ -208,7 +206,6 @@ export const lsCommand = new Command('ls')
     '--query <expr>',
     'AQL boolean filter over fields + facts (e.g. "disposition:blocked AND phase:ready_to_implement", "planApproved:true AND workspaceSet:false", "phase:planning AND statusAge > 3d")',
   )
-  .option('--archived', 'List only archived tickets (hidden from the default view)')
   .option('--json', 'Emit JSON instead of a table')
   .action(async (options: LsOptions) => {
     try {

@@ -196,7 +196,7 @@ links: []
 blockedReason: null
 workspace:
   repository: /Users/test/repo
-  worktreePath: null
+  worktree: null
   branch: feat/auth-schema
   parentBranch: main
 tags: []
@@ -226,18 +226,15 @@ priority: high
 created: "2026-03-15T09:30:00Z"
 updated: "2026-03-18T14:30:00Z"
 assignee: claude-1
-externalIds:
-  - system: jira
-    id: AUTH-43
-    url: https://jira.example.com/browse/AUTH-43
+blocked: null
+parked: null
 depends_on:
   - design-auth-schema
 links:
   - other-project/some-task
-blockedReason: null
 workspace:
   repository: /Users/test/projects/auth-service
-  worktreePath: /Users/test/worktrees/impl
+  worktree: /Users/test/worktrees/impl
   branch: feat/jwt-middleware
   parentBranch: main
 tags: []
@@ -258,122 +255,24 @@ Body here.`;
     expect(ticket.workspace.repository).toBe('/Users/test/projects/auth-service');
   });
 
-  it('defaults archive fields when absent (backward compatible)', () => {
-    const ticket = parseTicketFull(TICKET_WITH_DEPS);
-    expect(ticket.archived).toBe(false);
-    expect(ticket.archivedAt).toBeNull();
-    expect(ticket.archivedReason).toBeNull();
-  });
-
-  it('parses archive fields when present', () => {
-    const archived = parseTicketFull(
-      TICKET_WITH_DEPS.replace(
-        'tags: []\n---',
-        'tags: []\narchived: true\narchivedAt: "2026-05-31T12:00:00Z"\narchivedReason: stale\n---',
-      ),
+  it('parses blocked and parked reason flags', () => {
+    const blocked = parseTicketFull(
+      TICKET_WITH_DEPS.replace('blocked: null', 'blocked: waiting on API'),
     );
-    expect(archived.archived).toBe(true);
-    expect(archived.archivedAt).toBe('2026-05-31T12:00:00Z');
-    expect(archived.archivedReason).toBe('stale');
+    expect(blocked.blocked).toBe('waiting on API');
+    expect(blocked.parked).toBeNull();
+
+    const parked = parseTicketFull(
+      TICKET_WITH_DEPS.replace('parked: null', 'parked: on hold'),
+    );
+    expect(parked.parked).toBe('on hold');
   });
 
-  it('parses externalIds', () => {
-    const ticket = parseTicketFull(TICKET_WITH_DEPS);
-    expect(ticket.externalIds).toHaveLength(1);
-    expect(ticket.externalIds[0]).toEqual({
-      system: 'jira',
-      id: 'AUTH-43',
-      url: 'https://jira.example.com/browse/AUTH-43',
-    });
-  });
-
-  it('keeps externalIds entries without a url, defaulting url to null', () => {
-    const TICKET_URL_LESS = `---
-id: u-1
-slug: link-less
-title: Link-less External ID
-status: pending
-priority: medium
-created: "2026-03-15T09:30:00Z"
-updated: "2026-03-15T09:30:00Z"
-assignee: null
-externalIds:
-  - system: linear
-    id: ENG-7
-  - system: jira
-    id: PROJ-99
-    url: https://jira.example.com/browse/PROJ-99
-depends_on: []
-links: []
-blockedReason: null
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []
----
-
-# Link-less External ID`;
-    const ticket = parseTicketFull(TICKET_URL_LESS);
-    expect(ticket.externalIds).toHaveLength(2);
-    expect(ticket.externalIds[0]).toEqual({
-      system: 'linear',
-      id: 'ENG-7',
-      url: null,
-    });
-    expect(ticket.externalIds[1]).toEqual({
-      system: 'jira',
-      id: 'PROJ-99',
-      url: 'https://jira.example.com/browse/PROJ-99',
-    });
-  });
-
-  it('normalizes explicit null, empty, tilde, and quoted url scalars', () => {
-    const TICKET_QUIRKY_URLS = `---
-id: u-2
-slug: quirky-urls
-title: Quirky URLs
-status: pending
-priority: medium
-created: "2026-03-15T09:30:00Z"
-updated: "2026-03-15T09:30:00Z"
-assignee: null
-externalIds:
-  - system: jira
-    id: A-1
-    url: null
-  - system: jira
-    id: A-2
-    url: ""
-  - system: jira
-    id: A-3
-    url: "https://example.com/A-3"
-  - system: jira
-    id: A-4
-    url: ~
-  - system: jira
-    id: A-5
-    url:
-depends_on: []
-links: []
-blockedReason: null
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []
----
-
-# Quirky URLs`;
-    const ticket = parseTicketFull(TICKET_QUIRKY_URLS);
-    expect(ticket.externalIds).toHaveLength(5);
-    expect(ticket.externalIds[0].url).toBeNull();
-    expect(ticket.externalIds[1].url).toBeNull();
-    expect(ticket.externalIds[2].url).toBe('https://example.com/A-3');
-    expect(ticket.externalIds[3].url).toBeNull();
-    expect(ticket.externalIds[4].url).toBeNull();
+  it('reads legacy blockedReason as blocked', () => {
+    const legacy = parseTicketFull(
+      TICKET_WITH_DEPS.replace('blocked: null\nparked: null', 'blockedReason: legacy'),
+    );
+    expect(legacy.blocked).toBe('legacy');
   });
 });
 
@@ -467,70 +366,3 @@ describe('extractMermaidGraph', () => {
   });
 });
 
-describe('parseTicketFull — statusHistory parity', () => {
-  // Same fixture parsed by both the dashboard parser and the lifecycle parser
-  // must yield identical statusHistory (the two parsers are independent copies).
-  const HISTORY_BLOCK = `statusHistory:
-  - at: "2026-03-18T10:00:00Z"
-    from: null
-    to: draft
-    command: create
-    by: null
-  - at: "2026-03-18T11:00:00Z"
-    from: draft
-    to: blocked
-    command: block
-    by: claude-1
-    reason: waiting on API`;
-
-  function fixture(historyPlacement: 'middle' | 'last'): string {
-    const head = `---
-id: p-1
-slug: parity
-title: "Parity"
-status: blocked
-priority: medium
-created: "2026-03-18T10:00:00Z"
-updated: "2026-03-18T11:00:00Z"
-assignee: claude-1
-externalIds: []`;
-    const tail = `depends_on: []
-links: []
-blockedReason: waiting on API
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []`;
-    const fm =
-      historyPlacement === 'last'
-        ? `${head}\n${tail}\n${HISTORY_BLOCK}`
-        : `${head}\n${HISTORY_BLOCK}\n${tail}`;
-    return `${fm}\n---\n\n# Parity\n`;
-  }
-
-  it('matches the lifecycle parser (statusHistory in the middle)', async () => {
-    const { parseTicketFrontmatter } = await import('../lifecycle/frontmatter.js');
-    const content = fixture('middle');
-    expect(parseTicketFull(content).statusHistory).toEqual(
-      parseTicketFrontmatter(content).statusHistory,
-    );
-    expect(parseTicketFull(content).statusHistory).toHaveLength(2);
-  });
-
-  it('matches the lifecycle parser when statusHistory is the LAST key (EOF-safe)', async () => {
-    const { parseTicketFrontmatter } = await import('../lifecycle/frontmatter.js');
-    const content = fixture('last');
-    const dashboard = parseTicketFull(content).statusHistory;
-    const lifecycle = parseTicketFrontmatter(content).statusHistory;
-    expect(dashboard).toEqual(lifecycle);
-    expect(dashboard).toHaveLength(2);
-    expect(dashboard[1]).toMatchObject({ to: 'blocked', command: 'block', reason: 'waiting on API' });
-  });
-
-  it('returns [] when statusHistory is absent or inline empty', () => {
-    const base = fixture('middle').replace(HISTORY_BLOCK, 'statusHistory: []');
-    expect(parseTicketFull(base).statusHistory).toEqual([]);
-  });
-});

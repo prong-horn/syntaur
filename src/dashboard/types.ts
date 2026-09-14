@@ -50,53 +50,22 @@ export interface TicketSummary {
   title: string;
   status: string;
   template: string | null;
-  /** Explicit `workflow:` override stored on the ticket (null → resolved via binding). */
-  workflow: string | null;
-  /** The workflow id this ticket resolves to (drives its lifecycle/board column). */
-  resolvedWorkflow: string;
-  /** Human label of the resolved workflow (board swimlane / badge label). */
-  workflowLabel: string;
-  /** Display label of the current status WITHIN the resolved workflow. */
   statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
   depends_on: string[];
   links: string[];
   tags: string[];
-  externalIds: ExternalIdInfo[];
   created: string;
   updated: string;
-  archived: boolean;
-  archivedAt: string | null;
-  archivedReason: string | null;
-  /**
-   * Loader-derived (NOT stored). The `at` of the transition into the current
-   * status iff that status is terminal (lifecycle `completed`/`failed`), else
-   * null — so a ticket reopened after completion reports null. Sourced from
-   * `statusHistory`. See `deriveStatusVirtuals` in api.ts.
-   */
+  /** Non-null when blocked; reason string from `block`. */
+  blocked: string | null;
+  /** Non-null when parked; reason string from `park`. */
+  parked: string | null;
+  /** Loader-derived from events: latest `moved` into terminal stage, else null. */
   completedAt: string | null;
-  /**
-   * Loader-derived (NOT stored). Milliseconds spent in the current HEADLINE
-   * status = `Date.now() − at(last statusHistory entry where from != to)`.
-   * Dimension-only entries (phase moved while headline stayed, e.g. progress
-   * while blocked) do NOT reset it. Null when there is no history.
-   */
+  /** Loader-derived from events: ms since latest `moved` or `created`. */
   statusAge: number | null;
-  /** Loader-derived (NOT stored). Milliseconds since the last phase change
-   * recorded in statusHistory (phaseFrom != phaseTo). Null when never recorded. */
-  phaseAge: number | null;
-  /** Cached phase dimension (written by recompute; null pre-migration). */
-  phase: string | null;
-  /** Cached disposition dimension (active|blocked|parked; null pre-migration). */
-  disposition: string | null;
-  /** A sticky status override (pin) is active. */
-  pinned: boolean;
-  /**
-   * Evaluator facts for AQL board filtering; omitted on compute error or for
-   * ProjectDetail's summary path (chips-only by design — Decision 8).
-   */
-  facts?: Record<string, boolean | number | string[]>;
 }
 
 export interface TicketBoardItem extends TicketSummary {
@@ -104,7 +73,6 @@ export interface TicketBoardItem extends TicketSummary {
   projectSlug: string | null;
   /** `null` for standalone tickets. */
   projectTitle: string | null;
-  blockedReason: string | null;
   availableVerbs: TicketTransitionAction[];
 }
 
@@ -140,7 +108,7 @@ export interface ArchivedProjectItem {
 export interface ArchiveResponse {
   /** Archived projects, expandable to their children. */
   projects: ArchivedProjectItem[];
-  /** Individually-archived tickets whose parent project is NOT archived, plus archived standalone tickets. */
+  /** @deprecated Ticket archiving removed in v2 — always empty. */
   tickets: ArchivedTicketItem[];
 }
 
@@ -172,7 +140,7 @@ export interface ProjectDetail {
 
 export interface WorkspaceInfo {
   repository: string | null;
-  worktreePath: string | null;
+  worktree: string | null;
   branch: string | null;
   parentBranch: string | null;
 }
@@ -235,13 +203,6 @@ export interface TicketDetail {
   title: string;
   status: string;
   template: string | null;
-  /** Explicit `workflow:` override stored on the ticket (null → resolved via binding). */
-  workflow: string | null;
-  /** The workflow id this ticket resolves to (drives its lifecycle). */
-  resolvedWorkflow: string;
-  /** Human label of the resolved workflow. */
-  workflowLabel: string;
-  /** Display label of the current status WITHIN the resolved workflow. */
   statusLabel: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   assignee: string | null;
@@ -249,52 +210,16 @@ export interface TicketDetail {
   links: string[];
   reverseLinks: string[];
   enrichedLinks: EnrichedLink[];
-  blockedReason: string | null;
+  blocked: string | null;
+  parked: string | null;
   workspace: WorkspaceInfo;
-  externalIds: ExternalIdInfo[];
   tags: string[];
-  archived: boolean;
-  archivedAt: string | null;
-  archivedReason: string | null;
   /** Loader-derived (NOT stored). See {@link TicketSummary.completedAt}. */
   completedAt: string | null;
   /** Loader-derived (NOT stored). See {@link TicketSummary.statusAge}. */
   statusAge: number | null;
-  /** Loader-derived (NOT stored). See {@link TicketSummary.phaseAge}. */
-  phaseAge: number | null;
-  /** Cached phase dimension (null pre-migration). */
-  phase: string | null;
-  /** Cached disposition dimension (null pre-migration). */
-  disposition: string | null;
-  /** The active pin, when present (status/source/reason/at). */
-  override: { status: string; source: string; reason: string | null; at: string } | null;
-  /** Server-materialized derivation detail (design v3: facts are computed
-   * server-side and shipped — the browser never reads the filesystem).
-   * `derivedStatus` is the pre-override headline, powering the
-   * "pinned to X — would otherwise be Y" divergence display. Null for
-   * terminal tickets (derivation defers). */
-  derived: {
-    derivedStatus: string;
-    nextAction: string | null;
-    /** Full materialized fact set (built-ins + custom + attestation exports;
-     * actor-set exports are string[]). */
-    facts: Record<string, boolean | number | string[]>;
-    /** Declared bool/number custom facts only — pre-separated so the client
-     * renders them without guessing which keys are built-ins. */
-    customFacts: Record<string, boolean | number>;
-    /** Per-attestation-fact state with per-actor verdicts + staleness. */
-    attestations: Array<{
-      fact: string;
-      binds: 'plan' | 'commit' | 'none';
-      records: Array<{
-        actor: string;
-        verdict: 'approved' | 'changes-requested';
-        at: string;
-        note: string | null;
-        stale: boolean;
-      }>;
-    }>;
-  } | null;
+  /** Next verb hint from show model. */
+  next: string | null;
   created: string;
   updated: string;
   body: string;

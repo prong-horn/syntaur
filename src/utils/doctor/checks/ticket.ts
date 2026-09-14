@@ -146,18 +146,18 @@ const workspaceMissing: Check = {
       if (!parsed) continue;
       if (isTerminalStage(parsed.status as (typeof STAGE_ORDER)[number])) continue;
       if (PRE_WORKSPACE_STATUSES.has(parsed.status)) continue; // workspace not yet expected
-      const { repository, worktreePath } = parsed.workspace;
-      if (repository === null && worktreePath === null) {
+      const { repository, worktree } = parsed.workspace;
+      if (repository === null && worktree === null) {
         results.push({
           id: this.id,
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktreePath set — the PreToolUse hook will block implementation work`,
+          detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktree set — the PreToolUse hook will block implementation work`,
           affected: [path],
           remediation: {
             kind: 'manual',
-            suggestion: 'Set workspace.repository and workspace.worktreePath in the ticket frontmatter before continuing implementation',
+            suggestion: 'Set workspace.repository and workspace.worktree in the ticket frontmatter before continuing implementation',
             command: null,
           },
           autoFixable: false,

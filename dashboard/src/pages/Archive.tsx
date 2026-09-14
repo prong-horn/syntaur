@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Archive as ArchiveIcon, ArchiveRestore, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react';
-import { useArchived, type ArchivedTicketItem, type ArchivedProjectItem } from '../hooks/useProjects';
+import { ArchiveRestore, ChevronDown, ChevronRight, FolderKanban } from 'lucide-react';
+import { useArchived, type ArchivedProjectItem } from '../hooks/useProjects';
 import { LoadingState } from '../components/LoadingState';
 import { ErrorState } from '../components/ErrorState';
 import { EmptyState } from '../components/EmptyState';
@@ -10,19 +10,6 @@ import { SectionCard } from '../components/SectionCard';
 import { StatusBadge } from '../components/StatusBadge';
 import { formatDateTime } from '../lib/format';
 import { useToast, Toaster } from '../components/Toast';
-
-function ArchivedPill() {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-status-archived-foreground/30 bg-status-archived px-2 py-0.5 text-xs font-medium text-status-archived-foreground">
-      <ArchiveIcon className="h-3 w-3" />
-      Archived
-    </span>
-  );
-}
-
-function ticketHref(item: ArchivedTicketItem): string {
-  return `/t/${item.id}`;
-}
 
 export function Archive() {
   const { data, loading, error, refetch } = useArchived();
@@ -53,10 +40,6 @@ export function Archive() {
     return post(`/api/projects/${project.slug}/unarchive`, `project:${project.slug}`, 'Project restored');
   }
 
-  function restoreTicket(item: ArchivedTicketItem) {
-    return post(`/api/tickets/${item.id}/unarchive`, `ticket:${item.id}`, 'Ticket restored');
-  }
-
   if (loading) return <LoadingState label="Loading archived content…" />;
   if (error) return <ErrorState error={error} />;
 
@@ -69,7 +52,7 @@ export function Archive() {
       <Toaster toast={toast} onDismiss={dismissToast} />
       <PageHeader
         title="Archive"
-        description="Archived projects and individually-archived tickets. Restoring a project also brings back its cascade-hidden tickets; tickets archived on their own stay archived until restored here."
+        description="Archived projects. Restoring a project brings back its tickets on the board."
       />
 
       {actionError ? (
@@ -81,12 +64,12 @@ export function Archive() {
       {isEmpty ? (
         <EmptyState
           title="Nothing archived"
-          description="Archived projects and tickets will appear here, ready to restore."
+          description="Archived projects will appear here, ready to restore."
         />
       ) : (
         <>
           {projects.length > 0 && (
-            <SectionCard title="Archived Projects" description="Restoring a project unhides every cascade-hidden ticket; individually-archived children stay archived.">
+            <SectionCard title="Archived Projects" description="Restoring a project unhides its tickets on the board.">
               <ul className="divide-y divide-border">
                 {projects.map((project) => {
                   const open = expanded[project.slug] ?? false;
@@ -132,15 +115,11 @@ export function Archive() {
                         <ul className="mt-2 space-y-1 pl-9">
                           {project.tickets.map((child) => (
                             <li key={child.id} className="flex flex-wrap items-center gap-2 text-sm">
-                              <Link to={ticketHref(child)} className="text-foreground hover:text-foreground/80">
+                              <Link to={`/t/${child.id}`} className="text-foreground hover:text-foreground/80">
                                 {child.title}
                               </Link>
                               <StatusBadge status={child.status} showIcon={false} />
-                              <span className="text-xs text-muted-foreground">
-                                {child.archived
-                                  ? 'Archived individually — stays archived after restore'
-                                  : 'Hidden via project — returns on restore'}
-                              </span>
+                              <span className="text-xs text-muted-foreground">Hidden via project — returns on restore</span>
                             </li>
                           ))}
                         </ul>
@@ -152,35 +131,6 @@ export function Archive() {
             </SectionCard>
           )}
 
-          {tickets.length > 0 && (
-            <SectionCard title="Archived Tickets" description="Individually-archived tickets whose project is still active.">
-              <ul className="divide-y divide-border">
-                {tickets.map((item) => (
-                  <li key={item.id} className="flex flex-wrap items-center gap-3 py-3">
-                    <Link to={ticketHref(item)} className="text-sm font-medium text-foreground hover:text-foreground/80">
-                      {item.title}
-                    </Link>
-                    <StatusBadge status={item.status} showIcon={false} />
-                    <ArchivedPill />
-                    <span className="text-xs text-muted-foreground">
-                      {item.projectTitle ?? 'Standalone'} · Archived{' '}
-                      {item.archivedAt ? formatDateTime(item.archivedAt) : 'with no timestamp'}
-                      {item.archivedReason ? ` · ${item.archivedReason}` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => restoreTicket(item)}
-                      disabled={busy === `ticket:${item.id}`}
-                      className="ml-auto inline-flex items-center gap-1.5 rounded border border-border px-2 py-1 text-xs text-muted-foreground hover:border-foreground/40 hover:text-foreground disabled:opacity-50"
-                    >
-                      <ArchiveRestore className="h-3 w-3" />
-                      Restore
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </SectionCard>
-          )}
         </>
       )}
     </div>

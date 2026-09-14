@@ -32,7 +32,7 @@ updated: "2026-01-01T00:00:00Z"
 customField: keepme
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 ---
@@ -73,7 +73,7 @@ describe('syntaur workspace set', () => {
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain('repository: /repo');
-    expect(content).toContain('worktreePath: /repo/.worktrees/feat');
+    expect(content).toContain('worktree: /repo/.worktrees/feat');
     expect(content).toContain('branch: feat');
     expect(content).toContain('parentBranch: main');
     expect(content).toContain('customField: keepme'); // unrelated frontmatter preserved

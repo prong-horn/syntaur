@@ -143,7 +143,7 @@ function makeBroker(
   return broker;
 }
 
-async function writeTicket(workspace: { worktreePath?: string; repository?: string } = {}): Promise<void> {
+async function writeTicket(workspace: { worktree?: string; repository?: string } = {}): Promise<void> {
   const lines = [
     '---',
     `id: ${TICKET_ID}`,
@@ -161,7 +161,7 @@ async function writeTicket(workspace: { worktreePath?: string; repository?: stri
     '  approvedBy: null',
     'workspace:',
     `  repository: ${workspace.repository ?? worktree}`,
-    `  worktreePath: ${workspace.worktreePath ?? worktree}`,
+    `  worktree: ${workspace.worktree ?? worktree}`,
     '  branch: feat/chat-demo',
     '  parentBranch: main',
     '---',
@@ -260,7 +260,7 @@ describe('first message', () => {
         '  approvedBy: null',
         'workspace:',
         `  repository: ${worktree}`,
-        `  worktreePath: ${worktree}`,
+        `  worktree: ${worktree}`,
         '  branch: feat/chat-demo',
         '  parentBranch: main',
         '---',
@@ -321,7 +321,7 @@ describe('first message', () => {
   });
 
   it('falls back to homedir when the workspace has no valid cwd', async () => {
-    await writeTicket({ worktreePath: '/nope/nowhere', repository: '/nope/nowhere' });
+    await writeTicket({ worktree: '/nope/nowhere', repository: '/nope/nowhere' });
     makeBroker();
     await broker.send({ ticket: ticket(), text: 'hi' });
     await idle();
@@ -336,7 +336,7 @@ describe('first message', () => {
   });
 
   it('falls back to the repository when the worktree is missing', async () => {
-    await writeTicket({ worktreePath: '/nope/nowhere', repository: worktree });
+    await writeTicket({ worktree: '/nope/nowhere', repository: worktree });
     makeBroker();
     await broker.send({ ticket: ticket(), text: 'hi' });
     await idle();
@@ -1589,7 +1589,7 @@ describe('the drive loop never loses a message (finding 5)', () => {
   it('keeps a message queued when the adapter cannot start, and reports why', async () => {
     makeBroker();
     // No workspace ⇒ ensureAdapter throws before the turn is committed.
-    await writeTicket({ worktreePath: '/nope/nowhere', repository: worktree });
+    await writeTicket({ worktree: '/nope/nowhere', repository: worktree });
     // `send` itself refuses on a bad cwd, so queue through a good one first and
     // then break the workspace under it.
     const { messageId } = await broker.send({ ticket: ticket(), text: 'keep me' });

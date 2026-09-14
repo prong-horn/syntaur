@@ -384,9 +384,9 @@ function StructuredEditor({
           </Field>
           <Field label="Blocked reason" className="md:col-span-2">
             <input
-              value={state.blockedReason}
+              value={state.blocked}
               onChange={(event) =>
-                onChange(normalizeEditorContent(documentType, content, { blockedReason: event.target.value }))
+                onChange(normalizeEditorContent(documentType, content, { blocked: event.target.value }))
               }
               placeholder="Read-only unless the ticket is actually blocked"
               className="editor-input"

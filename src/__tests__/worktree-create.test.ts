@@ -45,7 +45,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -112,7 +112,7 @@ describe('syntaur worktree create', () => {
     expect(st.isDirectory()).toBe(true);
     const updated = await readFile(resolve(ticketDir, 'ticket.md'), 'utf-8');
     expect(updated).toContain('repository: ');
-    expect(updated).toContain(`worktreePath: ${expectedPath}`);
+    expect(updated).toContain(`worktree: ${expectedPath}`);
     expect(updated).toContain('branch: feat/x');
     expect(updated).toContain('parentBranch: main');
   });

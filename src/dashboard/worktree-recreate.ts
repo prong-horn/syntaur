@@ -37,10 +37,10 @@ export async function recreateForTarget(
   if (!t) return { status: 'not-found' };
   // A ticket can validly have a repository but no worktree path; that is
   // not a recreate case (nothing recorded to rebuild).
-  if (t.worktreePath === '') return { status: 'no-path' };
+  if (t.worktree === '') return { status: 'no-path' };
   // Idempotent: another concurrent click already rebuilt it. The re-fired
   // launch can proceed.
-  if (isExistingDir(t.worktreePath)) {
+  if (isExistingDir(t.worktree)) {
     return { status: 'already-exists', branch: t.branch };
   }
   if (!t.repository) return { status: 'no-repo' };
@@ -50,13 +50,13 @@ export async function recreateForTarget(
     return { status: 'bad-repo', httpStatus: repoCheck.status, error: repoCheck.error };
   }
 
-  const key = `recreate:${t.worktreePath}`;
+  const key = `recreate:${t.worktree}`;
   if (worktreeInFlight.has(key)) return { status: 'in-flight' };
   worktreeInFlight.add(key);
   try {
     const r = await recreateWorktree({
       repository: repoCheck.repo,
-      worktreePath: t.worktreePath,
+      worktreePath: t.worktree,
       branch: t.branch,
       originalHeadSha: t.originalHeadSha,
     });

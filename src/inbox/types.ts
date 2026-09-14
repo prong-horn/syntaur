@@ -98,6 +98,8 @@ export interface InboxItem {
    * or `null` when none qualifies.
    */
   reopenCommand?: string | null;
+  /** Review-only: gate hint to log an approving review when not yet clean. */
+  logReviewHint?: string;
   /** Question-only: the unresolved comment's id (for reply `replyTo` + resolve). */
   commentId?: string;
   /** Question-only: chat-sourced row linking to a chat item. */

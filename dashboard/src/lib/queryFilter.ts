@@ -30,38 +30,24 @@ export function boardItemToQueryItem(item: TicketBoardItem): QueryItem {
   const searchText = `${item.title ?? ''} ${item.slug ?? ''} ${item.projectTitle ?? 'standalone'} ${item.projectSlug ?? ''}`;
 
   return {
-    // Custom facts first (camelCase keys: the registry accessors map them from
-    // lowercase registry keys via their `get` functions, e.g. `i['hasRealObjective']`).
-    ...(item.facts ?? {}),
-
     // ── core frontmatter fields ──────────────────────────────────────────────
     status: item.status,
-    // WS-3 compat aliases (§4.5) live in the SHARED registry (fields.ts):
-    // `phase` falls back to `status` (the stage) and `disposition` to the
-    // blocked/parked flags when the deprecated payload mirrors are absent —
-    // identical on this browser evaluator and the CLI, by construction.
-    phase: item.phase,
-    disposition: item.disposition,
+    phase: item.status,
+    disposition: item.blocked ? 'blocked' : item.parked ? 'parked' : 'active',
+    blocked: Boolean(item.blocked),
+    parked: Boolean(item.parked),
     priority: item.priority,
     template: item.template,
     assignee: item.assignee,
     project: item.projectSlug,
-    // Resolved workflow (multi-workflow) — the `workflow` AQL field reads
-    // `resolvedWorkflow` (falling back to the raw override).
-    resolvedWorkflow: item.resolvedWorkflow,
-    workflow: item.workflow,
     tags: item.tags,
-    archived: item.archived,
     title: item.title,
     created: item.created,
     updated: item.updated,
 
     // ── history virtuals ──────────────────────────────────────────────────────
-    // These use camelCase keys; the registry's `get` accessors read them by
-    // that exact name (e.g. `i['completedAt']`, `i['statusAge']`, `i['phaseAge']`).
     completedAt: item.completedAt,
     statusAge: item.statusAge,
-    phaseAge: item.phaseAge,
 
     // ── search haystack ───────────────────────────────────────────────────────
     // `search` field in fields.ts: `get: (i) => i['searchText'] ?? i['title']`
@@ -104,14 +90,13 @@ export function filterBoardItems(
   compiled: CompiledQuery | null,
   opts: FilterBoardItemsOptions = {},
 ): TicketBoardItem[] {
-  const { includeArchived = false, now = Date.now() } = opts;
+  const { now = Date.now() } = opts;
 
   const ctx: EvalContext = { now };
 
   return items.filter((item) => {
     // ── page-level pre-filters (NOT part of AQL) ──────────────────────────
-    if (item.archived === true && !includeArchived) return false;
-
+    if (item.parked && !opts.includeArchived) return false;
     // ── AQL predicate (skipped when compiled is null → pre-filters only) ──
     if (!compiled) return true;
     const q = boardItemToQueryItem(item);

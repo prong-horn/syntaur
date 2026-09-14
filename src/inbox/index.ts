@@ -25,6 +25,17 @@ import {
   type ParsedComment,
 } from '../dashboard/parser.js';
 import { isPlanApproved } from '../ticket-templates/plan-facts.js';
+import { planRoleFile } from '../ticket-templates/manifest.js';
+import { loadTemplate } from '../ticket-templates/registry.js';
+import { syntaurRoot } from '../utils/paths.js';
+import { TERMINAL_STAGES, VERBS } from '../lifecycle/types.js';
+import { GATE_HINTS } from '../ticket-templates/gates.js';
+import {
+  initEventsDb,
+  latestCreatedByTicket,
+  latestMovedToStageByTicket,
+  latestMovesByTicket,
+} from '../db/events-db.js';
 import type {
   InboxAction,
   InboxCard,
@@ -130,17 +141,28 @@ export function unresolvedQuestions(comments: ParsedComment[]): ParsedComment[] 
 }
 
 /**
- * plan-approval = `status === 'ready_for_planning'` AND `plan.file` is set AND
- * that path exists on disk AND it is not yet approved (`isPlanApproved`).
- * No latest-revision fallback — `plan.file` is required (decision 12).
+ * plan-approval = plan-role file present on a non-terminal ticket and not yet
+ * approved (`isPlanApproved`). Uses `plan.file` when set, else the template's
+ * plan role path.
  */
 export async function isPlanAwaitingApproval(
   a: ParsedTicketFull,
   ticketDir: string,
 ): Promise<boolean> {
-  if (a.status !== 'planning') return false;
-  if (!a.plan.file) return false;
-  if (!(await fileExists(resolve(ticketDir, a.plan.file)))) return false;
+  if (TERMINAL_STAGES.has(a.status as 'done' | 'dropped')) return false;
+  const templateId = a.template ?? 'feature';
+  let manifest;
+  try {
+    manifest = await loadTemplate(syntaurRoot(), templateId);
+  } catch {
+    return false;
+  }
+  const planRole = planRoleFile(manifest);
+  if (!planRole) return false;
+  const planPath = a.plan.file
+    ? resolve(ticketDir, a.plan.file)
+    : resolve(ticketDir, planRole.path);
+  if (!(await fileExists(planPath))) return false;
   const approved = await isPlanApproved(ticketDir, { plan: a.plan });
   return !approved;
 }
@@ -168,38 +190,20 @@ function validTimestamp(value: string | null | undefined): string | null {
   return Number.isNaN(ms) ? null : canonicalRfc3339(ms);
 }
 
-/** `.at` of the latest statusHistory entry (by parseable timestamp), else null. */
-function latestStatusHistoryAt(a: ParsedTicketFull): string | null {
-  let best: { at: string; ms: number } | null = null;
-  for (const e of a.statusHistory) {
-    const at = validTimestamp(e.at);
-    if (at === null) continue;
-    const ms = Date.parse(at);
-    if (best === null || ms >= best.ms) best = { at, ms };
+function latestMoveAt(ticketId: string): string | null {
+  try {
+    initEventsDb();
+    const move = latestMovesByTicket([ticketId]).get(ticketId);
+    return move ? validTimestamp(move.at) : null;
+  } catch {
+    return null;
   }
-  return best?.at ?? null;
-}
-
-/** `.at` of the latest statusHistory entry matching `pred`, else null. */
-function latestStatusHistoryAtWhere(
-  a: ParsedTicketFull,
-  pred: (e: ParsedTicketFull['statusHistory'][number]) => boolean,
-): string | null {
-  let best: { at: string; ms: number } | null = null;
-  for (const e of a.statusHistory) {
-    if (!pred(e)) continue;
-    const at = validTimestamp(e.at);
-    if (at === null) continue;
-    const ms = Date.parse(at);
-    if (best === null || ms >= best.ms) best = { at, ms };
-  }
-  return best?.at ?? null;
 }
 
 /**
  * Resolve `since` for a category with the shared fallback chain
- * (category-specific entry → latest statusHistory `.at` → frontmatter `updated`
- * → `created` → caller's `now`). Always returns a valid RFC 3339.
+ * (category-specific entry → latest `moved` into the relevant stage → frontmatter
+ * `updated` → `created` → caller's `now`). Always returns a valid RFC 3339.
  */
 export function resolveSince(
   category: InboxCategory,
@@ -208,20 +212,31 @@ export function resolveSince(
   comment?: ParsedComment,
 ): string {
   let primary: string | null = null;
-  switch (category) {
-    case 'review':
-      primary = latestStatusHistoryAtWhere(a, (e) => e.to === 'review');
-      break;
-    case 'question':
-      primary = validTimestamp(comment?.timestamp);
-      break;
-    case 'plan-approval':
-      primary = latestStatusHistoryAt(a);
-      break;
+  if (category === 'question') {
+    primary = validTimestamp(comment?.timestamp);
+  } else {
+    try {
+      initEventsDb();
+      if (category === 'review') {
+        primary = validTimestamp(latestMovedToStageByTicket([a.id], 'review').get(a.id)?.at);
+      } else if (category === 'plan-approval') {
+        primary = validTimestamp(latestMovedToStageByTicket([a.id], 'planning').get(a.id)?.at);
+      }
+    } catch {
+      /* events db unavailable — fall through to frontmatter timestamps */
+    }
+  }
+  let createdAt: string | null = null;
+  try {
+    initEventsDb();
+    createdAt = validTimestamp(latestCreatedByTicket([a.id]).get(a.id));
+  } catch {
+    /* optional */
   }
   return (
     primary ??
-    latestStatusHistoryAt(a) ??
+    latestMoveAt(a.id) ??
+    createdAt ??
     validTimestamp(a.updated) ??
     validTimestamp(a.created) ??
     canonicalRfc3339(now)
@@ -247,34 +262,21 @@ export function computeAgeMs(since: string, now: number): number {
  * the derivation rejects it (e.g. a custom `review→shipped` command named
  * `ship`).
  */
-export const KNOWN_CLI_VERBS = new Set<string>([
-  'plan',
-  'approve',
-  'start',
-  'review',
-  'done',
-  'drop',
-  'reopen',
-  'block',
-  'unblock',
-  'park',
-  'unpark',
-]);
+/** Runnable lifecycle CLI verbs (see `src/lifecycle/types.ts` `VERBS`). */
+export const KNOWN_CLI_VERBS = new Set<string>(VERBS);
 
 /** @deprecated Use {@link KNOWN_CLI_VERBS} */
 export const KNOWN_TRANSITION_CLI_VERBS = KNOWN_CLI_VERBS;
 
 export interface ReviewVerbs {
-  /**
-   * Primary "Accept" command (a known CLI verb whose target is terminal and is
-   * not `fail`), or `null` when none qualifies. NO hardcoded fallback.
-   */
+  /** Primary Accept verb (`done`). */
   accept: string | null;
   /**
-   * "Reopen" command — a known CLI verb (`start`/`reopen`) whose target is an
-   * active (non-terminal) status — or `null` when none qualifies.
+   * @deprecated v2 review queue does not reopen — use {@link logReviewHint}.
    */
   reopen: string | null;
+  /** Gate hint when review is not yet clean (log an approving review). */
+  logReviewHint: string;
 }
 
 /**
@@ -297,9 +299,13 @@ export interface ReviewVerbs {
  * non-null, enumerated from the declared `transitions` (from==='review') plus a
  * sweep of `transitionTable` keys (`review:*`).
  */
-/** Fixed review-stage verbs (v2): accept via `done`, reopen via `reopen`. */
+/** Fixed review-stage verbs (v2): accept via `done`; otherwise log a review. */
 export function deriveReviewVerbs(_config?: InboxStatusConfig): ReviewVerbs {
-  return { accept: 'done', reopen: 'reopen' };
+  return {
+    accept: 'done',
+    reopen: null,
+    logReviewHint: GATE_HINTS['review-clean'],
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,6 +330,7 @@ export function buildAction(
   ctx: {
     acceptCommand?: string | null;
     reopenCommand?: string | null;
+    logReviewHint?: string;
     commentId?: string;
     chat?: InboxChatRef;
     dashboardUrl?: string;
@@ -332,18 +339,16 @@ export function buildAction(
   const { target, projectFlag } = targetAndProject(item);
   switch (category) {
     case 'review':
-      // Prefer the runnable Accept verb; else Reopen; else an inspect fallback
-      // (realistically unreachable since the default config derives 'complete').
       if (ctx.acceptCommand) {
         return {
           verb: 'Accept',
           command: `syntaur ${ctx.acceptCommand} ${target}${projectFlag}`,
         };
       }
-      if (ctx.reopenCommand) {
+      if (ctx.logReviewHint) {
         return {
-          verb: 'Reopen',
-          command: `syntaur ${ctx.reopenCommand} ${target}${projectFlag}`,
+          verb: 'Log review',
+          command: ctx.logReviewHint,
         };
       }
       return {
@@ -365,7 +370,7 @@ export function buildAction(
     case 'plan-approval':
       return {
         verb: 'Approve plan',
-        command: `syntaur plan approve ${target}${projectFlag}`,
+        command: `syntaur approve ${target}${projectFlag}`,
       };
   }
 }
@@ -510,20 +515,10 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
       continue; // unreadable/unparseable ticket.md → skip (not awaiting action)
     }
 
-    // Skip archived up front — an archived item is not awaiting action.
-    if (parsed.archived) continue;
+    // Skip parked tickets — not awaiting a human decision. Blocked + active flow on.
+    if (parsed.parked) continue;
 
-    // Skip parked/terminal-disposition tickets up front — they are not
-    // awaiting a human decision (matches the plan's exclusions, and guards a
-    // malformed `disposition:parked, status:review`). Blocked + active flow on.
-    if (parsed.disposition === 'parked' || parsed.disposition === 'terminal') continue;
-
-    // Skip terminal-STATUS tickets regardless of disposition. `disposition`
-    // is nullable, so a legacy/null-disposition entry whose derived status is
-    // terminal (completed/failed) with an unresolved question would otherwise
-    // leak in via the status-agnostic question loop below. `terminalStatuses`
-    // already covers completed/failed; the review/blocked/plan-approval
-    // predicates already require non-terminal statuses, so they're unaffected.
+    // Skip terminal-status tickets so unresolved questions cannot leak in.
     if (opts.statusConfig.terminalStatuses.has(parsed.status)) continue;
 
     const project = entry.projectSlug;
@@ -546,14 +541,14 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
         // ENGINE-FED post-marker (the bridge writes it in the work-start CAS
         // payload), so this summary pick stays coherent in both worlds;
         // `isReview` itself keys off the derived status, not this scalar.
-        summary: parsed.reviewRequested
-          ? 'Review requested — awaiting accept or reopen.'
-          : 'Awaiting review — accept or reopen.',
+        summary: 'Awaiting review — accept or reopen.',
         acceptCommand: reviewVerbs.accept,
         reopenCommand: reviewVerbs.reopen,
+        logReviewHint: reviewVerbs.logReviewHint,
         action: buildAction('review', baseItem, {
           acceptCommand: reviewVerbs.accept,
           reopenCommand: reviewVerbs.reopen,
+          logReviewHint: reviewVerbs.logReviewHint,
         }),
       });
     }

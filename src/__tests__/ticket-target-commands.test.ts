@@ -34,7 +34,7 @@ created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 ---

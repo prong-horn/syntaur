@@ -30,6 +30,9 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  const { closeEventsDb, resetEventsDb } = await import('../db/events-db.js');
+  closeEventsDb();
+  resetEventsDb();
   await rm(testDir, { recursive: true, force: true });
 });
 
@@ -249,7 +252,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -288,7 +291,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -773,43 +776,6 @@ Keep this paragraph.`, 'utf-8');
   });
 
   describe('archive / restore endpoints', () => {
-    it('archives + restores a project-scoped ticket, preserving status', async () => {
-      await createTicketFixture();
-      const router = createWriteRouter(testDir);
-      const ticketPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'ticket.md');
-
-      const archived = await invokeRoute(
-        router,
-        'post',
-        '/api/tickets/:id/archive',
-        { id: 'TP-1' },
-        { reason: 'no longer needed' },
-      );
-      expect(archived.statusCode).toBe(200);
-      const archDetail = (archived.payload as any).ticket ?? (archived.payload as any).ticket;
-      expect(archDetail.archived).toBe(true);
-      expect(archDetail.archivedAt).toBeTruthy();
-      expect(archDetail.archivedReason).toBe('no longer needed');
-      expect(archDetail.status).toBe('backlog'); // status untouched
-      const archContent = await readFile(ticketPath, 'utf-8');
-      expect(archContent).toContain('archived: true');
-      expect(archContent).toContain('status: backlog');
-
-      const restored = await invokeRoute(
-        router,
-        'post',
-        '/api/tickets/:id/unarchive',
-        { id: 'TP-1' },
-        {},
-      );
-      expect(restored.statusCode).toBe(200);
-      const restDetail = (restored.payload as any).ticket ?? (restored.payload as any).ticket;
-      expect(restDetail.archived).toBe(false);
-      expect(restDetail.archivedAt).toBeNull();
-      expect(restDetail.archivedReason).toBeNull();
-      expect(restDetail.status).toBe('backlog'); // prior status preserved
-    });
-
     it('archives + restores a project via the real flag (not statusOverride)', async () => {
       await createTicketFixture();
       const router = createWriteRouter(testDir);
@@ -927,7 +893,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: /repo/c
-  worktreePath: /repo/c/.worktrees/foo
+  worktree: /repo/c/.worktrees/foo
   branch: foo
   parentBranch: main
 tags: []
@@ -954,7 +920,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: /repo/a
-  worktreePath: /repo/a/.worktrees/bar
+  worktree: /repo/a/.worktrees/bar
   branch: bar
   parentBranch: main
 tags: []
@@ -1034,7 +1000,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: ${repo ?? 'null'}
-  worktreePath: ${worktreePath ?? 'null'}
+  worktree: ${worktreePath ?? 'null'}
   branch: ${branch ?? 'null'}
   parentBranch: ${repo && branch ? 'main' : 'null'}
 tags: []
@@ -1315,8 +1281,8 @@ tags: []
         );
         expect(create.statusCode, JSON.stringify(create.payload)).toBe(200);
         return (
-          create.payload as { ticket: { workspace: { worktreePath: string } } }
-        ).ticket.workspace.worktreePath;
+          create.payload as { ticket: { workspace: { worktree: string } } }
+        ).ticket.workspace.worktree;
       }
 
       it('rebuilds at the exact recorded path, bypassing the configured + branch-exists 409 guards', async () => {
@@ -1360,7 +1326,7 @@ tags: []
           'post',
           '/api/tickets/:id/worktree/recreate',
           { id: 'TP-1' },
-          { worktreePath: bogus, repository: '/etc' },
+          { worktree: bogus, repository: '/etc' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
         // Rebuilt at the recorded path, NOT the body-supplied one.
@@ -1412,8 +1378,8 @@ tags: []
           { repository: repo },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
-        const payload = res.payload as { ticket: { workspace: { worktreePath: string | null; branch: string | null; repository: string | null; parentBranch: string | null } } };
-        expect(payload.ticket.workspace.worktreePath).toBe(
+        const payload = res.payload as { ticket: { workspace: { worktree: string | null; branch: string | null; repository: string | null; parentBranch: string | null } } };
+        expect(payload.ticket.workspace.worktree).toBe(
           resolve(repo, '.worktrees', 'syntaur/test-project/test-ticket'),
         );
         expect(payload.ticket.workspace.branch).toBe('syntaur/test-project/test-ticket');
@@ -1448,7 +1414,7 @@ tags: []
         expect(payload.error).toMatch(/working-tree root/i);
       });
 
-      it('returns 409 when workspace.worktreePath is already set', async () => {
+      it('returns 409 when workspace.worktree is already set', async () => {
         await createTicketFixture();
         const repo = await setupRepo();
         const router = createWriteRouter(testDir);
@@ -1565,9 +1531,9 @@ tags: []
           { repository: repo, branch: 'feature/foo' },
         );
         expect(res.statusCode, JSON.stringify(res.payload)).toBe(200);
-        const payload = res.payload as { ticket: { workspace: { branch: string | null; worktreePath: string | null } } };
+        const payload = res.payload as { ticket: { workspace: { branch: string | null; worktree: string | null } } };
         expect(payload.ticket.workspace.branch).toBe('feature/foo');
-        expect(payload.ticket.workspace.worktreePath).toBe(resolve(repo, '.worktrees', 'feature/foo'));
+        expect(payload.ticket.workspace.worktree).toBe(resolve(repo, '.worktrees', 'feature/foo'));
       });
 
       it('returns 409 when the worktree dir already exists on disk', async () => {
@@ -1646,7 +1612,7 @@ tags: []
   });
 });
 
-describe('statusHistory recording + virtual fields (write router)', () => {
+describe('event history + virtual fields (write router)', () => {
   const PROJ = 'test-project';
   const DEFAULT_FOLDER = 'TP-1-test-ticket';
 
@@ -1671,7 +1637,7 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     return parseTicketFrontmatter(await readFile(ticketPath(folder), 'utf-8'));
   }
 
-  it('verb route records statusHistory on a stage move', async () => {
+  it('verb route moves stage without writing statusHistory to frontmatter', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
@@ -1684,8 +1650,8 @@ describe('statusHistory recording + virtual fields (write router)', () => {
     expect(res.statusCode).toBe(200);
     const fm = await readFm();
     expect(fm.status).toBe('planning');
-    // v2 file-only plan moves may not append statusHistory; stage change is authoritative.
-    expect(fm.statusHistory.length).toBeGreaterThanOrEqual(0);
+    const content = await readFile(ticketPath(), 'utf-8');
+    expect(content).not.toContain('statusHistory:');
   });
 
   it('raw PATCH rejects status changes and allows inert title edits', async () => {
@@ -1735,7 +1701,7 @@ links: []
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -1770,7 +1736,7 @@ links: []
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -1790,8 +1756,8 @@ tags: []
     expect(explicitFm.priority).toBe('low');
   });
 
-  it('raw create seeds a command:create entry', async () => {
-    await createTicketFixture(); // creates the project
+  it('raw create emits a created event', async () => {
+    await createTicketFixture();
     const router = createWriteRouter(testDir);
     const content = `---
 id: placeholder
@@ -1802,16 +1768,21 @@ priority: medium
 created: "2026-03-21T10:00:00Z"
 updated: "2026-03-21T10:00:00Z"
 assignee: null
-externalIds: []
+blocked: null
+parked: null
 depends_on: []
 links: []
-blockedReason: null
+tags: []
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
-tags: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
 ---
 
 # Fresh One
@@ -1825,83 +1796,33 @@ tags: []
     );
     expect(res.statusCode).toBe(201);
     const fm = await readFmBySlug('fresh-one');
-    expect(fm.statusHistory).toHaveLength(1);
-    expect(fm.statusHistory[0]).toMatchObject({ from: null, to: 'backlog', command: 'create', by: null });
+    const { listEventsByTicket, initEventsDb } = await import('../db/events-db.js');
+    initEventsDb();
+    const events = listEventsByTicket(fm.id, { types: ['created'] });
+    expect(events.length).toBeGreaterThanOrEqual(1);
+    expect(events[0].type).toBe('created');
   });
 
-  it('derives completedAt when terminal, clears it on reopen; statusAge is numeric', async () => {
-    const projectDir = resolve(testDir, 'test-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'TP-1-test-ticket');
-    await mkdir(ticketDir, { recursive: true });
-    await writeFile(
-      resolve(projectDir, 'project.md'),
-      `---
-id: project-1
-slug: test-project
-title: Test Project
-prefix: TP
-nextTicket: 2
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
----
-# Test Project`,
-      'utf-8',
-    );
-    await writeFile(
-      resolve(ticketDir, 'ticket.md'),
-      `---
-id: TP-1
-slug: test-ticket
-title: Test Ticket
-status: review
-priority: medium
-created: "2026-03-20T10:00:00Z"
-updated: "2026-03-20T10:00:00Z"
-assignee: codex-1
-externalIds: []
-depends_on: []
-blockedReason: null
-workspace:
-  repository: null
-  worktreePath: null
-  branch: null
-  parentBranch: null
-tags: []
-statusHistory:
-  - at: "2026-03-20T10:00:00Z"
-    from: in_progress
-    to: review
-    command: review
-    by: human
----
-# Test Ticket`,
-      'utf-8',
-    );
-    const router = createWriteRouter(testDir);
-
-    const doneRes = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/verbs/:verb',
-      { id: 'TP-1', verb: 'done' },
-      { force: true },
-    );
-    expect(doneRes.statusCode).toBe(200);
-    const detail1 = (doneRes.payload as { ticket: { completedAt: string | null; statusAge: number | null } }).ticket;
-    expect(detail1.completedAt).toBeTruthy();
-    expect(typeof detail1.statusAge).toBe('number');
-    expect(detail1.statusAge as number).toBeGreaterThanOrEqual(0);
-
-    const reopen = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/verbs/:verb',
-      { id: 'TP-1', verb: 'reopen' },
-      {},
-    );
-    expect(reopen.statusCode).toBe(200);
-    const detail2 = (reopen.payload as { ticket: { completedAt: string | null } }).ticket;
-    expect(detail2.completedAt).toBeNull();
+  it('derives completedAt from moved events when terminal', async () => {
+    await createTicketFixture();
+    const { initEventsDb, recordEvent } = await import('../db/events-db.js');
+    const { getTicketDetail, invalidateRecordsCache } = await import('../dashboard/api.js');
+    initEventsDb();
+    const path = ticketPath();
+    const content = (await readFile(path, 'utf-8')).replace('status: backlog', 'status: done');
+    await writeFile(path, content);
+    recordEvent({
+      ticketId: 'TP-1',
+      type: 'moved',
+      actor: 'agent',
+      at: '2026-04-01T12:00:00Z',
+      details: { from: 'review', to: 'done' },
+    });
+    invalidateRecordsCache();
+    const detail = await getTicketDetail(testDir, 'test-project', 'test-ticket');
+    expect(detail?.completedAt).toBe('2026-04-01T12:00:00Z');
+    expect(typeof detail?.statusAge).toBe('number');
+    expect(detail!.statusAge!).toBeGreaterThanOrEqual(0);
   });
 });
 

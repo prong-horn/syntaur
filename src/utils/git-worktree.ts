@@ -428,7 +428,7 @@ export async function createWorktreeAndRecord(
     const content = await readFile(ticketPath, 'utf-8');
     const updated = updateTicketWorkspace(content, {
       repository,
-      worktreePath,
+      worktree: worktreePath,
       branch,
       parentBranch,
     });

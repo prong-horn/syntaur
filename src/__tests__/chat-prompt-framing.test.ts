@@ -44,7 +44,7 @@ function def(id: string, overrides: Partial<AgentDefinition> = {}): AgentDefinit
 const context = {
   projectSlug: 'syntaur-meta',
   ticketSlug: 'chat-demo',
-  worktreePath: '/tmp/worktree',
+  worktree: '/tmp/worktree',
   branch: 'feat/chat-demo',
 };
 
@@ -219,7 +219,7 @@ Prompt framing ticket.
         projectSlug: 'p',
         ticketSlug: 'pf',
         ticketDir: dir,
-        worktreePath: '/tmp/wt',
+        worktree: '/tmp/wt',
       },
     });
     const textBlocks = blocks.filter((b) => b.type === 'text');
@@ -281,7 +281,7 @@ Still readable.
         projectSlug: 'p',
         ticketSlug: 'bad',
         ticketDir: dir,
-        worktreePath: '/tmp/wt',
+        worktree: '/tmp/wt',
       },
     });
     expect(warning).toMatch(/show context degraded for BAD-1/);

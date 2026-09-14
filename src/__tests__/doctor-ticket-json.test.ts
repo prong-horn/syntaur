@@ -32,7 +32,7 @@ created: "2026-04-23T12:00:00Z"
 updated: "2026-04-23T12:00:00Z"
 workspace:
   repository: /tmp/x
-  worktreePath: /tmp/x
+  worktree: /tmp/x
   branch: main
   parentBranch: main
 tags: []

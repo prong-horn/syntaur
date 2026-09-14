@@ -49,8 +49,8 @@ function featureTicketMd(
   parentBranch: main`
     : `workspace:
   repository: null
-  branch: null
   worktree: null
+  branch: null
   parentBranch: null`;
   return `---
 id: ${id}
@@ -88,7 +88,7 @@ A real objective.
 `;
 }
 
-describe('deps-done gate on start', () => {
+describe('deps-done gate on done', () => {
   let home: string;
   let mainPath: string;
 
@@ -110,9 +110,23 @@ describe('deps-done gate on start', () => {
     mainPath = join(mainDir, 'ticket.md');
     await writeFile(
       mainPath,
-      featureTicketMd('MAIN-1', 'main', 'ready', ['DEP-1'], { approved: true, workspace: true }),
+      featureTicketMd('MAIN-1', 'main', 'review', ['DEP-1'], { approved: true, workspace: true }),
     );
     await writeFile(join(mainDir, 'plan.md'), '# Plan\n\nApproved implementation plan.\n', 'utf-8');
+    await writeFile(
+      join(mainDir, 'journal.md'),
+      [
+        '## 2026-09-01T00:00:00Z · handoff · human',
+        '',
+        'Ready for review.',
+        '',
+        '## 2026-09-02T00:00:00Z · review · pi',
+        'verdict: approve · open: high=0 medium=0',
+        '',
+        'Clean.',
+      ].join('\n'),
+      'utf-8',
+    );
   });
 
   afterEach(async () => {
@@ -123,27 +137,37 @@ describe('deps-done gate on start', () => {
     return parseTicketFrontmatter(await readFile(mainPath, 'utf-8'));
   }
 
-  it('start fails the deps-done gate when a dependency is not done', async () => {
-    const r = await runCli(['start', 'MAIN-1', '--project', 'p1'], home);
+  it('done fails the deps-done gate when a dependency is not done', async () => {
+    const r = await runCli(['done', 'MAIN-1', '--project', 'p1'], home);
     expect(r.code).toBe(1);
     expect(r.stderr).toContain('deps-done');
     expect(r.stderr).toContain('DEP-1');
-    expect((await fm()).status).toBe('ready');
+    expect((await fm()).status).toBe('review');
   });
 
-  it('start succeeds when the dependency is done', async () => {
+  it('done succeeds when the dependency is done', async () => {
     const depPath = join(home, 'projects', 'p1', 'tickets', 'DEP-1-dep-a', 'ticket.md');
     const depContent = await readFile(depPath, 'utf-8');
     await writeFile(depPath, depContent.replace('status: backlog', 'status: done'));
 
+    const r = await runCli(['done', 'MAIN-1', '--project', 'p1'], home);
+    expect(r.code).toBe(0);
+    expect((await fm()).status).toBe('done');
+  });
+
+  it('done with --force skips deps-done and moves anyway', async () => {
+    const r = await runCli(['done', 'MAIN-1', '--project', 'p1', '--force'], home);
+    expect(r.code).toBe(0);
+    expect((await fm()).status).toBe('done');
+  });
+
+  it('start no longer checks deps-done', async () => {
+    const readyPath = mainPath;
+    const readyContent = (await readFile(readyPath, 'utf-8')).replace('status: review', 'status: ready');
+    await writeFile(readyPath, readyContent);
     const r = await runCli(['start', 'MAIN-1', '--project', 'p1'], home);
     expect(r.code).toBe(0);
     expect((await fm()).status).toBe('in_progress');
-  });
-
-  it('start with --force skips deps-done and moves anyway', async () => {
-    const r = await runCli(['start', 'MAIN-1', '--project', 'p1', '--force'], home);
-    expect(r.code).toBe(0);
-    expect((await fm()).status).toBe('in_progress');
+    expect(r.stderr).not.toContain('deps-done');
   });
 });

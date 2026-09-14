@@ -93,7 +93,7 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       id: a.projectSlug === null ? `ticket-standalone-${a.id}` : `ticket-${a.projectSlug}-${a.slug}`,
       title: a.title,
       subtitle: `${a.projectTitle} \u00B7 ${a.status}`,
-      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', ...idKeywords(a.externalIds)].filter(
+      keywords: [a.projectSlug ?? 'standalone', a.assignee ?? '', a.blocked ?? '', a.parked ?? ''].filter(
         (s): s is string => Boolean(s),
       ),
       route: `/t/${a.id}`,
@@ -102,7 +102,6 @@ export function buildIndex(input: BuildInput): PaletteEntry[] {
       assignee: a.assignee,
       ticketType: a.template,
       project: a.projectSlug,
-      externalIds: idField(a.externalIds),
     });
   }
 

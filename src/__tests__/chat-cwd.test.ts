@@ -29,7 +29,7 @@ describe('resolveChatCwd', () => {
 
   it('prefers worktreePath → tier worktree', () => {
     const r = resolveChatCwd({
-      worktreePath: worktree,
+      worktree: worktree,
       repository: repo,
       branch: 'main',
       ticketSlug: 'a',
@@ -42,7 +42,7 @@ describe('resolveChatCwd', () => {
 
   it('falls back to repository → tier repository', () => {
     const r = resolveChatCwd({
-      worktreePath: null,
+      worktree: null,
       repository: repo,
       branch: 'main',
       ticketSlug: 'a',
@@ -54,7 +54,7 @@ describe('resolveChatCwd', () => {
 
   it('falls back to project repository → tier project', () => {
     const r = resolveChatCwd({
-      worktreePath: null,
+      worktree: null,
       repository: null,
       branch: null,
       ticketSlug: 'a',
@@ -67,7 +67,7 @@ describe('resolveChatCwd', () => {
 
   it('falls back to homedir → tier home', () => {
     const r = resolveChatCwd({
-      worktreePath: null,
+      worktree: null,
       repository: null,
       branch: null,
       ticketSlug: 'a',
@@ -80,7 +80,7 @@ describe('resolveChatCwd', () => {
 
   it('skips non-existent project repositories', () => {
     const r = resolveChatCwd({
-      worktreePath: null,
+      worktree: null,
       repository: null,
       branch: null,
       ticketSlug: 'a',
@@ -92,7 +92,7 @@ describe('resolveChatCwd', () => {
 
   it('uses first existing project repository when multiple are given', () => {
     const r = resolveChatCwd({
-      worktreePath: null,
+      worktree: null,
       repository: null,
       branch: null,
       ticketSlug: 'a',
@@ -105,7 +105,7 @@ describe('resolveChatCwd', () => {
   it('worktree beats repository beats project beats home', () => {
     // All four exist, worktree wins
     const r = resolveChatCwd({
-      worktreePath: worktree,
+      worktree: worktree,
       repository: repo,
       branch: 'main',
       ticketSlug: 'a',

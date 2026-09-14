@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { appendStatusHistoryEntry } from '../lifecycle/frontmatter.js';
+import { emitCreated } from '../lifecycle/event-emit.js';
 import {
   moveTicket,
   flagTicket,
@@ -128,7 +128,7 @@ interface TrackedFields {
   status: string;
   priority: string;
   assignee: string | null;
-  archived: boolean;
+  archived?: boolean;
 }
 
 /**
@@ -337,7 +337,7 @@ async function handleWorktreeCreate(
 
   try {
     const parsed = parseTicketFull(await readFile(ctx.ticketPath, 'utf-8'));
-    if (parsed.workspace.worktreePath) {
+    if (parsed.workspace.worktree) {
       res
         .status(409)
         .json({ error: 'Worktree already configured for this ticket' });
@@ -649,16 +649,7 @@ export function createWriteRouter(projectsDir: string): Router {
 
       await ensureDir(ticketDir);
       const parsedCreate = parseTicketFull(contentWithId);
-      const seededHere = parsedCreate.statusHistory.length === 0;
-      let seededContent = seededHere
-        ? appendStatusHistoryEntry(contentWithId, {
-            at: timestamp,
-            from: null,
-            to: parsedCreate.status,
-            command: 'create',
-            by: null,
-          })
-        : contentWithId;
+      let seededContent = contentWithId;
 
       try {
         const templateDir = await resolveTemplateContentDir(root, templateId);
@@ -691,16 +682,12 @@ export function createWriteRouter(projectsDir: string): Router {
         throw companionError;
       }
 
-      // Audit event (best-effort): emit AFTER all companion files are written
-      // (FIX 2) — a companion failure removes the dir, so a pre-companion emit
-      // would leave a false event. Only when we seeded the statusHistory here.
-      if (seededHere) {
-        emitDashboardEvent(parsedCreate.id, projectSlug, 'status-change', {
-          from: null,
-          to: parsedCreate.status,
-          command: 'create',
-        });
-      }
+      emitCreated({
+        ticketId: parsedCreate.id,
+        projectSlug,
+        at: timestamp,
+        actor: 'human',
+      });
 
       res.status(201).json({ slug: ticketSlug, projectSlug });
     } catch (error) {
@@ -1005,34 +992,6 @@ const id = getParam(req.params.id);
     }
   });
 
-  async function handleTicketArchiveById(
-    req: Request,
-    res: Response,
-    archived: boolean,
-  ): Promise<void> {
-const id = getParam(req.params.id);
-    const resolved = await resolveTicketById(projectsDir, id);
-    if (!resolved) {
-      res.status(404).json({ error: `Ticket "${id}" not found` });
-      return;
-    }
-    const ticketPath = resolve(resolved.ticketDir, 'ticket.md');
-    const content = await readFile(ticketPath, 'utf-8');
-    const reason = archived ? archiveReason(req.body) : null;
-    await writeFileForce(ticketPath, applyArchiveFields(content, archived, reason));
-
-    const parsed = parseTicketFull(content);
-    emitDashboardEvent(
-      parsed.id || resolved.id,
-      resolved.projectSlug,
-      archived ? 'archived' : 'restored',
-      reason ? { reason } : {},
-    );
-
-    const ticket = await getTicketDetailById(projectsDir, id);
-    res.json({ ticket });
-  }
-
   router.delete('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
 const id = getParam(req.params.id);
@@ -1048,26 +1007,6 @@ const id = getParam(req.params.id);
       res.status(500).json({ error: `Failed to delete ticket: ${(error as Error).message}` });
     }
   });
-
-  router.post('/api/tickets/:id/archive', async (req: Request, res: Response) => {
-    try {
-      await handleTicketArchiveById(req, res, true);
-    } catch (error) {
-      console.error('Error archiving ticket:', error);
-      res.status(500).json({ error: `Failed to archive ticket: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/tickets/:id/unarchive', async (req: Request, res: Response) => {
-    try {
-      await handleTicketArchiveById(req, res, false);
-    } catch (error) {
-      console.error('Error restoring ticket:', error);
-      res.status(500).json({ error: `Failed to restore ticket: ${(error as Error).message}` });
-    }
-  });
-
-
 
   // --- Lifecycle Transitions ---
 
@@ -1204,30 +1143,12 @@ const id = getParam(req.params.id);
 
       nextContent = setTopLevelField(nextContent, 'updated', now);
 
-      // Record a transition when a raw edit changes the status (conditional).
-      if (next.status !== current.status) {
-        nextContent = appendStatusHistoryEntry(nextContent, {
-          at: now,
-          from: current.status,
-          to: next.status,
-          command: 'edit',
-          by: null,
-        });
-      }
-
       await writeFileForce(ticketPath, nextContent);
 
       const ticketId = current.id || next.id;
-      if (next.status !== current.status) {
-        emitDashboardEvent(ticketId, resolved.projectSlug, 'status-change', {
-          from: current.status,
-          to: next.status,
-          command: 'edit',
-        });
-      }
       emitTrackedFieldDiffs(
-        { id: current.id, project: resolved.projectSlug, status: current.status, priority: current.priority, assignee: current.assignee, archived: current.archived },
-        { id: current.id, project: resolved.projectSlug, status: next.status, priority: next.priority, assignee: next.assignee, archived: next.archived },
+        { id: current.id, project: resolved.projectSlug, status: current.status, priority: current.priority, assignee: current.assignee },
+        { id: current.id, project: resolved.projectSlug, status: next.status, priority: next.priority, assignee: next.assignee },
         resolved.projectSlug,
       );
 

@@ -2,6 +2,7 @@ import { beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { closeEventsDb, resetEventsDb } from '../db/events-db.js';
 
 /**
  * Point `SYNTAUR_HOME` at a throwaway root for every test in the calling file.
@@ -29,11 +30,15 @@ export function useHermeticSyntaurHome(): void {
   let prior: string | undefined;
   let root: string | null = null;
   beforeEach(async () => {
+    closeEventsDb();
+    resetEventsDb();
     prior = process.env.SYNTAUR_HOME;
     root = await mkdtemp(join(tmpdir(), 'syntaur-hermetic-root-'));
     process.env.SYNTAUR_HOME = root;
   });
   afterEach(async () => {
+    closeEventsDb();
+    resetEventsDb();
     if (prior === undefined) delete process.env.SYNTAUR_HOME;
     else process.env.SYNTAUR_HOME = prior;
     if (root) await rm(root, { recursive: true, force: true });

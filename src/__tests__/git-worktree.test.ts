@@ -110,7 +110,7 @@ describe('git-worktree helpers', () => {
 
     const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain(`repository: ${repo}`);
-    expect(content).toContain(`worktreePath: ${wtPath}`);
+    expect(content).toContain(`worktree: ${wtPath}`);
     expect(content).toContain('branch: feature/three');
     expect(content).toContain('parentBranch: main');
   });

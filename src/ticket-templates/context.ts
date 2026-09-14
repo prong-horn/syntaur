@@ -7,8 +7,10 @@ import { fileExists } from '../utils/fs.js';
 import { markdownBody } from './content.js';
 import {
   type GateContext,
+  type MovedEvent,
   resolveDependencyStage,
 } from './gates.js';
+import { listEventsByTicket } from '../db/events-db.js';
 import { logRoleFile } from './manifest.js';
 import type { StageId } from './manifest.js';
 import { loadTemplate, resolveTemplateForTicket } from './registry.js';
@@ -37,6 +39,30 @@ async function loadDependencyStages(
   return map;
 }
 
+function loadMovedEvents(ticketId: string): MovedEvent[] {
+  try {
+    const rows = listEventsByTicket(ticketId, { types: ['moved'] });
+    const moves: MovedEvent[] = [];
+    for (const row of rows) {
+      try {
+        const details = JSON.parse(row.details ?? '{}') as Record<string, unknown>;
+        moves.push({
+          at: row.at,
+          from: String(details.from ?? ''),
+          to: String(details.to ?? ''),
+          verb: String(details.verb ?? ''),
+        });
+      } catch {
+        /* skip malformed row */
+      }
+    }
+    moves.sort((a, b) => b.at.localeCompare(a.at));
+    return moves;
+  } catch {
+    return [];
+  }
+}
+
 async function loadLogEntries(
   ticketDir: string,
   manifest: Awaited<ReturnType<typeof loadTemplate>>,
@@ -62,6 +88,7 @@ export async function buildGateContext(ticketDir: string): Promise<GateContext> 
     loadLogEntries(ticketDir, manifest),
     loadDependencyStages(root, fm.depends_on),
   ]);
+  const moves = loadMovedEvents(fm.id);
 
   return {
     ticketDir,
@@ -70,5 +97,6 @@ export async function buildGateContext(ticketDir: string): Promise<GateContext> 
     ticketBody: body,
     logEntries,
     dependencyStages,
+    moves,
   };
 }

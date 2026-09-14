@@ -70,7 +70,7 @@ depends_on: []
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []
@@ -196,8 +196,8 @@ describe('records cache', () => {
       ticketMd('has-worktree', 'in_progress')
         .replace(`id: ${TEST_TICKET_ID}`, 'id: WSP-1')
         .replace(
-          'worktreePath: null\n  branch: null',
-          'worktreePath: /tmp/wt\n  branch: feature-x',
+          'worktree: null\n  branch: null',
+          'worktree: /tmp/wt\n  branch: feature-x',
         ),
       'utf-8',
     );
@@ -206,7 +206,7 @@ describe('records cache', () => {
     const match = records.find((r) => r.ticketSlug === 'has-worktree');
     expect(match).toMatchObject({
       projectSlug: 'wsp',
-      worktreePath: '/tmp/wt',
+      worktree: '/tmp/wt',
       branch: 'feature-x',
     });
   });

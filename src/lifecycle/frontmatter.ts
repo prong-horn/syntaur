@@ -1,15 +1,4 @@
-import type {
-  TicketFrontmatter,
-  AttestationRecord,
-  ExternalId,
-  FrozenCheck,
-  GateOverride,
-  PlanBlock,
-  Solicitation,
-  StatusHistoryEntry,
-  StatusOverride,
-  Workspace,
-} from './types.js';
+import type { PlanBlock, TicketFrontmatter, Workspace } from './types.js';
 
 function extractFrontmatter(fileContent: string): [string, string] {
   const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
@@ -25,8 +14,6 @@ function parseSimpleValue(raw: string): string | null {
   const trimmed = raw.trim();
   if (trimmed === 'null' || trimmed === '~' || trimmed === '') return null;
   if (trimmed.startsWith('"') && trimmed.endsWith('"') && trimmed.length >= 2) {
-    // Decode the escapes formatYamlValue encodes — round-trip safety for
-    // values containing quotes/backslashes (codex code-review finding 4).
     return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1');
   }
   if (trimmed.startsWith("'") && trimmed.endsWith("'") && trimmed.length >= 2) {
@@ -65,126 +52,6 @@ function parseLinks(frontmatter: string): string[] {
   return results;
 }
 
-function parseExternalIds(frontmatter: string): ExternalId[] {
-  const inlineMatch = frontmatter.match(/^externalIds:\s*\[\s*\]/m);
-  if (inlineMatch) return [];
-
-  const results: ExternalId[] = [];
-  const blockMatch = frontmatter.match(
-    /^externalIds:\s*\n((?:\s+-\s+[\s\S]*?)(?=^\w|\n---))/m,
-  );
-  if (!blockMatch) return [];
-
-  const itemBlocks = blockMatch[1].split(/\n\s+-\s+/).filter(Boolean);
-  for (const block of itemBlocks) {
-    const lines = block.split('\n');
-    const entry: Record<string, string | null> = {};
-    for (const line of lines) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    if (entry['system'] && entry['id']) {
-      results.push({
-        system: entry['system'],
-        id: entry['id'],
-        url: entry['url'] || null,
-      });
-    }
-  }
-  return results;
-}
-
-/**
- * Parse the `statusHistory` list-of-mappings from a frontmatter string.
- *
- * NOTE on the boundary: `extractFrontmatter` strips the closing `\n---`, so when
- * `statusHistory` is the LAST frontmatter key there is no trailing `---` and no
- * following top-level key. The `parseExternalIds` regex boundary `(?=^\w|\n---)`
- * would silently drop such a block, and `$` under `/m` matches end-of-LINE (which
- * would truncate an entry after its first line). So this uses a robust line-scan:
- * collect blank/indented lines after the header until the first column-0 non-blank
- * line OR end of input. This is end-of-input safe regardless of the `---` delimiter.
- */
-function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
-  if (/^statusHistory:\s*\[\s*\]/m.test(frontmatter)) return [];
-
-  const headerMatch = frontmatter.match(/^statusHistory:\s*$/m);
-  if (!headerMatch) return [];
-
-  // Use the regex match offset, NOT indexOf(headerMatch[0]) — an earlier scalar
-  // value could contain the substring "statusHistory:" (e.g. a title) and shift
-  // the start position, dropping the real block.
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
-  const after = frontmatter.slice(bodyStart);
-
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line); // blank line — keep scanning (YAML allows blanks in a block)
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break; // column-0 non-blank → block ended
-    bodyLines.push(line);
-  }
-  const body = bodyLines.join('\n');
-
-  const results: StatusHistoryEntry[] = [];
-  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
-  for (const block of itemBlocks) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    // `to` is required; `from` is null only on the seed/create entry.
-    if (!entry['to']) continue;
-    const result: StatusHistoryEntry = {
-      at: entry['at'] ?? '',
-      from: entry['from'] ?? null,
-      to: entry['to'],
-      command: entry['command'] ?? '',
-      by: entry['by'] ?? null,
-    };
-    if (entry['reason'] != null) result.reason = entry['reason'];
-    // Dimension-aware optional keys (derived-status v3); absent on old entries.
-    if ('phaseFrom' in entry) result.phaseFrom = entry['phaseFrom'];
-    if ('phaseTo' in entry) result.phaseTo = entry['phaseTo'];
-    if ('dispositionFrom' in entry) result.dispositionFrom = entry['dispositionFrom'];
-    if ('dispositionTo' in entry) result.dispositionTo = entry['dispositionTo'];
-    // WS-2 lifecycle-engine hop fields — present only on engine-written entries.
-    if (entry['trigger'] != null) {
-      result.trigger = entry['trigger'] as StatusHistoryEntry['trigger'];
-    }
-    if (entry['route'] != null) {
-      const route = tryJson(entry['route']);
-      if (route !== undefined) result.route = route as StatusHistoryEntry['route'];
-    }
-    if (entry['gateSnapshot'] != null) {
-      const snap = tryJson(entry['gateSnapshot']);
-      if (Array.isArray(snap)) result.gateSnapshot = snap as StatusHistoryEntry['gateSnapshot'];
-    }
-    if (entry['dissent'] != null) {
-      const dissent = tryJson(entry['dissent']);
-      if (dissent !== undefined) result.dissent = dissent as StatusHistoryEntry['dissent'];
-    }
-    results.push(result);
-  }
-  return results;
-}
-
-/**
- * Parse a flat nested mapping block (`header:` + indented `key: value` lines)
- * into a string map. Returns null when the header is absent or explicitly null.
- * Shared by `plan` / `override` parsing; mirrors `parseWorkspace`'s
- * field scanning but generically.
- */
 function parseNestedBlock(frontmatter: string, header: string): Record<string, string | null> | null {
   if (new RegExp(`^${header}:\\s*(null|~)\\s*$`, 'm').test(frontmatter)) return null;
   const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
@@ -194,7 +61,7 @@ function parseNestedBlock(frontmatter: string, header: string): Record<string, s
   const out: Record<string, string | null> = {};
   for (const line of after.split('\n')) {
     if (line.length === 0) continue;
-    if (line[0] !== ' ' && line[0] !== '\t') break; // top-level key — block ended
+    if (line[0] !== ' ' && line[0] !== '\t') break;
     const colonIdx = line.indexOf(':');
     if (colonIdx < 0) continue;
     const key = line.slice(0, colonIdx).trim();
@@ -222,95 +89,10 @@ function parsePlanBlock(frontmatter: string): PlanBlock {
   };
 }
 
-function parseOverride(frontmatter: string): StatusOverride | null {
-  const block = parseNestedBlock(frontmatter, 'override');
-  if (!block || !block['status']) return null;
-  return {
-    status: block['status'],
-    source: block['source'] ?? 'human',
-    reason: block['reason'] ?? null,
-    at: block['at'] ?? '',
-  };
-}
-
-/**
- * Parse the `facts:` map (custom asserted fact values). Reuses
- * {@link parseNestedBlock}: absent/null block → `{}`; entries whose value is
- * null (empty / `null` / `~`) are DROPPED; remaining values kept as trimmed
- * strings (parseSimpleValue already trims + strips quotes). Typed coercion
- * against declarations happens in facts.ts — hand-edited garbage degrades there.
- */
-function parseFactsMap(frontmatter: string): Record<string, string> {
-  const block = parseNestedBlock(frontmatter, 'facts');
-  if (!block) return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(block)) {
-    if (v === null) continue;
-    out[k] = v;
-  }
-  return out;
-}
-
-/**
- * Parse the `attestations:` record list. Modeled on {@link parseStatusHistory}
- * (same end-of-input-safe line scan). Records missing any required key
- * (fact/actor/verdict/at) or carrying an unknown verdict are dropped.
- */
-function parseAttestations(frontmatter: string): AttestationRecord[] {
-  if (/^attestations:\s*\[\s*\]/m.test(frontmatter)) return [];
-
-  const headerMatch = frontmatter.match(/^attestations:\s*$/m);
-  if (!headerMatch) return [];
-
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
-  const after = frontmatter.slice(bodyStart);
-
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line);
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    bodyLines.push(line);
-  }
-  const body = bodyLines.join('\n');
-
-  const results: AttestationRecord[] = [];
-  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
-  for (const block of itemBlocks) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    const verdict = entry['verdict'];
-    if (!entry['fact'] || !entry['actor'] || !verdict || !entry['at']) continue;
-    if (verdict !== 'approved' && verdict !== 'changes-requested') continue;
-    const record: AttestationRecord = {
-      fact: entry['fact'],
-      actor: entry['actor'],
-      verdict,
-      at: entry['at'],
-    };
-    if (entry['note'] != null) record.note = entry['note'];
-    if (entry['file'] != null) record.file = entry['file'];
-    if (entry['digest'] != null) record.digest = entry['digest'];
-    if (entry['commit'] != null) record.commit = entry['commit'];
-    results.push(record);
-  }
-  return results;
-}
-
 function parseWorkspace(frontmatter: string): Workspace {
   const defaults: Workspace = {
     repository: null,
     worktree: null,
-    worktreePath: null,
     branch: null,
     parentBranch: null,
   };
@@ -320,10 +102,7 @@ function parseWorkspace(frontmatter: string): Workspace {
     const match = frontmatter.match(new RegExp(`^\\s+${field}:\\s*(.*)$`, 'm'));
     if (match) {
       const value = parseSimpleValue(match[1]);
-      if (field === 'worktree') {
-        defaults.worktree = value;
-      } else if (field === 'worktreePath') {
-        defaults.worktreePath = value;
+      if (field === 'worktree' || field === 'worktreePath') {
         if (!defaults.worktree) defaults.worktree = value;
       } else if (field === 'repository') {
         defaults.repository = value;
@@ -352,117 +131,6 @@ function parseTags(frontmatter: string): string[] {
   return results;
 }
 
-// ── WS-2 lifecycle-engine frontmatter blocks ─────────────────────────────────────
-
-/**
- * Shared body scan for a multi-line list-of-mappings block. Returns one
- * string-map per `- ` item, or [] when the block is absent or inline-empty.
- * Generalizes {@link parseAttestations}' body scan (same end-of-input safety).
- */
-function parseObjectList(frontmatter: string, header: string): Record<string, string | null>[] {
-  if (new RegExp(`^${header}:\\s*\\[\\s*\\]`, 'm').test(frontmatter)) return [];
-  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
-  if (!headerMatch) return [];
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1;
-  const after = frontmatter.slice(bodyStart);
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line);
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    bodyLines.push(line);
-  }
-  const body = bodyLines.join('\n');
-  const results: Record<string, string | null>[] = [];
-  for (const block of body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0)) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    results.push(entry);
-  }
-  return results;
-}
-
-function parseSolicitations(frontmatter: string): Solicitation[] {
-  const out: Solicitation[] = [];
-  for (const entry of parseObjectList(frontmatter, 'solicitations')) {
-    const state = entry['state'];
-    if (!entry['check'] || !entry['at']) continue;
-    if (state !== 'solicited' && state !== 'rendered' && state !== 'failed') continue;
-    const s: Solicitation = { check: entry['check'], at: entry['at'], state };
-    if (entry['judge'] != null) s.judge = entry['judge'];
-    if (entry['revisionBinding'] != null) s.revisionBinding = entry['revisionBinding'];
-    if (entry['sessionRef'] != null) s.sessionRef = entry['sessionRef'];
-    out.push(s);
-  }
-  return out;
-}
-
-function parseGateOverrides(frontmatter: string): GateOverride[] {
-  const out: GateOverride[] = [];
-  for (const entry of parseObjectList(frontmatter, 'gateOverrides')) {
-    if (
-      !entry['stage'] ||
-      !entry['key'] ||
-      entry['label'] == null ||
-      !entry['from'] ||
-      !entry['to'] ||
-      !entry['actor'] ||
-      !entry['at']
-    )
-      continue;
-    const o: GateOverride = {
-      stage: entry['stage'],
-      key: entry['key'],
-      label: entry['label'],
-      from: entry['from'],
-      to: entry['to'],
-      actor: entry['actor'],
-      at: entry['at'],
-    };
-    if (entry['reason'] != null) o.reason = entry['reason'];
-    out.push(o);
-  }
-  return out;
-}
-
-/** `firedVerdicts` is a list of dissent keys (which contain colons, so each is
- *  quoted by formatYamlValue → parse via parseSimpleValue to strip the quotes). */
-function parseFiredVerdicts(frontmatter: string): string[] {
-  if (/^firedVerdicts:\s*\[\s*\]/m.test(frontmatter)) return [];
-  const results: string[] = [];
-  const blockMatch = frontmatter.match(/^firedVerdicts:\s*\n((?:\s+-\s+.*\n?)*)/m);
-  if (blockMatch) {
-    for (const item of blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm)) {
-      const v = parseSimpleValue(item[1]);
-      if (v != null) results.push(v);
-    }
-  }
-  return results;
-}
-
-/** `frozenChecks`: `null`/absent → not-frozen (`null`); inline `[]` → frozen with
- *  no checks; block → the snapshot. The null-vs-[] distinction is load-bearing
- *  (only a terminal ticket is frozen). */
-function parseFrozenChecks(frontmatter: string): FrozenCheck[] | null {
-  if (/^frozenChecks:\s*\[\s*\]/m.test(frontmatter)) return [];
-  if (!/^frozenChecks:\s*$/m.test(frontmatter)) return null; // absent or scalar null
-  const out: FrozenCheck[] = [];
-  for (const entry of parseObjectList(frontmatter, 'frozenChecks')) {
-    if (!entry['key'] || entry['label'] == null || entry['passed'] == null) continue;
-    out.push({ key: entry['key'], label: entry['label'], passed: entry['passed'] === 'true' });
-  }
-  return out;
-}
-
 export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
   const [frontmatter] = extractFrontmatter(fileContent);
 
@@ -478,65 +146,38 @@ export function parseTicketFrontmatter(fileContent: string): TicketFrontmatter {
     title: getField('title') ?? '',
     project: getField('project'),
     template: getField('template'),
-    workflow: getField('workflow'),
-    status: getField('status') ?? 'pending',
+    status: getField('status') ?? 'backlog',
     priority: (getField('priority') ?? 'medium') as TicketFrontmatter['priority'],
-    created: getField('created') ?? '',
-    updated: getField('updated') ?? '',
-    assignee: getField('assignee'),
-    externalIds: parseExternalIds(frontmatter),
-    statusHistory: parseStatusHistory(frontmatter),
-    depends_on: parseDependsOn(frontmatter),
-    links: parseLinks(frontmatter),
     blocked: getField('blocked') ?? getField('blockedReason'),
-    workspace: parseWorkspace(frontmatter),
-    tags: parseTags(frontmatter),
-    archived: getField('archived') === 'true',
-    archivedAt: getField('archivedAt'),
-    archivedReason: getField('archivedReason'),
-    phase: getField('phase'),
-    disposition: getField('disposition'),
-    plan: parsePlanBlock(frontmatter),
     parked: (() => {
       const raw = getField('parked');
       if (raw === null || raw === 'false' || raw === 'null') return null;
       if (raw === 'true') return 'parked';
       return raw;
     })(),
-    reviewRequested: getField('reviewRequested') === 'true',
-    reworkRequested: getField('reworkRequested') === 'true',
-    implementationStarted: getField('implementationStarted') === 'true',
-    override: parseOverride(frontmatter),
-    facts: parseFactsMap(frontmatter),
-    attestations: parseAttestations(frontmatter),
-    solicitations: parseSolicitations(frontmatter),
-    firedVerdicts: parseFiredVerdicts(frontmatter),
-    frozenChecks: parseFrozenChecks(frontmatter),
-    hold: getField('hold') === 'true',
-    gateOverrides: parseGateOverrides(frontmatter),
+    depends_on: parseDependsOn(frontmatter),
+    assignee: getField('assignee'),
+    tags: parseTags(frontmatter),
+    links: parseLinks(frontmatter),
+    workspace: parseWorkspace(frontmatter),
+    plan: parsePlanBlock(frontmatter),
+    created: getField('created') ?? '',
+    updated: getField('updated') ?? '',
   };
 }
 
 function formatYamlValue(value: string | boolean | null): string {
   if (typeof value === 'boolean') return value ? 'true' : 'false';
   if (value === null) return 'null';
-  // Frontmatter scalars are single-line by contract: flatten embedded
-  // newlines rather than corrupting the block (codex code-review finding 4).
   if (/[\r\n]/.test(value)) {
     value = value.replace(/\s*[\r\n]+\s*/g, ' ').trim();
   }
   if (/^\d{4}-\d{2}-\d{2}T/.test(value)) {
     return `"${value}"`;
   }
-  // Quote YAML keyword/number look-alikes so a literal string "null"/"true"/
-  // "42" round-trips as a string, not the YAML scalar.
   if (/^(null|~|true|false|-?\d+(\.\d+)?)$/i.test(value)) {
     return `"${value}"`;
   }
-  // Quote values containing YAML-special characters that could cause parse
-  // issues, OR a value that is itself wrapped in quote chars (e.g.
-  // `"connection refused"` / `'x'`) — otherwise parseSimpleValue strips the
-  // literal surrounding quotes on read and the value does not round-trip.
   if (
     /[:#{}[\],&*?|>!%@\`]/.test(value) ||
     /^\s|\s$/.test(value) ||
@@ -554,22 +195,7 @@ export function updateTicketFile(
   updates: Partial<
     Pick<
       TicketFrontmatter,
-      | 'status'
-      | 'template'
-      | 'workflow'
-      | 'assignee'
-      | 'blocked'
-      | 'updated'
-      | 'archived'
-      | 'archivedAt'
-      | 'archivedReason'
-      | 'phase'
-      | 'disposition'
-      | 'parked'
-      | 'reviewRequested'
-      | 'reworkRequested'
-      | 'implementationStarted'
-      | 'hold'
+      'status' | 'template' | 'assignee' | 'blocked' | 'parked' | 'updated'
     >
   >,
 ): string {
@@ -582,8 +208,6 @@ export function updateTicketFile(
     if (fieldRegex.test(result)) {
       result = result.replace(fieldRegex, `$1 ${formatted}`);
     } else {
-      // Insert a missing field just before the closing frontmatter delimiter.
-      // `indexOf('\n---', 4)` skips the opening `---`; mirrors setTopLevelField.
       const closeIdx = result.indexOf('\n---', 4);
       if (closeIdx !== -1) {
         result = `${result.slice(0, closeIdx)}\n${key}: ${formatted}${result.slice(closeIdx)}`;
@@ -594,47 +218,29 @@ export function updateTicketFile(
   return result;
 }
 
-/**
- * Locate the `workspace:` block inside a frontmatter string and return the
- * [start, end) byte offsets of the *body* of that block (lines indented under
- * `workspace:`, excluding the `workspace:` header line itself). Returns null
- * if no `workspace:` block is present.
- */
 function findWorkspaceBlock(
   fmBlock: string,
 ): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
   const headerMatch = fmBlock.match(/^workspace:\s*$/m);
   if (!headerMatch) return null;
-  // Regex match offset, not indexOf — guards against an earlier scalar value
-  // (e.g. a title) containing the substring "workspace:". Mirrors
-  // findStatusHistoryBlock / parseStatusHistory.
   const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
+  const bodyStart = headerStart + headerMatch[0].length + 1;
   const after = fmBlock.slice(bodyStart);
   const lines = after.split('\n');
   let consumed = 0;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.length === 0) {
-      // blank line — consume but keep scanning; YAML allows blanks inside a block
       consumed += line.length + 1;
       continue;
     }
-    if (line[0] !== ' ') break; // top-level key — block ended
+    if (line[0] !== ' ') break;
     consumed += line.length + 1;
   }
-  // Trim a trailing newline we counted past EOF
   const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
   return { headerStart, bodyStart, bodyEnd };
 }
 
-/**
- * Update nested workspace.* fields (repository, worktreePath, branch, parentBranch)
- * in-place. Edits only inside the `workspace:` block — other indented keys
- * with the same name elsewhere in frontmatter are not touched. Preserves
- * field ordering and unknown workspace fields. If the `workspace:` block does
- * not exist, it is appended to the frontmatter.
- */
 export function updateTicketWorkspace(
   fileContent: string,
   partial: Partial<Workspace>,
@@ -645,7 +251,7 @@ export function updateTicketWorkspace(
   }
 
   const fmBlock = fmMatch[2];
-  const fields = ['repository', 'worktreePath', 'branch', 'parentBranch'] as const;
+  const fields = ['repository', 'worktree', 'branch', 'parentBranch'] as const;
   const block = findWorkspaceBlock(fmBlock);
 
   let newFm = fmBlock;
@@ -678,159 +284,18 @@ export function updateTicketWorkspace(
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
 }
 
-/**
- * Relabel a status id within a ticket's `statusHistory` — rewrite every
- * entry whose `from`/`to` equals `oldId` to `newId`, WITHOUT appending a new
- * entry or changing any `at`. Used by `syntaur status rename`: a rename is a
- * relabel, not a transition, so it must preserve `statusAge` (no new entry) yet
- * keep historical labels consistent with the new id (so derived `completedAt`
- * stays correct after renaming a terminal status). Scoped to the frontmatter
- * block; `from:`/`to:` keys are unique to statusHistory entries there. Exact
- * value match avoids relabeling a status whose id is a substring of another.
- */
-export function renameStatusInHistory(
-  content: string,
-  oldId: string,
-  newId: string,
-): string {
-  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---)/);
-  if (!fmMatch) return content;
-  const esc = oldId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  // phaseFrom/phaseTo also hold status ids (phase namespace = status definitions),
-  // so a rename must relabel them too. Disposition keys hold dimension values
-  // (active/blocked/...), not status ids — excluded. The OLD value may be QUOTED
-  // when its id is a YAML keyword/number look-alike — match both forms with
-  // ("?)…\2. The NEW value is (re)serialized via formatYamlValue so it is quoted
-  // exactly when needed (e.g. newId `null`/`true`/`42`), instead of reusing the
-  // old value's quote state (which dropped/mistyped keyword-id entries on parse).
-  const re = new RegExp(`^(\\s+(?:from|to|phaseFrom|phaseTo):[ \\t]*)("?)${esc}\\2[ \\t]*$`, 'gm');
-  const newFm = fmMatch[2].replace(re, (_m, prefix: string) => `${prefix}${formatYamlValue(newId)}`);
-  return `${fmMatch[1]}${newFm}${fmMatch[3]}${content.slice(fmMatch[0].length)}`;
-}
-
-/**
- * Locate the `statusHistory:` block (the multi-line list form, not inline `[]`)
- * inside a frontmatter string and return the [bodyStart, bodyEnd) offsets of the
- * block body (the indented `- …` item lines, excluding the header line). Returns
- * null when there is no block header. Mirrors `findWorkspaceBlock`.
- */
-function findStatusHistoryBlock(
-  fmBlock: string,
-): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
-  const headerMatch = fmBlock.match(/^statusHistory:\s*$/m);
-  if (!headerMatch) return null;
-  // Regex match offset, not indexOf — guards against an earlier scalar value
-  // containing the substring "statusHistory:".
-  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
-  const after = fmBlock.slice(bodyStart);
-  const lines = after.split('\n');
-  let consumed = 0;
-  for (const line of lines) {
-    if (line.length === 0) {
-      consumed += line.length + 1;
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break; // top-level key — block ended
-    consumed += line.length + 1;
-  }
-  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
-  return { headerStart, bodyStart, bodyEnd };
-}
-
-function renderStatusHistoryItem(entry: StatusHistoryEntry): string {
-  const lines = [
-    `  - at: ${formatYamlValue(entry.at)}`,
-    `    from: ${formatYamlValue(entry.from)}`,
-    `    to: ${formatYamlValue(entry.to)}`,
-    `    command: ${formatYamlValue(entry.command)}`,
-    `    by: ${formatYamlValue(entry.by)}`,
-  ];
-  if (entry.reason !== undefined && entry.reason !== null) {
-    lines.push(`    reason: ${formatYamlValue(entry.reason)}`);
-  }
-  // Dimension-aware optional keys — rendered only when present, so entries
-  // written by plain status transitions stay byte-identical to the v1 format.
-  for (const key of ['phaseFrom', 'phaseTo', 'dispositionFrom', 'dispositionTo'] as const) {
-    if (entry[key] !== undefined) {
-      lines.push(`    ${key}: ${formatYamlValue(entry[key] ?? null)}`);
-    }
-  }
-  // WS-2 lifecycle-engine hop fields — rendered ONLY on engine-written entries, so a
-  // ladder/legacy entry stays byte-identical. `trigger` is a bare enum; the
-  // structured fields (route/gateSnapshot/dissent) are JSON scalars (single-line,
-  // round-tripped through the flat item parser + parseSimpleValue quote handling).
-  if (entry.trigger !== undefined) {
-    lines.push(`    trigger: ${formatYamlValue(entry.trigger)}`);
-  }
-  if (entry.route !== undefined) {
-    lines.push(`    route: ${formatYamlValue(JSON.stringify(entry.route))}`);
-  }
-  if (entry.gateSnapshot !== undefined) {
-    lines.push(`    gateSnapshot: ${formatYamlValue(JSON.stringify(entry.gateSnapshot))}`);
-  }
-  if (entry.dissent !== undefined) {
-    lines.push(`    dissent: ${formatYamlValue(JSON.stringify(entry.dissent))}`);
-  }
-  return lines.join('\n');
-}
-
-/** JSON.parse that returns undefined instead of throwing — a hand-corrupted hop
- *  field degrades to "absent" rather than crashing the whole parse. */
-function tryJson(raw: string): unknown {
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Append one entry to a ticket file's `statusHistory` frontmatter list,
- * returning the new file content. Robust to three states:
- *   (i)   no `statusHistory:` key      → create the block before the closing `---`;
- *   (ii)  inline `statusHistory: []`   → convert it to a block with this entry;
- *   (iii) existing block               → append the item after the last item.
- * This is the single shared serializer used by the lifecycle transition paths and
- * the dashboard write paths. Mirrors the bespoke block handling of
- * `updateTicketWorkspace` (scalar `updateTicketFile` cannot append to a list).
- */
-/**
- * Set or clear a flat nested mapping block (`header:` + indented `key: value`
- * lines) in ticket frontmatter. `record = null` writes `header: null`
- * (preserving the key so future sets edit in place). Creates the block before
- * the closing `---` when absent. Used for `plan` and `override`.
- *
- * Duplicate headers: only the FIRST block is edited — consistent with
- * parseNestedBlock, which also reads the first. This writer never creates a
- * second block, so duplicates can only come from hand edits; doctor territory.
- */
-export function updateNestedBlock(
-  fileContent: string,
-  header: string,
-  record: Record<string, string | null> | null,
-): string {
+function setFrontmatterBlock(fileContent: string, header: string, rendered: string): string {
   const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
   if (!fmMatch) {
     throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
   }
   const fmBlock = fmMatch[2];
-
-  const rendered =
-    record === null
-      ? `${header}: null`
-      : [`${header}:`, ...Object.entries(record).map(([k, v]) => `  ${k}: ${formatYamlValue(v)}`)].join('\n');
-
-  // Replace an existing block (header + indented body) or scalar form, else append.
   const headerRe = new RegExp(`^${header}:.*$`, 'm');
   const headerMatch = fmBlock.match(headerRe);
   let newFm: string;
   if (headerMatch) {
     const start = headerMatch.index ?? 0;
     let end = start + headerMatch[0].length;
-    // consume any indented body lines following the header; blanks inside a
-    // block are scanned past (mirrors findWorkspaceBlock) but only indented
-    // lines extend the consumed range, so trailing blanks aren't swallowed.
     const after = fmBlock.slice(end);
     let scanned = 0;
     for (const line of after.split('\n').slice(1)) {
@@ -850,6 +315,18 @@ export function updateNestedBlock(
   return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
 }
 
+export function updateNestedBlock(
+  fileContent: string,
+  header: string,
+  record: Record<string, string | null> | null,
+): string {
+  const rendered =
+    record === null
+      ? `${header}: null`
+      : [`${header}:`, ...Object.entries(record).map(([k, v]) => `  ${k}: ${formatYamlValue(v)}`)].join('\n');
+  return setFrontmatterBlock(fileContent, header, rendered);
+}
+
 export function updatePlanBlock(fileContent: string, patch: Partial<PlanBlock>): string {
   const [fm] = extractFrontmatter(fileContent);
   const current = parsePlanBlock(fm);
@@ -860,261 +337,4 @@ export function updatePlanBlock(fileContent: string, patch: Partial<PlanBlock>):
     approvedAt: merged.approvedAt,
     approvedBy: merged.approvedBy,
   });
-}
-
-export function updateOverride(fileContent: string, override: StatusOverride | null): string {
-  return updateNestedBlock(
-    fileContent,
-    'override',
-    override === null
-      ? null
-      : { status: override.status, source: override.source, reason: override.reason, at: override.at },
-  );
-}
-
-/**
- * Set one custom fact value in the `facts:` map (read-modify-write the whole
- * map through {@link updateNestedBlock}). `value` must already be the CANONICAL
- * serialization (`'true'`/`'false'` / `String(n)`) — the CLI coerces before
- * calling. Dedicated block writer (like {@link updatePlanBlock}); no
- * `updateTicketFile` whitelist entry needed.
- */
-export function updateFactsMap(fileContent: string, name: string, value: string): string {
-  const [frontmatter] = extractFrontmatter(fileContent);
-  const current = parseFactsMap(frontmatter);
-  current[name] = value;
-  return updateNestedBlock(fileContent, 'facts', current);
-}
-
-function renderAttestationItem(r: AttestationRecord): string {
-  const lines = [
-    `  - fact: ${formatYamlValue(r.fact)}`,
-    `    actor: ${formatYamlValue(r.actor)}`,
-    `    verdict: ${formatYamlValue(r.verdict)}`,
-    `    at: ${formatYamlValue(r.at)}`,
-  ];
-  if (r.note !== undefined && r.note !== null) lines.push(`    note: ${formatYamlValue(r.note)}`);
-  if (r.file !== undefined && r.file !== null) lines.push(`    file: ${formatYamlValue(r.file)}`);
-  if (r.digest !== undefined && r.digest !== null) lines.push(`    digest: ${formatYamlValue(r.digest)}`);
-  if (r.commit !== undefined && r.commit !== null) lines.push(`    commit: ${formatYamlValue(r.commit)}`);
-  return lines.join('\n');
-}
-
-/**
- * Locate the `attestations:` block (multi-line list form). Mirrors
- * {@link findStatusHistoryBlock}; returns null when no block header.
- */
-function findAttestationsBlock(
-  fmBlock: string,
-): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
-  const headerMatch = fmBlock.match(/^attestations:\s*$/m);
-  if (!headerMatch) return null;
-  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
-  const after = fmBlock.slice(bodyStart);
-  const lines = after.split('\n');
-  let consumed = 0;
-  for (const line of lines) {
-    if (line.length === 0) {
-      consumed += line.length + 1;
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    consumed += line.length + 1;
-  }
-  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
-  return { headerStart, bodyStart, bodyEnd };
-}
-
-/**
- * Upsert one attestation record into the `attestations:` frontmatter list:
- * any existing record with the same (fact, actor) is replaced, then the whole
- * block is re-rendered. Robust to no key / inline `[]` / existing block, like
- * {@link appendStatusHistoryEntry}.
- */
-export function upsertAttestation(fileContent: string, record: AttestationRecord): string {
-  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
-  if (!fmMatch) {
-    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
-  }
-  const fmBlock = fmMatch[2];
-
-  const existing = parseAttestations(fmBlock);
-  const next = existing.filter((r) => !(r.fact === record.fact && r.actor === record.actor));
-  next.push(record);
-  const rendered = `attestations:\n${next.map(renderAttestationItem).join('\n')}`;
-
-  // Inline empty list `[]` OR a scalar `null`/`~` form — both parse as "no
-  // records" but findAttestationsBlock (which requires an empty tail) skips the
-  // scalar form, so handle both here to avoid appending a duplicate key.
-  const scalarRegex = /^attestations:[ \t]*(\[[ \t]*\]|null|~)[ \t]*$/m;
-  const block = findAttestationsBlock(fmBlock);
-
-  let newFm: string;
-  if (scalarRegex.test(fmBlock)) {
-    newFm = fmBlock.replace(scalarRegex, rendered);
-  } else if (block) {
-    const before = fmBlock.slice(0, block.headerStart);
-    const rest = fmBlock.slice(block.bodyEnd);
-    const sep = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
-    newFm = `${before}${rendered}${sep}${rest}`;
-  } else {
-    newFm = `${fmBlock.replace(/\n+$/, '')}\n${rendered}`;
-  }
-  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
-}
-
-export function appendStatusHistoryEntry(
-  fileContent: string,
-  entry: StatusHistoryEntry,
-): string {
-  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
-  if (!fmMatch) {
-    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
-  }
-  const fmBlock = fmMatch[2];
-  const item = renderStatusHistoryItem(entry);
-
-  const inlineRegex = /^statusHistory:[ \t]*\[[ \t]*\][ \t]*$/m;
-  const block = findStatusHistoryBlock(fmBlock);
-
-  let newFm: string;
-  if (inlineRegex.test(fmBlock)) {
-    // (ii) inline empty list → block.
-    newFm = fmBlock.replace(inlineRegex, `statusHistory:\n${item}`);
-  } else if (block) {
-    // (iii) existing block → insert after the last item line.
-    const before = fmBlock.slice(0, block.bodyEnd);
-    const rest = fmBlock.slice(block.bodyEnd);
-    const sep1 = before.endsWith('\n') ? '' : '\n';
-    const sep2 = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
-    newFm = `${before}${sep1}${item}${sep2}${rest}`;
-  } else {
-    // (i) no key → append a new block at the end of the frontmatter.
-    newFm = `${fmBlock.replace(/\n+$/, '')}\nstatusHistory:\n${item}`;
-  }
-
-  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
-}
-
-// ── WS-2 lifecycle-engine block writers ──────────────────────────────────────────
-
-/** Generic `findAttestationsBlock` — locate `header:` (block form). */
-function findListBlock(
-  fmBlock: string,
-  header: string,
-): { headerStart: number; bodyStart: number; bodyEnd: number } | null {
-  const headerMatch = fmBlock.match(new RegExp(`^${header}:\\s*$`, 'm'));
-  if (!headerMatch) return null;
-  const headerStart = headerMatch.index ?? fmBlock.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1;
-  const after = fmBlock.slice(bodyStart);
-  let consumed = 0;
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      consumed += line.length + 1;
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    consumed += line.length + 1;
-  }
-  const bodyEnd = Math.min(bodyStart + consumed, fmBlock.length);
-  return { headerStart, bodyStart, bodyEnd };
-}
-
-/**
- * Set the frontmatter key `header` to the pre-rendered `rendered` text
- * (`header: []` / `header: null` / `header:\n  - …`). Replaces an existing block
- * OR scalar (`[]`/`null`/`~`) form in place, else appends before the closing
- * `---`. The single shared substrate for the WS-2 list blocks — mirrors
- * {@link upsertAttestation}'s block handling.
- */
-function setFrontmatterBlock(fileContent: string, header: string, rendered: string): string {
-  const fmMatch = fileContent.match(/^(---\n)([\s\S]*?)(\n---)/);
-  if (!fmMatch) {
-    throw new Error('No frontmatter found in ticket file. Expected --- delimiters.');
-  }
-  const fmBlock = fmMatch[2];
-  const scalarRegex = new RegExp(`^${header}:[ \\t]*(\\[[ \\t]*\\]|null|~)[ \\t]*$`, 'm');
-  const block = findListBlock(fmBlock, header);
-  let newFm: string;
-  if (block) {
-    const before = fmBlock.slice(0, block.headerStart);
-    const rest = fmBlock.slice(block.bodyEnd);
-    const sep = rest.length > 0 && !rest.startsWith('\n') ? '\n' : '';
-    newFm = `${before}${rendered}${sep}${rest}`;
-  } else if (scalarRegex.test(fmBlock)) {
-    newFm = fmBlock.replace(scalarRegex, rendered);
-  } else {
-    newFm = `${fmBlock.replace(/\n+$/, '')}\n${rendered}`;
-  }
-  return `${fmMatch[1]}${newFm}${fmMatch[3]}${fileContent.slice(fmMatch[0].length)}`;
-}
-
-/** Replace a whole list block with `renderedItems`; empty → inline `header: []`. */
-function replaceListBlock(fileContent: string, header: string, renderedItems: string[]): string {
-  const rendered =
-    renderedItems.length === 0 ? `${header}: []` : `${header}:\n${renderedItems.join('\n')}`;
-  return setFrontmatterBlock(fileContent, header, rendered);
-}
-
-function renderSolicitationItem(s: Solicitation): string {
-  const lines = [`  - check: ${formatYamlValue(s.check)}`];
-  if (s.judge !== undefined) lines.push(`    judge: ${formatYamlValue(s.judge)}`);
-  if (s.revisionBinding !== undefined) {
-    lines.push(`    revisionBinding: ${formatYamlValue(s.revisionBinding)}`);
-  }
-  lines.push(`    at: ${formatYamlValue(s.at)}`);
-  if (s.sessionRef !== undefined) lines.push(`    sessionRef: ${formatYamlValue(s.sessionRef)}`);
-  lines.push(`    state: ${formatYamlValue(s.state)}`);
-  return lines.join('\n');
-}
-
-/** Replace the whole `solicitations:` block with `list`. */
-export function replaceSolicitations(fileContent: string, list: Solicitation[]): string {
-  return replaceListBlock(fileContent, 'solicitations', list.map(renderSolicitationItem));
-}
-
-/** Replace the whole `firedVerdicts:` list (dissent keys). */
-export function replaceFiredVerdicts(fileContent: string, list: string[]): string {
-  return replaceListBlock(
-    fileContent,
-    'firedVerdicts',
-    list.map((v) => `  - ${formatYamlValue(v)}`),
-  );
-}
-
-function renderGateOverrideItem(o: GateOverride): string {
-  const lines = [
-    `  - stage: ${formatYamlValue(o.stage)}`,
-    `    key: ${formatYamlValue(o.key)}`,
-    `    label: ${formatYamlValue(o.label)}`,
-    `    from: ${formatYamlValue(o.from)}`,
-    `    to: ${formatYamlValue(o.to)}`,
-    `    actor: ${formatYamlValue(o.actor)}`,
-    `    at: ${formatYamlValue(o.at)}`,
-  ];
-  if (o.reason !== undefined) lines.push(`    reason: ${formatYamlValue(o.reason)}`);
-  return lines.join('\n');
-}
-
-/** Replace the whole `gateOverrides:` block with `list`. */
-export function replaceGateOverrides(fileContent: string, list: GateOverride[]): string {
-  return replaceListBlock(fileContent, 'gateOverrides', list.map(renderGateOverrideItem));
-}
-
-function renderFrozenCheckItem(c: FrozenCheck): string {
-  return [
-    `  - key: ${formatYamlValue(c.key)}`,
-    `    label: ${formatYamlValue(c.label)}`,
-    `    passed: ${formatYamlValue(c.passed)}`,
-  ].join('\n');
-}
-
-/** Write `frozenChecks:` — `null` (not frozen) / inline `[]` (frozen, no checks)
- *  / a block. The null-vs-[] distinction is load-bearing (Task 2.3 freeze read). */
-export function writeFrozenChecks(fileContent: string, checks: FrozenCheck[] | null): string {
-  if (checks === null) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: null');
-  if (checks.length === 0) return setFrontmatterBlock(fileContent, 'frozenChecks', 'frozenChecks: []');
-  return replaceListBlock(fileContent, 'frozenChecks', checks.map(renderFrozenCheckItem));
 }

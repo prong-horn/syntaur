@@ -88,14 +88,14 @@ describe('renderTicket', () => {
   });
     expect(out).toContain('id: uuid-1');
     expect(out).toContain('slug: test-ticket');
-    expect(out).toContain('status: draft');
+    expect(out).toContain('status: backlog');
     expect(out).toContain('priority: medium');
     expect(out).toContain('assignee: null');
-    expect(out).toContain('externalIds: []');
     expect(out).toContain('depends_on: []');
-    expect(out).toContain('blockedReason: null');
+    expect(out).toContain('blocked: null');
+    expect(out).toContain('parked: null');
     expect(out).toContain('repository: null');
-    expect(out).toContain('worktreePath: null');
+    expect(out).toContain('worktree: null');
     expect(out).toContain('branch: null');
     expect(out).toContain('parentBranch: null');
     expect(out).toContain('tags: []');

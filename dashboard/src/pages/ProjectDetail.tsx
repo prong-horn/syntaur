@@ -445,7 +445,7 @@ export function ProjectDetail() {
                 value: 'tickets',
                 label: 'Tickets',
                 // Archived tickets are hidden from the table; don't inflate the count with them.
-                count: project.tickets.filter((a) => !a.archived).length,
+                count: project.tickets.length,
                 content: (
                   <div className="space-y-5">
                     <SectionCard

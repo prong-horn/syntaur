@@ -4,6 +4,9 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createWriteRouter } from '../dashboard/api-write.js';
+import { useHermeticSyntaurHome } from './hermetic-root.js';
+
+useHermeticSyntaurHome();
 
 let testDir: string;
 

@@ -41,7 +41,7 @@ async function resolveTicketPath(opts: {
 
 export interface WorkspaceSetOptions {
   repository?: string;
-  worktreePath?: string;
+  worktree?: string;
   branch?: string;
   parentBranch?: string;
   ticket?: string;
@@ -52,10 +52,10 @@ export async function runWorkspaceSet(
   options: WorkspaceSetOptions,
   cwd: string = process.cwd(),
 ): Promise<{ path: string; fields: Record<string, string | null> }> {
-  const partial: Record<'repository' | 'worktreePath' | 'branch' | 'parentBranch', string> = {} as never;
+  const partial: Record<'repository' | 'worktree' | 'branch' | 'parentBranch', string> = {} as never;
   const fields: Record<string, string | null> = {};
   let any = false;
-  for (const key of ['repository', 'worktreePath', 'branch', 'parentBranch'] as const) {
+  for (const key of ['repository', 'worktree', 'branch', 'parentBranch'] as const) {
     const value = options[key];
     if (value !== undefined) {
       (partial as Record<string, string>)[key] = value;
@@ -116,9 +116,12 @@ workspaceCommand
   .option('--parent-branch <name>', 'Parent branch (typically main)')
   .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
-  .action(async (options: WorkspaceSetOptions) => {
+  .action(async (options: WorkspaceSetOptions & { worktreePath?: string }) => {
     try {
-      const { path, fields } = await runWorkspaceSet(options);
+      const { path, fields } = await runWorkspaceSet({
+        ...options,
+        worktree: options.worktree ?? options.worktreePath,
+      });
       console.log(`Updated workspace in ${path}`);
       for (const [k, v] of Object.entries(fields)) {
         console.log(`  ${k}: ${v ?? 'null'}`);

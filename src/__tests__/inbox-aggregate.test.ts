@@ -14,6 +14,12 @@ import { formatChatQuestionMarker } from '../chat/questions.js';
 import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
 import { planDigest } from '../ticket-templates/plan-facts.js';
 import { formatCommentEntry, type Comment } from '../templates/index.js';
+import {
+  closeEventsDb,
+  initEventsDb,
+  recordEvent,
+  resetEventsDb,
+} from '../db/events-db.js';
 
 let root: string;
 let projectsDir: string;
@@ -89,7 +95,8 @@ async function seed(o: SeedOpts): Promise<string> {
     `project: ${project}`,
   ];
   if (o.archived) fm.push('archived: true');
-  if (o.blockedReason) fm.push(`blockedReason: ${o.blockedReason}`);
+  fm.push('template: feature');
+  if (o.blockedReason) fm.push(`blocked: "${o.blockedReason}"`);
   if (o.reviewRequested) fm.push('reviewRequested: true');
   if (o.updated) fm.push(`updated: "${o.updated}"`);
   if (o.created) fm.push(`created: "${o.created}"`);
@@ -135,13 +142,27 @@ async function seed(o: SeedOpts): Promise<string> {
   return dir;
 }
 
+function seedMovedEvent(ticketId: string, at: string, to: string, from = 'in_progress'): void {
+  recordEvent({
+    ticketId,
+    type: 'moved',
+    actor: 'human',
+    at,
+    details: { from, to, verb: to },
+  });
+}
+
 beforeEach(async () => {
   root = await mkdtemp(join(tmpdir(), 'syntaur-inbox-agg-'));
   projectsDir = join(root, 'projects');
   await mkdir(projectsDir, { recursive: true });
+  resetEventsDb();
+  initEventsDb(join(root, 'syntaur.db'));
 });
 
 afterEach(async () => {
+  closeEventsDb();
+  resetEventsDb();
   await rm(root, { recursive: true, force: true });
 });
 
@@ -192,7 +213,8 @@ describe('computeInbox — shape', () => {
     const result = await run();
     const item = result.items[0];
     expect(item.acceptCommand).toBe('done');
-    expect(item.reopenCommand).toBe('reopen');
+    expect(item.reopenCommand).toBeNull();
+    expect(item.logReviewHint).toBe('Log an approving review');
     expect(item.commentId).toBeUndefined();
   });
 
@@ -271,7 +293,7 @@ describe('computeInbox — positive categories', () => {
     });
     const r = await run();
     expect(r.counts['plan-approval']).toBe(1);
-    expect(r.items[0].action.command).toBe('syntaur plan approve plan-it --project p1');
+    expect(r.items[0].action.command).toBe('syntaur approve plan-it --project p1');
   });
 
   it('project item: targets ticket by id with --project', async () => {
@@ -285,19 +307,19 @@ describe('computeInbox — positive categories', () => {
 // ── excluded / negative cases ──────────────────────────────────────────────────
 
 describe('computeInbox — exclusions', () => {
-  it('skips archived tickets up front', async () => {
-    await seed({ id: 'a', slug: 'arch', status: 'review', project: 'p1', archived: true });
-    const r = await run();
-    expect(r.total).toBe(0);
-  });
-
-  it('excludes backlog / ready / in_progress / terminal / parked', async () => {
+  it('excludes backlog / ready / in_progress / terminal / parked flag', async () => {
     await seed({ id: '1', slug: 'd', status: 'backlog', project: 'p1' });
     await seed({ id: '2', slug: 'rti', status: 'ready', project: 'p1' });
     await seed({ id: '3', slug: 'ip', status: 'in_progress', project: 'p1' });
     await seed({ id: '4', slug: 'done', status: 'done', project: 'p1' });
     await seed({ id: '5', slug: 'fail', status: 'dropped', project: 'p1' });
-    await seed({ id: '6', slug: 'park', status: 'parked', project: 'p1' });
+    await seed({
+      id: '6',
+      slug: 'park',
+      status: 'in_progress',
+      project: 'p1',
+      extraFrontmatter: ['parked: "on hold"'],
+    });
     const r = await run();
     expect(r.total).toBe(0);
   });
@@ -337,27 +359,25 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a parked-disposition ticket even with status review', async () => {
-    // Malformed pairing: disposition:parked but status:review. The up-front
-    // disposition guard drops it (a parked item is not awaiting a decision).
+  it('excludes a parked ticket even with status review', async () => {
     await seed({
       id: 'pk',
       slug: 'parked-rev',
       status: 'review',
       project: 'p1',
-      extraFrontmatter: ['disposition: parked'],
+      extraFrontmatter: ['parked: "on hold"'],
     });
     const r = await run();
     expect(r.total).toBe(0);
   });
 
-  it('excludes a parked-disposition ticket even with an open question', async () => {
+  it('excludes a parked ticket even with an open question', async () => {
     await seed({
       id: 'pkq',
       slug: 'parked-q',
       status: 'in_progress',
       project: 'p1',
-      extraFrontmatter: ['disposition: parked'],
+      extraFrontmatter: ['parked: "on hold"'],
       comments: [
         { id: 'c1', timestamp: '2026-06-15T00:00:00Z', author: 'h', type: 'question', body: 'q?', resolved: false },
       ],
@@ -367,23 +387,7 @@ describe('computeInbox — exclusions', () => {
     expect(r.total).toBe(0);
   });
 
-  it('excludes a terminal-disposition ticket even with status review', async () => {
-    await seed({
-      id: 'tm',
-      slug: 'terminal-rev',
-      status: 'review',
-      project: 'p1',
-      extraFrontmatter: ['disposition: terminal'],
-    });
-    const r = await run();
-    expect(r.total).toBe(0);
-  });
-
-  it('excludes a TERMINAL-status ticket with NULL disposition and an open question', async () => {
-    // Legacy/null-disposition: status is `done` (∈ terminalStatuses) with
-    // no `disposition` field, plus an unresolved question. The terminal-STATUS
-    // guard must drop it BEFORE the status-agnostic question loop — otherwise
-    // the question would leak into the inbox.
+  it('excludes a TERMINAL-status ticket with an open question', async () => {
     await seed({
       id: 'tnq',
       slug: 'terminal-null-q',
@@ -414,75 +418,75 @@ describe('computeInbox — exclusions', () => {
 // ── since selection + ageMs + ordering ─────────────────────────────────────────
 
 describe('computeInbox — since, age, ordering', () => {
-  it('uses the to===review statusHistory entry for review since/ageMs', async () => {
+  it('uses the latest moved-into-review event for review since/ageMs', async () => {
+    const ticketId = toTicketId('r', 'rev');
     await seed({
       id: 'r',
       slug: 'rev',
       status: 'review',
       project: 'p1',
-      statusHistory: [
-        '- at: "2026-06-10T00:00:00Z"',
-        '  to: in_progress',
-        '  command: start',
-        '- at: "2026-06-14T12:00:00Z"',
-        '  to: review',
-        '  command: review',
-      ],
     });
+    seedMovedEvent(ticketId, '2026-06-14T12:00:00Z', 'review');
     const r = await run();
     expect(r.items[0].since).toBe('2026-06-14T12:00:00Z');
     expect(r.items[0].ageMs).toBe(NOW - Date.parse('2026-06-14T12:00:00Z'));
   });
 
   it('orders by tier first, then most-urgent (largest ageMs) within a tier', async () => {
+    const oldId = toTicketId('old', 'old-rev');
+    const newId = toTicketId('new', 'new-rev');
+    const planId = toTicketId('plan', 'plan-row');
     await seed({
       id: 'old',
       slug: 'old-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(oldId, '2026-06-01T00:00:00Z', 'review');
     await seed({
       id: 'new',
       slug: 'new-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(newId, '2026-06-15T00:00:00Z', 'review');
     await seed({
       id: 'plan',
       slug: 'plan-row',
       status: 'planning',
       project: 'p1',
       planFiles: { 'plan.md': '# plan\n' },
-      statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: planning', '  command: shape'],
     });
+    seedMovedEvent(planId, '2026-06-10T00:00:00Z', 'planning', 'backlog');
     const r = await run();
     expect(r.items.map((i) => i.ticketSlug)).toEqual(['plan-row', 'old-rev', 'new-rev']);
   });
 
   it('orders most-urgent (largest ageMs) first within a category', async () => {
+    const oldId = toTicketId('old', 'old');
+    const newId = toTicketId('new', 'new');
     await seed({
       id: 'old',
       slug: 'old',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(oldId, '2026-06-01T00:00:00Z', 'review');
     await seed({
       id: 'new',
       slug: 'new',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(newId, '2026-06-15T00:00:00Z', 'review');
+    const midId = toTicketId('mid', 'mid');
     await seed({
       id: 'mid',
       slug: 'mid',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-10T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(midId, '2026-06-10T00:00:00Z', 'review');
     const r = await run();
     expect(r.items.map((i) => i.ticketSlug)).toEqual(['old', 'mid', 'new']);
   });
@@ -1025,20 +1029,22 @@ describe('computeInbox — chat questions', () => {
 
 describe('computeInbox — maxAgeMs', () => {
   it('drops an older review and keeps a newer one', async () => {
+    const oldId = toTicketId('old-rev', 'old-rev');
+    const newId = toTicketId('new-rev', 'new-rev');
     await seed({
       id: 'old-rev',
       slug: 'old-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-01T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(oldId, '2026-06-01T00:00:00Z', 'review');
     await seed({
       id: 'new-rev',
       slug: 'new-rev',
       status: 'review',
       project: 'p1',
-      statusHistory: ['- at: "2026-06-15T00:00:00Z"', '  to: review', '  command: review'],
     });
+    seedMovedEvent(newId, '2026-06-15T00:00:00Z', 'review');
     const r = await run({ maxAgeMs: 7 * 86_400_000 });
     expect(r.items.map((i) => i.ticketSlug)).toEqual(['new-rev']);
     expect(r.total).toBe(1);

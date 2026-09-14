@@ -37,7 +37,7 @@ created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 ---
@@ -94,7 +94,7 @@ describe('syntaur worktree list/remove', () => {
     // workspace.* cleared back to null.
     const content = await readFile(ticketPath, 'utf-8');
     expect(content).toContain('branch: null');
-    expect(content).toContain('worktreePath: null');
+    expect(content).toContain('worktree: null');
   });
 
   it('prints the branch SHA recovery hint before deleting the branch (U1)', async () => {

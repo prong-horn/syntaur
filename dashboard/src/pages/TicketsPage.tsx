@@ -834,7 +834,8 @@ export function TicketsPage() {
           ? {
               ...candidate,
               status: toColumnId,
-              blockedReason: toColumnId === 'blocked' ? reason ?? candidate.blockedReason : null,
+              blocked: toColumnId === 'blocked' ? reason ?? candidate.blocked : null,
+              parked: toColumnId === 'parked' ? reason ?? candidate.parked : null,
             }
           : candidate,
       ),
@@ -849,7 +850,8 @@ export function TicketsPage() {
             ? {
                 ...candidate,
                 status: updated.status,
-                blockedReason: updated.blockedReason,
+                blocked: updated.blocked,
+                parked: updated.parked,
                 availableVerbs: updated.availableVerbs,
                 updated: updated.updated,
               }
@@ -1638,9 +1640,14 @@ function TicketBoardCard({
         )}
       </div>
 
-      {ticket.blockedReason ? (
+      {ticket.blocked ? (
         <p className="mt-3 rounded-md border border-warning-foreground/30 bg-warning px-3 py-2 text-sm text-warning-foreground">
-          {ticket.blockedReason}
+          {ticket.blocked}
+        </p>
+      ) : null}
+      {ticket.parked ? (
+        <p className="mt-3 rounded-md border border-border/60 bg-muted px-3 py-2 text-sm text-muted-foreground">
+          Parked: {ticket.parked}
         </p>
       ) : null}
 

@@ -74,7 +74,7 @@ interface WorktreeCreateOptions {
 export async function runWorktreeCreate(
   options: WorktreeCreateOptions,
   cwd: string = process.cwd(),
-): Promise<{ worktreePath: string; ticketPath: string }> {
+): Promise<{ worktree: string; ticketPath: string }> {
   if (!options.branch) {
     throw new Error('--branch is required.');
   }
@@ -101,7 +101,7 @@ export async function runWorktreeCreate(
     ticketPath,
   });
 
-  return { worktreePath, ticketPath };
+  return { worktree: worktreePath, ticketPath };
 }
 
 export async function runWorktreeList(
@@ -123,7 +123,7 @@ export interface WorktreeRemoveOptions {
 export async function runWorktreeRemove(
   options: WorktreeRemoveOptions,
   cwd: string = process.cwd(),
-): Promise<{ worktreePath: string; branchDeleted: boolean; workspaceCleared: boolean }> {
+): Promise<{ worktree: string; branchDeleted: boolean; workspaceCleared: boolean }> {
   const ticketPath = await resolveTicketPath({
     ticket: options.ticket,
     project: options.project,
@@ -135,7 +135,7 @@ export async function runWorktreeRemove(
   const original = await readFile(ticketPath, 'utf-8');
   const fm = parseTicketFrontmatter(original);
   const repository = options.repository ?? fm.workspace.repository ?? undefined;
-  const worktreePath = fm.workspace.worktreePath ?? undefined;
+  const worktree = fm.workspace.worktree ?? undefined;
   const branch = fm.workspace.branch ?? undefined;
 
   if (!repository) {
@@ -143,15 +143,15 @@ export async function runWorktreeRemove(
       'No repository recorded in the ticket workspace. Pass --repository <path>.',
     );
   }
-  if (!worktreePath) {
-    throw new Error('No worktreePath recorded in the ticket workspace — nothing to remove.');
+  if (!worktree) {
+    throw new Error('No worktree recorded in the ticket workspace — nothing to remove.');
   }
 
   // 1. Git teardown first. On failure, leave the frontmatter untouched. If the
   // worktree dir is already gone (e.g. a prior run removed it but then failed on
   // branch deletion), skip removal so the operation is rerunnable.
-  if (await fileExists(worktreePath)) {
-    const removed = await removeWorktree(repository, worktreePath, { force: options.force });
+  if (await fileExists(worktree)) {
+    const removed = await removeWorktree(repository, worktree, { force: options.force });
     if (!removed.ok) {
       throw new Error(
         `git worktree remove failed: ${removed.stderr.trim() || '(no stderr)'}` +
@@ -195,7 +195,7 @@ export async function runWorktreeRemove(
   try {
     let next = updateTicketWorkspace(original, {
       repository: null,
-      worktreePath: null,
+      worktree: null,
       branch: null,
       parentBranch: null,
     });
@@ -210,7 +210,7 @@ export async function runWorktreeRemove(
     );
   }
 
-  return { worktreePath, branchDeleted, workspaceCleared };
+  return { worktree, branchDeleted, workspaceCleared };
 }
 
 // --- gc: classify + safely clean up worktrees -------------------------------
@@ -225,7 +225,7 @@ export type GcReason =
   | 'current';
 
 export interface GcCandidate {
-  worktreePath: string;
+  worktree: string;
   reason: GcReason;
   ticketSlug: string | null;
   projectSlug: string | null;
@@ -289,7 +289,7 @@ export async function runWorktreeGc(
     try {
       const content = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
       const fm = parseTicketFrontmatter(content);
-      const wp = fm.workspace?.worktreePath;
+      const wp = fm.workspace?.worktree;
       if (!wp) continue; // common case: ticket never got a worktree
       const key = canonicalPath(wp);
       const list = owners.get(key) ?? [];
@@ -297,7 +297,7 @@ export async function runWorktreeGc(
         ticketSlug: entry.ticketSlug,
         projectSlug: entry.projectSlug,
         status: fm.status,
-        terminal: isTerminalStageId(fm.status) || fm.archived === true,
+        terminal: isTerminalStageId(fm.status),
         worktreePathRaw: wp,
       });
       owners.set(key, list);
@@ -364,7 +364,7 @@ export async function runWorktreeGc(
       (Boolean(options.force) && (reason === 'dirty' || reason === 'unmerged'));
 
     candidates.push({
-      worktreePath: entry.worktreePath,
+      worktree: entry.worktreePath,
       reason,
       ticketSlug: primary?.ticketSlug ?? null,
       projectSlug: primary?.projectSlug ?? null,
@@ -380,13 +380,13 @@ export async function runWorktreeGc(
   let applied = false;
   if (options.apply) {
     for (const c of candidates.filter((cand) => cand.willRemove)) {
-      if (await fileExists(c.worktreePath)) {
-        const removed = await removeWorktree(repository, c.worktreePath, {
+      if (await fileExists(c.worktree)) {
+        const removed = await removeWorktree(repository, c.worktree, {
           force: Boolean(options.force),
         });
         if (!removed.ok) {
           throw new SyntaurError(
-            `git worktree remove failed for ${c.worktreePath}: ${removed.stderr.trim() || '(no stderr)'}`,
+            `git worktree remove failed for ${c.worktree}: ${removed.stderr.trim() || '(no stderr)'}`,
             { remediation: 'resolve the git error (dirty/locked?) or re-run with --force' },
           );
         }
@@ -441,7 +441,7 @@ function printGcReport(result: WorktreeGcResult): void {
       c.sessions > 0
         ? `  [${c.sessions} session${c.sessions === 1 ? '' : 's'} recorded — recoverable via \`syntaur open ${c.ticketSlug ?? '<ticket>'} --recreate\`]`
         : '';
-    return `  ${c.worktreePath}  ${c.branch ?? '(detached)'}  ${who}${sess}`;
+    return `  ${c.worktree}  ${c.branch ?? '(detached)'}  ${who}${sess}`;
   };
 
   const section = (title: string, reason: GcReason): void => {
@@ -485,8 +485,8 @@ worktreeCommand
   .option('--worktree-path <path>', 'Override the computed <repository>/.worktrees/<branch> path')
   .action(async (options: WorktreeCreateOptions) => {
     try {
-      const { worktreePath, ticketPath } = await runWorktreeCreate(options);
-      console.log(`Created worktree at ${worktreePath}`);
+      const { worktree, ticketPath } = await runWorktreeCreate(options);
+      console.log(`Created worktree at ${worktree}`);
       console.log(`Recorded workspace fields in ${ticketPath}`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
@@ -551,8 +551,8 @@ worktreeCommand
           return;
         }
       }
-      const { worktreePath, branchDeleted, workspaceCleared } = await runWorktreeRemove(options);
-      console.log(`Removed worktree at ${worktreePath}`);
+      const { worktree, branchDeleted, workspaceCleared } = await runWorktreeRemove(options);
+      console.log(`Removed worktree at ${worktree}`);
       if (branchDeleted) console.log('Deleted the branch.');
       if (workspaceCleared) console.log('Cleared the ticket workspace fields.');
     } catch (error) {

@@ -42,7 +42,7 @@ created: "2026-04-01T00:00:00Z"
 updated: "${opts.updated}"
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags:${tags}
@@ -131,26 +131,19 @@ describe('syntaur ls', () => {
     expect(data.tickets[0].slug).toBe('a-backlog');
   });
 
-  it('hides archived by default and shows only archived with --archived', async () => {
-    // Add an individually-archived ticket to the existing project.
+  it('lists tickets even when legacy archived:true is present on frontmatter', async () => {
     const projDir = resolve(syntaurHome, 'projects', 'p');
     const adir = resolve(projDir, 'tickets', 'a-archived');
     await mkdir(adir, { recursive: true });
     await writeFile(
       resolve(adir, 'ticket.md'),
-      `---\nid: PA-4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
+      `---\nid: PA-4\nslug: a-archived\ntitle: "a-archived"\nproject: p\nstatus: in_progress\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-05-08T12:00:00Z"\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: true\narchivedAt: "2026-05-08T12:00:00Z"\narchivedReason: null\n---\n\nBody.\n`,
     );
 
     const def = await runCli(['ls', '--json'], syntaurHome);
     expect(def.code, def.stderr).toBe(0);
     const defSlugs = JSON.parse(def.stdout).tickets.map((a: { slug: string }) => a.slug);
-    expect(defSlugs).not.toContain('a-archived');
-    expect(defSlugs).toHaveLength(3);
-
-    const arch = await runCli(['ls', '--archived', '--json'], syntaurHome);
-    expect(arch.code, arch.stderr).toBe(0);
-    const archTickets = JSON.parse(arch.stdout).tickets;
-    expect(archTickets).toHaveLength(1);
-    expect(archTickets[0].slug).toBe('a-archived');
+    expect(defSlugs).toContain('a-archived');
+    expect(defSlugs).toHaveLength(4);
   });
 });

@@ -139,7 +139,7 @@ links: []
 workspace:
   repository: /Users/brennen/syntaur
   branch: feat/needs-me-backlog-aging
-  worktreePath: /Users/brennen/syntaur/.worktrees/feat/needs-me-backlog-aging
+  worktree: /Users/brennen/syntaur/.worktrees/feat/needs-me-backlog-aging
   parentBranch: main
 plan:
   file: plan.md

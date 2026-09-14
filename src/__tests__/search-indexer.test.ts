@@ -85,7 +85,7 @@ describe('buildIndex', () => {
     expect(kinds).toContain('plan');
     expect(kinds).toContain('comments');
     const ticketDocs = docs.filter((d) => d.fileKind === 'ticket');
-    expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual(['build-widget', 'oneoff']);
+    expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual(['build-widget', 'old-task', 'oneoff']);
   });
 
   it('indexes the plan role path (plan.md), not superseded revisions', async () => {
@@ -97,12 +97,9 @@ describe('buildIndex', () => {
     expect(planDocs[0].body).not.toContain('Plan v2');
   });
 
-  it('excludes archived tickets unless includeArchived', async () => {
+  it('indexes tickets even when legacy archived:true is present on ticket frontmatter', async () => {
     const docs = await buildIndex({ projectsDir });
-    expect(docs.some((d) => d.ticketSlug === 'old-task')).toBe(false);
-
-    const withArchived = await buildIndex({ projectsDir, includeArchived: true });
-    expect(withArchived.some((d) => d.ticketSlug === 'old-task')).toBe(true);
+    expect(docs.some((d) => d.ticketSlug === 'old-task')).toBe(true);
   });
 
   it('excludes an archived project’s tickets by default', async () => {

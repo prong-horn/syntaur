@@ -32,7 +32,7 @@ function ticketMd(opts: {
   slug: string;
   status: string;
   repo: string;
-  worktreePath: string;
+  worktree: string;
   branch: string;
   archived?: boolean;
   ticketId?: string;
@@ -49,7 +49,7 @@ updated: "2026-01-01T00:00:00Z"
 archived: ${opts.archived ? 'true' : 'false'}
 workspace:
   repository: ${opts.repo}
-  worktreePath: ${opts.worktreePath}
+  worktree: ${opts.worktree}
   branch: ${opts.branch}
   parentBranch: main
 ---
@@ -61,7 +61,7 @@ describe('syntaur worktree gc', () => {
   let home: string;
   let repo: string;
 
-  async function writeTicket(opts: { slug: string; status: string; worktreePath: string; branch: string; archived?: boolean }): Promise<void> {
+  async function writeTicket(opts: { slug: string; status: string; worktree: string; branch: string; archived?: boolean }): Promise<void> {
     const ticketId = 'PA-1';
     const dir = resolve(home, 'projects', 'p', 'tickets', `${ticketId}-${opts.slug}`);
     await mkdir(dir, { recursive: true });
@@ -106,12 +106,12 @@ describe('syntaur worktree gc', () => {
 
   it('dry-run (default) classifies a merged+done worktree as removable and removes nothing', async () => {
     const wt = addWorktree('feat-done', false);
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-done' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-done' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--json'], home);
     expect(r.code, r.stderr).toBe(0);
     const report = JSON.parse(r.stdout);
-    const cand = report.candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith('feat-done'));
+    const cand = report.candidates.find((c: { worktree: string }) => c.worktree.endsWith('feat-done'));
     expect(cand.reason).toBe('removable');
     expect(report.applied).toBe(false);
     expect(await fileExists(wt)).toBe(true); // dry-run removed nothing
@@ -120,7 +120,7 @@ describe('syntaur worktree gc', () => {
   it('--apply removes a removable worktree but PRESERVES workspace.* (recoverable)', async () => {
     const wt = addWorktree('feat-done', false);
     const slugDir = resolve(home, 'projects', 'p', 'tickets', 'PA-1-a');
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-done' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-done' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply'], home);
     expect(r.code, r.stderr).toBe(0);
@@ -128,7 +128,7 @@ describe('syntaur worktree gc', () => {
 
     // The ticket's workspace.* fields must survive so `open --recreate` works.
     const fm = await readFile(resolve(slugDir, 'ticket.md'), 'utf-8');
-    expect(fm).toContain(`worktreePath: ${wt}`);
+    expect(fm).toContain(`worktree: ${wt}`);
     expect(fm).toContain('branch: feat-done');
 
     // Roundtrip: open --recreate rebuilds it at the exact path.
@@ -142,15 +142,15 @@ describe('syntaur worktree gc', () => {
     const unmerged = addWorktree('feat-wip', true);
     const inprog = addWorktree('feat-active', false);
     const orphan = addWorktree('feat-orphan', false);
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: merged, branch: 'feat-done' });
-    await writeTicket({ slug: 'b', status: 'done', worktreePath: unmerged, branch: 'feat-wip' });
-    await writeTicket({ slug: 'c', status: 'in_progress', worktreePath: inprog, branch: 'feat-active' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: merged, branch: 'feat-done' });
+    await writeTicket({ slug: 'b', status: 'done', worktree: unmerged, branch: 'feat-wip' });
+    await writeTicket({ slug: 'c', status: 'in_progress', worktree: inprog, branch: 'feat-active' });
     // no ticket for feat-orphan
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--json'], home);
     expect(r.code, r.stderr).toBe(0);
     const report = JSON.parse(r.stdout);
-    const byPath = (suffix: string) => report.candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith(suffix));
+    const byPath = (suffix: string) => report.candidates.find((c: { worktree: string }) => c.worktree.endsWith(suffix));
     expect(byPath('feat-done').reason).toBe('removable');
     expect(byPath('feat-wip').reason).toBe('unmerged');
     expect(byPath('feat-active').reason).toBe('non-terminal');
@@ -166,12 +166,12 @@ describe('syntaur worktree gc', () => {
     const wt = addWorktree('feat-shared', false);
     // Two records point at the same worktree: one completed, one active. The
     // active one must protect it — never removable.
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-shared' });
-    await writeTicket({ slug: 'b', status: 'in_progress', worktreePath: wt, branch: 'feat-shared' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-shared' });
+    await writeTicket({ slug: 'b', status: 'in_progress', worktree: wt, branch: 'feat-shared' });
 
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--json'], home);
     expect(r.code, r.stderr).toBe(0);
-    const cand = JSON.parse(r.stdout).candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith('feat-shared'));
+    const cand = JSON.parse(r.stdout).candidates.find((c: { worktree: string }) => c.worktree.endsWith('feat-shared'));
     expect(cand.reason).toBe('non-terminal');
     expect(cand.willRemove).toBe(false);
     expect(await fileExists(wt)).toBe(true);
@@ -191,12 +191,12 @@ describe('syntaur worktree gc', () => {
 
   it('counts recorded agent sessions per worktree (read-only) without creating the DB if absent', async () => {
     const wt = addWorktree('feat-done', false);
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-done' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-done' });
 
     // No DB yet -> count 0, and gc must NOT create syntaur.db.
     const dbPath = resolve(home, 'syntaur.db');
     const r0 = await runCli(['worktree', 'gc', '--repository', repo, '--json'], home);
-    const c0 = JSON.parse(r0.stdout).candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith('feat-done'));
+    const c0 = JSON.parse(r0.stdout).candidates.find((c: { worktree: string }) => c.worktree.endsWith('feat-done'));
     expect(c0.sessions).toBe(0);
     expect(await fileExists(dbPath)).toBe(false);
 
@@ -207,13 +207,13 @@ describe('syntaur worktree gc', () => {
     db.close();
 
     const r1 = await runCli(['worktree', 'gc', '--repository', repo, '--json'], home);
-    const c1 = JSON.parse(r1.stdout).candidates.find((c: { worktreePath: string }) => c.worktreePath.endsWith('feat-done'));
+    const c1 = JSON.parse(r1.stdout).candidates.find((c: { worktree: string }) => c.worktree.endsWith('feat-done'));
     expect(c1.sessions).toBe(1);
   });
 
   it('--apply --force off a TTY requires --yes', async () => {
     const wt = addWorktree('feat-wip', true);
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-wip' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-wip' });
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--force'], home);
     expect(r.code).not.toBe(0);
     expect(r.stderr).toContain('--yes');
@@ -222,7 +222,7 @@ describe('syntaur worktree gc', () => {
 
   it('--apply --force --yes removes an unmerged linked+terminal worktree', async () => {
     const wt = addWorktree('feat-wip', true);
-    await writeTicket({ slug: 'a', status: 'done', worktreePath: wt, branch: 'feat-wip' });
+    await writeTicket({ slug: 'a', status: 'done', worktree: wt, branch: 'feat-wip' });
     const r = await runCli(['worktree', 'gc', '--repository', repo, '--apply', '--force', '--yes'], home);
     expect(r.code, r.stderr).toBe(0);
     expect(await fileExists(wt)).toBe(false);

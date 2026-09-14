@@ -166,7 +166,6 @@ export async function newCommand(
     links,
     project: projectSlug,
     template: templateId,
-    workflow: null,
     status: initialStatus,
     acceptanceCriteria: options.acceptanceCriteria,
   });

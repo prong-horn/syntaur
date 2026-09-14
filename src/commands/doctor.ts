@@ -25,7 +25,7 @@ interface TicketValidationResult {
 
 const REQUIRED_WORKSPACE_FIELDS = [
   'repository',
-  'worktreePath',
+  'worktree',
   'branch',
   'parentBranch',
 ] as const;

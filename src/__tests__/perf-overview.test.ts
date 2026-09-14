@@ -61,7 +61,7 @@ depends_on: ${JSON.stringify(depends_on)}
 blockedReason: null
 workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null
 tags: []

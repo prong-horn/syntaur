@@ -35,6 +35,13 @@ const VERB_FOR_STAGE: Partial<Record<StageId, VerbWithGates>> = {
   done: 'done',
 };
 
+export interface MovedEvent {
+  at: string;
+  from: string;
+  to: string;
+  verb: string;
+}
+
 export interface GateContext {
   ticketDir: string;
   fm: TicketFrontmatter;
@@ -42,11 +49,12 @@ export interface GateContext {
   ticketBody: string;
   logEntries: LogEntry[];
   dependencyStages: Map<string, StageId | 'dropped'>;
+  moves: MovedEvent[];
 }
 
 function workspaceSet(fm: TicketFrontmatter): boolean {
   const w = fm.workspace;
-  const worktree = w.worktree ?? w.worktreePath;
+  const worktree = w.worktree ?? w.worktree;
   return Boolean(
     w.repository?.trim() &&
       w.branch?.trim() &&
@@ -57,6 +65,47 @@ function workspaceSet(fm: TicketFrontmatter): boolean {
 
 function dependencyDone(stage: StageId | 'dropped'): boolean {
   return stage === 'done';
+}
+
+function parseTimestampMs(value: string): number | null {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+function lastMovedMatching(
+  moves: MovedEvent[],
+  pred: (m: MovedEvent) => boolean,
+): MovedEvent | null {
+  let best: MovedEvent | null = null;
+  let bestMs = -1;
+  for (const move of moves) {
+    if (!pred(move)) continue;
+    const ms = parseTimestampMs(move.at);
+    if (ms === null) continue;
+    if (ms >= bestMs) {
+      best = move;
+      bestMs = ms;
+    }
+  }
+  return best;
+}
+
+/** Later of last move into `stage` and last `reopen`, or null when neither exists. */
+export function freshnessThresholdMs(moves: MovedEvent[], stage: StageId): number | null {
+  const into = lastMovedMatching(moves, (m) => m.to === stage);
+  const reopen = lastMovedMatching(moves, (m) => m.verb === 'reopen');
+  const intoMs = into ? parseTimestampMs(into.at) : null;
+  const reopenMs = reopen ? parseTimestampMs(reopen.at) : null;
+  if (intoMs === null && reopenMs === null) return null;
+  if (intoMs === null) return reopenMs;
+  if (reopenMs === null) return intoMs;
+  return Math.max(intoMs, reopenMs);
+}
+
+function logEntryAfterThreshold(entry: LogEntry, thresholdMs: number | null): boolean {
+  if (thresholdMs === null) return true;
+  const ms = parseTimestampMs(entry.timestamp);
+  return ms !== null && ms > thresholdMs;
 }
 
 function reviewEntryClean(entry: LogEntry): boolean {
@@ -128,15 +177,35 @@ export async function evaluateGate(gateId: GateId, ctx: GateContext): Promise<Ga
       return { pass: true, hint };
     }
     case 'handoff-logged': {
-      const hasHandoff = ctx.logEntries.some((e) => e.type === 'handoff');
-      if (!hasHandoff) {
-        return { pass: false, reason: 'no handoff entry logged', hint };
+      const thresholdMs = freshnessThresholdMs(ctx.moves, 'in_progress');
+      const handoff = ctx.logEntries.find(
+        (e) => e.type === 'handoff' && logEntryAfterThreshold(e, thresholdMs),
+      );
+      if (!handoff) {
+        return {
+          pass: false,
+          reason: thresholdMs === null
+            ? 'no handoff entry logged'
+            : 'no handoff entry after the current work cycle',
+          hint,
+        };
       }
       return { pass: true, hint };
     }
     case 'review-clean': {
+      const thresholdMs = freshnessThresholdMs(ctx.moves, 'review');
       const latestReview = ctx.logEntries.find((e) => e.type === 'review');
-      if (!latestReview || !reviewEntryClean(latestReview)) {
+      if (!latestReview) {
+        return { pass: false, reason: 'no review entry logged', hint };
+      }
+      if (!logEntryAfterThreshold(latestReview, thresholdMs)) {
+        return {
+          pass: false,
+          reason: 'latest review is before the current review cycle',
+          hint,
+        };
+      }
+      if (!reviewEntryClean(latestReview)) {
         return { pass: false, reason: 'latest review is not a clean approve', hint };
       }
       return { pass: true, hint };

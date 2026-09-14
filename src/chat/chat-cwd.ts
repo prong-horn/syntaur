@@ -34,7 +34,7 @@ export function resolveChatCwd(input: ResolveChatCwdInput): ChatCwdResult {
 
   if (base.cwd) {
     // Determine tier: worktree if it matched worktreePath, else repository.
-    const tier: CwdTier = base.cwd === input.worktreePath ? 'worktree' : 'repository';
+    const tier: CwdTier = base.cwd === input.worktree ? 'worktree' : 'repository';
     return { cwd: base.cwd, tier, fallbackWarning: base.fallbackWarning };
   }
 

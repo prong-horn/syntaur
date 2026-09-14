@@ -83,6 +83,12 @@ import {
   type StaleThresholds,
 } from '../staleness/classify.js';
 import type { StaleCandidate } from '../staleness/watchdog.js';
+import { initEventsDb } from '../db/events-db.js';
+import {
+  deriveStatusVirtualsForTicket,
+  loadTicketHistoryMaps,
+  type StatusHistoryVirtuals,
+} from '../lifecycle/history-from-events.js';
 
 const RECENT_PROJECTS_LIMIT = 6;
 const RECENT_ACTIVITY_LIMIT = 12;
@@ -102,9 +108,9 @@ function isProjectArchived(p: { archived?: boolean }): boolean {
   return p.archived === true;
 }
 
-/** Drop individually-archived tickets from a list (for normal/active views). */
-function activeTickets<T extends { archived?: boolean }>(items: T[]): T[] {
-  return items.filter((item) => item.archived !== true);
+/** Tickets are no longer individually archivable — pass-through for call sites. */
+function activeTickets<T>(items: T[]): T[] {
+  return items;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,40 +211,18 @@ function ticketAsFrontmatter(ticket: TicketRecord): TicketFrontmatter {
     title: ticket.title,
     project: ticket.project,
     template: ticket.template,
-    workflow: ticket.workflow,
     status: ticket.status,
     priority: ticket.priority as TicketFrontmatter['priority'],
+    blocked: ticket.blocked,
+    parked: ticket.parked,
+    depends_on: ticket.depends_on,
+    assignee: ticket.assignee,
+    tags: ticket.tags,
+    links: ticket.links,
+    workspace: ticket.workspace,
+    plan: ticket.plan,
     created: ticket.created,
     updated: ticket.updated,
-    assignee: ticket.assignee,
-    externalIds: ticket.externalIds,
-    statusHistory: ticket.statusHistory,
-    depends_on: ticket.depends_on,
-    links: ticket.links,
-    blocked: ticket.blockedReason,
-    workspace: {
-      ...ticket.workspace,
-      worktree: ticket.workspace.worktreePath,
-    },
-    tags: ticket.tags,
-    archived: ticket.archived,
-    archivedAt: ticket.archivedAt,
-    archivedReason: ticket.archivedReason,
-    phase: ticket.phase,
-    disposition: ticket.disposition,
-    parked: ticket.parked ? 'parked' : null,
-    reviewRequested: ticket.reviewRequested,
-    reworkRequested: ticket.reworkRequested,
-    implementationStarted: ticket.implementationStarted,
-    plan: ticket.plan,
-    override: ticket.override,
-    facts: ticket.facts,
-    attestations: ticket.attestations,
-    solicitations: ticket.solicitations,
-    firedVerdicts: ticket.firedVerdicts,
-    frozenChecks: ticket.frozenChecks,
-    hold: ticket.hold,
-    gateOverrides: ticket.gateOverrides,
   };
 }
 
@@ -343,7 +327,7 @@ export async function listWorkspaceRecords(projectsDir: string,
     projectSlug: string | null;
     ticketSlug: string;
     ticketTitle: string;
-    worktreePath: string | null;
+    worktree: string | null;
     branch: string | null;
   }>
 > {
@@ -353,7 +337,7 @@ export async function listWorkspaceRecords(projectsDir: string,
     projectSlug: string | null;
     ticketSlug: string;
     ticketTitle: string;
-    worktreePath: string | null;
+    worktree: string | null;
     branch: string | null;
   }> = [];
 
@@ -363,7 +347,7 @@ export async function listWorkspaceRecords(projectsDir: string,
         projectSlug: project.summary.slug,
         ticketSlug: ticket.slug,
         ticketTitle: ticket.title || ticket.slug,
-        worktreePath: ticket.workspace.worktreePath ?? null,
+        worktree: ticket.workspace.worktree ?? null,
         branch: ticket.workspace.branch ?? null,
       });
     }
@@ -464,24 +448,23 @@ export async function getOverview(projectsDir: string,
 export async function listTicketsBoard(projectsDir: string,
   options: { archived?: 'exclude' | 'only' } = {},
 ): Promise<TicketsBoardResponse> {
-  const mode = options.archived ?? 'exclude';
+  if (options.archived === 'only') {
+    return { generatedAt: new Date().toISOString(), tickets: [] };
+  }
+  initEventsDb();
   const projectRecords = await listProjectRecords(projectsDir);
+  const allTickets = projectRecords.flatMap((r) =>
+    isProjectArchived(r.summary) ? [] : r.tickets,
+  );
+  const historyMaps = loadTicketHistoryMaps(allTickets.map((t) => t.id));
+  const now = Date.now();
+
   const projectItems = await Promise.all(
     projectRecords.flatMap(async (record) => {
-      if (mode === 'only') {
-        // Individually-archived tickets only — ignore project-archived cascade.
-        return Promise.all(
-          record.tickets
-            .filter((ticket) => ticket.archived === true)
-            .map(async (ticket) => toTicketBoardItem(projectsDir, record, ticket)),
-        );
-      }
-      // 'exclude': cascade-hide every child of an archived project, and drop
-      // individually-archived children of non-archived projects.
       if (isProjectArchived(record.summary)) return [] as TicketBoardItem[];
       return Promise.all(
-        activeTickets(record.tickets).map(async (ticket) =>
-          toTicketBoardItem(projectsDir, record, ticket),
+        record.tickets.map(async (ticket) =>
+          toTicketBoardItem(projectsDir, record, ticket, historyMaps, now),
         ),
       );
     }),
@@ -494,32 +477,9 @@ export async function listTicketsBoard(projectsDir: string,
   };
 }
 
-function toArchivedTicketItem(
-  ticket: TicketRecord,
-  projectSlug: string | null,
-  projectTitle: string | null,
-): ArchivedTicketItem {
-  return {
-    id: ticket.id,
-    slug: ticket.slug,
-    title: ticket.title,
-    status: ticket.status,
-    template: ticket.template,
-    priority: ticket.priority as ArchivedTicketItem['priority'],
-    projectSlug,
-    projectTitle,
-    archived: ticket.archived,
-    archivedAt: ticket.archivedAt,
-    archivedReason: ticket.archivedReason,
-    updated: ticket.updated,
-  };
-}
-
 /**
- * Build the canonical archived view for the dashboard Archive page.
- * Returns archived projects (each expandable to ALL its children) plus
- * individually-archived tickets whose parent project is NOT archived
- * (so they are never double-listed) and archived standalone tickets.
+ * Build the archived-projects view for the dashboard Archive page.
+ * Ticket archiving was removed in v2 — only projects are archived.
  * GET /api/archived
  */
 export async function listArchived(projectsDir: string,
@@ -533,27 +493,25 @@ export async function listArchived(projectsDir: string,
       archivedAt: record.summary.archivedAt,
       archivedReason: record.summary.archivedReason,
       tickets: record.tickets
-        .map((ticket) =>
-          toArchivedTicketItem(ticket, record.summary.slug, record.summary.title),
-        )
+        .map((ticket) => ({
+          id: ticket.id,
+          slug: ticket.slug,
+          title: ticket.title,
+          status: ticket.status,
+          template: ticket.template,
+          priority: ticket.priority as ArchivedTicketItem['priority'],
+          projectSlug: record.summary.slug,
+          projectTitle: record.summary.title,
+          archived: false,
+          archivedAt: null,
+          archivedReason: null,
+          updated: ticket.updated,
+        }))
         .sort((left, right) => compareTimestamps(right.updated, left.updated)),
     }))
     .sort((left, right) => compareTimestamps(right.archivedAt ?? '', left.archivedAt ?? ''));
 
-  const individuallyArchived: ArchivedTicketItem[] = [];
-  for (const record of projectRecords) {
-    if (isProjectArchived(record.summary)) continue; // its children belong under the project above
-    for (const ticket of record.tickets) {
-      if (ticket.archived === true) {
-        individuallyArchived.push(
-          toArchivedTicketItem(ticket, record.summary.slug, record.summary.title),
-        );
-      }
-    }
-  }
-  individuallyArchived.sort((left, right) => compareTimestamps(right.updated, left.updated));
-
-  return { projects, tickets: individuallyArchived };
+  return { projects, tickets: [] };
 }
 
 
@@ -708,8 +666,10 @@ export async function getProjectDetail(
   // children so archiving an old ticket doesn't bump it.
   const updated = getProjectActivityTimestamp(project.updated, activeTickets(tickets));
 
+  initEventsDb();
+  const historyMaps = loadTicketHistoryMaps(tickets.map((t) => t.id));
   const ticketSummaries = tickets
-    .map((a) => toTicketSummary(a))
+    .map((a) => toTicketSummary(a, historyMaps))
     .sort((left, right) => compareTimestamps(right.updated, left.updated));
 
   return {
@@ -920,6 +880,8 @@ export async function getTicketDetail(
     manifest,
   )) as TicketTransitionAction[];
 
+  initEventsDb();
+  const showModel = await buildShow(syntaurRoot(), ticketDir);
   const detail: TicketDetail = {
     id: ticket.id,
     projectSlug,
@@ -927,9 +889,6 @@ export async function getTicketDetail(
     title: ticket.title,
     status: ticket.status,
     template: ticket.template,
-    workflow: ticket.workflow,
-    resolvedWorkflow: ticket.template ?? 'default',
-    workflowLabel: ticket.template ?? 'Default',
     statusLabel: getStageLabel(ticket.status),
     priority: ticket.priority as TicketDetail['priority'],
     assignee: ticket.assignee,
@@ -937,16 +896,12 @@ export async function getTicketDetail(
     links: ticket.links,
     reverseLinks: [],
     enrichedLinks: [],
-    blockedReason: ticket.blockedReason ?? null,
+    blocked: ticket.blocked,
+    parked: ticket.parked,
     workspace: ticket.workspace,
-    externalIds: ticket.externalIds,
     tags: ticket.tags,
-    archived: ticket.archived,
-    archivedAt: ticket.archivedAt,
-    archivedReason: ticket.archivedReason,
     ...deriveStatusVirtuals(ticket),
-    override: ticket.override,
-    derived: null,
+    next: showModel.next,
     created: ticket.created,
     updated: ticket.updated,
     body: ticket.body,
@@ -1379,7 +1334,7 @@ async function buildProjectRollup(
     const stage = entry.ticket.status;
     progress[stage] = (progress[stage] ?? 0) + 1;
     openQuestions += entry.openQuestions;
-    if (entry.ticket.blockedReason) blockedCount++;
+    if (entry.ticket.blocked) blockedCount++;
     if (stage === 'dropped') failedCount++;
     if (stage === 'done') doneCount++;
     if (stage === 'in_progress' || stage === 'review') activeWorkCount++;
@@ -1413,71 +1368,37 @@ async function buildProjectRollup(
   return { progress, needsAttention, status };
 }
 
-/**
- * Derive the loader-only virtual fields from a ticket's `statusHistory`
- * (never stored on disk). `completedAt` is the `at` of the LAST transition into
- * the current status, but only when that status is terminal (lifecycle
- * `completed`/`failed`) — so a ticket reopened after completion reports null,
- * because its current status is no longer terminal. `statusAge` is the elapsed
- * milliseconds since the last entry (time in current status), null when there is
- * no history or the timestamp is unparseable.
- */
-function deriveStatusVirtuals(ticket: TicketRecord): {
-  completedAt: string | null;
-  statusAge: number | null;
-  phaseAge: number | null;
-  phase: string | null;
-  disposition: string | null;
-  pinned: boolean;
-} {
-  const updatedMs = Date.parse(ticket.updated);
-  const statusAge = Number.isNaN(updatedMs) ? null : Date.now() - updatedMs;
-  const isTerminal = isTerminalStageId(ticket.status);
-  const completedAt =
-    isTerminal && ticket.status === 'done' && !Number.isNaN(updatedMs)
-      ? ticket.updated
-      : null;
-
-  const blocked = Boolean(ticket.blockedReason);
-  const parked = Boolean(ticket.parked);
-  let disposition: string | null = 'active';
-  if (isTerminal) disposition = 'terminal';
-  else if (blocked) disposition = 'blocked';
-  else if (parked) disposition = 'parked';
-
-  return {
-    completedAt,
-    statusAge,
-    phaseAge: statusAge,
-    phase: ticket.status,
-    disposition,
-    pinned: false,
-  };
+function deriveStatusVirtuals(
+  ticket: TicketRecord,
+  maps = loadTicketHistoryMaps([ticket.id]),
+  now = Date.now(),
+): StatusHistoryVirtuals {
+  return deriveStatusVirtualsForTicket(ticket, maps, now);
 }
 
-function toTicketSummary(ticket: TicketRecord): TicketSummary {
+function toTicketSummary(
+  ticket: TicketRecord,
+  maps = loadTicketHistoryMaps([ticket.id]),
+  now = Date.now(),
+): TicketSummary {
+  const virtuals = deriveStatusVirtuals(ticket, maps, now);
   return {
     id: ticket.id,
     slug: ticket.slug,
     title: ticket.title,
     status: ticket.status,
     template: ticket.template,
-    workflow: ticket.workflow,
-    resolvedWorkflow: ticket.template ?? 'default',
-    workflowLabel: ticket.template ?? 'Default',
     statusLabel: getStageLabel(ticket.status),
     priority: ticket.priority as TicketSummary['priority'],
     assignee: ticket.assignee,
     depends_on: ticket.depends_on,
     links: ticket.links,
     tags: ticket.tags,
-    externalIds: ticket.externalIds,
+    blocked: ticket.blocked,
+    parked: ticket.parked,
     created: ticket.created,
     updated: ticket.updated,
-    archived: ticket.archived,
-    archivedAt: ticket.archivedAt,
-    archivedReason: ticket.archivedReason,
-    ...deriveStatusVirtuals(ticket),
+    ...virtuals,
   };
 }
 
@@ -1485,16 +1406,17 @@ async function toTicketBoardItem(
   _projectsDir: string,
   projectRecord: ProjectRecord,
   ticket: TicketRecord,
+  maps = loadTicketHistoryMaps([ticket.id]),
+  now = Date.now(),
 ): Promise<TicketBoardItem> {
   const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.slug);
   const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
   const verbs = await getAvailableVerbs(ticketDir, ticketAsFrontmatter(ticket), manifest);
 
   return {
-    ...toTicketSummary(ticket),
+    ...toTicketSummary(ticket, maps, now),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
-    blockedReason: ticket.blockedReason ?? null,
     availableVerbs: verbs as TicketTransitionAction[],
   };
 }
@@ -1644,19 +1566,21 @@ function classifyTicketRecord(
   depsSatisfied: boolean | null,
   lastActivityMs: number | null,
   thresholds: StaleThresholds,
+  historyMaps?: ReturnType<typeof loadTicketHistoryMaps>,
 ): StaleReason[] {
+  const maps = historyMaps ?? loadTicketHistoryMaps([ticket.id]);
   return classifyNeedsAttention(
     {
       stage: ticket.status,
       isTerminal: isTerminalStageId(ticket.status),
       assignee: ticket.assignee ?? null,
-      blocked: ticket.blockedReason ?? null,
+      blocked: ticket.blocked ?? null,
       depsSatisfied,
       // plan_awaiting_approval is deferred to the decision inbox's plan-approval
       // category for now; pass values that keep that reason dormant.
       planExists: false,
       planApproved: true,
-      statusAgeMs: deriveStatusVirtuals(ticket).statusAge,
+      statusAgeMs: deriveStatusVirtualsForTicket(ticket, maps).statusAge,
       lastActivityMs,
     },
     thresholds,
@@ -1671,8 +1595,14 @@ function classifyTicketRecord(
  */
 export async function collectStaleCandidates(projectsDir: string,
 ): Promise<StaleCandidate[]> {
+  initEventsDb();
   const projectRecords = await listProjectRecords(projectsDir);
   const thresholds = resolveStaleThresholds((await readConfig()).staleness);
+  const historyMaps = loadTicketHistoryMaps(
+    projectRecords
+      .filter((record) => !isProjectArchived(record.summary))
+      .flatMap((record) => activeTickets(record.tickets).map((t) => t.id)),
+  );
   const now = Date.now();
   const out: StaleCandidate[] = [];
 
@@ -1690,7 +1620,13 @@ export async function collectStaleCandidates(projectsDir: string,
         resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
         now,
       );
-      const reasons = classifyTicketRecord(ticket, depsSatisfied, lastActivityMs, thresholds);
+      const reasons = classifyTicketRecord(
+        ticket,
+        depsSatisfied,
+        lastActivityMs,
+        thresholds,
+        historyMaps,
+      );
       if (reasons.length > 0) {
         out.push({ ticketId: ticket.id, projectSlug: record.summary.slug, reasons });
       }
@@ -1711,6 +1647,12 @@ async function buildOverviewSegmentBuckets(
   // below — a custom terminal status must not be misread as active/stale.
   // Staleness age-gates: config overrides merged over defaults (defaults-first).
   const staleThresholds = resolveStaleThresholds((await readConfig()).staleness);
+  initEventsDb();
+  const historyMaps = loadTicketHistoryMaps(
+    projectRecords
+      .filter((record) => !isProjectArchived(record.summary))
+      .flatMap((record) => activeTickets(record.tickets).map((t) => t.id)),
+  );
   // Pool of all non-terminal rows (across primary segments) used to seed
   // `newestCreated`. Each entry remembers its `created` timestamp + the row
   // we'd clone into the segment.
@@ -1761,13 +1703,14 @@ async function buildOverviewSegmentBuckets(
 
     for (const { ticket, availableVerbs, depsSatisfied, lastActivityMs } of resolvedTransitions) {
       const segmentId =
-        ticket.blockedReason ? 'blocked' : STATUS_TO_SEGMENT[ticket.status];
+        ticket.blocked ? 'blocked' : STATUS_TO_SEGMENT[ticket.status];
       const isTerminal = isTerminalStageId(ticket.status);
       const staleReasons = classifyTicketRecord(
         ticket,
         depsSatisfied,
         lastActivityMs,
         staleThresholds,
+        historyMaps,
       );
       const stale = staleReasons.length > 0;
       const agingMs = Math.max(0, now - parseTimestamp(ticket.updated));
@@ -1781,7 +1724,7 @@ async function buildOverviewSegmentBuckets(
         status: ticket.status,
         updated: ticket.updated,
         href: `/t/${ticket.id}`,
-        blockedReason: ticket.blockedReason ?? null,
+        blockedReason: ticket.blocked ?? null,
         stale,
         agingMs,
         assignee: ticket.assignee ?? null,
@@ -1790,8 +1733,8 @@ async function buildOverviewSegmentBuckets(
 
       if (segmentId) {
         const reason =
-          segmentId === 'blocked' && ticket.blockedReason
-            ? ticket.blockedReason
+          segmentId === 'blocked' && ticket.blocked
+            ? ticket.blocked
             : SEGMENT_REASON[segmentId];
         const primary: AttentionItem = {
           ...shared,

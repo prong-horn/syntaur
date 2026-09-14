@@ -1850,7 +1850,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     } catch {
       throw new ChatSendError(`Cannot read ${path}`, 500);
     }
-    const worktreePath = getNestedField(frontmatter, 'workspace', 'worktreePath');
+    const worktree = getNestedField(frontmatter, 'workspace', 'worktree');
     const repository = getNestedField(frontmatter, 'workspace', 'repository');
     const branch = getNestedField(frontmatter, 'workspace', 'branch');
 
@@ -1871,7 +1871,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
 
     const result = resolveChatCwd({
-      worktreePath,
+      worktree,
       repository,
       branch,
       ticketSlug: session.ticket.ticketSlug,
@@ -2836,7 +2836,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         projectSlug: session.ticket.projectSlug,
         ticketSlug: session.ticket.ticketSlug,
         ticketDir: session.ticket.ticketDir,
-        worktreePath: session.cwd,
+        worktree: session.cwd,
         branch: session.branch,
         cwdTier: session.cwdTier,
         agent: session.definition,

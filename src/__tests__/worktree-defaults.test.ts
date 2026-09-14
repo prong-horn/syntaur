@@ -9,7 +9,7 @@ describe('computeWorktreeDefaults', () => {
       existing: { repository: '/r', branch: null, parentBranch: null },
     });
     expect(out.branch).toBe('syntaur/proj/task');
-    expect(out.worktreePath).toBe('/r/.worktrees/syntaur/proj/task');
+    expect(out.worktree).toBe('/r/.worktrees/syntaur/proj/task');
     expect(out.repository).toBe('/r');
     expect(out.parentBranch).toBeDefined();
   });
@@ -21,7 +21,7 @@ describe('computeWorktreeDefaults', () => {
       existing: { repository: '/r', branch: null, parentBranch: null },
     });
     expect(out.branch).toBe('syntaur/task');
-    expect(out.worktreePath).toBe('/r/.worktrees/syntaur/task');
+    expect(out.worktree).toBe('/r/.worktrees/syntaur/task');
   });
 
   it('honors existing parentBranch instead of falling back', () => {
@@ -40,6 +40,6 @@ describe('computeWorktreeDefaults', () => {
       existing: { repository: '/custom/repo', branch: null, parentBranch: null },
     });
     expect(out.repository).toBe('/custom/repo');
-    expect(out.worktreePath).toBe('/custom/repo/.worktrees/syntaur/proj/task');
+    expect(out.worktree).toBe('/custom/repo/.worktrees/syntaur/proj/task');
   });
 });

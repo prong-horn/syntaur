@@ -12,6 +12,7 @@ import {
 } from '../inbox/index.js';
 import { INBOX_CATEGORIES, type InboxCategory } from '../inbox/types.js';
 import { getChatItem } from '../db/chat-db.js';
+import { TERMINAL_STAGES } from '../lifecycle/types.js';
 
 /**
  * Read-only "Needs me" decision inbox API. Localhost-only per the existing
@@ -45,7 +46,7 @@ async function baseComputeOptions(req: Request, projectsDir: string) {
     ],
     transitions: [],
     transitionTable: new Map<string, string>(),
-    terminalStatuses: new Set(['done', 'dropped']),
+    terminalStatuses: TERMINAL_STAGES,
   };
   return {
     projectsDir,

@@ -31,7 +31,7 @@ describe('syntaur open', () => {
   let home: string;
   let repo: string;
 
-  async function writeTicket(slug: string, worktreePath: string | null, branch: string | null): Promise<void> {
+  async function writeTicket(slug: string, worktree: string | null, branch: string | null): Promise<void> {
     const ticketId = 'PA-1';
     const dir = resolve(home, 'projects', 'p', 'tickets', `${ticketId}-${slug}`);
     await mkdir(dir, { recursive: true });
@@ -47,8 +47,8 @@ created: "2026-01-01T00:00:00Z"
 updated: "2026-01-01T00:00:00Z"
 archived: false
 workspace:
-  repository: ${worktreePath ? repo : 'null'}
-  worktreePath: ${worktreePath ?? 'null'}
+  repository: ${worktree ? repo : 'null'}
+  worktree: ${worktree ?? 'null'}
   branch: ${branch ?? 'null'}
   parentBranch: main
 ---

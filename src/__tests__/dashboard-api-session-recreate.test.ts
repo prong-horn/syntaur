@@ -33,7 +33,7 @@ async function writeProjectTicket(opts: {
   ticketSlug: string;
   id: string;
   repository: string;
-  worktreePath: string;
+  worktree: string;
   branch: string;
 }): Promise<void> {
   const projectDir = resolve(projectsDir, opts.projectSlug);
@@ -63,7 +63,7 @@ async function writeProjectTicket(opts: {
       'blockedReason: null',
       'workspace:',
       `  repository: ${opts.repository}`,
-      `  worktreePath: ${opts.worktreePath}`,
+      `  worktree: ${opts.worktree}`,
       `  branch: ${opts.branch}`,
       '  parentBranch: main',
       'tags: []',
@@ -127,7 +127,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
       ticketSlug: 'task-recreate',
       id: ticketId,
       repository: repo,
-      worktreePath: wtPath,
+      worktree: wtPath,
       branch: 'feat/sess',
     });
     await appendSession('', {
@@ -177,7 +177,7 @@ describe('POST /api/agent-sessions/:sessionId/worktree/recreate', () => {
       ticketSlug: 'solo-task',
       id: ticketId,
       repository: repo,
-      worktreePath: wtPath,
+      worktree: wtPath,
       branch: 'feat/solo',
     });
 

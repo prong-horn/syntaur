@@ -6,7 +6,7 @@ export interface WorktreeDefaults {
   repository: string;
   branch: string;
   parentBranch: string;
-  worktreePath: string;
+  worktree: string;
 }
 
 /**
@@ -49,7 +49,7 @@ export function computeWorktreeDefaults(opts: {
     ...(repository ? { repository } : {}),
     branch,
     parentBranch,
-    worktreePath: worktreeBase,
+    worktree: worktreeBase,
   };
 }
 

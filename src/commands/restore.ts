@@ -1,6 +1,5 @@
-import { runRestore, reportArchiveResult, type ArchiveOptions } from './_archive-helper.js';
+import { runProjectRestore, type ArchiveOptions } from './archive.js';
 
 export async function restoreCommand(target: string, options: ArchiveOptions): Promise<void> {
-  const result = await runRestore(target, options);
-  reportArchiveResult(result);
+  await runProjectRestore(target, options);
 }

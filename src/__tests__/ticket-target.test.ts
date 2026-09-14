@@ -215,7 +215,7 @@ describe('resolveTicketTarget', () => {
     await writeContextJson(cwdRoot, {
       repository: '/repo',
       branch: 'feat/x',
-      worktreePath: '/repo/.worktrees/x',
+      worktree: '/repo/.worktrees/x',
       sessionId: 'sess-abc',
     });
 

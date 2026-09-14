@@ -33,7 +33,7 @@ export interface ShowWorkspace {
   mode: 'set' | 'none' | 'not-set';
   repository: string | null;
   branch: string | null;
-  worktreePath: string | null;
+  worktree: string | null;
 }
 
 export interface ShowDepend {
@@ -82,19 +82,18 @@ const LOG_TAIL_COUNT = 3;
 
 function buildWorkspace(manifest: TemplateManifest, fm: TicketFrontmatter): ShowWorkspace {
   if (manifest.workspace === 'none') {
-    return { mode: 'none', repository: null, branch: null, worktreePath: null };
+    return { mode: 'none', repository: null, branch: null, worktree: null };
   }
   const w = fm.workspace;
-  const worktree = w.worktree ?? w.worktreePath;
-  const set = Boolean(w.repository?.trim() && w.branch?.trim() && worktree?.trim());
+  const set = Boolean(w.repository?.trim() && w.branch?.trim() && w.worktree?.trim());
   if (!set) {
-    return { mode: 'not-set', repository: null, branch: null, worktreePath: null };
+    return { mode: 'not-set', repository: null, branch: null, worktree: null };
   }
   return {
     mode: 'set',
     repository: w.repository,
     branch: w.branch,
-    worktreePath: worktree,
+    worktree: w.worktree,
   };
 }
 
@@ -232,7 +231,7 @@ export function renderShowText(model: ShowModel): string {
     lines.push('Workspace: none (template does not require one)');
   } else if (model.workspace.mode === 'set') {
     lines.push(
-      `Workspace: ${model.workspace.repository} · ${model.workspace.branch} · ${model.workspace.worktreePath}`,
+      `Workspace: ${model.workspace.repository} · ${model.workspace.branch} · ${model.workspace.worktree}`,
     );
   } else {
     lines.push('Workspace: not set');

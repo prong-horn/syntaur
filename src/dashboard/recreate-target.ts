@@ -28,7 +28,7 @@ export interface RecreateTarget {
   projectSlug: string | null;
   ticketSlug: string | null;
   /** Exact recorded worktree path; '' when nothing is on record. */
-  worktreePath: string;
+  worktree: string;
   repository: string | null;
   branch: string | null;
   originalHeadSha: string | null;
@@ -60,16 +60,16 @@ export async function resolveRecreateTarget(
             target.ticketSlug,
           );
     if (!detail) return null;
-    const worktreePath = detail.workspace.worktreePath ?? '';
+    const worktree = detail.workspace.worktree ?? '';
     const repository = detail.workspace.repository ?? null;
     const branch = detail.workspace.branch ?? null;
-    const missing = worktreePath !== '' && !isExistingDir(worktreePath);
+    const missing = worktree !== '' && !isExistingDir(worktree);
     return {
       kind: 'ticket',
       id: detail.id,
       projectSlug: detail.projectSlug ?? null,
       ticketSlug: detail.slug,
-      worktreePath,
+      worktree,
       repository,
       branch,
       originalHeadSha: null,
@@ -94,7 +94,7 @@ export async function resolveRecreateTarget(
     if (detail) {
       repository = detail.workspace.repository ?? null;
       branch = detail.workspace.branch ?? null;
-      ticketWorktreePath = detail.workspace.worktreePath ?? '';
+      ticketWorktreePath = detail.workspace.worktree ?? '';
     }
   } else if (session.projectSlug && session.ticketSlug) {
     const detail = await getTicketDetail(
@@ -105,7 +105,7 @@ export async function resolveRecreateTarget(
     if (detail) {
       repository = detail.workspace.repository ?? null;
       branch = detail.workspace.branch ?? null;
-      ticketWorktreePath = detail.workspace.worktreePath ?? '';
+      ticketWorktreePath = detail.workspace.worktree ?? '';
     }
   } else if (session.ticketSlug) {
     const detail = await getTicketDetailById(projectsDir,
@@ -114,18 +114,18 @@ export async function resolveRecreateTarget(
     if (detail) {
       repository = detail.workspace.repository ?? null;
       branch = detail.workspace.branch ?? null;
-      ticketWorktreePath = detail.workspace.worktreePath ?? '';
+      ticketWorktreePath = detail.workspace.worktree ?? '';
     }
   }
 
-  const worktreePath = session.path || ticketWorktreePath;
-  const missing = worktreePath !== '' && !isExistingDir(worktreePath);
+  const worktree = session.path || ticketWorktreePath;
+  const missing = worktree !== '' && !isExistingDir(worktree);
   return {
     kind: 'session',
     id: session.sessionId,
     projectSlug: session.projectSlug ?? null,
     ticketSlug: session.ticketSlug ?? null,
-    worktreePath,
+    worktree,
     repository,
     branch,
     originalHeadSha: session.originalHeadSha ?? null,

@@ -60,15 +60,15 @@ describe('documents YAML scalar codec + inline-flow lists', () => {
 
   it('(d) an ISO timestamp value still decodes bare', () => {
     const iso = '2026-06-16T12:00:00Z';
-    const content = ticketDoc(`title: Demo\nstatus: x\nblockedReason: ${`"${iso}"`}`);
+    const content = ticketDoc(`title: Demo\nstatus: x\nblocked: ${`"${iso}"`}`);
 
     const parsed = parseTicketEditorState(content);
-    expect(parsed.blockedReason).toBe(iso);
+    expect(parsed.blocked).toBe(iso);
 
     // And a freshly written timestamp scalar round-trips bare too.
-    const serialized = updateTicketContent(content, { blockedReason: iso });
-    expect(serialized).toContain(`blockedReason: "${iso}"`);
-    expect(parseTicketEditorState(serialized).blockedReason).toBe(iso);
+    const serialized = updateTicketContent(content, { blocked: iso });
+    expect(serialized).toContain(`blocked: "${iso}"`);
+    expect(parseTicketEditorState(serialized).blocked).toBe(iso);
   });
 
   it('(e) empty `[]` stays empty', () => {

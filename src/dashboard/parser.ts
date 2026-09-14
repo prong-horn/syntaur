@@ -3,13 +3,7 @@
  * Pattern copied from src/lifecycle/frontmatter.ts:3-23 (extractFrontmatter + parseSimpleValue).
  */
 
-import type {
-  AttestationRecord,
-  FrozenCheck,
-  GateOverride,
-  Solicitation,
-  StatusHistoryEntry,
-} from '../lifecycle/types.js';
+import type { PlanBlock } from '../lifecycle/types.js';
 
 export interface ParsedFile {
   frontmatter: Record<string, string>;
@@ -139,6 +133,38 @@ function unquoteYamlString(value: string): string {
     return value.slice(1, -1);
   }
   return value;
+}
+
+function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string | null }> {
+  const inlineMatch = frontmatter.match(/^externalIds:\s*\[\s*\]/m);
+  if (inlineMatch) return [];
+
+  const results: Array<{ system: string; id: string; url: string | null }> = [];
+  const blockMatch = frontmatter.match(
+    /^externalIds:\s*\n((?:\s+-\s+[\s\S]*?)(?=^\w|\n---))/m,
+  );
+  if (!blockMatch) return [];
+
+  const itemBlocks = blockMatch[1].split(/\n\s+-\s+/).filter(Boolean);
+  for (const block of itemBlocks) {
+    const lines = block.split('\n');
+    const entry: Record<string, string | null> = {};
+    for (const line of lines) {
+      const colonIdx = line.indexOf(':');
+      if (colonIdx < 0) continue;
+      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
+      if (!key) continue;
+      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
+    }
+    if (entry['system'] && entry['id']) {
+      results.push({
+        system: entry['system'],
+        id: entry['id'],
+        url: entry['url'] || null,
+      });
+    }
+  }
+  return results;
 }
 
 // --- Project Parser ---
@@ -286,387 +312,75 @@ export interface ParsedTicketFull {
   title: string;
   project: string | null;
   template: string | null;
-  /** Explicit lifecycle-workflow override (`workflow:` id); null when unset. */
-  workflow: string | null;
   status: string;
   priority: string;
-  assignee: string | null;
-  depends_on: string[];
-  links: string[];
   blocked: string | null;
-  /** @deprecated v1 — use {@link ParsedTicketFull.blocked}. */
-  blockedReason: string | null;
+  parked: string | null;
+  depends_on: string[];
+  assignee: string | null;
+  tags: string[];
+  links: string[];
   workspace: {
     repository: string | null;
-    worktreePath: string | null;
+    worktree: string | null;
     branch: string | null;
     parentBranch: string | null;
   };
-  externalIds: Array<{ system: string; id: string; url: string | null }>;
-  statusHistory: StatusHistoryEntry[];
-  tags: string[];
-  archived: boolean;
-  archivedAt: string | null;
-  archivedReason: string | null;
+  plan: PlanBlock;
   created: string;
   updated: string;
   body: string;
-  // ── derived-status v3 fields ─────────────────────────────────────────────
-  phase: string | null;
-  disposition: string | null;
-  parked: string | null;
-  reviewRequested: boolean;
-  reworkRequested: boolean;
-  implementationStarted: boolean;
-  plan: { file: string | null; approvedDigest: string | null; approvedAt: string | null; approvedBy: string | null };
-  override: { status: string; source: string; reason: string | null; at: string } | null;
-  // ── custom facts + attestations ──────────────────────────────────────────
-  /** Custom asserted fact values (raw scalars). Absent block → {}. Parity with
-   * the lifecycle parser so buildDerivedDetail's cast feeds computeFacts these. */
-  facts: Record<string, string>;
-  /** Attestation records (one per fact+actor). Absent block → []. */
-  attestations: AttestationRecord[];
-  // ── lifecycle-engine fields (WS-2; read-only mirror, dormant until migrated) ──
-  solicitations: Solicitation[];
-  firedVerdicts: string[];
-  frozenChecks: FrozenCheck[] | null;
-  hold: boolean;
-  gateOverrides: GateOverride[];
 }
 
-function parseExternalIds(frontmatter: string): Array<{ system: string; id: string; url: string | null }> {
-  const inlineMatch = frontmatter.match(/^externalIds:\s*\[\s*\]/m);
-  if (inlineMatch) return [];
-
-  const results: Array<{ system: string; id: string; url: string | null }> = [];
-  const blockMatch = frontmatter.match(
-    /^externalIds:\s*\n((?:\s+-\s+[\s\S]*?)(?=^\w|\n---))/m,
-  );
-  if (!blockMatch) return [];
-
-  const itemBlocks = blockMatch[1].split(/\n\s+-\s+/).filter(Boolean);
-  for (const block of itemBlocks) {
-    const lines = block.split('\n');
-    const entry: Record<string, string | null> = {};
-    for (const line of lines) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    if (entry['system'] && entry['id']) {
-      results.push({
-        system: entry['system'],
-        id: entry['id'],
-        url: entry['url'] || null,
-      });
-    }
-  }
-  return results;
+function parsePlanBlockD(fm: string): PlanBlock {
+  return {
+    file: getNestedField(fm, 'plan', 'file'),
+    approvedDigest: getNestedField(fm, 'plan', 'approvedDigest'),
+    approvedAt: getNestedField(fm, 'plan', 'approvedAt'),
+    approvedBy: getNestedField(fm, 'plan', 'approvedBy'),
+  };
 }
 
-/**
- * Parse the `statusHistory` list-of-mappings. Parity copy of
- * `src/lifecycle/frontmatter.ts::parseStatusHistory` — uses the same robust
- * line-scan (NOT the `parseExternalIds` regex boundary), because this module's
- * `extractFrontmatter` also strips the closing `\n---`, so a last-key
- * `statusHistory` block would otherwise be dropped. Keep in sync with the
- * lifecycle parser (dashboard-parser parity test guards this).
- */
-function parseStatusHistory(frontmatter: string): StatusHistoryEntry[] {
-  if (/^statusHistory:\s*\[\s*\]/m.test(frontmatter)) return [];
-
-  const headerMatch = frontmatter.match(/^statusHistory:\s*$/m);
-  if (!headerMatch) return [];
-
-  // Regex match offset, not indexOf — guards against an earlier scalar value
-  // containing the substring "statusHistory:".
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1; // skip the trailing \n
-  const after = frontmatter.slice(bodyStart);
-
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line);
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    bodyLines.push(line);
-  }
-  const body = bodyLines.join('\n');
-
-  const results: StatusHistoryEntry[] = [];
-  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
-  for (const block of itemBlocks) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    if (!entry['to']) continue;
-    const result: StatusHistoryEntry = {
-      at: entry['at'] ?? '',
-      from: entry['from'] ?? null,
-      to: entry['to'],
-      command: entry['command'] ?? '',
-      by: entry['by'] ?? null,
-    };
-    if (entry['reason'] != null) result.reason = entry['reason'];
-    // Dimension-aware optional keys (derived-status v3); keep in sync with the
-    // lifecycle parser.
-    if ('phaseFrom' in entry) result.phaseFrom = entry['phaseFrom'];
-    if ('phaseTo' in entry) result.phaseTo = entry['phaseTo'];
-    if ('dispositionFrom' in entry) result.dispositionFrom = entry['dispositionFrom'];
-    if ('dispositionTo' in entry) result.dispositionTo = entry['dispositionTo'];
-    results.push(result);
-  }
-  return results;
-}
-
-/**
- * Parse the `facts:` map (parity with lifecycle `frontmatter.ts::parseFactsMap`).
- * Absent/null block → `{}`; null-valued entries dropped; values trimmed +
- * unquoted via parseSimpleValue. Keep in sync with the lifecycle parser.
- */
-function parseFactsMap(frontmatter: string): Record<string, string> {
-  const headerMatch = frontmatter.match(/^facts:\s*$/m);
-  if (!headerMatch) return {};
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const after = frontmatter.slice(headerStart + headerMatch[0].length + 1);
-  const out: Record<string, string> = {};
-  for (const line of after.split('\n')) {
-    if (line.length === 0) continue;
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    const colonIdx = line.indexOf(':');
-    if (colonIdx < 0) continue;
-    const key = line.slice(0, colonIdx).trim();
-    if (!key) continue;
-    const value = parseSimpleValue(line.slice(colonIdx + 1));
-    if (value === null) continue;
-    out[key] = value;
-  }
-  return out;
-}
-
-/**
- * Parse the `attestations:` record list (parity with lifecycle
- * `frontmatter.ts::parseAttestations` — same robust line-scan). Records missing
- * a required key or with an unknown verdict are dropped. Keep in sync.
- */
-function parseAttestations(frontmatter: string): AttestationRecord[] {
-  if (/^attestations:\s*\[\s*\]/m.test(frontmatter)) return [];
-
-  const headerMatch = frontmatter.match(/^attestations:\s*$/m);
-  if (!headerMatch) return [];
-
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1;
-  const after = frontmatter.slice(bodyStart);
-
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line);
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    bodyLines.push(line);
-  }
-  const body = bodyLines.join('\n');
-
-  const results: AttestationRecord[] = [];
-  const itemBlocks = body.split(/\n\s+-\s+/).filter((b) => b.trim().length > 0);
-  for (const block of itemBlocks) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    const verdict = entry['verdict'];
-    if (!entry['fact'] || !entry['actor'] || !verdict || !entry['at']) continue;
-    if (verdict !== 'approved' && verdict !== 'changes-requested') continue;
-    const record: AttestationRecord = {
-      fact: entry['fact'],
-      actor: entry['actor'],
-      verdict,
-      at: entry['at'],
-    };
-    if (entry['note'] != null) record.note = entry['note'];
-    if (entry['file'] != null) record.file = entry['file'];
-    if (entry['digest'] != null) record.digest = entry['digest'];
-    if (entry['commit'] != null) record.commit = entry['commit'];
-    results.push(record);
-  }
-  return results;
-}
-
-// ── WS-2 lifecycle-engine blocks (parity with lifecycle frontmatter.ts; keep in
-// sync). Read-only mirror for the dashboard payloads; parsed but only consumed
-// once the engine is active (Task 2.6 migrated display). ─────────────────────
-
-function parseObjectListD(frontmatter: string, header: string): Record<string, string | null>[] {
-  if (new RegExp(`^${header}:\\s*\\[\\s*\\]`, 'm').test(frontmatter)) return [];
-  const headerMatch = frontmatter.match(new RegExp(`^${header}:\\s*$`, 'm'));
-  if (!headerMatch) return [];
-  const headerStart = headerMatch.index ?? frontmatter.indexOf(headerMatch[0]);
-  const bodyStart = headerStart + headerMatch[0].length + 1;
-  const after = frontmatter.slice(bodyStart);
-  const bodyLines: string[] = [];
-  for (const line of after.split('\n')) {
-    if (line.length === 0) {
-      bodyLines.push(line);
-      continue;
-    }
-    if (line[0] !== ' ' && line[0] !== '\t') break;
-    bodyLines.push(line);
-  }
-  const results: Record<string, string | null>[] = [];
-  for (const block of bodyLines.join('\n').split(/\n\s+-\s+/).filter((b) => b.trim().length > 0)) {
-    const entry: Record<string, string | null> = {};
-    for (const line of block.split('\n')) {
-      const colonIdx = line.indexOf(':');
-      if (colonIdx < 0) continue;
-      const key = line.slice(0, colonIdx).trim().replace(/^-\s+/, '');
-      if (!key) continue;
-      entry[key] = parseSimpleValue(line.slice(colonIdx + 1));
-    }
-    results.push(entry);
-  }
-  return results;
-}
-
-function parseSolicitationsD(fm: string): Solicitation[] {
-  const out: Solicitation[] = [];
-  for (const e of parseObjectListD(fm, 'solicitations')) {
-    const state = e['state'];
-    if (!e['check'] || !e['at']) continue;
-    if (state !== 'solicited' && state !== 'rendered' && state !== 'failed') continue;
-    const s: Solicitation = { check: e['check'], at: e['at'], state };
-    if (e['judge'] != null) s.judge = e['judge'];
-    if (e['revisionBinding'] != null) s.revisionBinding = e['revisionBinding'];
-    if (e['sessionRef'] != null) s.sessionRef = e['sessionRef'];
-    out.push(s);
-  }
-  return out;
-}
-
-function parseGateOverridesD(fm: string): GateOverride[] {
-  const out: GateOverride[] = [];
-  for (const e of parseObjectListD(fm, 'gateOverrides')) {
-    if (!e['stage'] || !e['key'] || e['label'] == null || !e['from'] || !e['to'] || !e['actor'] || !e['at'])
-      continue;
-    const o: GateOverride = {
-      stage: e['stage'],
-      key: e['key'],
-      label: e['label'],
-      from: e['from'],
-      to: e['to'],
-      actor: e['actor'],
-      at: e['at'],
-    };
-    if (e['reason'] != null) o.reason = e['reason'];
-    out.push(o);
-  }
-  return out;
-}
-
-function parseFrozenChecksD(fm: string): FrozenCheck[] | null {
-  if (/^frozenChecks:\s*\[\s*\]/m.test(fm)) return [];
-  if (!/^frozenChecks:\s*$/m.test(fm)) return null;
-  const out: FrozenCheck[] = [];
-  for (const e of parseObjectListD(fm, 'frozenChecks')) {
-    if (!e['key'] || e['label'] == null || e['passed'] == null) continue;
-    out.push({ key: e['key'], label: e['label'], passed: e['passed'] === 'true' });
-  }
-  return out;
+function parseWorkspaceBlock(fm: string): ParsedTicketFull['workspace'] {
+  const worktree =
+    getNestedField(fm, 'workspace', 'worktree') ??
+    getNestedField(fm, 'workspace', 'worktree');
+  return {
+    repository: getNestedField(fm, 'workspace', 'repository'),
+    worktree,
+    branch: getNestedField(fm, 'workspace', 'branch'),
+    parentBranch: getNestedField(fm, 'workspace', 'parentBranch'),
+  };
 }
 
 export function parseTicketFull(fileContent: string): ParsedTicketFull {
   const [fm, body] = extractFrontmatter(fileContent);
+  const blockedRaw = getField(fm, 'blocked') ?? getField(fm, 'blockedReason');
+  const parkedRaw = getField(fm, 'parked');
   return {
     id: getField(fm, 'id') ?? '',
     slug: getField(fm, 'slug') ?? '',
     title: getField(fm, 'title') ?? '',
     project: getField(fm, 'project'),
     template: getField(fm, 'template'),
-    workflow: getField(fm, 'workflow'),
-    status: getField(fm, 'status') ?? 'pending',
+    status: getField(fm, 'status') ?? 'backlog',
     priority: getField(fm, 'priority') ?? 'medium',
-    assignee: getField(fm, 'assignee'),
+    blocked: blockedRaw === 'null' ? null : blockedRaw,
+    parked:
+      parkedRaw === null || parkedRaw === 'false' || parkedRaw === 'null'
+        ? null
+        : parkedRaw === 'true'
+          ? 'parked'
+          : parkedRaw,
     depends_on: parseListField(fm, 'depends_on'),
-    links: parseListField(fm, 'links'),
-    blocked: (() => {
-      const b = getField(fm, 'blocked');
-      if (b !== null) return b === 'null' ? null : b;
-      const legacy = getField(fm, 'blockedReason');
-      return legacy === 'null' ? null : legacy;
-    })(),
-    blockedReason: getField(fm, 'blockedReason'),
-    workspace: {
-      repository: getNestedField(fm, 'workspace', 'repository'),
-      worktreePath: getNestedField(fm, 'workspace', 'worktreePath'),
-      branch: getNestedField(fm, 'workspace', 'branch'),
-      parentBranch: getNestedField(fm, 'workspace', 'parentBranch'),
-    },
-    externalIds: parseExternalIds(fm),
-    statusHistory: parseStatusHistory(fm),
+    assignee: getField(fm, 'assignee'),
     tags: parseListField(fm, 'tags'),
-    archived: getField(fm, 'archived') === 'true',
-    archivedAt: getField(fm, 'archivedAt'),
-    archivedReason: getField(fm, 'archivedReason'),
+    links: parseListField(fm, 'links'),
+    workspace: parseWorkspaceBlock(fm),
+    plan: parsePlanBlockD(fm),
     created: getField(fm, 'created') ?? '',
     updated: getField(fm, 'updated') ?? '',
     body,
-    // WS-3 compat window (§4.5): `phase`/`disposition` are DEPRECATED payload
-    // mirrors kept one release. Post-migration the engine maintains `phase`
-    // as a mirror of the stored stage (`status`) and `disposition` from the
-    // pause flags; consumers should migrate to `status` + the flags.
-    phase: getField(fm, 'phase'),
-    disposition: getField(fm, 'disposition'),
-    parked: (() => {
-      const raw = getField(fm, 'parked');
-      if (raw === null || raw === 'null') return null;
-      if (raw === 'true') return 'parked before v2 (no reason recorded)';
-      if (raw === 'false') return null;
-      return raw;
-    })(),
-    // Retired session-stage facts (WS-3 T9): post-marker these stop being
-    // asserted — review/rework standing derives from the stored stage + the
-    // stage routes. The reads stay as the pre-marker fallback.
-    reviewRequested: getField(fm, 'reviewRequested') === 'true',
-    reworkRequested: getField(fm, 'reworkRequested') === 'true',
-    implementationStarted: getField(fm, 'implementationStarted') === 'true',
-    plan: {
-      file: getNestedField(fm, 'plan', 'file'),
-      approvedDigest: getNestedField(fm, 'plan', 'approvedDigest'),
-      approvedAt: getNestedField(fm, 'plan', 'approvedAt'),
-      approvedBy: getNestedField(fm, 'plan', 'approvedBy'),
-    },
-    override: (() => {
-      const status = getNestedField(fm, 'override', 'status');
-      if (!status) return null;
-      return {
-        status,
-        source: getNestedField(fm, 'override', 'source') ?? 'human',
-        reason: getNestedField(fm, 'override', 'reason'),
-        at: getNestedField(fm, 'override', 'at') ?? '',
-      };
-    })(),
-    facts: parseFactsMap(fm),
-    attestations: parseAttestations(fm),
-    solicitations: parseSolicitationsD(fm),
-    firedVerdicts: parseListField(fm, 'firedVerdicts').map((v) => parseSimpleValue(v) ?? v),
-    frozenChecks: parseFrozenChecksD(fm),
-    hold: getField(fm, 'hold') === 'true',
-    gateOverrides: parseGateOverridesD(fm),
   };
 }
 

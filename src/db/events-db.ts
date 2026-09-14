@@ -244,3 +244,107 @@ export function hasEventsForTicket(ticketId: string): boolean {
     .get(ticketId);
   return row !== undefined;
 }
+
+export interface LatestMove {
+  at: string;
+  from: string;
+  to: string;
+}
+
+function parseMoveDetails(details: string | null): { from: string; to: string } | null {
+  if (!details) return null;
+  try {
+    const parsed = JSON.parse(details) as { from?: unknown; to?: unknown };
+    if (typeof parsed.from !== 'string' || typeof parsed.to !== 'string') return null;
+    return { from: parsed.from, to: parsed.to };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Latest `moved` event per ticket (one query). Tickets with no `moved` row are
+ * omitted — callers fall back to `created` / `updated`.
+ */
+export function latestMovesByTicket(ticketIds: string[]): Map<string, LatestMove> {
+  const out = new Map<string, LatestMove>();
+  if (ticketIds.length === 0) return out;
+  if (!db) initEventsDb();
+
+  const database = getEventsDb();
+  const placeholders = ticketIds.map(() => '?').join(', ');
+  const rows = database
+    .prepare(
+      `SELECT ticket_id, at, details
+       FROM events
+       WHERE ticket_id IN (${placeholders}) AND type = 'moved'
+       ORDER BY at DESC`,
+    )
+    .all(...ticketIds) as Array<{ ticket_id: string; at: string; details: string | null }>;
+
+  for (const row of rows) {
+    if (out.has(row.ticket_id)) continue;
+    const endpoints = parseMoveDetails(row.details);
+    if (!endpoints) continue;
+    out.set(row.ticket_id, { at: row.at, from: endpoints.from, to: endpoints.to });
+  }
+  return out;
+}
+
+/**
+ * Latest `created` event per ticket (one query). Used as the statusAge fallback
+ * when no `moved` row exists.
+ */
+export function latestCreatedByTicket(ticketIds: string[]): Map<string, string> {
+  const out = new Map<string, string>();
+  if (ticketIds.length === 0) return out;
+  if (!db) initEventsDb();
+
+  const database = getEventsDb();
+  const placeholders = ticketIds.map(() => '?').join(', ');
+  const rows = database
+    .prepare(
+      `SELECT ticket_id, at
+       FROM events
+       WHERE ticket_id IN (${placeholders}) AND type = 'created'
+       ORDER BY at DESC`,
+    )
+    .all(...ticketIds) as Array<{ ticket_id: string; at: string }>;
+
+  for (const row of rows) {
+    if (!out.has(row.ticket_id)) out.set(row.ticket_id, row.at);
+  }
+  return out;
+}
+
+/**
+ * Latest `moved` event whose `to` matches `stage`, per ticket (one query).
+ * Used for inbox `since` on review tickets.
+ */
+export function latestMovedToStageByTicket(
+  ticketIds: string[],
+  stage: string,
+): Map<string, LatestMove> {
+  const out = new Map<string, LatestMove>();
+  if (ticketIds.length === 0) return out;
+  if (!db) initEventsDb();
+
+  const database = getEventsDb();
+  const placeholders = ticketIds.map(() => '?').join(', ');
+  const rows = database
+    .prepare(
+      `SELECT ticket_id, at, details
+       FROM events
+       WHERE ticket_id IN (${placeholders}) AND type = 'moved'
+       ORDER BY at DESC`,
+    )
+    .all(...ticketIds) as Array<{ ticket_id: string; at: string; details: string | null }>;
+
+  for (const row of rows) {
+    if (out.has(row.ticket_id)) continue;
+    const endpoints = parseMoveDetails(row.details);
+    if (!endpoints || endpoints.to !== stage) continue;
+    out.set(row.ticket_id, { at: row.at, from: endpoints.from, to: endpoints.to });
+  }
+  return out;
+}

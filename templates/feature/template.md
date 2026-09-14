@@ -59,8 +59,8 @@ files:
     entryTypes: [progress, decision, handoff, note, question, answer, review]
 gates:
   approve: [plan-exists]
-  start: [plan-approved, deps-done, workspace-set]
-  done: [criteria-checked, handoff-logged, review-clean]
+  start: [plan-approved, workspace-set]
+  done: [criteria-checked, handoff-logged, review-clean, deps-done]
 ---
 
 Built-in template; copy the directory to customise

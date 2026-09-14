@@ -100,7 +100,7 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
     const projectIsArchived = entry.projectSlug
       ? projectArchived.get(entry.projectSlug) === true
       : false;
-    const archived = ticket.archived || projectIsArchived;
+    const archived = projectIsArchived;
 
     if (!includeArchived && archived) continue;
 

@@ -78,7 +78,7 @@ async function writeFeatureTicket(
   const digest = createHash('sha256').update(planBody, 'utf-8').digest('hex');
   const workspaceYaml = `workspace:
   repository: null
-  worktreePath: null
+  worktree: null
   branch: null
   parentBranch: null`;
   const deps =
@@ -120,7 +120,7 @@ Objective text.
   if (opts.workspace) {
     ticketContent = updateTicketWorkspace(ticketContent, {
       repository: '/repo',
-      worktreePath: '/tmp/wt',
+      worktree: '/tmp/wt',
       branch: 'main',
       parentBranch: 'main',
     });

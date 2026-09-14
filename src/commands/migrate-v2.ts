@@ -464,6 +464,7 @@ async function runTemplatesStep(
   const ticketPaths = await collectTicketMdPaths(home);
   for (const ticketMdPath of ticketPaths) {
     const content = await readFile(ticketMdPath, 'utf-8');
+    if (!content.trimStart().startsWith('---')) continue;
     const ticketDir = resolve(ticketMdPath, '..');
     const { content: next, counts: partial } = await transformTicketTemplatesFrontmatter(
       content,
@@ -710,7 +711,12 @@ async function discoverProjectTickets(
       const md = await discoverTicketMd(base, entry.name);
       if (!md) continue;
       const content = await readFile(md.path, 'utf-8');
-      const fm = parseTicketFrontmatter(content);
+      let fm;
+      try {
+        fm = parseTicketFrontmatter(content);
+      } catch {
+        continue;
+      }
       if (!fm.id || !fm.slug) continue;
       tickets.push({
         uuid: fm.id,
@@ -746,7 +752,12 @@ async function discoverStandaloneTickets(home: string): Promise<DiscoveredTicket
       const md = await discoverTicketMd(base, entry.name);
       if (!md) continue;
       const content = await readFile(md.path, 'utf-8');
-      const fm = parseTicketFrontmatter(content);
+      let fm;
+      try {
+        fm = parseTicketFrontmatter(content);
+      } catch {
+        continue;
+      }
       if (!fm.id || !fm.slug) continue;
       if (seen.has(fm.id)) continue;
       seen.add(fm.id);
