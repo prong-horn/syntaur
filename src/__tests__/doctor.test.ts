@@ -198,7 +198,7 @@ describe('syntaur doctor', () => {
     const dir = resolve(projectDir, 'tickets', 'empty-draft');
     await mkdir(dir, { recursive: true });
     // Build a ticket with explicit empty Objective body
-    const md = `---\nid: 22222222-2222-2222-2222-222222222222\nslug: empty-draft\ntitle: Empty\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Empty\n\n## Objective\n\n## Acceptance Criteria\n\n- [ ] <!-- criterion 1 -->\n`;
+    const md = `---\nid: 22222222-2222-2222-2222-222222222222\nslug: empty-draft\ntitle: Empty\nstatus: backlog\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndepends_on: []\nblocked: null\nparked: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Empty\n\n## Objective\n\n## Acceptance Criteria\n\n- [ ] <!-- criterion 1 -->\n`;
     await writeFile(resolve(dir, 'ticket.md'), md);
     const report = await runChecks();
     const issues = byId(report, 'ticket.draft-missing-objective').filter((c) => c.status === 'warn');
@@ -211,7 +211,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const dir = resolve(projectDir, 'tickets', 'real-draft');
     await mkdir(dir, { recursive: true });
-    const md = `---\nid: 33333333-3333-3333-3333-333333333333\nslug: real-draft\ntitle: Real\nstatus: draft\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Real\n\n## Objective\n\nThis is a real objective with actual content describing the work.\n\n## Acceptance Criteria\n\n- [ ] something concrete\n`;
+    const md = `---\nid: 33333333-3333-3333-3333-333333333333\nslug: real-draft\ntitle: Real\nstatus: backlog\npriority: medium\ncreated: "2026-01-01T00:00:00Z"\nupdated: "2026-01-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndepends_on: []\nblocked: null\nparked: null\nworkspace:\n  repository: null\n  worktree: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\n# Real\n\n## Objective\n\nThis is a real objective with actual content describing the work.\n\n## Acceptance Criteria\n\n- [ ] something concrete\n`;
     await writeFile(resolve(dir, 'ticket.md'), md);
     const report = await runChecks();
     const issues = byId(report, 'ticket.draft-missing-objective').filter((c) => c.status !== 'pass');
@@ -223,7 +223,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const dir = resolve(projectDir, 'tickets', 'no-plan');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready'));
     const report = await runChecks();
     const issues = byId(report, 'ticket.ready-to-implement-missing-plan').filter((c) => c.status === 'warn');
     expect(issues.length).toBe(1);
@@ -235,7 +235,7 @@ describe('syntaur doctor', () => {
     const projectDir = await writeProjectScaffold('m1');
     const dir = resolve(projectDir, 'tickets', 'has-plan');
     await mkdir(dir, { recursive: true });
-    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready_to_implement'));
+    await writeFile(resolve(dir, 'ticket.md'), ticketMd('ready'));
     await writeFile(resolve(dir, 'plan.md'), '# Plan\n\nSome plan content.\n');
     const report = await runChecks();
     const issues = byId(report, 'ticket.ready-to-implement-missing-plan').filter((c) => c.status !== 'pass');

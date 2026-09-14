@@ -383,7 +383,7 @@ const projectFrontmatterMatchesContainer: Check = {
 const draftMissingObjective: Check = {
   id: 'ticket.draft-missing-objective',
   category: CATEGORY,
-  title: 'Draft tickets have a non-empty Objective',
+  title: 'Backlog tickets have a non-empty Objective',
   async run(ctx) {
     const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
@@ -391,7 +391,7 @@ const draftMissingObjective: Check = {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      if (parsed.status !== 'draft') continue;
+      if (parsed.status !== 'backlog') continue;
       let raw: string;
       try {
         raw = await readFile(path, 'utf-8');
@@ -405,11 +405,11 @@ const draftMissingObjective: Check = {
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `${label} (status: draft) has an empty or placeholder ## Objective`,
+        detail: `${label} (status: backlog) has an empty or placeholder ## Objective`,
         affected: [path],
         remediation: {
           kind: 'manual',
-          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur shape ${a.ticketId ?? a.ticketSlug}' to transition to ready_for_planning`,
+          suggestion: `Flesh out the Objective and Acceptance Criteria, then run 'syntaur plan create ${a.ticketId ?? a.ticketSlug}'`,
           command: null,
         },
         autoFixable: false,
@@ -423,7 +423,7 @@ const draftMissingObjective: Check = {
 const readyToImplementMissingPlan: Check = {
   id: 'ticket.ready-to-implement-missing-plan',
   category: CATEGORY,
-  title: 'ready_to_implement tickets have a plan.md (or plan-v<N>.md)',
+  title: 'ready tickets have a plan.md (or plan-v<N>.md)',
   async run(ctx) {
     const { withTicketMd } = await listTickets(ctx);
     const results: CheckResult[] = [];
@@ -431,7 +431,7 @@ const readyToImplementMissingPlan: Check = {
       const path = resolve(a.ticketDir, 'ticket.md');
       const parsed = await parseSafe(path);
       if (!parsed) continue;
-      if (parsed.status !== 'ready_to_implement') continue;
+      if (parsed.status !== 'ready') continue;
       const entries = await readdir(a.ticketDir).catch(() => [] as string[]);
       const planFiles = entries.filter((f) => /^plan(?:-v\d+)?\.md$/i.test(f));
       let hasPlanContent = false;
@@ -453,11 +453,11 @@ const readyToImplementMissingPlan: Check = {
         category: this.category,
         title: this.title,
         status: 'warn',
-        detail: `${label} (status: ready_to_implement) has no plan.md or plan-v<N>.md`,
+        detail: `${label} (status: ready) has no plan.md or plan-v<N>.md`,
         affected: [resolve(a.ticketDir, 'plan.md')],
         remediation: {
           kind: 'manual',
-          suggestion: `Write a plan with '/plan-ticket' (or 'syntaur plan'), then re-mark ready_to_implement`,
+          suggestion: `Write a plan with 'syntaur plan create ${a.ticketId ?? a.ticketSlug}'`,
           command: null,
         },
         autoFixable: false,
