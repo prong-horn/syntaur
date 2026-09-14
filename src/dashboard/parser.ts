@@ -75,7 +75,7 @@ export function getNestedField(frontmatter: string, parent: string, key: string)
 }
 
 /**
- * Parse a YAML list field (e.g., tags, dependsOn, relatedTickets).
+ * Parse a YAML list field (e.g., tags, depends_on, relatedTickets).
  *
  * Supports the empty inline form `field: []` and the block-list form
  * `field:\n  - a\n  - b`. Does NOT support populated inline arrays

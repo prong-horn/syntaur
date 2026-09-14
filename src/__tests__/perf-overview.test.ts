@@ -57,7 +57,7 @@ created: "2026-03-20T10:00:00Z"
 updated: "${RECENT}"
 assignee: bench
 externalIds: []
-depends_on: ${JSON.stringify(dependsOn)}
+depends_on: ${JSON.stringify(depends_on)}
 blockedReason: null
 workspace:
   repository: null
@@ -115,13 +115,13 @@ async function seedSyntheticWorkspace(
     for (let a = 0; a < ticketsPerProject; a++) {
       const slug = `asg-${a.toString().padStart(3, '0')}`;
       const status = statuses[a % statuses.length]!;
-      const dependsOn =
+      const dependsIds =
         a > 0 && a % 5 === 0 ? [`asg-${(a - 1).toString().padStart(3, '0')}`] : [];
       const aDir = resolve(projectPath, 'tickets', slug);
       await mkdir(aDir, { recursive: true });
       await writeFile(
         resolve(aDir, 'ticket.md'),
-        ticketMd(slug, status, dependsOn),
+        ticketMd(slug, status, dependsIds),
         'utf-8',
       );
       if (a % 4 === 0) {

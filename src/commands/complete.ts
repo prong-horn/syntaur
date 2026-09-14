@@ -14,7 +14,7 @@ export interface CompleteOptions extends LifecycleOptions {}
  * dependents' depsSatisfied fact just changed. Resolves the project dir + slug
  * even when the ticket was addressed by UUID without `--project` (mirrors
  * reopen), and recomputes by the resolved SLUG (recomputeDependents matches
- * `dependsOn` against slugs, not UUIDs). */
+ * `depends_on` against slugs, not UUIDs). */
 export async function completeCommand(
   ticket: string,
   options: CompleteOptions,

@@ -82,7 +82,7 @@ describe('documents YAML scalar codec + inline-flow lists', () => {
   });
 
   it('(f) a list element containing a comma and/or quote round-trips', () => {
-    // dependsOn is a string list; commaListToArray splits the comma-joined input,
+    // depends_on is a string list; commaListToArray splits the comma-joined input,
     // so we set it directly with a single element that itself contains specials.
     // Use the inline-flow parse path for the comma case (commas inside quotes
     // must not split the element).

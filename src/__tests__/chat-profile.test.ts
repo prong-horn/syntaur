@@ -275,7 +275,7 @@ Ticket chat
       'plan.md': '# Plan v1\n\nReal plan content.\n',
       'progress.md': '# Progress\n',
     });
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
@@ -341,7 +341,7 @@ blockedReason: null
 Ticket chat
 `,
     });
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: { ...BASE, harness: 'codex' },
       harness: HARNESSES.codex,
       ticketDir: dir,
@@ -406,7 +406,7 @@ Ticket chat
       'plan-v2.md': '# Plan v2\n',
       'plan-v10.md': '# Plan v10\n',
     });
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
@@ -486,7 +486,7 @@ updated: "2026-01-01T00:00:00Z"
 Recent work line.
 `,
     });
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,
@@ -504,7 +504,7 @@ Recent work line.
 
   it('skips records that are missing or empty', async () => {
     const dir = await seedTicket({ 'ticket.md': '   \n' });
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: BASE,
       harness: HARNESSES.claude,
       ticketDir: dir,

@@ -164,7 +164,7 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 
 - Ticket frontmatter is the single source of truth for state. \`id\` is \`<PREFIX>-<n>\`; \`project\` is the containing project slug; \`type\` is a classification validated against \`config.md\` \`types.definitions\` when present.
 - Ticket folders are \`<ID>-<slug>\`. Slugs are lowercase, hyphen-separated and may be renamed with \`syntaur rename\`.
-- \`dependsOn\` and \`links\` hold ticket ids, not slugs.
+- \`depends_on\` and \`links\` hold ticket ids, not slugs.
 - Always read \`project.md\` at the project level (when project-nested) before starting work.
 - Keep \`ticket.md\` acceptance criteria updated as work lands; append timestamped entries to \`progress.md\` (never to \`ticket.md\`).
 - Keep active plan file(s) current after planning changes. Write \`handoff.md\` (via \`complete-ticket\`) at the cross-ticket boundary.

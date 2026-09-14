@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   buildContextSection,
   buildStandingContext,
@@ -225,7 +225,7 @@ Prompt framing ticket.
     );
     await writeFile(join(dir, 'progress.md'), '# Progress\n\n## 2026-01-01T00:00:00Z\n\nold\n', 'utf-8');
 
-    const blocks = await buildStandingContext({
+    const { blocks } = await buildStandingContext({
       definition: def('planner'),
       harness: { id: 'claude', systemPromptTransport: 'meta' } as never,
       ticketDir: dir,
@@ -243,6 +243,81 @@ Prompt framing ticket.
     expect(
       blocks.some((b) => b.type === 'resource' && b.resource.uri.endsWith('progress.md')),
     ).toBe(false);
+  });
+
+  it('warns and degrades when the template id is unknown', async () => {
+    const dir = join(sandbox, 'bad-template');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      join(dir, 'ticket.md'),
+      `---
+id: BAD-1
+slug: bad
+title: Bad template
+project: p
+template: not-a-real-template
+status: draft
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+archived: false
+archivedAt: null
+archivedReason: null
+phase: null
+disposition: null
+parked: false
+reviewRequested: false
+reworkRequested: false
+implementationStarted: false
+override: null
+facts: {}
+attestations: []
+solicitations: []
+firedVerdicts: []
+frozenChecks: null
+hold: false
+gateOverrides: []
+statusHistory: []
+assignee: null
+externalIds: []
+workflow: null
+blockedReason: null
+---
+
+## Objective
+
+Still readable.
+`,
+      'utf-8',
+    );
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { blocks, warning } = await buildStandingContext({
+      definition: def('planner'),
+      harness: { id: 'claude', systemPromptTransport: 'meta' } as never,
+      ticketDir: dir,
+      syntaurRoot: sandbox,
+      context: {
+        projectSlug: 'p',
+        ticketSlug: 'bad',
+        ticketDir: dir,
+        worktreePath: '/tmp/wt',
+      },
+    });
+    expect(warning).toMatch(/show context degraded for BAD-1/);
+    expect(warnSpy).toHaveBeenCalled();
+    expect(blocks.some((b) => b.type === 'resource' && b.resource.uri.endsWith('ticket.md'))).toBe(
+      true,
+    );
+    warnSpy.mockRestore();
   });
 
   it('changes fingerprint when status changes', () => {

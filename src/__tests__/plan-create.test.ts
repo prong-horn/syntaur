@@ -81,4 +81,13 @@ describe('syntaur plan create', () => {
     const forced = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p', '--force'], home);
     expect(forced.code, forced.stderr).toBe(0);
   });
+
+  it('plan create --force uses injectPurpose without a bare purpose key', async () => {
+    await writeFile(resolve(ticketDir, 'ticket.md'), TICKET.replace('template: legacy', 'template: feature'), 'utf-8');
+    const r = await runCli(['plan', 'create', '--ticket', 'PX-1', '--project', 'p', '--force'], home);
+    expect(r.code, r.stderr).toBe(0);
+    const plan = await readFile(resolve(ticketDir, 'plan.md'), 'utf-8');
+    expect(plan.startsWith('---\npurpose: Implementation plan with tasks and verify steps')).toBe(true);
+    expect(plan).not.toMatch(/^---\n---/);
+  });
 });

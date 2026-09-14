@@ -70,6 +70,16 @@ describe('createProjectCommand', () => {
     expect(content).toContain('defaultTemplate: feature');
   });
 
+  it('honors --default-template when creating a project', async () => {
+    await createProjectCommand('Quick project', {
+      slug: 'quick-proj',
+      dir: testDir,
+      defaultTemplate: 'quick',
+    });
+    const content = await readFile(resolve(testDir, 'quick-proj', 'project.md'), 'utf-8');
+    expect(content).toContain('defaultTemplate: quick');
+  });
+
   it('uses custom slug when provided', async () => {
     const slug = await createProjectCommand('Test', {
       slug: 'custom-slug',
@@ -140,13 +150,13 @@ describe('newCommand', () => {
     expect(content).not.toContain('<!-- criterion 1 -->');
   });
 
-  it('rejects invalid dependsOn ids', async () => {
+  it('rejects invalid dependency ids', async () => {
     await createProjectCommand('Test Project', { dir: testDir });
     await expect(
       newCommand('Test', {
         project: 'test-project',
         dir: testDir,
-        dependsOn: 'not-an-id',
+        depends_on_flag: 'not-an-id',
       }),
     ).rejects.toThrow('Invalid dependency id');
   });
@@ -163,7 +173,7 @@ describe('newCommand', () => {
       project: 'test-project',
       dir: testDir,
       priority: 'high',
-      dependsOn: dep.id,
+      depends_on_flag: dep.id,
     });
 
     const ticketDir = resolve(
@@ -180,6 +190,46 @@ describe('newCommand', () => {
     expect(content).toContain('priority: high');
     expect(content).toContain('depends_on:');
     expect(content).toContain(`  - ${dep.id}`);
+  });
+
+  it('uses template defaultPriority when --priority is omitted', async () => {
+    await createProjectCommand('Test Project', { dir: testDir });
+    const bug = await newCommand('Bug fix', {
+      project: 'test-project',
+      dir: testDir,
+      template: 'bug',
+      silent: true,
+    });
+    const bugMd = await readFile(
+      resolve(testDir, 'test-project', 'tickets', `${bug.id}-bug-fix`, 'ticket.md'),
+      'utf-8',
+    );
+    expect(bugMd).toContain('priority: high');
+
+    const quick = await newCommand('Quick chore', {
+      project: 'test-project',
+      dir: testDir,
+      template: 'quick',
+      silent: true,
+    });
+    const quickMd = await readFile(
+      resolve(testDir, 'test-project', 'tickets', `${quick.id}-quick-chore`, 'ticket.md'),
+      'utf-8',
+    );
+    expect(quickMd).toContain('priority: low');
+
+    await newCommand('Explicit priority', {
+      project: 'test-project',
+      dir: testDir,
+      template: 'quick',
+      priority: 'critical',
+      silent: true,
+    });
+    const explicitMd = await readFile(
+      resolve(testDir, 'test-project', 'tickets', 'TP-3-explicit-priority', 'ticket.md'),
+      'utf-8',
+    );
+    expect(explicitMd).toContain('priority: critical');
   });
 
   it('throws on empty title', async () => {
@@ -220,7 +270,7 @@ describe('newCommand', () => {
       newCommand('Task', {
         project: 'test',
         dir: testDir,
-        dependsOn: 'TP-1,not-an-id',
+        depends_on_flag: 'TP-1,not-an-id',
       }),
     ).rejects.toThrow('Invalid dependency id');
   });

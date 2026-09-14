@@ -132,7 +132,7 @@ describe('renderTicket', () => {
     expect(out).not.toContain('links: []');
   });
 
-  it('renders non-empty dependsOn as YAML list', () => {
+  it('renders non-empty depends_on as YAML list', () => {
     const out = renderTicket({
       id: 'id',
       slug: 's',

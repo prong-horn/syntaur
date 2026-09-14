@@ -25,7 +25,6 @@ import {
   type ParsedComment,
 } from '../dashboard/parser.js';
 import { isPlanApproved } from '../lifecycle/facts.js';
-import { DEFAULT_PLAN_STEM, latestPlanRevision } from '../ticket-templates/roles.js';
 import { getTargetStatus } from '../lifecycle/state-machine.js';
 import type {
   InboxAction,
@@ -142,13 +141,9 @@ export async function isPlanAwaitingApproval(
   ticketDir: string,
 ): Promise<boolean> {
   if (a.status !== 'ready_for_planning') return false;
-  const planPath =
-    a.plan.file ?? (await latestPlanRevision(ticketDir, DEFAULT_PLAN_STEM));
-  if (!planPath) return false;
-  if (!(await fileExists(resolve(ticketDir, planPath)))) return false;
-  const approved = await isPlanApproved(ticketDir, {
-    plan: { ...a.plan, file: a.plan.file ?? planPath },
-  });
+  if (!a.plan.file) return false;
+  if (!(await fileExists(resolve(ticketDir, a.plan.file)))) return false;
+  const approved = await isPlanApproved(ticketDir, { plan: a.plan });
   return !approved;
 }
 

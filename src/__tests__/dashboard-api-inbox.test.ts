@@ -71,6 +71,14 @@ async function seed(o: SeedOpts): Promise<void> {
     fm.push('statusHistory:');
     fm.push(...o.statusHistory.map((l) => `  ${l}`));
   }
+  if (o.planFiles) {
+    const planFile = Object.keys(o.planFiles)[0]!;
+    fm.push('plan:');
+    fm.push(`  file: ${planFile}`);
+    fm.push('  approvedDigest: null');
+    fm.push('  approvedAt: null');
+    fm.push('  approvedBy: null');
+  }
   await writeFile(
     join(dir, 'ticket.md'),
     `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`,

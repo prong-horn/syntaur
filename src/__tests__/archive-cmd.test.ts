@@ -10,7 +10,7 @@ let projectsDir: string;
 let prevHome: string | undefined;
 
 function ticketMd(id: string, slug: string, status: string): string {
-  return `---\nid: ${id}\nslug: ${slug}\ntitle: "${slug}"\nproject: p\nstatus: ${status}\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-04-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\nBody.\n`;
+  return `---\nid: ${id}\nslug: ${slug}\ntitle: "${slug}"\nproject: p\nstatus: ${status}\npriority: medium\ncreated: "2026-04-01T00:00:00Z"\nupdated: "2026-04-01T00:00:00Z"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\n---\n\nBody.\n`;
 }
 
 beforeEach(async () => {

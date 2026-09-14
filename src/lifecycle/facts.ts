@@ -127,7 +127,7 @@ export async function countUnresolvedQuestions(ticketDir: string): Promise<numbe
   }
 }
 
-/** All `dependsOn` targets terminal? Standalone tickets (no project dir)
+/** All `depends_on` targets terminal? Standalone tickets (no project dir)
  * and empty dependency lists are trivially satisfied. */
 export async function areDependenciesSatisfied(
   projectDir: string | null,

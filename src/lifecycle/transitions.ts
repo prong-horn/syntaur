@@ -25,7 +25,7 @@ async function readTicket(
 }
 
 /**
- * Resolve which of a ticket's `dependsOn` targets are not yet terminal.
+ * Resolve which of a ticket's `depends_on` targets are not yet terminal.
  * Exported so derive verbs (`start`/`implement`) can surface the same
  * non-blocking unmet-dependency warning the legacy transition path emits.
  */

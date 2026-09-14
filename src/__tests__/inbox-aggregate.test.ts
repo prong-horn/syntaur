@@ -42,7 +42,7 @@ interface SeedOpts {
   archived?: boolean;
   blockedReason?: string;
   reviewRequested?: boolean;
-  plan?: { file: string; approvedDigest: string };
+  plan?: { file: string; approvedDigest: string | null };
   statusHistory?: string[]; // raw YAML lines under statusHistory:
   updated?: string;
   created?: string;
@@ -78,12 +78,24 @@ async function seed(o: SeedOpts): Promise<string> {
   if (o.reviewRequested) fm.push('reviewRequested: true');
   if (o.updated) fm.push(`updated: "${o.updated}"`);
   if (o.created) fm.push(`created: "${o.created}"`);
-  if (o.plan) {
+  const planMeta =
+    o.plan ??
+    (o.planFiles
+      ? {
+          file: Object.keys(o.planFiles)[0]!,
+          approvedDigest: null,
+        }
+      : undefined);
+  if (planMeta) {
     fm.push('plan:');
-    fm.push(`  file: ${o.plan.file}`);
-    fm.push(`  approvedDigest: ${o.plan.approvedDigest}`);
-    fm.push('  approvedBy: human');
-    fm.push('  at: "2026-06-16T00:00:00Z"');
+    fm.push(`  file: ${planMeta.file}`);
+    fm.push(
+      planMeta.approvedDigest === null
+        ? '  approvedDigest: null'
+        : `  approvedDigest: ${planMeta.approvedDigest}`,
+    );
+    fm.push('  approvedAt: null');
+    fm.push('  approvedBy: null');
   }
   if (o.statusHistory) {
     fm.push('statusHistory:');

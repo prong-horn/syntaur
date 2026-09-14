@@ -121,11 +121,7 @@ program
   .argument('<title>', 'Ticket title')
   .option('--project <slug>', 'Target project slug (defaults to scratch)')
   .option('--slug <slug>', 'Override auto-generated display slug')
-  .option(
-    '--priority <level>',
-    'Priority level (low|medium|high|critical)',
-    'medium',
-  )
+  .option('--priority <level>', 'Priority level (low|medium|high|critical)')
   .option('-t, --template <id>', 'Ticket template id (defaults to the project defaultTemplate)')
   .option('--workflow <id>', 'Lifecycle workflow this ticket follows (defaults to the resolved binding)')
   .option('--depends-on <ids>', 'Comma-separated dependency ticket ids')
@@ -134,7 +130,10 @@ program
   .option('--ready', 'Create the ticket directly as ready_for_planning (skips the draft phase)')
   .action(
     runCommand(async (title, options) => {
-      await newCommand(title, options);
+      await newCommand(title, {
+        ...options,
+        depends_on_flag: options.dependsOn,
+      });
     }),
   );
 

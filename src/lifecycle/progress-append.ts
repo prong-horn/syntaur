@@ -125,7 +125,7 @@ export async function appendProgressLog(
   if (await fileExists(path)) {
     content = await readFile(path, 'utf-8');
   } else {
-    content = injectPurpose(`---\n---\n`, description);
+    content = injectPurpose('', description);
   }
 
   const next = appendJournalEntry(content, input.text, now, input.author);

@@ -27,7 +27,7 @@ export interface NewTicketOptions {
   project?: string;
   slug?: string;
   priority?: 'low' | 'medium' | 'high' | 'critical';
-  dependsOn?: string;
+  depends_on_flag?: string;
   links?: string;
   dir?: string;
   template?: string;
@@ -82,8 +82,8 @@ export async function newCommand(
     );
   }
 
-  const depends_on = options.dependsOn
-    ? options.dependsOn.split(',').map((s) => s.trim()).filter(Boolean)
+  const depends_on = options.depends_on_flag
+    ? options.depends_on_flag.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
   for (const dep of depends_on) {
     if (!isTicketId(dep)) {
@@ -112,14 +112,6 @@ export async function newCommand(
     }
   }
 
-  const validPriorities = ['low', 'medium', 'high', 'critical'] as const;
-  const priority = (options.priority || 'medium') as typeof validPriorities[number];
-  if (!validPriorities.includes(priority)) {
-    throw new Error(
-      `Invalid priority "${options.priority}". Must be one of: ${validPriorities.join(', ')}`,
-    );
-  }
-
   const timestamp = nowTimestamp();
   const projectDir = resolve(baseDir, projectSlug);
   const projectMdPath = resolve(projectDir, 'project.md');
@@ -142,6 +134,14 @@ export async function newCommand(
 
   const manifest = await loadTemplate(root, templateId);
   const templateDir = await resolveTemplateContentDir(root, templateId);
+
+  const validPriorities = ['low', 'medium', 'high', 'critical'] as const;
+  const priority = (options.priority ?? manifest.defaultPriority) as typeof validPriorities[number];
+  if (!validPriorities.includes(priority)) {
+    throw new Error(
+      `Invalid priority "${options.priority ?? manifest.defaultPriority}". Must be one of: ${validPriorities.join(', ')}`,
+    );
+  }
 
   const id = await allocateTicketId(projectDir);
   const folderName = formatTicketFolderName(id, ticketSlug);

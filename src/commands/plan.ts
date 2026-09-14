@@ -19,8 +19,7 @@ import {
   planStemFromPath,
   latestPlanRevision,
 } from '../ticket-templates/roles.js';
-import { scaffoldTemplateFiles } from '../ticket-templates/scaffold.js';
-import { renderPlanStub } from '../templates/plan.js';
+import { scaffoldFileContent, scaffoldTemplateFiles } from '../ticket-templates/scaffold.js';
 
 async function resolveTicketDir(opts: {
   ticket?: string;
@@ -171,21 +170,19 @@ async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   const templateDir = await resolveTemplateContentDir(syntaurRoot(), manifest.id);
   const timestamp = isoNow();
 
-  if (options.force && (await fileExists(destPath))) {
-    await writeFileForce(
-      destPath,
-      renderPlanStub({ ticketSlug, timestamp }),
-    );
-  } else {
-    await scaffoldTemplateFiles({
-      ticketDir,
-      templateDir,
-      template: manifest,
-      ticketSlug,
-      timestamp,
-      only: [planPath],
-    });
+  const planEntry = manifest.files.find((f) => f.path === planPath);
+  if (!planEntry) {
+    throw new Error(`Template "${manifest.id}" has no plan file at ${planPath}`);
   }
+
+  const planContent = await scaffoldFileContent(planEntry, {
+    ticketDir,
+    templateDir,
+    template: manifest,
+    ticketSlug,
+    timestamp,
+  });
+  await writeFileForce(destPath, planContent);
 
   const ticketMdPath = resolve(ticketDir, 'ticket.md');
   const ticketContent = await readFile(ticketMdPath, 'utf-8');

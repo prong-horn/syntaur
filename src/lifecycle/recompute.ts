@@ -515,7 +515,7 @@ export async function recomputeAndWrite(
 
 /**
  * Reverse-dependency recompute: when `changedTicketId` transitions (notably to a
- * terminal status), every sibling that `dependsOn` it gets its `depsSatisfied`
+ * terminal status), every sibling that `depends_on` it gets its `depsSatisfied`
  * fact refreshed.
  */
 export async function recomputeDependents(

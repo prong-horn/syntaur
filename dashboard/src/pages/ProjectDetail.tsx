@@ -657,7 +657,7 @@ export function ProjectDetail() {
                 ) : (
                   <EmptyState
                     title="No dependency graph yet"
-                    description="Dependencies appear here once tickets declare dependsOn relationships."
+                    description="Dependencies appear here once tickets declare depends_on relationships."
                   />
                 ),
               },

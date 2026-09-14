@@ -50,7 +50,7 @@ describe('lifecycle integration', () => {
     await newCommand('Task A', {
       project: projectSlug,
       dir: testDir,
-      dependsOn: taskBId,
+      depends_on_flag: taskBId,
     });
   });
 

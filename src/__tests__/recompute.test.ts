@@ -37,7 +37,7 @@ function ticketContent(opts: {
   status?: string;
   body?: string;
   extraFm?: string;
-  dependsOn?: string[];
+  depends_on?: string[];
   blockedReason?: string;
 }): string {
   const deps =

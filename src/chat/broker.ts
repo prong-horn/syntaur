@@ -2827,7 +2827,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const roster = participants.agents
       .map((id) => definitions.find((d) => d.id === id))
       .filter((d): d is AgentDefinition => d !== undefined);
-    const blocks = await buildStandingContext({
+    const standing = await buildStandingContext({
       definition: session.definition,
       harness: session.harness,
       ticketDir: session.ticket.ticketDir,
@@ -2843,6 +2843,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         roster,
       },
     });
+    if (standing.warning) {
+      await record(
+        session,
+        'system',
+        { level: 'warn', text: standing.warning },
+        null,
+      );
+    }
+    const blocks = standing.blocks;
     const standingMeta = await readTicketStandingMeta(session.ticket.ticketDir);
     return {
       blocks,

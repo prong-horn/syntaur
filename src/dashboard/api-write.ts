@@ -615,13 +615,6 @@ export function createWriteRouter(projectsDir: string): Router {
         return;
       }
 
-      const validPriorities = ['low', 'medium', 'high', 'critical'];
-      const priority = fields.priority || 'medium';
-      if (!validPriorities.includes(priority)) {
-        res.status(400).json({ error: `Invalid priority "${priority}". Must be low, medium, high, or critical.` });
-        return;
-      }
-
       const timestamp = fields.created || nowTimestamp();
       const ticketId = await allocateTicketId(projectDir);
       const ticketDir = resolve(
@@ -648,6 +641,14 @@ export function createWriteRouter(projectsDir: string): Router {
         return;
       }
 
+      const manifest = await loadTemplate(root, templateId);
+      const validPriorities = ['low', 'medium', 'high', 'critical'];
+      const priority = fields.priority || manifest.defaultPriority;
+      if (!validPriorities.includes(priority)) {
+        res.status(400).json({ error: `Invalid priority "${priority}". Must be low, medium, high, or critical.` });
+        return;
+      }
+
       let contentWithId = /^id:\s/m.test(content)
         ? content.replace(/^id:\s*.*$/m, `id: ${ticketId}`)
         : content.replace(/^(---\n)/, `---\nid: ${ticketId}\n`);
@@ -670,7 +671,6 @@ export function createWriteRouter(projectsDir: string): Router {
         : contentWithId;
 
       try {
-        const manifest = await loadTemplate(root, templateId);
         const templateDir = await resolveTemplateContentDir(root, templateId);
         const scaffolded = await scaffoldTemplateFiles({
           ticketDir,

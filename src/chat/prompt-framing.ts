@@ -76,12 +76,20 @@ export interface StandingContextInput {
   syntaurRoot?: string;
 }
 
+export interface StandingContextResult {
+  blocks: ContentBlock[];
+  warning?: string;
+}
+
 /**
  * The blocks sent with the FIRST prompt of an adapter session. After a
  * `session/resume` the agent still holds them, so they are not re-sent.
  */
-export async function buildStandingContext(input: StandingContextInput): Promise<ContentBlock[]> {
+export async function buildStandingContext(
+  input: StandingContextInput,
+): Promise<StandingContextResult> {
   const blocks: ContentBlock[] = [];
+  let warning: string | undefined;
 
   // codex-acp ignores `_meta.systemPrompt`; a `<system>` section prepended to
   // the first prompt is what sticks there (RESULTS.md row 03).
@@ -114,14 +122,24 @@ export async function buildStandingContext(input: StandingContextInput): Promise
         const plan = await readResource(input.ticketDir, planName);
         if (plan) blocks.push(plan);
       }
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      let ticketId = input.context.ticketSlug;
+      try {
+        const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+        ticketId = fm.id;
+      } catch {
+        /* keep slug */
+      }
+      warning = `show context degraded for ${ticketId}: ${message}`;
+      console.warn(warning);
       const ticket = await readResource(input.ticketDir, 'ticket.md');
       if (ticket) blocks.push(ticket);
     }
   }
 
   blocks.push(textBlock(buildContextSection(contextInput)));
-  return blocks;
+  return warning ? { blocks, warning } : { blocks };
 }
 
 /**

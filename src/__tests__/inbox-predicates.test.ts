@@ -109,9 +109,17 @@ describe('isPlanAwaitingApproval', () => {
     expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
   });
 
-  it('positive: ready_for_planning WITH an unapproved latest plan', async () => {
+  it('negative: plan on disk without plan.file set', async () => {
     await writeFile(join(dir, 'plan.md'), '# plan content\n');
     const a = ticket('status: ready_for_planning');
+    expect(await isPlanAwaitingApproval(a, dir)).toBe(false);
+  });
+
+  it('positive: ready_for_planning WITH plan.file and an unapproved plan', async () => {
+    await writeFile(join(dir, 'plan.md'), '# plan content\n');
+    const a = ticket(
+      'status: ready_for_planning\nplan:\n  file: plan.md\n  approvedDigest: null\n  approvedAt: null\n  approvedBy: null',
+    );
     expect(await isPlanAwaitingApproval(a, dir)).toBe(true);
   });
 

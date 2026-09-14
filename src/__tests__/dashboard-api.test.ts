@@ -904,13 +904,13 @@ tags: []
             // Every 5th ticket depends on the previous one in the same
             // project — exercises getUnmetDependencies and the new
             // dependencyStatusMap fast-path.
-            const dependsOn =
+            const dependsIds =
               a > 0 && a % 5 === 0 ? [`asg-${(a - 1).toString().padStart(3, '0')}`] : [];
             const aDir = resolve(projectPath, 'tickets', slug);
             await mkdir(aDir, { recursive: true });
             await writeFile(
               resolve(aDir, 'ticket.md'),
-              buildPerfTicketMd(slug, status, dependsOn),
+              buildPerfTicketMd(slug, status, dependsIds),
               'utf-8',
             );
             // Every 4th ticket gets a comments.md with an open question —
@@ -1268,14 +1268,14 @@ describe('archive hiding + cascade + listArchived + migration', () => {
   function asgMd(id: string, slug: string, opts: { archived?: boolean; status?: string } = {}): string {
     const archived = opts.archived ? 'true' : 'false';
     const archivedAt = opts.archived ? '"2026-05-31T00:00:00Z"' : 'null';
-    return `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: ${opts.status ?? 'in_progress'}\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived}\narchivedAt: ${archivedAt}\narchivedReason: null\n---\n\nBody`;
+    return `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: ${opts.status ?? 'in_progress'}\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived}\narchivedAt: ${archivedAt}\narchivedReason: null\n---\n\nBody`;
   }
 
   async function writeStandalone(dir: string, id: string, slug: string, archived: boolean): Promise<void> {
     const adir = resolve(dir, id);
     await mkdir(adir, { recursive: true });
     await writeFile(resolve(adir, 'ticket.md'),
-      `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndependsOn: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
+      `---\nid: ${id}\nslug: ${slug}\ntitle: ${slug}\nstatus: in_progress\npriority: medium\ncreated: "2026-03-20T10:00:00Z"\nupdated: "${RECENT}"\nassignee: null\nexternalIds: []\ndepends_on: []\nblockedReason: null\nworkspace:\n  repository: null\n  worktreePath: null\n  branch: null\n  parentBranch: null\ntags: []\narchived: ${archived ? 'true' : 'false'}\narchivedAt: ${archived ? '"2026-05-31T00:00:00Z"' : 'null'}\narchivedReason: null\n---\n\nBody`,
       'utf-8');
   }
 

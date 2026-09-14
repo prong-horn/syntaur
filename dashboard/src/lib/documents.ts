@@ -304,7 +304,7 @@ export function parseTicketEditorState(content: string): TicketEditorState {
     status: getScalar(model, 'status'),
     priority: (getScalar(model, 'priority') || 'medium') as TicketEditorState['priority'],
     assignee: getScalar(model, 'assignee'),
-    depends_on: getStringList(model, 'dependsOn').join(', '),
+    depends_on: getStringList(model, 'depends_on').join(', '),
     links: getStringList(model, 'links').join(', '),
     blockedReason: getScalar(model, 'blockedReason'),
     tags: getStringList(model, 'tags').join(', '),
@@ -324,7 +324,7 @@ export function updateTicketContent(
   setScalar(model, 'status', next.status);
   setScalar(model, 'priority', next.priority);
   setScalar(model, 'assignee', next.assignee || null);
-  setStringList(model, 'dependsOn', commaListToArray(next.depends_on));
+  setStringList(model, 'depends_on', commaListToArray(next.depends_on));
   setStringList(model, 'links', commaListToArray(next.links));
   setScalar(model, 'blockedReason', next.blockedReason || null);
   setStringList(model, 'tags', commaListToArray(next.tags));

@@ -26,7 +26,7 @@ export async function reopenCommand(
   const { context, workflowResolver } = await resolveRecomputeContext();
   let ticketPath: string;
   let projectDir: string | null;
-  // recomputeDependents matches `dependsOn` against ticket ids — NOT slugs.
+  // recomputeDependents matches `depends_on` against ticket ids — NOT slugs.
   let changedTicketId: string;
   if (options.project) {
     projectDir = resolve(baseDir, options.project);
