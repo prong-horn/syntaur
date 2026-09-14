@@ -16,6 +16,7 @@ import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { derivePrefix } from '../utils/ticket-ids.js';
 import { formatTicketFolderName, parseTicketFolderName } from '../utils/ticket-folder.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { escapeYamlString } from '../utils/yaml.js';
 import {
   rebuildProjectTicketIndex,
   writeProjectScaffold,
@@ -302,15 +303,23 @@ function replacePlanApprovalWithPlanBlock(
   return next;
 }
 
-export async function readMarkerSteps(
-  markerPath: string,
-): Promise<Map<MigrationStep, string>> {
+export interface MarkerState {
+  completed: Map<MigrationStep, string>;
+  /** Legacy bare-timestamp marker: rename-ids implied, templates not — skip statuses until templates ledger exists. */
+  barePreTemplates: boolean;
+}
+
+export async function readMarkerSteps(markerPath: string): Promise<MarkerState> {
   const completed = new Map<MigrationStep, string>();
-  if (!(await fileExists(markerPath))) return completed;
+  if (!(await fileExists(markerPath))) {
+    return { completed, barePreTemplates: false };
+  }
   const raw = await readFile(markerPath, 'utf-8');
+  let sawLedgerRename = false;
   for (const line of raw.split('\n').map((l) => l.trim()).filter(Boolean)) {
     const ledger = line.match(/^(rename-ids|templates|statuses)\s+(.+)$/);
     if (ledger) {
+      if (ledger[1] === 'rename-ids') sawLedgerRename = true;
       completed.set(ledger[1] as MigrationStep, ledger[2]);
       continue;
     }
@@ -318,13 +327,19 @@ export async function readMarkerSteps(
       completed.set('rename-ids', line);
     }
   }
-  return completed;
+  const barePreTemplates =
+    completed.has('rename-ids') && !sawLedgerRename && !completed.has('templates');
+  return { completed, barePreTemplates };
 }
 
-export function pendingMigrationSteps(
-  completed: Map<MigrationStep, string>,
-): MigrationStep[] {
-  return MIGRATION_STEPS.filter((step) => !completed.has(step));
+export function pendingMigrationSteps(state: MarkerState | Map<MigrationStep, string>): MigrationStep[] {
+  const completed = state instanceof Map ? state : state.completed;
+  const barePreTemplates = state instanceof Map ? false : state.barePreTemplates;
+  const pending = MIGRATION_STEPS.filter((step) => !completed.has(step));
+  if (barePreTemplates && pending.includes('statuses')) {
+    return pending.filter((step) => step !== 'statuses');
+  }
+  return pending;
 }
 
 async function appendMarkerStep(markerPath: string, step: MigrationStep): Promise<void> {
@@ -619,40 +634,156 @@ function parseStatusHistoryV1(fm: string): StatusHistoryEntryV1[] {
   return entries;
 }
 
-function dropFrontmatterField(content: string, key: string): { content: string; dropped: boolean } {
-  const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!fmMatch) return { content, dropped: false };
-  let fm = fmMatch[1];
-  if (!new RegExp(`^${key}:`, 'm').test(fm)) return { content, dropped: false };
-  fm = fm.replace(new RegExp(`^${key}:.*\\n`, 'm'), '');
-  fm = fm.replace(
-    new RegExp(`^${key}:\\s*\\n(?:(?:  [^\\n]*|  -[^\\n]*)\\n)*`, 'm'),
-    '',
-  );
-  fm = fm.replace(new RegExp(`^${key}:\\s*\\[[^\\]]*\\]\\s*\\n?`, 'm'), '');
-  return {
-    content: content.replace(fmMatch[0], `---\n${fm}---`),
-    dropped: true,
-  };
-}
+export const V2_TICKET_FIELD_ORDER = [
+  'id',
+  'slug',
+  'title',
+  'project',
+  'template',
+  'status',
+  'priority',
+  'blocked',
+  'parked',
+  'depends_on',
+  'assignee',
+  'tags',
+  'links',
+  'workspace',
+  'plan',
+  'created',
+  'updated',
+] as const;
 
-function setFrontmatterScalar(content: string, key: string, value: string | null): string {
-  const yamlValue =
-    value === null ? 'null' : /^[a-z0-9_]+$/i.test(value) ? value : `"${value.replace(/"/g, '\\"')}"`;
-  if (new RegExp(`^${key}:`, 'm').test(content)) {
-    return content.replace(new RegExp(`^${key}:.*$`, 'm'), `${key}: ${yamlValue}`);
+const V2_TICKET_FIELD_SET = new Set<string>(V2_TICKET_FIELD_ORDER);
+
+/** Top-level frontmatter keys in source order (excludes nested block children). */
+export function listTopLevelFrontmatterKeys(fm: string): string[] {
+  const keys: string[] = [];
+  for (const line of fm.split('\n')) {
+    if (line.length === 0 || line[0] === ' ' || line[0] === '\t') continue;
+    const match = line.match(/^([A-Za-z_][\w]*):/);
+    if (match) keys.push(match[1]);
   }
-  const closeIdx = content.indexOf('\n---', 4);
-  if (closeIdx === -1) return content;
-  return `${content.slice(0, closeIdx)}\n${key}: ${yamlValue}${content.slice(closeIdx)}`;
+  return keys;
 }
 
-function renameWorkspaceWorktreePath(content: string): { content: string; renamed: boolean } {
-  if (!/^\s+worktreePath:/m.test(content)) return { content, renamed: false };
-  return {
-    content: content.replace(/^(\s+)worktreePath:/gm, '$1worktree:'),
-    renamed: true,
+function formatMigratedYamlScalar(value: string | null): string {
+  if (value === null) return 'null';
+  if (/^\d{4}-\d{2}-\d{2}T/.test(value)) return `"${value}"`;
+  if (
+    /[:#{}[\],&*?|>!%@`]/.test(value) ||
+    /\s/.test(value) ||
+    /^\s|\s$/.test(value) ||
+    value === ''
+  ) {
+    return escapeYamlString(value);
+  }
+  return value;
+}
+
+function parseYamlListV1(fm: string, keys: string[]): string[] {
+  for (const key of keys) {
+    if (new RegExp(`^${key}:\\s*\\[\\s*\\]`, 'm').test(fm)) return [];
+    const block = fm.match(new RegExp(`^${key}:\\s*\\n((?:\\s+-\\s+.*\\n?)*)`, 'm'));
+    if (block) {
+      return [...block[1].matchAll(/^\s+-\s+(.+)$/gm)].map((m) =>
+        m[1].trim().replace(/^["']|["']$/g, ''),
+      );
+    }
+  }
+  return [];
+}
+
+function parseWorkspaceV1(fm: string): {
+  repository: string | null;
+  worktree: string | null;
+  branch: string | null;
+  parentBranch: string | null;
+  hadWorktreePath: boolean;
+} {
+  const block = parseNestedFrontmatterBlock(fm, 'workspace');
+  const defaults = {
+    repository: null as string | null,
+    worktree: null as string | null,
+    branch: null as string | null,
+    parentBranch: null as string | null,
+    hadWorktreePath: false,
   };
+  if (!block) return defaults;
+  const hadWorktreePath = block.worktreePath != null && block.worktreePath !== '';
+  return {
+    repository: block.repository ?? null,
+    worktree: block.worktree ?? block.worktreePath ?? null,
+    branch: block.branch ?? null,
+    parentBranch: block.parentBranch ?? null,
+    hadWorktreePath,
+  };
+}
+
+interface RenderV2TicketFrontmatterInput {
+  id: string;
+  slug: string;
+  title: string;
+  project: string | null;
+  template: string | null;
+  status: string;
+  priority: string;
+  blocked: string | null;
+  parked: string | null;
+  depends_on: string[];
+  assignee: string | null;
+  tags: string[];
+  links: string[];
+  workspace: {
+    repository: string | null;
+    worktree: string | null;
+    branch: string | null;
+    parentBranch: string | null;
+  };
+  plan: {
+    file: string | null;
+    approvedDigest: string | null;
+    approvedAt: string | null;
+    approvedBy: string | null;
+  };
+  created: string;
+  updated: string;
+}
+
+function renderListYaml(key: string, items: string[]): string[] {
+  if (items.length === 0) return [`${key}: []`];
+  return [`${key}:`, ...items.map((item) => `  - ${item}`)];
+}
+
+function renderV2TicketFrontmatter(data: RenderV2TicketFrontmatterInput): string {
+  const lines: string[] = [
+    `id: ${data.id}`,
+    `slug: ${data.slug}`,
+    `title: ${escapeYamlString(data.title)}`,
+    `project: ${data.project ?? 'null'}`,
+    `template: ${data.template ?? 'legacy'}`,
+    `status: ${data.status}`,
+    `priority: ${data.priority}`,
+    `blocked: ${formatMigratedYamlScalar(data.blocked)}`,
+    `parked: ${formatMigratedYamlScalar(data.parked)}`,
+    ...renderListYaml('depends_on', data.depends_on),
+    `assignee: ${data.assignee ?? 'null'}`,
+    ...renderListYaml('tags', data.tags),
+    ...renderListYaml('links', data.links),
+    'workspace:',
+    `  repository: ${formatMigratedYamlScalar(data.workspace.repository)}`,
+    `  branch: ${formatMigratedYamlScalar(data.workspace.branch)}`,
+    `  worktree: ${formatMigratedYamlScalar(data.workspace.worktree)}`,
+    `  parentBranch: ${formatMigratedYamlScalar(data.workspace.parentBranch)}`,
+    'plan:',
+    `  file: ${data.plan.file ?? 'null'}`,
+    `  approvedDigest: ${data.plan.approvedDigest ?? 'null'}`,
+    `  approvedAt: ${formatMigratedYamlScalar(data.plan.approvedAt)}`,
+    `  approvedBy: ${data.plan.approvedBy ?? 'null'}`,
+    `created: ${formatMigratedYamlScalar(data.created)}`,
+    `updated: ${formatMigratedYamlScalar(data.updated)}`,
+  ];
+  return lines.join('\n');
 }
 
 function migrateArchivedSourceKey(ticketId: string): string {
@@ -662,12 +793,13 @@ function migrateArchivedSourceKey(ticketId: string): string {
 interface StatusesStepCounts {
   mapped: number;
   stageCounts: Record<string, number>;
+  mappingBreakdown: Map<string, number>;
   archivedToDropped: number;
   blockedFlags: number;
   parkedFlags: number;
   historyBackfilled: number;
-  movedRewritten: number;
-  planApprovedRewritten: number;
+  statusChangeRewritten: number;
+  planApprovalRewritten: number;
   worktreeRenamed: number;
   fieldsDropped: number;
 }
@@ -676,11 +808,11 @@ function transformTicketStatusesFrontmatter(
   content: string,
   ticketId: string,
   applyEvents: boolean,
-): { content: string; counts: Partial<StatusesStepCounts>; archivedEvent?: {
-  from: string;
-  to: string;
-  at: string;
-} } {
+): {
+  content: string;
+  counts: Partial<StatusesStepCounts>;
+  mappingKey: string | null;
+} {
   const partial: Partial<StatusesStepCounts> = {
     stageCounts: {
       backlog: 0,
@@ -693,9 +825,10 @@ function transformTicketStatusesFrontmatter(
     },
   };
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!fmMatch) return { content, counts: partial };
+  if (!fmMatch) return { content, counts: partial, mappingKey: null };
 
   const fm = fmMatch[1];
+  const body = content.slice(fmMatch[0].length);
   const legacyStatus = parseScalarV1(fm, 'status') ?? 'draft';
   let nextStatus = legacyStatusToStage(legacyStatus);
   const blockedReason = parseScalarV1(fm, 'blockedReason');
@@ -722,27 +855,53 @@ function transformTicketStatusesFrontmatter(
     nextStatus = 'dropped';
   }
 
+  const mappingKey = `${legacyStatus}→${nextStatus}`;
   partial.stageCounts![nextStatus] = (partial.stageCounts![nextStatus] ?? 0) + 1;
   partial.mapped = 1;
   if (blocked) partial.blockedFlags = 1;
   if (parked) partial.parkedFlags = 1;
 
-  let next = content;
-  next = setFrontmatterScalar(next, 'status', nextStatus);
-  next = setFrontmatterScalar(next, 'blocked', blocked);
-  next = setFrontmatterScalar(next, 'parked', parked);
+  const workspace = parseWorkspaceV1(fm);
+  if (workspace.hadWorktreePath) partial.worktreeRenamed = 1;
 
-  const workspaceRenamed = renameWorkspaceWorktreePath(next);
-  next = workspaceRenamed.content;
-  if (workspaceRenamed.renamed) partial.worktreeRenamed = 1;
+  const topLevelKeys = listTopLevelFrontmatterKeys(fm);
+  partial.fieldsDropped = topLevelKeys.filter((key) => !V2_TICKET_FIELD_SET.has(key)).length;
 
-  let fieldsDropped = 0;
-  for (const key of DROPPED_V1_FIELDS) {
-    const dropped = dropFrontmatterField(next, key);
-    next = dropped.content;
-    if (dropped.dropped) fieldsDropped += 1;
-  }
-  partial.fieldsDropped = fieldsDropped;
+  const planBlock = parseNestedFrontmatterBlock(fm, 'plan');
+  const approval = parsePlanApprovalV1(`---\n${fm}\n---`);
+  const plan = {
+    file: planBlock?.file ?? approval?.file ?? null,
+    approvedDigest: planBlock?.approvedDigest ?? approval?.digest ?? null,
+    approvedAt: planBlock?.approvedAt ?? approval?.at ?? null,
+    approvedBy: planBlock?.approvedBy ?? approval?.by ?? null,
+  };
+
+  const rendered = renderV2TicketFrontmatter({
+    id: parseScalarV1(fm, 'id') ?? ticketId,
+    slug: parseScalarV1(fm, 'slug') ?? '',
+    title: parseScalarV1(fm, 'title') ?? '',
+    project: parseScalarV1(fm, 'project'),
+    template: parseScalarV1(fm, 'template'),
+    status: nextStatus,
+    priority: parseScalarV1(fm, 'priority') ?? 'medium',
+    blocked,
+    parked,
+    depends_on: parseYamlListV1(fm, ['depends_on', 'dependsOn']),
+    assignee: parseScalarV1(fm, 'assignee'),
+    tags: parseYamlListV1(fm, ['tags']),
+    links: parseYamlListV1(fm, ['links']),
+    workspace: {
+      repository: workspace.repository,
+      worktree: workspace.worktree,
+      branch: workspace.branch,
+      parentBranch: workspace.parentBranch,
+    },
+    plan,
+    created: parseScalarV1(fm, 'created') ?? '',
+    updated: parseScalarV1(fm, 'updated') ?? '',
+  });
+
+  const next = `---\n${rendered}\n---${body.startsWith('\n') ? '' : '\n'}${body}`;
 
   if (applyEvents && archivedEvent) {
     insertEventOrThrow({
@@ -761,7 +920,7 @@ function transformTicketStatusesFrontmatter(
     });
   }
 
-  return { content: next, counts: partial, archivedEvent };
+  return { content: next, counts: partial, mappingKey };
 }
 
 function synthesizeBackfillEvents(
@@ -813,13 +972,32 @@ function synthesizeBackfillEvents(
   return events;
 }
 
+function countLegacyEventRows(dbPath: string): {
+  statusChange: number;
+  planApproval: number;
+} {
+  const database = new Database(dbPath, { readonly: true });
+  const statusChange = (
+    database.prepare(`SELECT count(*) AS n FROM events WHERE type = 'status-change'`).get() as {
+      n: number;
+    }
+  ).n;
+  const planApproval = (
+    database.prepare(`SELECT count(*) AS n FROM events WHERE type = 'plan-approval'`).get() as {
+      n: number;
+    }
+  ).n;
+  database.close();
+  return { statusChange, planApproval };
+}
+
 function rewriteLegacyEvents(dbPath: string, apply: boolean): {
-  movedRewritten: number;
-  planApprovedRewritten: number;
+  statusChangeRewritten: number;
+  planApprovalRewritten: number;
 } {
   const database = apply ? getEventsDb() : new Database(dbPath, { readonly: true });
-  let movedRewritten = 0;
-  let planApprovedRewritten = 0;
+  let statusChangeRewritten = 0;
+  let planApprovalRewritten = 0;
 
   const statusRows = database
     .prepare(
@@ -848,7 +1026,7 @@ function rewriteLegacyEvents(dbPath: string, apply: boolean): {
         .prepare(`UPDATE events SET type = 'moved', details = ? WHERE event_id = ?`)
         .run(details, row.event_id);
     }
-    movedRewritten += 1;
+    statusChangeRewritten += 1;
   }
 
   const planRows = database
@@ -861,14 +1039,43 @@ function rewriteLegacyEvents(dbPath: string, apply: boolean): {
         .prepare(`UPDATE events SET type = 'plan-approved', details = ? WHERE event_id = ?`)
         .run(row.details, row.event_id);
     }
-    planApprovedRewritten += 1;
+    planApprovalRewritten += 1;
   }
 
   if (!apply) {
     database.close();
   }
 
-  return { movedRewritten, planApprovedRewritten };
+  return { statusChangeRewritten, planApprovalRewritten };
+}
+
+const MAPPING_BREAKDOWN_ORDER = [
+  'draft→backlog',
+  'draft→dropped',
+  'ready_for_planning→planning',
+  'ready_for_planning→dropped',
+  'ready_to_implement→ready',
+  'in_progress→in_progress',
+  'in_progress→dropped',
+  'review→review',
+  'completed→done',
+  'failed→dropped',
+  'blocked→in_progress',
+  'pending→backlog',
+] as const;
+
+function formatMappingBreakdown(breakdown: Map<string, number>): string {
+  const parts: string[] = [];
+  for (const key of MAPPING_BREAKDOWN_ORDER) {
+    const count = breakdown.get(key);
+    if (count && count > 0) parts.push(`${key} ${count}`);
+  }
+  for (const [key, count] of breakdown.entries()) {
+    if (count > 0 && !(MAPPING_BREAKDOWN_ORDER as readonly string[]).includes(key)) {
+      parts.push(`${key} ${count}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(', ') : 'none';
 }
 
 async function runStatusesStep(
@@ -888,18 +1095,20 @@ async function runStatusesStep(
       done: 0,
       dropped: 0,
     },
+    mappingBreakdown: new Map(),
     archivedToDropped: 0,
     blockedFlags: 0,
     parkedFlags: 0,
     historyBackfilled: 0,
-    movedRewritten: 0,
-    planApprovedRewritten: 0,
+    statusChangeRewritten: 0,
+    planApprovalRewritten: 0,
     worktreeRenamed: 0,
     fieldsDropped: 0,
   };
 
   const dbPath = resolve(home, 'syntaur.db');
   const hasDb = await fileExists(dbPath);
+  const legacyEventCounts = hasDb ? countLegacyEventRows(dbPath) : { statusChange: 0, planApproval: 0 };
   if (apply) {
     initEventsDb(dbPath);
   }
@@ -937,7 +1146,7 @@ async function runStatusesStep(
       }
     }
 
-    const { content: next, counts: partial } = transformTicketStatusesFrontmatter(
+    const { content: next, counts: partial, mappingKey } = transformTicketStatusesFrontmatter(
       content,
       ticketId,
       apply,
@@ -948,6 +1157,12 @@ async function runStatusesStep(
     counts.parkedFlags += partial.parkedFlags ?? 0;
     counts.worktreeRenamed += partial.worktreeRenamed ?? 0;
     counts.fieldsDropped += partial.fieldsDropped ?? 0;
+    if (mappingKey) {
+      counts.mappingBreakdown.set(
+        mappingKey,
+        (counts.mappingBreakdown.get(mappingKey) ?? 0) + 1,
+      );
+    }
     for (const [stage, n] of Object.entries(partial.stageCounts ?? {})) {
       counts.stageCounts[stage] = (counts.stageCounts[stage] ?? 0) + n;
     }
@@ -956,9 +1171,11 @@ async function runStatusesStep(
     }
   }
 
-  const rewritten = hasDb ? rewriteLegacyEvents(dbPath, apply) : { movedRewritten: 0, planApprovedRewritten: 0 };
-  counts.movedRewritten = rewritten.movedRewritten;
-  counts.planApprovedRewritten = rewritten.planApprovedRewritten;
+  const rewritten = hasDb
+    ? rewriteLegacyEvents(dbPath, apply)
+    : { statusChangeRewritten: 0, planApprovalRewritten: 0 };
+  counts.statusChangeRewritten = rewritten.statusChangeRewritten;
+  counts.planApprovalRewritten = rewritten.planApprovalRewritten;
 
   if (apply) {
     const deriveMarker = resolve(home, 'derive-migrated');
@@ -984,8 +1201,9 @@ async function runStatusesStep(
   logLine(
     lines,
     mode,
-    `history: ${counts.historyBackfilled} entries backfilled, ${counts.movedRewritten} events rewritten to moved, ${counts.planApprovedRewritten} to plan-approved`,
+    `history: ${counts.historyBackfilled} backfilled, ${legacyEventCounts.statusChange} status-change and ${legacyEventCounts.planApproval} plan-approval rows rewritten`,
   );
+  logLine(lines, mode, `mapped: ${formatMappingBreakdown(counts.mappingBreakdown)}`);
   logLine(lines, mode, `worktree: ${counts.worktreeRenamed} renamed`);
   logLine(lines, mode, `dropped fields: ${counts.fieldsDropped}`);
   logLine(lines, mode, 'removed: derive-migrated, stages-migrated, workflows/');
@@ -2443,8 +2661,8 @@ export async function migrateV2Command(
   const lines: string[] = [];
 
   const markerPath = resolve(home, V2_MIGRATED_MARKER);
-  const completed = await readMarkerSteps(markerPath);
-  const pending = pendingMigrationSteps(completed);
+  const markerState = await readMarkerSteps(markerPath);
+  const pending = pendingMigrationSteps(markerState);
 
   if (pending.length === 0) {
     throw new Error(

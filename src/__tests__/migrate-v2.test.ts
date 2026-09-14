@@ -15,7 +15,15 @@ import {
   rekeyDatabase,
   readMarkerSteps,
   pendingMigrationSteps,
+  V2_TICKET_FIELD_ORDER,
+  listTopLevelFrontmatterKeys,
 } from '../commands/migrate-v2.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { parseTicketFull } from '../dashboard/parser.js';
+import { buildShow } from '../ticket-templates/show.js';
+import { BUILTIN_TEMPLATE_IDS, seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import { buildCheckContext, closeCheckContext } from '../utils/doctor/context.js';
+import { ticketChecks } from '../utils/doctor/checks/ticket.js';
 import {
   closeSessionDb,
   initSessionDb,
@@ -737,8 +745,8 @@ describe('migrateV2Command', () => {
     expect(marker).toContain('rename-ids ');
     expect(marker).toContain('templates ');
     expect(marker).toContain('statuses ');
-    const steps = await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER));
-    expect(pendingMigrationSteps(steps)).toEqual([]);
+    const markerState = await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER));
+    expect(pendingMigrationSteps(markerState)).toEqual([]);
     expect(await fileExists(resolve(home, 'templates', 'feature', 'template.md'))).toBe(true);
   });
 
@@ -882,7 +890,7 @@ describe('migrate v2 templates step', () => {
     expect(ticketMd).not.toContain('planApproval:');
     expect(ticketMd).toContain('plan:\n  file: plan.md');
     expect(ticketMd).toContain(`approvedDigest: ${digest}`);
-    expect(ticketMd).toContain('status: backlog');
+    expect(ticketMd).toContain('status: draft');
   });
 
   it('drops superseded plan approvals when a newer plan revision exists', async () => {
@@ -1188,6 +1196,7 @@ async function buildStatusesFixture(root: string): Promise<void> {
     resolve(root, 'config.md'),
     renderConfig({ defaultProjectDir: resolve(root, 'projects') }),
   );
+  await seedMissingBuiltins(root);
 
   const tickets: Array<{ folder: string; body: string }> = [
     {
@@ -1440,6 +1449,10 @@ describe('migrate v2 statuses step', () => {
       expect(md).not.toContain('worktreePath:');
       expect(md).not.toContain('phase:');
       expect(md).not.toContain('archived:');
+      const fm = md.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+      expect(listTopLevelFrontmatterKeys(fm)).toEqual([...V2_TICKET_FIELD_ORDER]);
+      parseTicketFrontmatter(md);
+      parseTicketFull(md);
     };
     await expectStatus('DEM-1-draft', 'backlog');
     await expectStatus('DEM-2-planning', 'planning');
@@ -1535,6 +1548,21 @@ describe('migrate v2 statuses step', () => {
     closeEventsDb();
     resetEventsDb();
     expect(backfillCountSecond).toBe(backfillCountFirst);
+  });
+
+  it('migrated tickets parse for show and pass doctor ticket checks', async () => {
+    await migrateV2Command({ root: stHome, apply: true });
+    const ticketDir = resolve(stHome, 'projects', 'demo', 'tickets', 'DEM-2-planning');
+    const show = await buildShow(stHome, ticketDir);
+    expect(show.ticket.id).toBe('DEM-2');
+    expect(show.stage.id).toBe('planning');
+
+    const ctx = await buildCheckContext(stHome);
+    for (const check of ticketChecks) {
+      const result = await check.run(ctx);
+      expect(result.status).not.toBe('error');
+    }
+    await closeCheckContext(ctx);
   });
 });
 
