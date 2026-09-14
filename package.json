@@ -38,6 +38,7 @@
     "skills",
     ".claude-plugin",
     "examples",
+    "templates",
     "dashboard/dist",
     "statusline"
   ],

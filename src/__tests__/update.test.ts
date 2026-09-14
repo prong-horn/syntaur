@@ -253,10 +253,11 @@ describe('updateCommand — refresh wiring', () => {
   it('after update, spawns fresh `syntaur install-plugin --force` with SYNTAUR_PLUGIN_TARGET', async () => {
     const { deps, calls } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' } });
     await run({}, deps);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
     expect(calls[0].cmd).toBe('npm');
     expect(calls[1]).toMatchObject({ cmd: 'syntaur', args: ['install-plugin', '--force'] });
     expect(calls[1].env?.SYNTAUR_PLUGIN_TARGET).toBe('/home/u/.claude/plugins/syntaur');
+    expect(calls[2]).toMatchObject({ cmd: 'syntaur', args: ['template', 'reset', '--missing'] });
   });
 
   it('forwards --force-skills and --enable to the refresh', async () => {
@@ -299,7 +300,7 @@ describe('updateCommand — errors', () => {
   });
 
   it('treats a refresh failure as a warning, not fatal', async () => {
-    const { runner } = recordingRunner([{ code: 0 }, { code: 1, stderr: 'boom' }]);
+    const { runner } = recordingRunner([{ code: 0 }, { code: 1, stderr: 'boom' }, { code: 0 }]);
     const { deps } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' }, runner });
     const logs: string[] = [];
     deps.log = (m) => logs.push(m);

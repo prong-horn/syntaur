@@ -379,5 +379,13 @@ async function refreshPluginSkills(
   if (res.code !== 0 || res.error) {
     return 'Warning: skills refresh failed — run `syntaur install-plugin --force` manually.';
   }
-  return 'Refreshed plugin + skills.';
+
+  // Seed any missing built-in templates via the fresh binary (best-effort).
+  const templateArgs = fresh ? [...fresh.baseArgs, 'template', 'reset', '--missing'] : ['template', 'reset', '--missing'];
+  log('Seeding missing built-in templates: syntaur template reset --missing');
+  const templateRes = await runner(cmd, templateArgs, { env: childEnv });
+  if (templateRes.code !== 0 || templateRes.error) {
+    return 'Refreshed plugin + skills. Warning: template seed failed — run `syntaur template reset --missing` manually.';
+  }
+  return 'Refreshed plugin + skills and seeded missing templates.';
 }

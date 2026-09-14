@@ -9,6 +9,7 @@ const CRITERION_NAMES = [
   'agents',
   'workflows',
   'targets',
+  'templates',
   'view-prefs.json',
   'inbox-snoozes.json',
 ] as const;

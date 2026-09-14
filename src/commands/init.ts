@@ -5,6 +5,7 @@ import { syntaurRoot, defaultProjectDir } from '../utils/paths.js';
 import { ensureDir, writeFileSafe, writeFileForce, fileExists } from '../utils/fs.js';
 import { renderConfig } from '../templates/config.js';
 import { rebuildPlaybookManifest } from '../utils/playbooks.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 export interface InitOptions {
   force?: boolean;
@@ -16,10 +17,12 @@ export async function initCommand(options: InitOptions): Promise<void> {
   const configPath = resolve(root, 'config.md');
 
   const playbooksDir = resolve(root, 'playbooks');
+  const templatesDir = resolve(root, 'templates');
 
   await ensureDir(root);
   await ensureDir(projectsDir);
   await ensureDir(playbooksDir);
+  await ensureDir(templatesDir);
 
   const configContent = renderConfig({
     defaultProjectDir: projectsDir,
@@ -51,6 +54,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
 
   // Rebuild playbook index
   await rebuildPlaybookManifest(playbooksDir);
+
+  const seededTemplates = await seedMissingBuiltins(root);
+  if (seededTemplates.length > 0) {
+    console.log(`Seeded ${seededTemplates.length} built-in template(s) in ${templatesDir}/`);
+  }
 
   console.log('\nSyntaur initialized successfully.');
 }

@@ -1,6 +1,10 @@
 import { resolve } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
+import {
+  BUILTIN_TEMPLATE_IDS,
+  builtinStatus,
+} from '../../../ticket-templates/builtins.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'structure';
@@ -16,6 +20,7 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'npx-install.json', // npx-prompt.ts
   'playbooks', // paths.ts
   'projects', // paths.ts
+  'templates', // ticket-templates/builtins.ts
   'runtime', // session-id.ts
   'stages-migrated', // stages-marker.ts
   'v2-migrated', // migrate-v2.ts
@@ -116,9 +121,65 @@ const knownFilesRecognized: Check = {
   },
 };
 
+const templatesDir: Check = {
+  id: 'structure.templates-dir',
+  category: CATEGORY,
+  title: 'templates/ directory and built-in templates',
+  async run(ctx) {
+    const p = resolve(ctx.syntaurRoot, 'templates');
+    if (!(await fileExists(p))) {
+      return {
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: 'templates/ missing under ~/.syntaur/',
+        affected: [p],
+        remediation: {
+          kind: 'manual',
+          suggestion: 'Run `syntaur init` or `syntaur template reset --missing` to seed built-in templates',
+          command: 'syntaur template reset --missing',
+        },
+        autoFixable: false,
+      } satisfies CheckResult;
+    }
+
+    const problems: string[] = [];
+    for (const id of BUILTIN_TEMPLATE_IDS) {
+      const status = await builtinStatus(ctx.syntaurRoot, id);
+      if (status === 'missing') problems.push(`${id}: missing`);
+      else if (status === 'modified') problems.push(`${id}: modified`);
+      else if (status === 'outdated') problems.push(`${id}: outdated`);
+    }
+
+    if (problems.length === 0) return pass(this);
+
+    const command =
+      problems.some((p) => p.includes('missing'))
+        ? 'syntaur template reset --missing'
+        : 'syntaur template reset <id>';
+
+    return {
+      id: this.id,
+      category: this.category,
+      title: this.title,
+      status: 'warn',
+      detail: `built-in template issues: ${problems.join('; ')}`,
+      affected: problems.map((n) => resolve(p, n.split(':')[0])),
+      remediation: {
+        kind: 'manual',
+        suggestion: 'Run `syntaur template check --builtins` for details, then reset as needed',
+        command,
+      },
+      autoFixable: false,
+    } satisfies CheckResult;
+  },
+};
+
 export const structureChecks: Check[] = [
   projectsDir,
   playbooksDir,
+  templatesDir,
   knownFilesRecognized,
 ];
 
