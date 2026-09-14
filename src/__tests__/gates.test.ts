@@ -162,12 +162,11 @@ describe('gate evaluators', () => {
   });
 });
 
-describe('Next line per built-in stage', () => {
-  async function nextFor(
-    templateId: string,
-    status: string,
-    setup?: (ticketDir: string) => Promise<void>,
-  ): Promise<string> {
+async function nextFor(
+  templateId: string,
+  status: string,
+  setup?: (ticketDir: string) => Promise<void>,
+): Promise<string> {
     const manifest = await loadBuiltin(templateId);
     const ticketDir = join(home, templateId, status);
     await mkdir(ticketDir, { recursive: true });
@@ -206,8 +205,9 @@ Work.
     const stage = stageForStatus(status);
     const gateCtx = ctx(ticketDir, fm, manifest, '## Acceptance Criteria\n\n- [x] one\n');
     return await computeNextLine('X-1', stage, manifest, gateCtx);
-  }
+}
 
+describe('Next line per built-in stage', () => {
   it('quick backlog → syntaur done', async () => {
     expect(await nextFor('quick', 'draft')).toBe('syntaur done X-1');
   });
@@ -243,5 +243,163 @@ workspace:
       await writeFile(resolve(dir, 'journal.md'), journal, 'utf-8');
     });
     expect(next).toBe('syntaur review X-1');
+  });
+});
+
+describe('all gate ids pass and fail', () => {
+  it('plan-approved fails without approval and passes when digest matches', async () => {
+    const ticketDir = join(home, 'plan-approved');
+    await mkdir(ticketDir, { recursive: true });
+    const plan = '# Plan\n\nReal plan body.\n';
+    await writeFile(resolve(ticketDir, 'plan.md'), plan, 'utf-8');
+    const manifest = await loadBuiltin('feature');
+    const fm = baseFm({ plan: { ...baseFm().plan, file: 'plan.md' } });
+    const fail = await evaluateGate('plan-approved', ctx(ticketDir, fm, manifest, ''));
+    expect(fail.pass).toBe(false);
+
+    const { createHash } = await import('node:crypto');
+    const digest = createHash('sha256').update(plan, 'utf-8').digest('hex');
+    const approvedFm = baseFm({
+      plan: {
+        file: 'plan.md',
+        approvedDigest: digest,
+        approvedAt: '2026-01-01T00:00:00Z',
+        approvedBy: 'human',
+      },
+    });
+    const pass = await evaluateGate('plan-approved', ctx(ticketDir, approvedFm, manifest, ''));
+    expect(pass.pass).toBe(true);
+  });
+
+  it('workspace-set fails until workspace fields are complete', async () => {
+    const manifest = await loadBuiltin('feature');
+    const fail = await evaluateGate('workspace-set', ctx(join(home, 'ws'), baseFm(), manifest, ''));
+    expect(fail.pass).toBe(false);
+    const pass = await evaluateGate(
+      'workspace-set',
+      ctx(
+        join(home, 'ws'),
+        baseFm({
+          workspace: {
+            repository: '/repo',
+            branch: 'main',
+            worktreePath: '/wt',
+            parentBranch: 'main',
+          },
+        }),
+        manifest,
+        '',
+      ),
+    );
+    expect(pass.pass).toBe(true);
+  });
+
+  it('criteria-checked fails when unchecked criteria remain', async () => {
+    const manifest = await loadBuiltin('quick');
+    const body = '## Acceptance Criteria\n\n- [ ] ship it\n';
+    const fail = await evaluateGate('criteria-checked', ctx(join(home, 'crit'), baseFm(), manifest, body));
+    expect(fail.pass).toBe(false);
+    const pass = await evaluateGate(
+      'criteria-checked',
+      ctx(join(home, 'crit'), baseFm(), manifest, '## Acceptance Criteria\n\n- [x] ship it\n'),
+    );
+    expect(pass.pass).toBe(true);
+  });
+
+  it('deliverable-present fails on empty deliverable and passes with content', async () => {
+    const manifest = await loadBuiltin('spike');
+    const ticketDir = join(home, 'deliverable');
+    await mkdir(ticketDir, { recursive: true });
+    const role = manifest.files.find((f) => f.role === 'deliverable')!;
+    const fail = await evaluateGate('deliverable-present', ctx(ticketDir, baseFm({ template: 'spike' }), manifest, ''));
+    expect(fail.pass).toBe(false);
+    await writeFile(resolve(ticketDir, role.path), '# Findings\n\nReal findings.\n', 'utf-8');
+    const pass = await evaluateGate(
+      'deliverable-present',
+      ctx(ticketDir, baseFm({ template: 'spike' }), manifest, ''),
+    );
+    expect(pass.pass).toBe(true);
+  });
+
+  it('deps-done ignores dropped dependencies', async () => {
+    const manifest = await loadBuiltin('feature');
+    const fm = baseFm({ depends_on: ['X-9'] });
+    const fail = await evaluateGate(
+      'deps-done',
+      ctx(join(home, 'deps'), fm, manifest, '', '', new Map([['X-9', 'dropped']])),
+    );
+    expect(fail.pass).toBe(false);
+  });
+});
+
+describe('Next line for every built-in stage', () => {
+  const matrix: Array<[string, string, string]> = [
+    ['feature', 'draft', 'syntaur plan X-1'],
+    ['feature', 'ready_for_planning', GATE_HINTS['plan-exists']],
+    ['feature', 'ready_to_implement', GATE_HINTS['plan-approved']],
+    ['feature', 'in_progress', 'syntaur review X-1'],
+    ['feature', 'review', GATE_HINTS['handoff-logged']],
+    ['feature', 'completed', 'none (terminal)'],
+    ['bug', 'draft', GATE_HINTS['workspace-set']],
+    ['bug', 'in_progress', 'syntaur review X-1'],
+    ['bug', 'review', GATE_HINTS['handoff-logged']],
+    ['bug', 'completed', 'none (terminal)'],
+    ['spike', 'draft', 'syntaur start X-1'],
+    ['spike', 'in_progress', GATE_HINTS['deliverable-present']],
+    ['spike', 'completed', 'none (terminal)'],
+    ['quick', 'draft', 'syntaur done X-1'],
+    ['quick', 'completed', 'none (terminal)'],
+    ['legacy', 'draft', 'syntaur plan X-1'],
+    ['legacy', 'ready_for_planning', GATE_HINTS['plan-exists']],
+    ['legacy', 'ready_to_implement', 'syntaur start X-1'],
+    ['legacy', 'in_progress', 'syntaur review X-1'],
+    ['legacy', 'review', GATE_HINTS['handoff-logged']],
+    ['legacy', 'completed', 'none (terminal)'],
+  ];
+
+  for (const [templateId, status, expected] of matrix) {
+    it(`${templateId} ${status} → ${expected}`, async () => {
+      expect(await nextFor(templateId, status)).toBe(expected);
+    });
+  }
+
+  it('off-template stage uses the next declared stage hint', async () => {
+    const manifest = await loadBuiltin('quick');
+    const ticketDir = join(home, 'off-template');
+    await mkdir(ticketDir, { recursive: true });
+    const ticketMd = `---
+id: X-1
+slug: x
+title: X
+project: p
+template: quick
+status: ready_for_planning
+priority: medium
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+---
+
+## Objective
+
+Work.
+
+## Acceptance Criteria
+
+- [ ] one
+`;
+    await writeFile(resolve(ticketDir, 'ticket.md'), ticketMd, 'utf-8');
+    const fm = parseTicketFrontmatter(ticketMd);
+    const stage = stageForStatus('ready_for_planning');
+    const gateCtx = ctx(ticketDir, fm, manifest, '## Acceptance Criteria\n\n- [ ] one\n');
+    const next = await computeNextLine('X-1', stage, manifest, gateCtx);
+    expect(next).toBe('syntaur done X-1');
+    expect(stage).toBe('planning');
   });
 });

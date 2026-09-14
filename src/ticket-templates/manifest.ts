@@ -10,6 +10,9 @@ export const STAGE_IDS = [
   'done',
 ] as const;
 
+/** Includes `dropped` for parse/validate (rule 16); not a valid template stage id. */
+export const PARSEABLE_STAGE_IDS = [...STAGE_IDS, 'dropped'] as const;
+
 export type StageId = (typeof STAGE_IDS)[number];
 
 export const FILE_ROLES = ['plan', 'log', 'notes', 'deliverable'] as const;
@@ -156,7 +159,7 @@ function parseStage(entry: unknown, file: string, index: number): TemplateStage 
   }
   const id = str(entry, 'id');
   if (!id) throw new TemplateManifestError(file, `stages[${index}] is missing 'id'`);
-  if (!(STAGE_IDS as readonly string[]).includes(id)) {
+  if (!(PARSEABLE_STAGE_IDS as readonly string[]).includes(id)) {
     throw new TemplateManifestError(file, `stages[${index}].id "${id}" is not a valid stage id`);
   }
   const instructions = str(entry, 'instructions');
@@ -243,18 +246,10 @@ function parseGates(
   }
   const gates: Partial<Record<VerbWithGates, GateId[]>> = {};
   for (const [verb, gateList] of Object.entries(entry)) {
-    if (!(VERBS_WITH_GATES as readonly string[]).includes(verb)) {
-      throw new TemplateManifestError(file, `gates has unknown verb "${verb}"`);
-    }
     if (!Array.isArray(gateList)) {
       throw new TemplateManifestError(file, `gates.${verb} must be a list`);
     }
-    gates[verb as VerbWithGates] = gateList.map((g, i) => {
-      if (typeof g !== 'string' || !(GATE_IDS as readonly string[]).includes(g)) {
-        throw new TemplateManifestError(file, `gates.${verb}[${i}] is invalid`);
-      }
-      return g as GateId;
-    });
+    gates[verb as VerbWithGates] = gateList.map((g) => String(g)) as GateId[];
   }
   return gates;
 }

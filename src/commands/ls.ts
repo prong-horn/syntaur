@@ -185,7 +185,7 @@ async function loadQueryItem(
       phase: stagesMigrated ? fm.status : fm.phase,
       disposition: fm.disposition,
       priority: fm.priority,
-      type: fm.template,
+      template: fm.template,
       assignee: fm.assignee,
       project: item.projectSlug,
       tags: fm.tags,

@@ -13,12 +13,16 @@ import {
   derivePrefix,
 } from '../utils/ticket-ids.js';
 import { parseProject } from '../dashboard/parser.js';
+import { syntaurRoot } from '../utils/paths.js';
+import { listTemplates } from '../ticket-templates/registry.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 export interface ProjectNewOptions {
   slug?: string;
   prefix?: string;
   dir?: string;
   silent?: boolean;
+  defaultTemplate?: string;
 }
 
 export async function projectNewCommand(
@@ -66,6 +70,17 @@ export async function projectNewCommand(
   const timestamp = nowTimestamp();
   const id = generateId();
 
+  const root = syntaurRoot();
+  await seedMissingBuiltins(root);
+  const templates = await listTemplates(root);
+  const templateIds = templates.map((t) => t.id);
+  const defaultTemplate = options.defaultTemplate ?? 'feature';
+  if (!templateIds.includes(defaultTemplate)) {
+    throw new Error(
+      `Unknown default template "${defaultTemplate}". Available: ${templateIds.join(', ')}`,
+    );
+  }
+
   await writeProjectScaffold(projectDir, {
     slug,
     title,
@@ -73,6 +88,7 @@ export async function projectNewCommand(
     nextTicket: 1,
     id,
     timestamp,
+    defaultTemplate,
   });
 
   if (!options.silent) {
@@ -143,6 +159,7 @@ projectCommand
   .option('--slug <slug>', 'Override auto-generated slug')
   .option('--prefix <prefix>', 'Override auto-derived ticket id prefix (2–5 uppercase letters)')
   .option('--dir <path>', 'Override default project directory')
+  .option('--default-template <id>', 'Default ticket template for new tickets in this project')
   .action(async (title: string, options: ProjectNewOptions) => {
     try {
       await projectNewCommand(title, options);

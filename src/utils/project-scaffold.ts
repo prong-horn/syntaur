@@ -30,6 +30,7 @@ export interface ProjectScaffoldParams {
   nextTicket: number;
   id?: string;
   timestamp?: string;
+  defaultTemplate?: string;
 }
 
 const INDEX_STATUS_KEYS = [
@@ -69,7 +70,7 @@ export async function writeProjectScaffold(
         timestamp,
         prefix: params.prefix,
         nextTicket: params.nextTicket,
-        defaultTemplate: 'feature',
+        defaultTemplate: params.defaultTemplate ?? 'feature',
       }),
     ],
     [

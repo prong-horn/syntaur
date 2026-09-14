@@ -55,7 +55,7 @@ function workspaceSet(fm: TicketFrontmatter): boolean {
 }
 
 function dependencyDone(stage: StageId | 'dropped'): boolean {
-  return stage === 'done' || stage === 'dropped';
+  return stage === 'done';
 }
 
 function reviewEntryClean(entry: LogEntry): boolean {

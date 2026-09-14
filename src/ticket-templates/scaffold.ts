@@ -108,11 +108,19 @@ function defaultRoleContent(
     if (entry.path === 'progress.md') {
       return renderProgress({ ticket: input.ticketSlug, timestamp: input.timestamp });
     }
-    return `---\n---\n`;
+    return '';
   }
 
   const stem = stemFromPath(entry.path);
   return `# ${stem}\n`;
+}
+
+/** Build scaffold content for one template file (including injectPurpose). */
+export async function scaffoldFileContent(
+  entry: TemplateFile,
+  input: Omit<ScaffoldTemplateFilesInput, 'when' | 'only' | 'ticketStatus'>,
+): Promise<string> {
+  return await resolveFileContent(entry, input as ScaffoldTemplateFilesInput);
 }
 
 async function resolveFileContent(

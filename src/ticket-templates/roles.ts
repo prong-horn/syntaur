@@ -99,18 +99,15 @@ export async function resolvePlanReadPath(
   fm: Pick<TicketFrontmatter, 'plan' | 'template'>,
   root = syntaurRoot(),
 ): Promise<string | null> {
-  if (fm.plan.file) {
-    const explicit = resolve(ticketDir, fm.plan.file);
-    if (await fileExists(explicit)) return fm.plan.file;
-  }
   try {
     const manifest = await loadTemplate(root, resolveTemplateForTicket(fm));
-    const fromRole = await resolvePlanFileOnDisk(ticketDir, fm, manifest);
-    if (fromRole) return fromRole;
+    return await resolvePlanFileOnDisk(ticketDir, fm, manifest);
   } catch {
-    /* custom/unknown template id */
+    if (!fm.plan.file) return null;
+    const explicit = resolve(ticketDir, fm.plan.file);
+    if (await fileExists(explicit)) return fm.plan.file;
+    return null;
   }
-  return await latestPlanRevision(ticketDir, DEFAULT_PLAN_STEM);
 }
 
 function formatLogAge(timestamp: string, now = Date.now()): string {
@@ -150,9 +147,9 @@ export async function fileState(
   }
 
   if (entry.role === 'log') {
-    if (!exists) return '0 entries · last none';
+    if (!exists) return '0 entries';
     const entries = parseLogEntries(await readFile(path, 'utf-8'));
-    if (entries.length === 0) return '0 entries · last none';
+    if (entries.length === 0) return '0 entries';
     const latest = entries[0];
     return `${entries.length} entries · last ${latest.type} ${formatLogAge(latest.timestamp, now)}`;
   }

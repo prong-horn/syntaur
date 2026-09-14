@@ -201,11 +201,10 @@ describe('validation rules', () => {
   });
 
   it('rule 16: dropped in stages', () => {
-    expect(() =>
-      parseTemplateManifest(
-        'f',
-        'test',
-        manifestYaml(`id: test
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(`id: test
 version: 1
 description: x
 whenToUse: x
@@ -215,8 +214,60 @@ stages:
   - id: done
     instructions: done
 files: []`),
-      ),
-    ).toThrow();
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 16)).toBe(true);
+  });
+
+  it('rule 1: template.md missing from directory', () => {
+    const m = parseTemplateManifest('f', 'test', manifestYaml(baseManifest()));
+    expect(validateTemplate(m, []).some((i) => i.rule === 1)).toBe(true);
+  });
+
+  it('extra: invalid workspace mode', () => {
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(`${baseManifest()}\nworkspace: bogus`),
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 'workspace')).toBe(true);
+  });
+
+  it('extra: invalid defaultPriority', () => {
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(`${baseManifest()}\ndefaultPriority: urgent`),
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 'defaultPriority')).toBe(
+      true,
+    );
+  });
+
+  it('extra: unknown gates verb', () => {
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(`${baseManifest()}\ngates:\n  ship: [deps-done]`),
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 'gates-verb')).toBe(true);
+  });
+
+  it('extra: unknown gate id', () => {
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(`${baseManifest()}\ngates:\n  done: [not-a-gate]`),
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 'gates-id')).toBe(true);
+  });
+
+  it('extra: stages missing done', () => {
+    const m = parseTemplateManifest(
+      'f',
+      'test',
+      manifestYaml(baseManifest({ stages: `stages:\n  - id: backlog\n    instructions: backlog` })),
+    );
+    expect(validateTemplate(m, ['template.md']).some((i) => i.rule === 'stages-done')).toBe(true);
   });
 
   it('extra: invalid writer', () => {

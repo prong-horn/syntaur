@@ -46,6 +46,15 @@ describe('new -t template scaffolding', () => {
     expect(names).not.toContain('progress.md');
   });
 
+  it('journal.md frontmatter is exactly purpose from injectPurpose', async () => {
+    await newCommand('Log scaffold', { project: 'demo', template: 'feature', dir: testDir, silent: true });
+    const { dir } = await filesInLatestTicket();
+    const journal = await readFile(resolve(dir, 'journal.md'), 'utf-8');
+    expect(journal).toBe(
+      '---\npurpose: Append-only log for progress, decisions, handoffs, questions, answers, and reviews.\n---\n\n',
+    );
+  });
+
   it('bug creates journal.md only at ticket-creation', async () => {
     await newCommand('Bug fix', { project: 'demo', template: 'bug', dir: testDir, silent: true });
     const { names } = await filesInLatestTicket();

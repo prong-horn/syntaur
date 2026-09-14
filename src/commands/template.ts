@@ -6,6 +6,7 @@ import { ensureDir, fileExists } from '../utils/fs.js';
 import {
   BUILTIN_TEMPLATE_IDS,
   builtinStatus,
+  builtinTemplatesDir,
   resetBuiltin,
   resetMissingBuiltins,
   type BuiltinTemplateId,
@@ -64,7 +65,10 @@ templateCommand
       return fail(`template "${id}" already exists`);
     }
 
-    const sourceDir = resolve(root, 'templates', opts.from);
+    let sourceDir = resolve(root, 'templates', opts.from);
+    if (!(await fileExists(sourceDir))) {
+      sourceDir = resolve(builtinTemplatesDir(), opts.from);
+    }
     if (!(await fileExists(sourceDir))) {
       return fail(`built-in "${opts.from}" is not installed — run syntaur init or template reset --missing`);
     }

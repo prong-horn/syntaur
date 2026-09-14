@@ -42,12 +42,8 @@ export function validateTemplate(
 ): TemplateIssue[] {
   const issues: TemplateIssue[] = [];
 
-  // Rule 1: id matches directory name
-  const dirName = dirEntries.includes('template.md')
-    ? manifest.id
-    : manifest.id;
-  if (!dirEntries.length || !dirEntries.includes('template.md')) {
-    // dir name check uses manifest.id vs expected — caller passes dir name separately
+  if (!dirEntries.includes('template.md')) {
+    issues.push({ rule: 1, message: 'template.md is missing from template directory' });
   }
 
   // Rule 2: version is 1
@@ -57,6 +53,7 @@ export function validateTemplate(
 
   // Rule 3: every stages[].id is in fixed vocabulary
   for (const stage of manifest.stages) {
+    if ((stage.id as string) === 'dropped') continue;
     if (!(STAGE_IDS as readonly string[]).includes(stage.id)) {
       issues.push({ rule: 3, message: `unknown stage id "${stage.id}"` });
     }
@@ -152,7 +149,7 @@ export function validateTemplate(
   }
 
   // Rule 16: dropped not in stages (also checked above)
-  if (ids.includes('dropped' as never)) {
+  if (ids.includes('dropped' as (typeof ids)[number])) {
     issues.push({ rule: 16, message: 'dropped must not appear in stages[]' });
   }
 
