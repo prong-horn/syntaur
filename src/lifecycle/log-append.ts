@@ -159,10 +159,10 @@ function insertLegacyLogEntry(content: string, entryBlock: string, now: string):
   }
   const [, open, fmBody, close, body] = fmMatch;
 
-  const entries = parseLogEntries(content);
-  const nextCount = entries.length + 1;
+  const countMatch = fmBody.match(/^entryCount:\s*(\d+)\s*$/m);
+  const nextCount = countMatch ? parseInt(countMatch[1], 10) + 1 : 1;
   let newFm = fmBody;
-  if (/^entryCount:\s*\d+\s*$/m.test(newFm)) {
+  if (countMatch) {
     newFm = newFm.replace(/^entryCount:\s*\d+\s*$/m, `entryCount: ${nextCount}`);
   } else {
     newFm = `${newFm}\nentryCount: ${nextCount}`;

@@ -17,7 +17,7 @@ No progress yet.
 `;
 }
 
-export function formatProgressEntry(body: string, timestamp: string): string {
+export function formatProgressEntry(body: string, timestamp: string, author = 'human'): string {
   const trimmed = body.trim();
-  return `## ${timestamp}\n\n${trimmed}\n`;
+  return `## ${timestamp} · progress · ${author}\n\n${trimmed}\n`;
 }

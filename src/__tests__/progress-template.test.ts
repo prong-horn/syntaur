@@ -20,7 +20,7 @@ describe('renderProgress', () => {
 describe('formatProgressEntry', () => {
   it('formats an entry with a timestamp heading and trimmed body', () => {
     const entry = formatProgressEntry('   Did the thing.   ', '2026-04-20T13:00:00Z');
-    expect(entry).toBe('## 2026-04-20T13:00:00Z\n\nDid the thing.\n');
+    expect(entry).toBe('## 2026-04-20T13:00:00Z · progress · human\n\nDid the thing.\n');
   });
 });
 

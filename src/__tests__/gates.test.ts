@@ -176,6 +176,24 @@ describe('gate evaluators', () => {
     expect(result.reason).toMatch(/after the current work cycle/);
   });
 
+  it('handoff-logged passes when handoff body contains a sub-heading', async () => {
+    const manifest = await loadBuiltin('feature');
+    const log = [
+      '## 2026-09-04T00:00:00Z · handoff · human',
+      '',
+      'Fresh handoff.',
+      '',
+      '## Summary',
+      '',
+      'Shipped the API.',
+    ].join('\n');
+    const result = await evaluateGate(
+      'handoff-logged',
+      ctx(join(home, 't'), baseFm(), manifest, '', log),
+    );
+    expect(result.pass).toBe(true);
+  });
+
   it('handoff-logged passes when handoff is after the last reopen', async () => {
     const manifest = await loadBuiltin('feature');
     const log = `## 2026-09-04T00:00:00Z · handoff · human\n\nFresh handoff.\n`;
