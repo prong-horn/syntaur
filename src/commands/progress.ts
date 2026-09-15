@@ -1,7 +1,10 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import { readFile } from 'node:fs/promises';
 import { appendProgressLog } from '../lifecycle/log-append.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { runLog } from './log.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -48,30 +51,28 @@ export async function runProgressLog(
     project: options.project,
     cwd,
   });
-  if (!(await fileExists(resolve(dir, 'ticket.md')))) {
-    throw new Error(`No ticket found at ${dir} (missing ticket.md).`);
-  }
-  let author = 'human';
-  try {
-    const { initSessionDb } = await import('../dashboard/session-db.js');
-    const { resolveSessionEngagement } = await import('../utils/engagement-binding.js');
-    initSessionDb();
-    const se = await resolveSessionEngagement(cwd);
-    if (se?.session.id) {
-      const { getSessionById } = await import('../dashboard/agent-sessions.js');
-      const row = getSessionById(se.session.id);
-      if (row?.agent) author = row.agent;
-    }
-  } catch {
-    /* no session db — human */
+  const ticketMdPath = resolve(dir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) {
+    const { path, timestamp } = await appendProgressLog({
+      ticketDir: dir,
+      ticketRef: slug,
+      text,
+      author: 'human',
+    });
+    return { path, timestamp };
   }
 
-  const { path, timestamp } = await appendProgressLog({
-    ticketDir: dir,
-    ticketRef: slug,
+  const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+  const message = await runLog(
+    fm.id,
     text,
-    author,
-  });
+    { type: 'progress', project: options.project },
+    cwd,
+  );
+  const match = message.match(/\(([^)]+)\)\s*$/);
+  const timestamp = match?.[1] ?? new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+  const pathMatch = message.match(/^Logged progress to ([^(]+) \(/);
+  const path = pathMatch?.[1]?.trim() ?? 'progress.md';
   return { path, timestamp };
 }
 
@@ -87,8 +88,21 @@ progressCommand
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
   .action(async (text: string, options: { ticket?: string; project?: string }) => {
     try {
-      const { path, timestamp } = await runProgressLog(text, options);
-      console.log(`Logged progress to ${path} (${timestamp})`);
+      const { dir } = await resolveTicketDir({
+        ticket: options.ticket,
+        project: options.project,
+        cwd: process.cwd(),
+      });
+      const ticketMdPath = resolve(dir, 'ticket.md');
+      if (await fileExists(ticketMdPath)) {
+        const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+        console.log(
+          await runLog(fm.id, text, { type: 'progress', project: options.project }, process.cwd()),
+        );
+      } else {
+        const { path, timestamp } = await runProgressLog(text, options);
+        console.log(`Logged progress to ${path} (${timestamp})`);
+      }
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);
