@@ -2460,11 +2460,6 @@ describe('inbox questions (needs-me)', () => {
     return parseLogEntries(await readFile(logPath(), 'utf-8'));
   }
 
-  async function readComments() {
-    const entries = await readLogEntries();
-    return { entries, open: openQuestions(entries) };
-  }
-
   async function waitForOpenQuestion(match?: (body: string) => boolean): Promise<void> {
     await waitUntil(async () => {
       const open = openQuestions(await readLogEntries());
@@ -2679,7 +2674,12 @@ describe('inbox questions (needs-me)', () => {
     await idle(1);
     await waitUntil(async () => {
       const entries = await readLogEntries();
-      return entries.some((e) => e.type === 'question' && e.body.includes('nobody answered within'));
+      return entries.some(
+        (e) =>
+          e.type === 'question' &&
+          e.body.includes('nobody answered within') &&
+          e.body.includes('kind="permission"'),
+      );
     }, 'denial question', 10_000);
   });
 
@@ -2749,7 +2749,11 @@ describe('inbox questions (needs-me)', () => {
     });
     await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 2, 'two permission cards');
-    await waitUntil(async () => (await readComments()).entries.length === 2, 'two grace comments');
+    await waitUntil(
+      async () => (await readLogEntries()).filter((e) => e.type === 'question').length === 2,
+      'two grace comments',
+      10_000,
+    );
     const perms = itemsOfType('permission.request') as Array<{ requestId: string }>;
     expect(
       await broker.answerPermission(ticket(), perms[0].requestId, 'allow', { allowAllSession: true }),
@@ -2768,9 +2772,9 @@ describe('inbox questions (needs-me)', () => {
     await sendP;
     await idle();
     await waitUntil(async () => {
-      const { entries, open } = await readComments();
+      const entries = await readLogEntries();
       const questions = entries.filter((e) => e.type === 'question');
-      return questions.length === 0 || open.length === 0;
+      return questions.length === 0 || openQuestions(entries).length === 0;
     }, 'orphan grace resolved');
   });
 

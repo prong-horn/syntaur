@@ -12,6 +12,12 @@ import {
 } from '../chat/records.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { HUMAN_AGENT_ID } from '../chat/types.js';
+import {
+  closeSessionDb,
+  initSessionDb,
+  resetSessionDb,
+} from '../dashboard/session-db.js';
+import { fileExists } from '../utils/fs.js';
 import type { AgentMessageItem, AgentWorkItem, ChatItem } from '../chat/types.js';
 
 let testDir: string;
@@ -325,6 +331,88 @@ describe('fileChatRecord', () => {
     expect(filedQuestion.author).toBe('human');
     expect(filedQuestion.body).toContain('Looks good?');
     expect(journalAfterQuestion).toContain('_Filed from chat (you,');
+  });
+
+  it('files a note entry on a feature ticket', async () => {
+    const note = await fileChatRecord({
+      ticketDir: testDir,
+      ticketRef: 'demo',
+      ticketId: TICKET_ID,
+      record: { kind: 'note', body: 'A note from chat.' },
+      source,
+    });
+    expect(note.label).toBe('a note entry');
+    const journal = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    expect(journal).toContain('· note · claude');
+    expect(journal).toContain('A note from chat.');
+  });
+
+  it('files typed entries at the top of legacy progress.md', async () => {
+    const legacyDir = await mkdtemp(join(tmpdir(), 'chat-records-legacy-'));
+    await writeFile(
+      join(legacyDir, 'ticket.md'),
+      `---
+id: LEG-1
+slug: legacy
+template: legacy
+status: in_progress
+---
+`,
+    );
+    await writeFile(
+      join(legacyDir, 'progress.md'),
+      `---
+ticket: legacy
+entryCount: 0
+updated: "2026-01-01T00:00:00Z"
+---
+
+# Progress
+
+No progress yet.
+`,
+    );
+    await fileChatRecord({
+      ticketDir: legacyDir,
+      ticketRef: 'legacy',
+      ticketId: 'LEG-1',
+      record: { kind: 'progress', body: 'Legacy baton from chat.' },
+      source,
+    });
+    const progress = await readFile(join(legacyDir, 'progress.md'), 'utf-8');
+    expect(progress).toContain('· progress · claude');
+    const h1 = progress.indexOf('# Progress');
+    expect(progress.indexOf('Legacy baton from chat.')).toBeGreaterThan(h1);
+    await rm(legacyDir, { recursive: true, force: true });
+  });
+
+  it('files a chat note on quick templates without a log role', async () => {
+    const quickDir = await mkdtemp(join(tmpdir(), 'chat-records-quick-'));
+    resetSessionDb();
+    initSessionDb(join(quickDir, 'syntaur.db'));
+    await writeFile(
+      join(quickDir, 'ticket.md'),
+      `---
+id: Q-1
+slug: quick
+template: quick
+status: draft
+---
+`,
+    );
+    const filed = await fileChatRecord({
+      ticketDir: quickDir,
+      ticketRef: 'quick',
+      ticketId: 'Q-1',
+      record: { kind: 'note', body: 'Quick chat note.' },
+      source,
+    });
+    expect(filed.label).toBe('chat note');
+    expect(await fileExists(join(quickDir, 'chat', 'events.jsonl'))).toBe(true);
+    expect(await readFile(join(quickDir, 'chat', 'events.jsonl'), 'utf-8')).toContain('Quick chat note.');
+    closeSessionDb();
+    resetSessionDb();
+    await rm(quickDir, { recursive: true, force: true });
   });
 
   it('escapes progress headings so parseProgress sees one entry', async () => {

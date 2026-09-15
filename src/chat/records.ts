@@ -1,5 +1,6 @@
 import { isAbsolute, relative } from 'node:path';
-import { appendTypedLogEntry } from '../lifecycle/log-append.js';
+import { appendTypedLogEntry, ticketHasLogRole } from '../lifecycle/log-append.js';
+import { appendChatNote } from './notes.js';
 import type { ChatItem, FileChatRecordInput, FiledChatRecord } from './types.js';
 import { HUMAN_AGENT_ID } from './types.js';
 
@@ -149,6 +150,15 @@ export async function fileChatRecord(input: {
   const trimmed = record.body.trim();
   const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
   const author = source.agentId === HUMAN_AGENT_ID ? 'human' : source.agentId;
+
+  if (!(await ticketHasLogRole(input.ticketDir))) {
+    const { timestamp } = await appendChatNote(input.ticketDir, input.ticketId, author, body);
+    return {
+      kind: record.kind,
+      ref: timestamp,
+      label: 'chat note',
+    };
+  }
 
   const { timestamp } = await appendTypedLogEntry({
     ticketDir: input.ticketDir,

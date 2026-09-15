@@ -843,7 +843,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
       items: Array<{ type: string; text?: string }>;
     };
     const filed = items.items.find((i) => i.type === 'system' && i.text?.startsWith('Filed '));
-    expect(filed?.text).toContain('a decision entry');
+    expect(filed?.text).toMatch(/as decision entry \(/);
   });
 
   it('files a progress entry to the journal', async () => {

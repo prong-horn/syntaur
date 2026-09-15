@@ -2680,17 +2680,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     pending.resolve({ outcome: { outcome: 'selected', optionId: rejectOption(pending.options) } });
     await record(session, 'acp.permission_response', { requestId, timedOut: true });
     try {
-      await appendTypedLogEntry({
-        ticketDir: session.ticket.ticketDir,
-        ticketId: session.ticket.id,
-        projectSlug: session.ticket.projectSlug,
-        type: 'question',
-        author: session.agentId,
-        body:
-          `The chat agent asked for permission to run **${title}** and nobody answered within ` +
+      const item = findChatItemByRequestId(session.ticket.id, requestId);
+      const ref: ChatQuestionRef = { kind: 'permission', itemId: item?.itemId ?? requestId };
+      await fileChatQuestion(
+        session,
+        ref,
+        `The chat agent asked for permission to run **${title}** and nobody answered within ` +
           `${Math.round(timeouts.permissionMs / 60000)} minutes, so it was denied and the turn moved on. ` +
           `Re-run it from the Chat tab if it should have been allowed.`,
-      });
+      );
     } catch {
       await record(session, 'system', {
         level: 'warn',
@@ -3579,7 +3577,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     const source =
       item.agentId === HUMAN_AGENT_ID ? 'your message' : `@${item.agentId}'s reply`;
-    const text = `Filed ${source} as ${filed.label}`;
+    const text = `Filed ${source} as ${filed.kind} entry (${filed.ref})`;
     try {
       await recordTicket(ticket, 'system', { level: 'info', text }, {
         agentId: SYSTEM_AGENT_ID,
