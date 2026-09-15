@@ -136,6 +136,136 @@ afterEach(async () => {
   await rm(cwd, { recursive: true, force: true });
 });
 
+describe('buildPromptContext explicit session binding', () => {
+  const ENV_SESSION = 'env-bound-session';
+
+  beforeEach(async () => {
+    process.env.SYNTAUR_HOME = home;
+    await writeFeatureTicket('SCR-20', 'planning');
+    seedEngagement('SCR-20', 'planning');
+    process.env.CLAUDE_CODE_SESSION_ID = ENV_SESSION;
+    resetSessionDb();
+    initSessionDb(resolve(home, 'syntaur.db'));
+    openEngagement({
+      sessionId: ENV_SESSION,
+      ticketId: 'SCR-20',
+      stage: 'planning',
+      startedAt: '2026-01-02T00:00:00Z',
+    });
+    closeSessionDb();
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+  });
+
+  it('does not bind from CLAUDE_CODE_SESSION_ID when session id is omitted', async () => {
+    const result = await buildPromptContext({ root: home, cwd, sessionId: null });
+    expect(result.ticketId).toBeNull();
+    expect(result.text).not.toContain('Ticket:');
+    expect(result.text).toContain('## Playbooks');
+  });
+
+  it('does not bind an invalid explicit session id', async () => {
+    const result = await buildPromptContext({ root: home, cwd, sessionId: 'bad id!' });
+    expect(result.ticketId).toBeNull();
+    expect(result.text).not.toContain('Ticket:');
+  });
+});
+
+describe('runSessionContext explicit session binding', () => {
+  const ENV_SESSION = 'env-bound-session';
+
+  beforeEach(async () => {
+    process.env.SYNTAUR_HOME = home;
+    await writeFeatureTicket('SCR-21', 'backlog');
+    process.env.CLAUDE_CODE_SESSION_ID = ENV_SESSION;
+    resetSessionDb();
+    initSessionDb(resolve(home, 'syntaur.db'));
+    openEngagement({
+      sessionId: ENV_SESSION,
+      ticketId: 'SCR-21',
+      stage: 'backlog',
+      startedAt: '2026-01-02T00:00:00Z',
+    });
+    closeSessionDb();
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+  });
+
+  it('hook payload without session_id and no context.json prints playbooks only', async () => {
+    const result = await runSessionContext(
+      JSON.stringify({ cwd, hook_event_name: 'UserPromptSubmit', prompt: 'hi' }),
+      { cwd, fromHook: true },
+    );
+    expect(result?.ticketId).toBeNull();
+    expect(result?.text).not.toContain('Ticket:');
+    expect(result?.text).toContain('## Playbooks');
+  });
+});
+
+describe('syntaur session context CLI explicit binding', () => {
+  const ENV_SESSION = 'env-bound-session';
+
+  beforeEach(async () => {
+    await writeFeatureTicket('SCR-22', 'planning');
+    process.env.CLAUDE_CODE_SESSION_ID = ENV_SESSION;
+    resetSessionDb();
+    initSessionDb(resolve(home, 'syntaur.db'));
+    openEngagement({
+      sessionId: ENV_SESSION,
+      ticketId: 'SCR-22',
+      stage: 'planning',
+      startedAt: '2026-01-02T00:00:00Z',
+    });
+    closeSessionDb();
+  });
+
+  afterEach(() => {
+    delete process.env.CLAUDE_CODE_SESSION_ID;
+  });
+
+  it('with no session id prints playbooks only despite env session', async () => {
+    const res = await runCli(['session', 'context', '--cwd', cwd], home, undefined, {
+      CLAUDE_CODE_SESSION_ID: ENV_SESSION,
+    });
+    expect(res.code).toBe(0);
+    expect(res.stdout).not.toContain('Ticket:');
+    expect(res.stdout).toContain('## Playbooks');
+  });
+
+  it('with invalid --session-id prints playbooks only', async () => {
+    const res = await runCli(
+      ['session', 'context', '--session-id', 'bad id!', '--cwd', cwd],
+      home,
+      undefined,
+      { CLAUDE_CODE_SESSION_ID: ENV_SESSION },
+    );
+    expect(res.code).toBe(0);
+    expect(res.stdout).not.toContain('Ticket:');
+    expect(res.stdout).toContain('## Playbooks');
+  });
+
+  it('hook stdin without session_id prints playbooks only', async () => {
+    const payload = JSON.stringify({
+      cwd,
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'hi',
+    });
+    const res = await runCli(['session', 'context', '--from-hook'], home, payload, {
+      CLAUDE_CODE_SESSION_ID: ENV_SESSION,
+    });
+    expect(res.code).toBe(0);
+    const parsed = JSON.parse(res.stdout.trim()) as {
+      hookSpecificOutput: { additionalContext: string };
+    };
+    expect(parsed.hookSpecificOutput.additionalContext).not.toContain('Ticket:');
+    expect(parsed.hookSpecificOutput.additionalContext).toContain('## Playbooks');
+  });
+});
+
 describe('buildPromptContext', () => {
   it('prints ticket block with stage instructions, Next and bytes', async () => {
     process.env.SYNTAUR_HOME = home;

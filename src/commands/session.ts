@@ -745,8 +745,10 @@ sessionCommand
         return;
       }
       console.log(result.text);
-    } catch {
-      /* hook path: always exit 0 */
+    } catch (error) {
+      if (options.fromHook) return;
+      console.error('Error:', error instanceof Error ? error.message : String(error));
+      process.exit(1);
     }
   });
 

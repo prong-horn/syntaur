@@ -12,7 +12,7 @@ import {
   listPlaybookSlugs,
   loadEnabledPlaybook,
 } from '../utils/playbooks.js';
-import { isSafeSessionId, resolveOwnSessionId } from '../utils/session-id.js';
+import { isSafeSessionId } from '../utils/session-id.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 
 export interface BuildPromptContextInput {
@@ -139,13 +139,11 @@ export async function buildPromptContext(
   let ticketId: string | null = null;
   let stage: string | null = null;
 
-  const resolved = await resolveOwnSessionId({
-    sessionId: input.sessionId ?? undefined,
-    cwd: input.cwd,
-  });
+  const sessionId =
+    input.sessionId && isSafeSessionId(input.sessionId) ? input.sessionId : null;
 
-  if (resolved) {
-    const ticketBlock = await formatTicketBlock(root, input.cwd, resolved.id);
+  if (sessionId) {
+    const ticketBlock = await formatTicketBlock(root, input.cwd, sessionId);
     if (ticketBlock.lines.length > 0) {
       lines.push(...ticketBlock.lines);
       ticketId = ticketBlock.ticketId;
