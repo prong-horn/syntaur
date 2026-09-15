@@ -314,8 +314,6 @@ describe('getTicketDetail', () => {
     expect(result!.template).toBe('feature');
     expect(result!.plan?.status).toBe('in_progress');
     expect(result!.scratchpad?.updated).toBe('2026-04-07T11:00:00Z');
-    expect(result!.handoff?.handoffCount).toBe(1);
-    expect(result!.decisionRecord?.decisionCount).toBe(1);
     expect(result!.availableVerbs.map((action) => action.command)).toContain('review');
   });
 
@@ -349,22 +347,17 @@ First entry.
 
     const result = await getTicketDetail(testDir, 'test-project', 'test-ticket');
     expect(result).not.toBeNull();
-    expect(result!.progress).not.toBeNull();
-    expect(result!.progress!.entryCount).toBe(2);
-    expect(result!.progress!.entries).toHaveLength(2);
-    expect(result!.progress!.entries[0].timestamp).toBe('2026-04-07T14:00:00Z');
     const journal = result!.templateBlock.files.find((f) => f.path === 'journal.md');
     expect(journal?.logEntries?.[0]?.type).toBe('question');
     expect(journal?.logEntries?.[0]?.firstLine).toBe('Waiting on approval?');
   });
 
-  it('leaves progress null and journal log missing when the files are absent', async () => {
+  it('leaves journal log missing when the log file is absent', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-ticket', ticketMd: TICKET_MD },
     ]);
     const result = await getTicketDetail(testDir, 'test-project', 'test-ticket');
     expect(result).not.toBeNull();
-    expect(result!.progress).toBeNull();
     const journal = result!.templateBlock.files.find((f) => f.path === 'journal.md');
     expect(journal?.exists).toBe(false);
     expect(journal?.logEntries).toBeUndefined();
@@ -555,7 +548,9 @@ See [target](../target-b/ticket.md) for context.
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       {
         slug: 'source-a',
-        ticketMd: TICKET_MD.replace('slug: test-ticket', 'slug: source-a').replace('id: a-123', 'id: a-111'),
+        ticketMd: TICKET_MD.replace('slug: test-ticket', 'slug: source-a')
+          .replace('id: a-123', 'id: a-111')
+          .replace('template: feature', 'template: legacy'),
         progressMd: progressWithLink,
       },
       {
@@ -584,7 +579,9 @@ See [target](../target-b/ticket.md) for context.
     for (let i = 0; i < 60; i++) {
       target.push({
         slug: `src-${i}`,
-        ticketMd: TICKET_MD.replace('slug: test-ticket', `slug: src-${i}`).replace('id: a-123', `id: src-${i}`),
+        ticketMd: TICKET_MD.replace('slug: test-ticket', `slug: src-${i}`)
+          .replace('id: a-123', `id: src-${i}`)
+          .replace('template: feature', 'template: legacy'),
         progressMd: `---
 ticket: src-${i}
 entryCount: 1

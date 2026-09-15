@@ -5,6 +5,7 @@ import { routeForHit, slugifyHeading, FILE_KIND_TO_TAB } from '../search/route.j
 describe('parseFileKinds', () => {
   it('resolves singular + plural/common forms to canonical FileKind', () => {
     expect(parseFileKinds('comments,plans')).toEqual(['comments', 'plan']);
+    expect(parseFileKinds('journal,journals')).toEqual(['journal']);
     expect(parseFileKinds('decisions')).toEqual(['decision-record']);
     expect(parseFileKinds('decision-record')).toEqual(['decision-record']);
   });
@@ -58,7 +59,7 @@ describe('routeForHit', () => {
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/t/ticket-uuid-1?tab=plan#open-questions');
+    expect(route).toBe('/t/ticket-uuid-1?tab=file:plan.md#open-questions');
   });
 
   it('keeps a section anchor for a decision-record hit (markdown-rendered pane)', () => {
@@ -72,7 +73,7 @@ describe('routeForHit', () => {
         section: 'Why Postgres',
       }),
     );
-    expect(route).toBe('/t/ticket-uuid-2?tab=decisions#why-postgres');
+    expect(route).toBe('/t/ticket-uuid-2?tab=file:decision-record.md#why-postgres');
   });
 
   it('omits the section anchor for ticket (summary pane builds SectionCards, no heading ids)', () => {
@@ -90,7 +91,7 @@ describe('routeForHit', () => {
     expect(route).not.toContain('#');
   });
 
-  it('omits the section anchor for comments (structured pane, no heading ids)', () => {
+  it('keeps a section anchor for comments hits', () => {
     const route = routeForHit(
       hit({
         fileKind: 'comments',
@@ -101,11 +102,10 @@ describe('routeForHit', () => {
         section: 'Open Questions',
       }),
     );
-    expect(route).toBe('/t/ticket-uuid-4?tab=comments');
-    expect(route).not.toContain('#');
+    expect(route).toBe('/t/ticket-uuid-4?tab=file:comments.md#open-questions');
   });
 
-  it('omits the section anchor for progress (structured pane, no heading ids)', () => {
+  it('keeps a section anchor for progress hits', () => {
     const route = routeForHit(
       hit({
         fileKind: 'progress',
@@ -116,8 +116,7 @@ describe('routeForHit', () => {
         section: 'Day 1',
       }),
     );
-    expect(route).toBe('/t/ticket-uuid-5?tab=progress');
-    expect(route).not.toContain('#');
+    expect(route).toBe('/t/ticket-uuid-5?tab=file:progress.md#day-1');
   });
 
   it('builds a nested route without an anchor when no section', () => {
@@ -130,7 +129,7 @@ describe('routeForHit', () => {
         standalone: false,
       }),
     );
-    expect(route).toBe('/t/ticket-uuid-6?tab=plan');
+    expect(route).toBe('/t/ticket-uuid-6?tab=file:plan.md');
   });
 
   it('builds a standalone route off the ticket id', () => {
@@ -141,13 +140,25 @@ describe('routeForHit', () => {
         standalone: true,
       }),
     );
-    expect(route).toBe('/t/uuid-123?tab=plan');
+    expect(route).toBe('/t/uuid-123?tab=file:plan.md');
   });
 
   it('maps each FileKind to an existing TicketDetail tab', () => {
     expect(FILE_KIND_TO_TAB.ticket).toBe('summary');
-    expect(FILE_KIND_TO_TAB.plan).toBe('plan');
-    expect(FILE_KIND_TO_TAB['decision-record']).toBe('decisions');
+    expect(FILE_KIND_TO_TAB.plan).toBe('file:plan.md');
+    expect(FILE_KIND_TO_TAB.journal).toBe('file:journal.md');
+    expect(FILE_KIND_TO_TAB['decision-record']).toBe('file:decision-record.md');
+  });
+
+  it('routes journal hits to the journal tab', () => {
+    const route = routeForHit(
+      hit({
+        fileKind: 'journal',
+        ticketId: 'ticket-uuid-7',
+        section: 'Day 1',
+      }),
+    );
+    expect(route).toBe('/t/ticket-uuid-7?tab=file:journal.md#day-1');
   });
 });
 

@@ -22,7 +22,7 @@ import {
 import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
 import { resolvePlanReadPath, planFileFor } from '../ticket-templates/roles.js';
 import { buildShow, type ShowModel } from '../ticket-templates/show.js';
-import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
+import { openQuestions, parseLogEntries, type LogEntry } from '../ticket-templates/log-reader.js';
 import { logRoleFile } from '../ticket-templates/manifest.js';
 import { markdownBody } from '../ticket-templates/content.js';
 import { syntaurRoot } from '../utils/paths.js';
@@ -72,6 +72,7 @@ import type {
   EngagementInfo,
   TicketTemplateBlock,
   TicketTemplateFileDetail,
+  TicketLogEntryDetail,
 } from './types.js';
 import { listAllSessions, getSessionById } from './agent-sessions.js';
 import { getEngagementsByTicketId } from '../db/engagement-db.js';
@@ -262,9 +263,41 @@ interface ProjectRecord {
 // file watcher clears it for edits made outside the dashboard.
 const projectRecordsCache = new Map<string, Promise<ProjectRecord[]>>();
 
+interface LogParseCacheEntry {
+  mtimeMs: number;
+  entries: LogEntry[];
+}
+
+const logParseCache = new Map<string, LogParseCacheEntry>();
+
+function mapLogEntryDetail(entry: LogEntry): TicketLogEntryDetail {
+  return {
+    timestamp: entry.timestamp,
+    type: entry.type,
+    author: entry.author,
+    firstLine: entry.firstLine,
+    body: entry.body,
+    ...(Object.keys(entry.keys).length > 0 ? { keys: entry.keys } : {}),
+  };
+}
+
+/** Read and parse a log-role file with an mtime-keyed cache. */
+export async function readCachedLogEntries(filePath: string): Promise<LogEntry[]> {
+  const fileStat = await stat(filePath);
+  const cached = logParseCache.get(filePath);
+  if (cached && cached.mtimeMs === fileStat.mtimeMs) {
+    return cached.entries;
+  }
+  const content = await readFile(filePath, 'utf-8');
+  const entries = parseLogEntries(content);
+  logParseCache.set(filePath, { mtimeMs: fileStat.mtimeMs, entries });
+  return entries;
+}
+
 /** Drop all cached record snapshots. Cheap and idempotent. */
 export function invalidateRecordsCache(): void {
   projectRecordsCache.clear();
+  logParseCache.clear();
   // Content-search index shares this invalidation seam: every record mutation
   // (write routers, file watcher, broadcast, deleteWorkspace) funnels here, so
   // clearing the search index alongside keeps `/api/search` consistent with the
@@ -577,7 +610,7 @@ export async function getEditableDocument(
     content,
     projectSlug,
     ticketSlug,
-    appendOnly: documentType === 'handoff' || documentType === 'decision-record',
+    appendOnly: false,
   };
 }
 
@@ -611,11 +644,7 @@ export async function getEditableDocumentById(
         ? 'ticket.md'
         : documentType === 'scratchpad'
           ? 'scratchpad.md'
-          : documentType === 'handoff'
-            ? 'handoff.md'
-            : documentType === 'decision-record'
-              ? 'decision-record.md'
-              : null;
+          : null;
     filePath = fileName ? resolve(resolved.ticketDir, fileName) : null;
     if (filePath && !(await fileExists(filePath))) filePath = null;
   }
@@ -628,11 +657,7 @@ export async function getEditableDocumentById(
       ? `Edit Ticket: ${label}`
       : documentType === 'plan'
         ? `Edit Plan: ${label}`
-        : documentType === 'scratchpad'
-          ? `Edit Scratchpad: ${label}`
-          : documentType === 'handoff'
-            ? `Append Handoff: ${label}`
-            : `Append Decision: ${label}`;
+        : `Edit Scratchpad: ${label}`;
 
   return {
     documentType,
@@ -641,7 +666,7 @@ export async function getEditableDocumentById(
     projectSlug: null,
     ticketSlug: undefined,
     ticketId: resolved.id,
-    appendOnly: documentType === 'handoff' || documentType === 'decision-record',
+    appendOnly: false,
   };
 }
 
@@ -746,13 +771,10 @@ async function buildTicketTemplateBlock(
     if (exists) {
       const content = await readFile(filePath, 'utf-8');
       if (entry.role === 'log') {
-        logEntries = parseLogEntries(content).map((e) => ({
-          timestamp: e.timestamp,
-          type: e.type,
-          author: e.author,
-          firstLine: e.firstLine,
-          body: e.body,
-        }));
+        const logPath = resolve(ticketDir, entry.path);
+        if (exists) {
+          logEntries = (await readCachedLogEntries(logPath)).map(mapLogEntryDetail);
+        }
         body = content;
       } else if (entry.role === 'plan') {
         const parsed = parsePlan(content);
@@ -772,6 +794,7 @@ async function buildTicketTemplateBlock(
       exists,
       createOn: entry.createOn,
       body,
+      ...(entry.role === 'log' ? { entryTypes: [...entry.entryTypes] } : {}),
       ...(logEntries ? { logEntries } : {}),
       ...(planStatus ? { planStatus } : {}),
     });
@@ -781,7 +804,7 @@ async function buildTicketTemplateBlock(
 }
 
 /**
- * Get full ticket detail with plan, scratchpad, handoff, and decision record
+ * Get full ticket detail with plan and scratchpad metadata
  * (served through GET /api/tickets/:id).
  */
 export async function getTicketDetail(
@@ -828,42 +851,6 @@ export async function getTicketDetail(
     };
   }
 
-  let handoff: TicketDetail['handoff'] = null;
-  const handoffPath = resolve(ticketDir, 'handoff.md');
-  if (await fileExists(handoffPath)) {
-    const handoffContent = await readFile(handoffPath, 'utf-8');
-    const parsed = parseHandoff(handoffContent);
-    handoff = {
-      updated: parsed.updated,
-      handoffCount: parsed.handoffCount,
-      body: parsed.body,
-    };
-  }
-
-  let decisionRecord: TicketDetail['decisionRecord'] = null;
-  const decisionRecordPath = resolve(ticketDir, 'decision-record.md');
-  if (await fileExists(decisionRecordPath)) {
-    const decisionRecordContent = await readFile(decisionRecordPath, 'utf-8');
-    const parsed = parseDecisionRecord(decisionRecordContent);
-    decisionRecord = {
-      updated: parsed.updated,
-      decisionCount: parsed.decisionCount,
-      body: parsed.body,
-    };
-  }
-
-  let progress: TicketDetail['progress'] = null;
-  const progressPath = resolve(ticketDir, 'progress.md');
-  if (await fileExists(progressPath)) {
-    const progressContent = await readFile(progressPath, 'utf-8');
-    const parsed = parseProgress(progressContent);
-    progress = {
-      updated: parsed.updated,
-      entryCount: parsed.entryCount,
-      entries: parsed.entries,
-    };
-  }
-
   const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
   const availableVerbs = (await getAvailableVerbs(
     ticketDir,
@@ -898,9 +885,6 @@ export async function getTicketDetail(
     body: ticket.body,
     plan,
     scratchpad,
-    handoff,
-    decisionRecord,
-    progress,
     referencedBy: [],
     engagements: buildTicketEngagements(ticket.id),
     availableVerbs,
@@ -997,7 +981,7 @@ interface ReferenceTarget {
 }
 
 /**
- * Scan every *other* ticket's Todos, progress, comments, and handoff bodies
+ * Scan every *other* ticket's log-role file and legacy record bodies
  * for markdown links that resolve to `target`, and return an aggregated per-source
  * count (capped at 50).
  */
@@ -1051,8 +1035,25 @@ async function countMentionsInTicket(
   target: ReferenceTarget,
 ): Promise<number> {
   const bodies: string[] = [];
+  const scanPaths = new Set<string>();
 
-  for (const filename of ['progress.md', 'comments.md', 'handoff.md']) {
+  const ticketMdPath = resolve(sourceDir, 'ticket.md');
+  if (await fileExists(ticketMdPath)) {
+    try {
+      const ticket = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
+      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+      const logRole = logRoleFile(manifest);
+      if (logRole) scanPaths.add(logRole.path);
+    } catch {
+      // ignore
+    }
+  }
+
+  for (const legacy of ['handoff.md', 'decision-record.md', 'comments.md']) {
+    scanPaths.add(legacy);
+  }
+
+  for (const filename of scanPaths) {
     const path = resolve(sourceDir, filename);
     if (await fileExists(path)) {
       try {
@@ -1097,6 +1098,38 @@ function buildLinkPatternsForTarget(target: ReferenceTarget): RegExp[] {
 
 function escapeRegExpLocal(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Resolve a ticket by UUID (standalone or project-nested) and return its full detail payload.
+ * GET /api/tickets/:id
+ */
+export async function getTicketLogById(
+  projectsDir: string,
+  id: string,
+  typeFilter?: string,
+): Promise<{ path: string; entries: TicketLogEntryDetail[] } | null> {
+  const resolved = await resolveTicketById(projectsDir, id);
+  if (!resolved) return null;
+
+  const ticketMdPath = resolve(resolved.ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return null;
+
+  const ticket = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
+  const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+  const logRole = logRoleFile(manifest);
+  if (!logRole) return null;
+
+  const logFilePath = resolve(resolved.ticketDir, logRole.path);
+  if (!(await fileExists(logFilePath))) {
+    return { path: logRole.path, entries: [] };
+  }
+
+  let entries = (await readCachedLogEntries(logFilePath)).map(mapLogEntryDetail);
+  if (typeFilter) {
+    entries = entries.filter((entry) => entry.type === typeFilter);
+  }
+  return { path: logRole.path, entries };
 }
 
 /**

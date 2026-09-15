@@ -18,6 +18,7 @@ export interface TicketTabSpec {
 }
 
 function tabLabelForFile(file: TicketTemplateFileDetail): string {
+  if (file.role === 'log') return 'Journal';
   return file.path.replace(/\.md$/i, '');
 }
 
@@ -72,16 +73,12 @@ export function buildTicketTabs(
 /** Map legacy companion paths to existing editor routes when available. */
 export function templateFileEditSection(
   path: string,
-): 'plan' | 'scratchpad' | 'handoff' | 'decision-record' | null {
+): 'plan' | 'scratchpad' | null {
   switch (path) {
     case 'plan.md':
       return 'plan';
     case 'scratchpad.md':
       return 'scratchpad';
-    case 'handoff.md':
-      return 'handoff';
-    case 'decision-record.md':
-      return 'decision-record';
     default:
       return null;
   }

@@ -3,10 +3,9 @@ import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { appendProgressEntry } from '../lifecycle/progress-append.js';
-import { appendDecisionEntry, appendTypedLogEntry, appendProgressLog } from '../lifecycle/log-append.js';
+import { appendTypedLogEntry, appendProgressLog } from '../lifecycle/log-append.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { parseProgress } from '../dashboard/parser.js';
-import { parseDecisionRecord } from '../dashboard/parser.js';
 
 let testDir: string;
 
@@ -63,48 +62,6 @@ describe('appendProgressEntry', () => {
     expect(() =>
       appendProgressEntry('# Progress\n\nnothing yet\n', 'text', '2026-09-07T12:00:00Z'),
     ).toThrow('progress.md has no YAML frontmatter.');
-  });
-});
-
-describe('appendDecisionEntry', () => {
-  it('scaffolds, writes ## title + **Recorded:**, returns { number: 1 }', async () => {
-    const result = await appendDecisionEntry({
-      ticketDir: testDir,
-      ticketRef: 'demo',
-      title: 'Use X',
-      body: 'We chose X because it is simpler.',
-    });
-
-    expect(result).toEqual({ number: 1, title: 'Use X' });
-
-    const content = await readFile(join(testDir, 'decision-record.md'), 'utf-8');
-    expect(content).toContain('## Use X');
-    expect(content).toContain('**Recorded:**');
-    expect(content).toContain('We chose X because it is simpler.');
-    const parsed = parseDecisionRecord(content);
-    expect(parsed.decisionCount).toBe(1);
-  });
-
-  it('returns 2 on a second call with decisionCount: 2', async () => {
-    await appendDecisionEntry({
-      ticketDir: testDir,
-      ticketRef: 'demo',
-      title: 'First',
-      body: 'One',
-    });
-    const result = await appendDecisionEntry({
-      ticketDir: testDir,
-      ticketRef: 'demo',
-      title: 'Second',
-      body: 'Two',
-    });
-
-    expect(result.number).toBe(2);
-    const content = await readFile(join(testDir, 'decision-record.md'), 'utf-8');
-    const parsed = parseDecisionRecord(content);
-    expect(parsed.decisionCount).toBe(2);
-    expect(content).toContain('## Second');
-    expect(content).toContain('## First');
   });
 });
 

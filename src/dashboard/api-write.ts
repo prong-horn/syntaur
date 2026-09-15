@@ -65,7 +65,7 @@ import {
   renderHandoff,
   renderDecisionRecord,
 } from '../templates/index.js';
-import { appendLogEntry, appendTypedLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
+import { appendTypedLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
 import { LOG_ENTRY_TYPES, logRoleFile, type LogEntryType } from '../ticket-templates/manifest.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { buildShow } from '../ticket-templates/show.js';
@@ -1143,26 +1143,6 @@ const id = getParam(req.params.id);
     res.json(doc);
   });
 
-  router.get('/api/tickets/:id/handoff/edit', async (req: Request, res: Response) => {
-const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, 'handoff', id);
-    if (!doc) {
-      res.status(404).json({ error: 'Handoff log not found' });
-      return;
-    }
-    res.json(doc);
-  });
-
-  router.get('/api/tickets/:id/decision-record/edit', async (req: Request, res: Response) => {
-const id = getParam(req.params.id);
-    const doc = await getEditableDocumentById(projectsDir, 'decision-record', id);
-    if (!doc) {
-      res.status(404).json({ error: 'Decision record not found' });
-      return;
-    }
-    res.json(doc);
-  });
-
   router.patch('/api/tickets/:id', async (req: Request, res: Response) => {
     try {
 const id = getParam(req.params.id);
@@ -1301,80 +1281,6 @@ const id = getParam(req.params.id);
     } catch (error) {
       console.error('Error updating standalone scratchpad:', error);
       res.status(500).json({ error: `Failed to update scratchpad: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/tickets/:id/handoff/entries', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: `Ticket "${id}" not found` });
-        return;
-      }
-      const handoffPath = resolve(resolved.ticketDir, 'handoff.md');
-      const currentContent = await readCurrentDocument(handoffPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Handoff log not found' });
-        return;
-      }
-      const { title, body } = req.body || {};
-      if (!body || typeof body !== 'string' || !body.trim()) {
-        res.status(400).json({ error: 'body is required' });
-        return;
-      }
-      const parsed = parseHandoff(currentContent);
-      const nextContent = appendLogEntry(
-        currentContent,
-        'handoffCount',
-        parsed.handoffCount + 1,
-        title && typeof title === 'string' && title.trim() ? title.trim() : `Handoff ${parsed.handoffCount + 1}`,
-        body,
-        'No handoffs recorded yet.',
-      );
-      await writeFileForce(handoffPath, nextContent);
-      const ticket = await getTicketDetailById(projectsDir, id);
-      res.status(201).json({ ticket, content: nextContent });
-    } catch (error) {
-      console.error('Error appending standalone handoff entry:', error);
-      res.status(500).json({ error: `Failed to append handoff entry: ${(error as Error).message}` });
-    }
-  });
-
-  router.post('/api/tickets/:id/decision-record/entries', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: `Ticket "${id}" not found` });
-        return;
-      }
-      const decisionPath = resolve(resolved.ticketDir, 'decision-record.md');
-      const currentContent = await readCurrentDocument(decisionPath);
-      if (!currentContent) {
-        res.status(404).json({ error: 'Decision record not found' });
-        return;
-      }
-      const { title, body } = req.body || {};
-      if (!body || typeof body !== 'string' || !body.trim()) {
-        res.status(400).json({ error: 'body is required' });
-        return;
-      }
-      const parsed = parseDecisionRecord(currentContent);
-      const nextContent = appendLogEntry(
-        currentContent,
-        'decisionCount',
-        parsed.decisionCount + 1,
-        title && typeof title === 'string' && title.trim() ? title.trim() : `Decision ${parsed.decisionCount + 1}`,
-        body,
-        'No decisions recorded yet.',
-      );
-      await writeFileForce(decisionPath, nextContent);
-      const ticket = await getTicketDetailById(projectsDir, id);
-      res.status(201).json({ ticket, content: nextContent });
-    } catch (error) {
-      console.error('Error appending standalone decision entry:', error);
-      res.status(500).json({ error: `Failed to append decision entry: ${(error as Error).message}` });
     }
   });
 

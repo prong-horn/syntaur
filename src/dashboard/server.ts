@@ -560,6 +560,22 @@ export function createDashboardServer(options: DashboardServerOptions) {
     }
   });
 
+  app.get('/api/tickets/:id/log', async (req, res) => {
+    try {
+      const { getTicketLogById } = await import('./api.js');
+      const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : undefined;
+      const log = await getTicketLogById(projectsDir, req.params.id, typeFilter || undefined);
+      if (!log) {
+        res.status(404).json({ error: `Ticket "${req.params.id}" not found` });
+        return;
+      }
+      res.json(log);
+    } catch (error) {
+      console.error('Error getting ticket log:', error);
+      res.status(500).json({ error: 'Failed to get ticket log' });
+    }
+  });
+
   app.get('/api/tickets/:id', async (req, res) => {
     try {
       const detail = await getTicketDetailById(projectsDir, req.params.id);

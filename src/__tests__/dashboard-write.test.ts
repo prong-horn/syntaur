@@ -335,67 +335,6 @@ Keep this paragraph.`, 'utf-8');
     expect(fileContent).not.toContain('updated: "2026-03-20T10:00:00Z"');
   });
 
-  it('appends handoff entries without rewriting prior history', async () => {
-    await createTicketFixture();
-    const router = createWriteRouter(testDir);
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/handoff/entries',
-      { id: 'TP-1' },
-      {
-        title: 'Handoff 2',
-        body: 'Second handoff entry',
-      },
-    );
-
-    expect(response.statusCode).toBe(201);
-    expect((response.payload as any).ticket.handoff.handoffCount).toBe(2);
-    expect((response.payload as any).content).toContain('Initial handoff');
-    expect((response.payload as any).content).toContain('Second handoff entry');
-
-    const fileContent = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'handoff.md'),
-      'utf-8',
-    );
-    expect(fileContent).toContain('Initial handoff');
-    expect(fileContent).toContain('Second handoff entry');
-    expect(fileContent).toContain('**Recorded:**');
-    expect(fileContent).toContain('## Handoff 2');
-  });
-
-  it('appends decision-record entries with heading, Recorded timestamp and bumped count', async () => {
-    await createTicketFixture();
-    const router = createWriteRouter(testDir);
-
-    const response = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/decision-record/entries',
-      { id: 'TP-1' },
-      {
-        title: 'Use caching',
-        body: 'We will cache harness options in syntaur.db.',
-      },
-    );
-
-    expect(response.statusCode).toBe(201);
-    expect((response.payload as any).ticket.decisionRecord.decisionCount).toBe(2);
-    expect((response.payload as any).content).toContain('## Use caching');
-    expect((response.payload as any).content).toContain('**Recorded:**');
-    expect((response.payload as any).content).toContain('Keep the current layout');
-
-    const fileContent = await readFile(
-      resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'decision-record.md'),
-      'utf-8',
-    );
-    expect(fileContent).toContain('## Use caching');
-    expect(fileContent).toContain('**Recorded:**');
-    expect(fileContent).toContain('Keep the current layout');
-    expect(fileContent).toMatch(/decisionCount: 2/);
-  });
-
   it('uses lifecycle verb routes for block/unblock flag changes', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
@@ -1861,6 +1800,16 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
 });
 
 describe('log write-boundary validation', () => {
+  it('does not expose legacy handoff or decision-record append routes', () => {
+    const router = createWriteRouter(testDir);
+    expect(() => getRouteHandler(router, 'post', '/api/tickets/:id/handoff/entries')).toThrow(
+      /Route not found/,
+    );
+    expect(() => getRouteHandler(router, 'post', '/api/tickets/:id/decision-record/entries')).toThrow(
+      /Route not found/,
+    );
+  });
+
   it('rejects an empty body (400, nothing written)', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);

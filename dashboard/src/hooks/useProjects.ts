@@ -163,6 +163,7 @@ export interface TicketLogEntryDetail {
   author: string | null;
   firstLine: string;
   body: string;
+  keys?: Record<string, string>;
 }
 
 export interface TicketTemplateFileDetail {
@@ -175,6 +176,7 @@ export interface TicketTemplateFileDetail {
   createOn: string;
   body: string | null;
   logEntries?: TicketLogEntryDetail[];
+  entryTypes?: string[];
   planStatus?: string | null;
 }
 
@@ -209,9 +211,6 @@ export interface TicketDetail {
   body: string;
   plan: { status: string; updated: string; body: string } | null;
   scratchpad: { updated: string; body: string } | null;
-  handoff: { updated: string; handoffCount: number; body: string } | null;
-  decisionRecord: { updated: string; decisionCount: number; body: string } | null;
-  progress: TicketProgress | null;
   referencedBy: TicketReference[];
   engagements: EngagementInfo[];
   availableVerbs: TicketTransitionAction[];

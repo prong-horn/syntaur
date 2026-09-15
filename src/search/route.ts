@@ -13,12 +13,13 @@ import type { FileKind, SearchHit } from './types.js';
  */
 export const FILE_KIND_TO_TAB: Record<FileKind, string> = {
   ticket: 'summary',
-  plan: 'plan',
-  scratchpad: 'scratchpad',
-  handoff: 'handoff',
-  progress: 'progress',
-  comments: 'comments',
-  'decision-record': 'decisions',
+  plan: 'file:plan.md',
+  scratchpad: 'file:scratchpad.md',
+  journal: 'file:journal.md',
+  handoff: 'file:handoff.md',
+  progress: 'file:progress.md',
+  comments: 'file:comments.md',
+  'decision-record': 'file:decision-record.md',
 };
 
 /**
@@ -51,6 +52,9 @@ const ANCHORABLE_KINDS: ReadonlySet<FileKind> = new Set<FileKind>([
   'scratchpad',
   'handoff',
   'decision-record',
+  'journal',
+  'progress',
+  'comments',
 ]);
 
 /**

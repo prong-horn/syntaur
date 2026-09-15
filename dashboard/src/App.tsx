@@ -15,8 +15,6 @@ import { EditProject } from './pages/EditProject';
 import { EditTicket } from './pages/EditTicket';
 import { EditTicketPlan } from './pages/EditTicketPlan';
 import { EditTicketScratchpad } from './pages/EditTicketScratchpad';
-import { AppendTicketHandoff } from './pages/AppendTicketHandoff';
-import { AppendTicketDecisionRecord } from './pages/AppendTicketDecisionRecord';
 import { AgentsPage } from './pages/AgentsPage';
 import { AgentEditorPage } from './pages/AgentEditorPage';
 import { UsagePage } from './pages/UsagePage';
@@ -52,8 +50,6 @@ export function App() {
             <Route path="/t/:id/edit" element={<EditTicket />} />
             <Route path="/t/:id/plan/edit" element={<EditTicketPlan />} />
             <Route path="/t/:id/scratchpad/edit" element={<EditTicketScratchpad />} />
-            <Route path="/t/:id/handoff/edit" element={<AppendTicketHandoff />} />
-            <Route path="/t/:id/decision-record/edit" element={<AppendTicketDecisionRecord />} />
             <Route path="/agents" element={<AgentsPage />} />
             <Route path="/agents/new" element={<AgentEditorPage />} />
             <Route path="/agents/:id/edit" element={<AgentEditorPage />} />

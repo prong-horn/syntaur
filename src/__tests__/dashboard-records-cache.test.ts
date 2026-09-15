@@ -8,6 +8,7 @@ import {
   listProjects,
   listWorkspaceRecords,
   invalidateRecordsCache,
+  readCachedLogEntries,
 } from '../dashboard/api.js';
 import { createWriteRouter } from '../dashboard/api-write.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
@@ -209,5 +210,48 @@ describe('records cache', () => {
       worktree: '/tmp/wt',
       branch: 'feature-x',
     });
+  });
+
+  it('reuses log parse cache until invalidation', async () => {
+    const ticketDir = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`);
+    await seedProjectWithTicket('backlog');
+    const journalPath = resolve(ticketDir, 'journal.md');
+    await writeFile(
+      journalPath,
+      `---
+purpose: log
+---
+
+## 2026-04-07T12:00:00Z · progress · human
+
+First.
+`,
+    );
+
+    const first = await readCachedLogEntries(journalPath);
+    expect(first).toHaveLength(1);
+
+    const cached = await readCachedLogEntries(journalPath);
+    expect(cached).toHaveLength(1);
+
+    await writeFile(
+      journalPath,
+      `---
+purpose: log
+---
+
+## 2026-04-07T12:00:00Z · progress · human
+
+First.
+
+## 2026-04-07T13:00:00Z · progress · human
+
+Second.
+`,
+    );
+
+    invalidateRecordsCache();
+    const fresh = await readCachedLogEntries(journalPath);
+    expect(fresh).toHaveLength(2);
   });
 });

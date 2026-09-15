@@ -35,7 +35,7 @@ describe('buildTicketTabs', () => {
     expect(tabs.map((t) => t.label)).toEqual([
       'Summary',
       'Chat',
-      'journal',
+      'Journal',
       'plan',
       'Activity',
       'Session Activity',
@@ -77,7 +77,7 @@ describe('buildTicketTabs', () => {
       'scratchpad',
       'handoff',
       'decision-record',
-      'progress',
+      'Journal',
       'comments',
       'plan',
     ]);

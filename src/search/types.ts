@@ -16,6 +16,7 @@
 export type FileKind =
   | 'ticket'
   | 'plan'
+  | 'journal'
   | 'progress'
   | 'comments'
   | 'handoff'
@@ -25,6 +26,7 @@ export type FileKind =
 export const FILE_KINDS: readonly FileKind[] = [
   'ticket',
   'plan',
+  'journal',
   'progress',
   'comments',
   'handoff',
@@ -126,6 +128,8 @@ export const FILE_KIND_ALIASES: Record<string, FileKind> = {
   tickets: 'ticket',
   plan: 'plan',
   plans: 'plan',
+  journal: 'journal',
+  journals: 'journal',
   progress: 'progress',
   comment: 'comments',
   comments: 'comments',

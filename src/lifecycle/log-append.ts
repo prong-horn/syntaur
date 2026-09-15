@@ -2,8 +2,7 @@ import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { renderDecisionRecord, renderProgress } from '../templates/index.js';
-import { parseDecisionRecord } from '../dashboard/parser.js';
+import { renderProgress } from '../templates/index.js';
 import { parseTicketFrontmatter } from './frontmatter.js';
 import { syntaurRoot } from '../utils/paths.js';
 import {
@@ -57,61 +56,6 @@ export function setTopLevelField(
   }
 
   return `${frontmatter}\n${key}: ${formatted}${rest}`;
-}
-
-export function appendLogEntry(
-  existingContent: string,
-  countField: 'handoffCount' | 'decisionCount',
-  nextCount: number,
-  heading: string,
-  body: string,
-  emptyPlaceholder: string,
-): string {
-  const timestamp = nowTimestamp();
-  let next = setTopLevelField(existingContent, 'updated', timestamp);
-  next = setTopLevelField(next, countField, nextCount);
-
-  const entryBody = body.trim();
-  const entry = `## ${heading}\n\n**Recorded:** ${timestamp}\n\n${entryBody}\n`;
-
-  if (next.includes(emptyPlaceholder)) {
-    return next.replace(emptyPlaceholder, entry.trimEnd());
-  }
-
-  return `${next.trimEnd()}\n\n${entry}`;
-}
-
-export interface AppendDecisionEntryInput {
-  ticketDir: string;
-  ticketRef: string;
-  title: string;
-  body: string;
-}
-
-/** Read-or-scaffold `decision-record.md`, append one decision, write atomically. */
-export async function appendDecisionEntry(
-  input: AppendDecisionEntryInput,
-): Promise<{ number: number; title: string }> {
-  const path = resolve(input.ticketDir, 'decision-record.md');
-  const timestamp = nowTimestamp();
-
-  const content = (await fileExists(path))
-    ? await readFile(path, 'utf-8')
-    : renderDecisionRecord({ ticketSlug: input.ticketRef, timestamp });
-
-  const parsed = parseDecisionRecord(content);
-  const nextNumber = parsed.decisionCount + 1;
-  const title = input.title.trim();
-  const next = appendLogEntry(
-    content,
-    'decisionCount',
-    nextNumber,
-    title,
-    input.body,
-    'No decisions recorded yet.',
-  );
-  await writeFileForce(path, next);
-  return { number: nextNumber, title };
 }
 
 export async function resolveLogRole(ticketDir: string): Promise<{

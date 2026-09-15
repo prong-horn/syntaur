@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  ArrowUpRight,
   FilePenLine,
-  Hammer,
   NotebookPen,
   SendToBack,
   Trash2,
@@ -39,6 +37,7 @@ import { LinksPanel } from '../components/LinksPanel';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
 import { ChatTab } from '../components/chat/ChatTab';
+import { JournalTab } from '../components/JournalTab';
 import { buildTicketTabs, templateFileEditSection } from '../lib/ticketTabs';
 import type { TicketTabSpec } from '../lib/ticketTabs';
 import type { TicketTemplateFileDetail } from '../hooks/useProjects';
@@ -126,18 +125,6 @@ export function TicketDetail() {
     handler: () => id && navigate(ticketEditHref(id, 'plan')),
   });
   useHotkey({
-    keys: 'h',
-    scope: 'ticket',
-    description: 'Append handoff',
-    handler: () => id && navigate(ticketEditHref(id, 'handoff')),
-  });
-  useHotkey({
-    keys: 'd',
-    scope: 'ticket',
-    description: 'Append decision record',
-    handler: () => id && navigate(ticketEditHref(id, 'decision-record')),
-  });
-  useHotkey({
     keys: 's',
     scope: 'ticket',
     description: 'Edit scratchpad',
@@ -182,22 +169,9 @@ export function TicketDetail() {
         </Link>
       ) : undefined;
 
-      if (file.role === 'log' && file.logEntries && file.logEntries.length > 0) {
+      if (file.role === 'log') {
         return (
-          <SectionCard title={file.path} description={`${file.state} · ${file.description}`}>
-            <ol className="space-y-4">
-              {file.logEntries.map((entry, idx) => (
-                <li key={`${entry.timestamp}-${idx}`} className="border-l-2 border-border pl-3">
-                  <div className="text-xs font-mono text-muted-foreground">
-                    {entry.timestamp}
-                    {entry.author ? ` · ${entry.author}` : ''}
-                    {entry.type ? ` · ${entry.type}` : ''}
-                  </div>
-                  <MarkdownRenderer content={entry.body} />
-                </li>
-              ))}
-            </ol>
-          </SectionCard>
+          <JournalTab ticketId={id} file={file} onAppended={() => void refetch()} />
         );
       }
 
@@ -500,18 +474,6 @@ export function TicketDetail() {
       label: 'Edit scratchpad',
       icon: NotebookPen,
       href: ticketEditHref(id, 'scratchpad'),
-    },
-    {
-      key: 'append-handoff',
-      label: 'Append handoff',
-      icon: ArrowUpRight,
-      href: ticketEditHref(id, 'handoff'),
-    },
-    {
-      key: 'append-decision',
-      label: 'Append decision',
-      icon: Hammer,
-      href: ticketEditHref(id, 'decision-record'),
     },
     {
       key: 'delete',

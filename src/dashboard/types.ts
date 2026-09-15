@@ -169,6 +169,7 @@ export interface TicketTemplateFileDetail {
   createOn: string;
   body: string | null;
   logEntries?: TicketLogEntryDetail[];
+  entryTypes?: string[];
   planStatus?: string | null;
 }
 
@@ -178,6 +179,7 @@ export interface TicketLogEntryDetail {
   author: string | null;
   firstLine: string;
   body: string;
+  keys?: Record<string, string>;
 }
 
 export interface TicketTemplateBlock {
@@ -215,9 +217,6 @@ export interface TicketDetail {
   body: string;
   plan: { status: string; updated: string; body: string } | null;
   scratchpad: { updated: string; body: string } | null;
-  handoff: { updated: string; handoffCount: number; body: string } | null;
-  decisionRecord: { updated: string; decisionCount: number; body: string } | null;
-  progress: TicketProgress | null;
   referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first). Empty when the session DB is not initialized (non-dashboard callers). */
   engagements: EngagementInfo[];
