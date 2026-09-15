@@ -536,6 +536,8 @@ The Claude Code plugin registers session hooks that call `syntaur session` subco
 
 Text mode (`syntaur session context --session-id <id>`) prints the same block for measurement and debugging.
 
+An explicit `syntaur track-session --ticket <id>` re-binds the session's open engagement to that ticket (closing any open engagement on another ticket) so the prompt hook names the ticket you just tracked.
+
 Block shape:
 
 ```

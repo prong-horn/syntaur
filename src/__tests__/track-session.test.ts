@@ -9,7 +9,14 @@ import {
 } from '../dashboard/session-db.js';
 import { getSessionById } from '../dashboard/agent-sessions.js';
 import { getOpenEngagement } from '../db/engagement-db.js';
+import { getSessionDb } from '../dashboard/session-db.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { trackSessionCommand } from '../commands/track-session.js';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname } from 'node:path';
+
+const CLI_ENTRY = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'syntaur.js');
 
 let testDir: string;
 
@@ -124,5 +131,172 @@ describe('trackSessionCommand session-id self-resolution', () => {
       ),
     ).rejects.toThrow(/do not synthesize/);
     expect(getSessionById('should-not-reach')).toBeNull();
+  });
+});
+
+async function writePairTickets(projectsDir: string): Promise<void> {
+  const aDir = resolve(projectsDir, 'proj', 'tickets', 'ASGN-1-asgn');
+  const bDir = resolve(projectsDir, 'proj', 'tickets', 'ASGN-2-asgn');
+  await mkdir(aDir, { recursive: true });
+  await mkdir(bDir, { recursive: true });
+  await writeFile(
+    resolve(projectsDir, 'proj', 'project.md'),
+    `---\nslug: proj\ntitle: proj\ncreated: "2026-01-01"\nupdated: "2026-01-01"\n---\n# proj\n`,
+  );
+  await writeFile(
+    resolve(aDir, 'ticket.md'),
+    `---\nid: ASGN-1\nslug: asgn\ntitle: Ticket A\nstatus: review\n---\n# A\n`,
+  );
+  await writeFile(
+    resolve(bDir, 'ticket.md'),
+    `---\nid: ASGN-2\nslug: asgn2\ntitle: Ticket B\nstatus: planning\n---\n# B\n`,
+  );
+}
+
+describe('trackSessionCommand explicit --ticket re-bind', () => {
+  beforeEach(() => {
+    resetSessionDb();
+    initSessionDb(resolve(testDir, 'syntaur.db'));
+  });
+
+  it('switches the open engagement when tracking a different ticket', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    await writePairTickets(projectsDir);
+    const prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = testDir;
+    await writeFile(
+      resolve(testDir, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
+    );
+    try {
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'rebind-1',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-1',
+        },
+        { fallbackPid: () => null },
+      );
+      expect(getOpenEngagement('rebind-1')?.ticket_id).toBe('ASGN-1');
+
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'rebind-1',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-2',
+        },
+        { fallbackPid: () => null },
+      );
+
+      const open = getOpenEngagement('rebind-1');
+      expect(open?.ticket_id).toBe('ASGN-2');
+      expect(open?.stage).toBe('planning');
+
+      const rows = getSessionDb()
+        .prepare(
+          'SELECT ticket_id, ended_at IS NOT NULL AS closed FROM engagement WHERE session_id = ? ORDER BY started_at',
+        )
+        .all('rebind-1') as Array<{ ticket_id: string | null; closed: number }>;
+      expect(rows).toHaveLength(2);
+      expect(rows[0].ticket_id).toBe('ASGN-1');
+      expect(rows[0].closed).toBe(1);
+      expect(rows[1].ticket_id).toBe('ASGN-2');
+      expect(rows[1].closed).toBe(0);
+    } finally {
+      if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prevHome;
+    }
+  });
+
+  it('does not split the engagement when tracking the same ticket again', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    await writePairTickets(projectsDir);
+    const prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = testDir;
+    await writeFile(
+      resolve(testDir, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
+    );
+    try {
+      const opts = {
+        agent: 'claude',
+        sessionId: 'rebind-2',
+        path: testDir,
+        dir: projectsDir,
+        project: 'proj',
+        ticket: 'ASGN-1',
+      };
+      await trackSessionCommand(opts, { fallbackPid: () => null });
+      const firstOpenId = getOpenEngagement('rebind-2')!.id;
+      await trackSessionCommand(opts, { fallbackPid: () => null });
+      expect(getOpenEngagement('rebind-2')!.id).toBe(firstOpenId);
+      const count = getSessionDb()
+        .prepare('SELECT COUNT(*) AS n FROM engagement WHERE session_id = ?')
+        .get('rebind-2') as { n: number };
+      expect(count.n).toBe(1);
+    } finally {
+      if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prevHome;
+    }
+  });
+
+  it('session context prints the re-bound ticket', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    await writePairTickets(projectsDir);
+    const prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = testDir;
+    await writeFile(
+      resolve(testDir, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
+    );
+    await seedMissingBuiltins(testDir);
+    try {
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'rebind-3',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-1',
+        },
+        { fallbackPid: () => null },
+      );
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'rebind-3',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-2',
+        },
+        { fallbackPid: () => null },
+      );
+
+      const stdout = await new Promise<string>((resolvePromise, reject) => {
+        const child = spawn(
+          process.execPath,
+          [CLI_ENTRY, 'session', 'context', '--session-id', 'rebind-3', '--cwd', testDir],
+          { env: { ...process.env, SYNTAUR_HOME: testDir, HOME: testDir } },
+        );
+        let out = '';
+        child.stdout.on('data', (d) => (out += d.toString()));
+        child.on('close', (code) => {
+          if (code === 0) resolvePromise(out);
+          else reject(new Error(`exit ${code}`));
+        });
+      });
+      expect(stdout).toContain('Ticket: ASGN-2');
+    } finally {
+      if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prevHome;
+    }
   });
 });

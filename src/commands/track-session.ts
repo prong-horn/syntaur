@@ -13,6 +13,10 @@ import { isExistingDir } from '../utils/workspace-cwd.js';
 import { initSessionDb } from '../dashboard/session-db.js';
 import { appendSession } from '../dashboard/agent-sessions.js';
 import type { AgentSessionStatus } from '../dashboard/types.js';
+import { getOpenEngagement } from '../db/engagement-db.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import { switchSessionStage } from '../utils/engagement-binding.js';
+import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 
 export interface TrackSessionOptions {
   project?: string;
@@ -79,6 +83,7 @@ export async function trackSessionCommand(
   assertMayMutate(resolved, { hasSelector: Boolean(options.ticket) });
 
   let ticketId: string | null = null;
+  let resolvedTicket: ResolvedTicket | null = null;
   if (options.project || options.ticket) {
     const config = await readConfig();
     const baseDir = options.dir
@@ -103,7 +108,8 @@ export async function trackSessionCommand(
           `--ticket must be a ticket id (<PREFIX>-<n>), got "${options.ticket}".`,
         );
       }
-      ticketId = (await resolveTicketById(baseDir, options.ticket))?.id ?? null;
+      resolvedTicket = await resolveTicketById(baseDir, options.ticket);
+      ticketId = resolvedTicket?.id ?? null;
     }
   }
 
@@ -139,6 +145,30 @@ export async function trackSessionCommand(
     transcriptPath: options.transcriptPath ?? null,
     originalHeadSha,
   });
+
+  if (options.ticket && ticketId && resolvedTicket) {
+    const open = getOpenEngagement(sessionId);
+    if (!open || open.ticket_id !== ticketId) {
+      const oldTicketId = open?.ticket_id ?? null;
+      let stage = 'implement';
+      try {
+        const ticketMd = await readFile(resolve(resolvedTicket.ticketDir, 'ticket.md'), 'utf-8');
+        stage = parseTicketFrontmatter(ticketMd).status || stage;
+      } catch {
+        /* keep implement */
+      }
+      await switchSessionStage({
+        sessionId,
+        ticketId,
+        projectSlug: options.project ?? resolvedTicket.projectSlug,
+        ticketSlug: resolvedTicket.ticketSlug,
+        stage,
+      });
+      console.log(
+        `Re-bound session ${sessionId} from ${oldTicketId ?? 'none'} to ${ticketId}.`,
+      );
+    }
+  }
 
   if (options.project && options.ticket) {
     console.log(
