@@ -72,6 +72,22 @@ export async function crossTemplatePlaybooks(root: string): Promise<string[]> {
   return cross;
 }
 
+/** Drop a leading document H1 and the blank line after it when present. */
+function stripLeadingDocumentH1(body: string): string {
+  const lines = body.split('\n');
+  let i = 0;
+  while (i < lines.length && lines[i].trim() === '') i++;
+  if (i >= lines.length) return body.trim();
+
+  const first = lines[i].trim();
+  if (/^#[^#]/.test(first)) {
+    i++;
+    while (i < lines.length && lines[i].trim() === '') i++;
+    return lines.slice(i).join('\n').trim();
+  }
+  return body.trim();
+}
+
 async function formatPlaybooksSection(root: string): Promise<string[]> {
   const slugs = await crossTemplatePlaybooks(root);
   if (slugs.length === 0) return [];
@@ -84,7 +100,7 @@ async function formatPlaybooksSection(root: string): Promise<string[]> {
     const name = parsed.name || slug;
     lines.push(`### ${name}`);
     if (parsed.body.trim()) {
-      lines.push(parsed.body.trim());
+      lines.push(stripLeadingDocumentH1(parsed.body));
     }
     lines.push('');
   }

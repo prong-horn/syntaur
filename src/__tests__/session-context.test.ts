@@ -267,6 +267,23 @@ describe('syntaur session context CLI explicit binding', () => {
 });
 
 describe('buildPromptContext', () => {
+  it('strips a leading H1 from playbook bodies so the title appears once', async () => {
+    process.env.SYNTAUR_HOME = home;
+    const result = await buildPromptContext({ root: home, cwd, sessionId: SESSION_ID });
+    expect(result.text).toContain('### Commit Discipline');
+    expect(result.text).not.toMatch(/^# Commit Discipline/m);
+    expect(result.text).toContain('Commit often.');
+    expect(result.text.split('Commit Discipline').length - 1).toBe(1);
+  });
+
+  it('leaves playbook bodies that start with a paragraph unchanged', async () => {
+    process.env.SYNTAUR_HOME = home;
+    await writePlaybook('plain-body', 'Plain Body', 'Start with prose.\n\nMore text.');
+    const result = await buildPromptContext({ root: home, cwd, sessionId: SESSION_ID });
+    expect(result.text).toContain('### Plain Body');
+    expect(result.text).toContain('Start with prose.');
+  });
+
   it('prints ticket block with stage instructions, Next and bytes', async () => {
     process.env.SYNTAUR_HOME = home;
     await writeFeatureTicket('SCR-9', 'planning');
@@ -461,12 +478,18 @@ describe('runSessionContext', () => {
 });
 
 describe('hooks.json UserPromptSubmit entries', () => {
-  it('lists session-touch.sh and prompt-context.sh', () => {
+  it('lists session-touch.sh and prompt-context.sh with 5s timeout', () => {
     const hooks = JSON.parse(readFileSync(hooksPath, 'utf-8')) as {
-      hooks: { UserPromptSubmit: Array<{ hooks: Array<{ command: string }> }> };
+      hooks: {
+        UserPromptSubmit: Array<{ hooks: Array<{ command: string; timeout?: number }> }>;
+      };
     };
     const entries = hooks.hooks.UserPromptSubmit;
     expect(entries).toHaveLength(2);
+    for (const entry of entries) {
+      expect(entry.hooks).toHaveLength(1);
+      expect(entry.hooks[0].timeout).toBe(5);
+    }
     const commands = entries.flatMap((e) => e.hooks.map((h) => h.command));
     expect(commands.some((c) => c.includes('session-touch.sh'))).toBe(true);
     expect(commands.some((c) => c.includes('prompt-context.sh'))).toBe(true);

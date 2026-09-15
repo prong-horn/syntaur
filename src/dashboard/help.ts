@@ -266,7 +266,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         term: 'Playbook',
         description:
-          'A behavioral rule set stored in ~/.syntaur/playbooks/. Playbooks define constraints and conventions that agents must follow during execution. Manage them via the CLI or the Playbooks page.',
+          'A behavioral rule set stored in ~/.syntaur/playbooks/. Playbooks define constraints and conventions that agents must follow during execution. Edit them in the dashboard Library; cross-template playbooks reach agents through the UserPromptSubmit prompt hook.',
       },
       {
         term: 'Workspace',
