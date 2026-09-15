@@ -21,12 +21,6 @@ import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
-import { createPlaybookCommand } from './commands/create-playbook.js';
-import { listPlaybooksCommand } from './commands/list-playbooks.js';
-import { enablePlaybookCommand } from './commands/enable-playbook.js';
-import { disablePlaybookCommand } from './commands/disable-playbook.js';
-import { deletePlaybookCommand } from './commands/delete-playbook.js';
-import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
 import { doctorCommand } from './commands/doctor.js';
 import { usageCommand } from './commands/usage.js';
 import { planCommand } from './commands/plan.js';
@@ -378,67 +372,6 @@ program
     }),
   );
 
-program
-  .command('create-playbook')
-  .description('Create a new playbook')
-  .argument('<name>', 'Playbook name')
-  .option('--slug <slug>', 'Override auto-generated slug')
-  .option('--description <desc>', 'Playbook description')
-  .action(
-    runCommand(async (name, options) => {
-      await createPlaybookCommand(name, options);
-    }),
-  );
-
-program
-  .command('list-playbooks')
-  .description('List playbooks (disabled playbooks are excluded unless --all is passed)')
-  .option('--all', 'Include disabled playbooks')
-  .action(
-    runCommand(async (options) => {
-      await listPlaybooksCommand({ all: Boolean(options?.all) });
-    }),
-  );
-
-program
-  .command('enable-playbook')
-  .description('Enable a previously-disabled playbook')
-  .argument('<slug>', 'Playbook slug')
-  .action(
-    runCommand(async (slug) => {
-      await enablePlaybookCommand(slug);
-    }),
-  );
-
-program
-  .command('disable-playbook')
-  .description('Disable a playbook so agents no longer load it')
-  .argument('<slug>', 'Playbook slug')
-  .action(
-    runCommand(async (slug) => {
-      await disablePlaybookCommand(slug);
-    }),
-  );
-
-program
-  .command('delete-playbook')
-  .description('Delete a playbook from disk and regenerate the manifest')
-  .argument('<slug>', 'Playbook slug')
-  .action(
-    runCommand(async (slug) => {
-      await deletePlaybookCommand(slug);
-    }),
-  );
-
-program
-  .command('regen-playbook-manifest')
-  .description('Rebuild ~/.syntaur/playbooks/manifest.md from current playbook files')
-  .action(
-    runCommand(async () => {
-      await regenPlaybookManifestCommand();
-    }),
-  );
-
 const migrateCommand = new Command('migrate').description('One-time data migrations');
 migrateCommand.addCommand(v2MigrateCommand);
 migrateCommand.addCommand(journalMigrateCommand);
@@ -473,7 +406,7 @@ Common workflow:
   $ syntaur doctor                                 Diagnose Syntaur state & suggested fixes
 
 Run 'syntaur <command> --help' for command-specific options.
-Migration/internal commands (migrate-*, regen-playbook-manifest) are advanced; most
+Migration/internal commands (migrate-*) are advanced; most
 workflows never need them.`,
 );
 

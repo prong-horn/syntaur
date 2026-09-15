@@ -247,7 +247,7 @@ export async function rebuildPlaybookManifest(playbooksDir: string): Promise<voi
  * later recreation with the same slug doesn't silently start disabled. Throws
  * `PlaybookError` on `manifest` / `not-found`.
  *
- * Shared by `DELETE /api/playbooks/:slug` and `syntaur delete-playbook`.
+ * Shared by `DELETE /api/playbooks/:slug`.
  */
 export async function deletePlaybook(
   playbooksDir: string,

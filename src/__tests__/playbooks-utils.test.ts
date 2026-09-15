@@ -16,9 +16,6 @@ import {
   removeFromDisabledList,
   rebuildPlaybookManifest,
 } from '../utils/playbooks.js';
-import { enablePlaybookCommand } from '../commands/enable-playbook.js';
-import { disablePlaybookCommand } from '../commands/disable-playbook.js';
-import { deletePlaybookCommand } from '../commands/delete-playbook.js';
 import { deletePlaybook, renamePlaybook, PlaybookError } from '../utils/playbooks.js';
 import { fileExists } from '../utils/fs.js';
 import { parsePlaybook } from '../dashboard/parser.js';
@@ -203,66 +200,8 @@ describe('removeFromDisabledList', () => {
   });
 });
 
-describe('CLI commands', () => {
-  it('disablePlaybookCommand disables and is idempotent', async () => {
-    await writePlaybook('alpha');
-    await disablePlaybookCommand('alpha');
-    const cfg1 = await readConfig();
-    expect(cfg1.playbooks.disabled).toEqual(['alpha']);
-
-    await disablePlaybookCommand('alpha');
-    const cfg2 = await readConfig();
-    expect(cfg2.playbooks.disabled).toEqual(['alpha']);
-  });
-
-  it('enablePlaybookCommand re-enables and is idempotent', async () => {
-    await writePlaybook('alpha');
-    await disablePlaybookCommand('alpha');
-    await enablePlaybookCommand('alpha');
-    const cfg1 = await readConfig();
-    expect(cfg1.playbooks.disabled).toEqual([]);
-
-    await enablePlaybookCommand('alpha');
-    const cfg2 = await readConfig();
-    expect(cfg2.playbooks.disabled).toEqual([]);
-  });
-
-  it('throws on unknown slug', async () => {
-    await expect(disablePlaybookCommand('not-a-real-slug')).rejects.toThrow(/not found/);
-  });
-
-  it('rejects invalid slug format', async () => {
-    await expect(disablePlaybookCommand('Bad Slug!')).rejects.toThrow(/Invalid slug/);
-  });
-
-  it('deletePlaybookCommand removes the file and regenerates the manifest', async () => {
-    await writePlaybook('alpha');
-    await writePlaybook('beta');
-    await rebuildPlaybookManifest(playbooksDir);
-
-    await deletePlaybookCommand('alpha');
-
-    expect(await fileExists(resolve(playbooksDir, 'alpha.md'))).toBe(false);
-    expect(await fileExists(resolve(playbooksDir, 'beta.md'))).toBe(true);
-
-    const manifest = await readFile(resolve(playbooksDir, 'manifest.md'), 'utf-8');
-    expect(manifest).toContain('total: 1');
-    expect(manifest).toContain('beta.md');
-    expect(manifest).not.toContain('alpha.md');
-  });
-
-  it('deletePlaybookCommand refuses to delete the manifest', async () => {
-    await writePlaybook('alpha');
-    await rebuildPlaybookManifest(playbooksDir);
-    await expect(deletePlaybookCommand('manifest')).rejects.toThrow(/manifest cannot be deleted/);
-    expect(await fileExists(resolve(playbooksDir, 'manifest.md'))).toBe(true);
-  });
-
-  it('deletePlaybookCommand surfaces not-found as a clear error', async () => {
-    await expect(deletePlaybookCommand('not-a-real-slug')).rejects.toThrow(/not found/);
-  });
-
-  it('deletePlaybook helper drops the slug from the disabled list', async () => {
+describe('deletePlaybook helper', () => {
+  it('drops the slug from the disabled list', async () => {
     await writePlaybook('alpha');
     await setPlaybookEnabled(playbooksDir, 'alpha', false);
     expect((await readConfig()).playbooks.disabled).toEqual(['alpha']);

@@ -73,7 +73,7 @@ If you're already globally installed and later run a newer `npx syntaur@latest`,
 
 The first time you run `syntaur` or `npx syntaur@latest`, it walks through:
 
-1. Initialize `~/.syntaur/` (config, SQLite session registry, playbooks dir, built-in ticket templates under `templates/`)
+1. Initialize `~/.syntaur/` (config, SQLite session registry, playbooks dir seeded with the two cross-template playbooks, built-in ticket templates under `templates/`)
 2. Offer to install the Claude Code plugin (copies vendored protocol skills into `~/.claude/skills/` too)
 3. Offer to install the Codex plugin (copies vendored protocol skills into `~/.codex/skills/` too)
 4. Ask where those plugins should live, with sensible defaults based on your machine

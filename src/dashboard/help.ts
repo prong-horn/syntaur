@@ -146,37 +146,6 @@ const CLI_COMMANDS: HelpCommand[] = [
     example:
       'syntaur track-session --agent claude --session-id <real-id> --transcript-path <path> --project ui-overhaul --ticket UI-1',
   },
-
-  // --- Playbooks (indices 18-20) ---
-  {
-    command: 'syntaur create-playbook',
-    description: 'Create a new playbook with behavioral rules for agents.',
-    example: 'syntaur create-playbook "Code Review Standards"',
-  },
-  {
-    command: 'syntaur list-playbooks',
-    description:
-      'List playbooks in the Syntaur home directory. Disabled playbooks are excluded by default; pass --all to include them with a (disabled) tag.',
-    example: 'syntaur list-playbooks --all',
-  },
-  {
-    command: 'syntaur enable-playbook',
-    description:
-      'Re-enable a previously-disabled playbook so agents load it again. Updates config.md and rebuilds manifest.md.',
-    example: 'syntaur enable-playbook commit-discipline',
-  },
-  {
-    command: 'syntaur disable-playbook',
-    description:
-      'Disable a playbook so agents no longer list or load it. Playbook file is untouched; state is tracked in config.md.',
-    example: 'syntaur disable-playbook commit-discipline',
-  },
-  {
-    command: 'syntaur delete-playbook',
-    description:
-      'Delete a playbook from disk and regenerate the manifest. Refuses to delete the manifest itself.',
-    example: 'syntaur delete-playbook scratch-foo',
-  },
 ];
 
 const WORKFLOW: HelpChecklistItem[] = [
@@ -362,7 +331,8 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Playbooks',
-        description: 'Create, browse, and edit behavioral rules that agents must follow. The playbook manifest at ~/.syntaur/playbooks/manifest.md is auto-generated for inclusion in agent instructions.',
+        description:
+          'Create, browse, and edit behavioral rules in the dashboard Library. Cross-template playbooks are injected by the prompt hook; template-claimed guidance lives in stage instructions.',
         href: '/playbooks',
       },
       {
@@ -415,7 +385,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'What are playbooks and how do I use them?',
         answer:
-          'Playbooks are markdown files in ~/.syntaur/playbooks/ that define behavioral rules agents must follow. Create them via the CLI (syntaur create-playbook) or the Playbooks page. The auto-generated manifest at ~/.syntaur/playbooks/manifest.md can be included in your CLAUDE.md so agents pick up the rules.',
+          'Playbooks are markdown files in ~/.syntaur/playbooks/ that define behavioral rules. Edit them in the dashboard Library. Cross-template playbooks (such as commit-discipline and test-before-done) are injected by the UserPromptSubmit prompt hook; guidance claimed by a ticket template lives in that template\'s stage instructions instead.',
       },
       {
         question: 'How does agent session tracking work?',
