@@ -11,7 +11,7 @@ interface DocumentEditorPageProps {
   redirectTo: string;
   title: string;
   description?: string;
-  documentType: Exclude<EditableDocumentType, 'handoff' | 'decision-record'>;
+  documentType: EditableDocumentType;
   helpTitle: string;
   helpBody: string;
 }

@@ -28,6 +28,59 @@ export interface JournalTabProps {
   onAppended?: () => void;
 }
 
+export interface JournalAppendPayload {
+  type: string;
+  body: string;
+  verdict?: 'approve' | 'changes';
+  open?: string;
+  answers?: string;
+}
+
+export function validateJournalAppend(
+  entryType: string,
+  body: string,
+  answers: string,
+): string | null {
+  if (!body.trim()) return 'Entry body is required';
+  if (entryType === 'answer' && !answers) return 'Select a question to answer';
+  return null;
+}
+
+export function buildJournalAppendPayload(
+  entryType: string,
+  body: string,
+  answers: string,
+  verdict: 'approve' | 'changes',
+  openHigh: string,
+  openMedium: string,
+): JournalAppendPayload {
+  const payload: JournalAppendPayload = { type: entryType, body: body.trim() };
+  if (entryType === 'review') {
+    payload.verdict = verdict;
+    payload.open = `high=${openHigh},medium=${openMedium}`;
+  }
+  if (entryType === 'answer') {
+    payload.answers = answers;
+  }
+  return payload;
+}
+
+export function mergeJournalEntriesAfterAppend(
+  entries: TicketLogEntryDetail[],
+  appended: TicketLogEntryDetail,
+): TicketLogEntryDetail[] {
+  return [...entries, appended];
+}
+
+export function journalTypeCounts(entries: TicketLogEntryDetail[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const t of ALL_TYPES) counts.set(t, 0);
+  for (const entry of entries) {
+    counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
+  }
+  return counts;
+}
+
 function parseVerdictBadge(verdictKey: string | undefined): string | null {
   if (!verdictKey) return null;
   const match = verdictKey.match(/^(approve|changes)\b/);
@@ -53,6 +106,8 @@ export function JournalTab({ ticketId, file, onAppended }: JournalTabProps) {
   const allowedTypes = file.entryTypes ?? [...ALL_TYPES];
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [entries, setEntries] = useState<TicketLogEntryDetail[]>(file.logEntries ?? []);
+  const [allEntries, setAllEntries] = useState<TicketLogEntryDetail[]>(file.logEntries ?? []);
+  const [hasLoadedFromApi, setHasLoadedFromApi] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [entryType, setEntryType] = useState(allowedTypes[0] ?? 'progress');
@@ -67,13 +122,26 @@ export function JournalTab({ ticketId, file, onAppended }: JournalTabProps) {
     setLoading(true);
     setError(null);
     try {
-      const params = typeFilter ? `?type=${encodeURIComponent(typeFilter)}` : '';
-      const res = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/log${params}`);
-      if (!res.ok) {
-        throw new Error((await res.json().catch(() => ({}))).error ?? 'Failed to load journal');
+      const allRes = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/log`);
+      if (!allRes.ok) {
+        throw new Error((await allRes.json().catch(() => ({}))).error ?? 'Failed to load journal');
       }
-      const data = (await res.json()) as LogResponse;
-      setEntries(data.entries);
+      const allData = (await allRes.json()) as LogResponse;
+      setAllEntries(allData.entries);
+
+      if (typeFilter) {
+        const filteredRes = await fetch(
+          `/api/tickets/${encodeURIComponent(ticketId)}/log?type=${encodeURIComponent(typeFilter)}`,
+        );
+        if (!filteredRes.ok) {
+          throw new Error((await filteredRes.json().catch(() => ({}))).error ?? 'Failed to load journal');
+        }
+        const filteredData = (await filteredRes.json()) as LogResponse;
+        setEntries(filteredData.entries);
+      } else {
+        setEntries(allData.entries);
+      }
+      setHasLoadedFromApi(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load journal');
     } finally {
@@ -85,43 +153,28 @@ export function JournalTab({ ticketId, file, onAppended }: JournalTabProps) {
     void loadEntries();
   }, [loadEntries]);
 
-  const allEntries = useMemo(() => {
-    if (typeFilter) return entries;
-    return file.logEntries && !loading ? file.logEntries : entries;
-  }, [entries, file.logEntries, loading, typeFilter]);
+  const displayEntries = hasLoadedFromApi ? entries : (file.logEntries ?? []);
 
-  const typeCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const t of ALL_TYPES) counts.set(t, 0);
-    for (const entry of allEntries) {
-      counts.set(entry.type, (counts.get(entry.type) ?? 0) + 1);
-    }
-    return counts;
-  }, [allEntries]);
+  const typeCounts = useMemo(() => journalTypeCounts(allEntries), [allEntries]);
 
   const openQuestions = useMemo(() => openQuestionEntries(allEntries), [allEntries]);
 
-  const displayEntries = typeFilter
-    ? entries
-    : allEntries;
-
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    const trimmed = body.trim();
-    if (!trimmed) return;
+    const validationError = validateJournalAppend(entryType, body, answers);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
 
-    const payload: Record<string, string> = { type: entryType, body: trimmed };
-    if (entryType === 'review') {
-      payload.verdict = verdict;
-      payload.open = `high=${openHigh},medium=${openMedium}`;
-    }
-    if (entryType === 'answer') {
-      if (!answers) {
-        setError('Select a question to answer');
-        return;
-      }
-      payload.answers = answers;
-    }
+    const payload = buildJournalAppendPayload(
+      entryType,
+      body,
+      answers,
+      verdict,
+      openHigh,
+      openMedium,
+    );
 
     setSubmitting(true);
     setError(null);

@@ -17,7 +17,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface MarkdownEditorProps {
   initialContent: string;
-  documentType: Exclude<EditableDocumentType, 'handoff' | 'decision-record'>;
+  documentType: EditableDocumentType;
   mode?: 'create' | 'edit';
   onSave: (content: string) => Promise<void>;
   saving: boolean;
@@ -576,6 +576,8 @@ function getBodyContent(
       return parseScratchpadEditorState(content).body;
     case 'playbook':
       return parsePlaybookEditorState(content).body;
+    default:
+      return content;
   }
 }
 
@@ -616,5 +618,7 @@ function getValidationErrors(
         state.slug.trim() && !isValidSlug(state.slug) ? 'Playbook slug must be lowercase letters, numbers, and hyphens only.' : null,
       ].filter((value): value is string => Boolean(value));
     }
+    default:
+      return [];
   }
 }

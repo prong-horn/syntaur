@@ -477,11 +477,8 @@ export interface PlaybooksResponse {
 export type EditableDocumentType =
   | 'project'
   | 'ticket'
-  | 'ticket'
   | 'plan'
   | 'scratchpad'
-  | 'handoff'
-  | 'decision-record'
   | 'playbook';
 
 export interface EditableDocumentResponse {

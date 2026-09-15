@@ -1591,12 +1591,21 @@ function topStaleReason(reasons: StaleReason[]): StaleReason | null {
     .sort((a, b) => STALE_SEVERITY_RANK[b.severity] - STALE_SEVERITY_RANK[a.severity])[0];
 }
 
-/** Activity age from `progress.md` mtime (the honest signal — NOT ticket
- * `updated`, which recompute bumps). `null` when there is no progress.md, so the
+/** Activity age from the ticket log-role file mtime (the honest signal — NOT ticket
+ * `updated`, which recompute bumps). `null` when there is no log file, so the
  * classifier's activity-based reason fails safe (never fires on unknown). */
-async function readProgressActivityMs(progressPath: string, now: number): Promise<number | null> {
+async function readLogRoleActivityMs(ticketDir: string, now: number): Promise<number | null> {
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return null;
   try {
-    const s = await stat(progressPath);
+    const ticketContent = await readFile(ticketMdPath, 'utf-8');
+    const fm = parseTicketFull(ticketContent);
+    const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+    const logRole = logRoleFile(manifest);
+    if (!logRole) return null;
+    const logPath = resolve(ticketDir, logRole.path);
+    if (!(await fileExists(logPath))) return null;
+    const s = await stat(logPath);
     return Math.max(0, now - s.mtimeMs);
   } catch {
     return null;
@@ -1662,8 +1671,8 @@ export async function collectStaleCandidates(projectsDir: string,
         ticket.depends_on.length === 0
           ? true
           : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap)).length === 0;
-      const lastActivityMs = await readProgressActivityMs(
-        resolve(projectPath, 'tickets', ticket.dirName, 'progress.md'),
+      const lastActivityMs = await readLogRoleActivityMs(
+        resolve(projectPath, 'tickets', ticket.dirName),
         now,
       );
       const reasons = classifyTicketRecord(
@@ -1740,10 +1749,7 @@ async function buildOverviewSegmentBuckets(
             ? true
             : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap))
                 .length === 0;
-        const lastActivityMs = await readProgressActivityMs(
-          resolve(projectPath, 'tickets', ticket.dirName, 'progress.md'),
-          now,
-        );
+        const lastActivityMs = await readLogRoleActivityMs(ticketDir, now);
         return { ticket, availableVerbs, depsSatisfied, lastActivityMs };
       }),
     );
@@ -1975,14 +1981,6 @@ function getDocumentPath(
       return ticketSlug
         ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'scratchpad.md')
         : null;
-    case 'handoff':
-      return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'handoff.md')
-        : null;
-    case 'decision-record':
-      return ticketSlug
-        ? resolve(projectsDir, projectSlug, 'tickets', ticketSlug, 'decision-record.md')
-        : null;
     default:
       return null;
   }
@@ -2002,10 +2000,6 @@ function getEditableDocumentTitle(
       return `Edit Plan: ${ticketSlug || 'ticket'}`;
     case 'scratchpad':
       return `Edit Scratchpad: ${ticketSlug || 'ticket'}`;
-    case 'handoff':
-      return `Append Handoff: ${ticketSlug || 'ticket'}`;
-    case 'decision-record':
-      return `Append Decision: ${ticketSlug || 'ticket'}`;
     case 'playbook':
       return `Edit Playbook: ${projectSlug}`;
     default:

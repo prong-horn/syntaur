@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { JournalTab } from '../JournalTab';
-import type { TicketTemplateFileDetail } from '../../hooks/useProjects';
+import {
+  JournalTab,
+  buildJournalAppendPayload,
+  mergeJournalEntriesAfterAppend,
+  validateJournalAppend,
+} from '../JournalTab';
+import type { TicketLogEntryDetail, TicketTemplateFileDetail } from '../../hooks/useProjects';
 
 const file: TicketTemplateFileDetail = {
   path: 'journal.md',
@@ -52,5 +57,31 @@ describe('JournalTab', () => {
     const html = renderToStaticMarkup(<JournalTab ticketId="TP-1" file={file} />);
     expect(html).toContain('progress');
     expect(html).not.toContain('<option value="handoff">');
+  });
+
+  it('merges appended entries into the displayed list', () => {
+    const appended: TicketLogEntryDetail = {
+      timestamp: '2026-04-07T14:00:00Z',
+      type: 'progress',
+      author: 'human',
+      firstLine: 'Follow-up shipped',
+      body: 'Follow-up shipped',
+    };
+    const merged = mergeJournalEntriesAfterAppend(file.logEntries ?? [], appended);
+    expect(merged).toHaveLength(4);
+    expect(merged.at(-1)?.body).toBe('Follow-up shipped');
+  });
+
+  it('requires a question for answer append and verdict/open for review append', () => {
+    expect(validateJournalAppend('answer', 'An answer', '')).toBe('Select a question to answer');
+    expect(validateJournalAppend('answer', 'An answer', '2026-04-07T10:00:00Z')).toBeNull();
+
+    const review = buildJournalAppendPayload('review', 'Looks good', '', 'approve', '0', '1');
+    expect(review).toEqual({
+      type: 'review',
+      body: 'Looks good',
+      verdict: 'approve',
+      open: 'high=0,medium=1',
+    });
   });
 });

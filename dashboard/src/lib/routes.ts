@@ -9,11 +9,10 @@ export function ticketPageHref(id: string, tab?: string): string {
 /** SPA path for a ticket editor or append page under `/t/:id/...`. */
 export function ticketEditHref(
   id: string,
-  section?: 'plan' | 'scratchpad' | 'handoff' | 'decision-record',
+  section?: 'plan' | 'scratchpad',
 ): string {
   const base = `/t/${encodeURIComponent(id)}`;
   if (!section) return `${base}/edit`;
-  if (section === 'decision-record') return `${base}/decision-record/edit`;
   return `${base}/${section}/edit`;
 }
 
@@ -147,10 +146,6 @@ export function buildShellMeta(pathname: string): ShellMeta {
       title = 'Edit Plan';
     } else if (parts[2] === 'scratchpad' && parts[3] === 'edit') {
       title = 'Edit Scratchpad';
-    } else if (parts[2] === 'handoff' && parts[3] === 'edit') {
-      title = 'Append Handoff';
-    } else if (parts[2] === 'decision-record' && parts[3] === 'edit') {
-      title = 'Append Decision';
     }
   } else if (parts[0] === 'agents') {
     breadcrumbs.push({ label: 'Agents', path: '/agents' });

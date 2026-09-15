@@ -68,8 +68,6 @@ export const BUILTIN_HOTKEY_CATALOG: readonly BuiltinHotkeyEntry[] = [
   { combo: 'r',           description: 'Refresh board',                 scope: 'tickets-board' },
 
   { combo: 'p',           description: 'Edit plan',                     scope: 'ticket' },
-  { combo: 'h',           description: 'Append handoff',                scope: 'ticket' },
-  { combo: 'd',           description: 'Append decision record',        scope: 'ticket' },
   { combo: 's',           description: 'Edit scratchpad',               scope: 'ticket' },
   { combo: '[',           description: 'Previous ticket',           scope: 'ticket' },
   { combo: ']',           description: 'Next ticket',               scope: 'ticket' },
