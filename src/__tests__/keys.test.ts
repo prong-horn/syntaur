@@ -45,7 +45,7 @@ describe('colon-free key builders', () => {
       ...question,
       chat: { kind: 'reply', itemId: 'item~1', agentId: 'claude' },
     };
-    expect(inboxRowKey(chatRow)).toBe('item~1');
+    expect(inboxRowKey(chatRow)).toBe('SYN-142~20260616T000000Z');
   });
 
   it('inboxRowKey shapes', () => {
@@ -82,7 +82,7 @@ describe('colon-free key builders', () => {
       chat: { kind: 'reply', itemId: 'turn-uuid~1', agentId: 'claude' },
     };
     assertNoColon('chat row', inboxRowKey(chatRow));
-    expect(inboxRowKey(chatRow)).toBe('turn-uuid~1');
+    expect(inboxRowKey(chatRow)).toBe('SYN-142~20260615T000000Z');
   });
 
   it('compactInboxTimestamp', () => {

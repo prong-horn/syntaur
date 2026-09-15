@@ -47,7 +47,7 @@ describe('rowKey', () => {
           chat: { kind: 'reply', itemId: 'item~1', agentId: 'claude' },
         }),
       ),
-    ).toBe('item~1');
+    ).toBe('uuid-1~20260616T000000Z');
     expect(rowKey(makeItem({ category: 'review', ticketId: 'uuid-r' }))).toBe('uuid-r~review');
   });
 });
@@ -56,9 +56,11 @@ describe('inboxRowHref', () => {
   it('uses the row key literally in the hash', () => {
     const item = makeItem({
       category: 'question',
+      questionTs: '2026-06-16T00:00:00Z',
+      since: '2026-06-16T00:00:00Z',
       chat: { kind: 'permission', itemId: 'abc~def', agentId: 'cursor' },
     });
-    expect(inboxRowHref(item)).toBe('/inbox#abc~def');
+    expect(inboxRowHref(item)).toBe('/inbox#uuid-1~20260616T000000Z');
   });
 });
 

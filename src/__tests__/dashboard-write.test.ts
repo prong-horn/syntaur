@@ -1887,6 +1887,35 @@ describe('log write-boundary validation', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  it('rejects review log POST without valid verdict and open counts', async () => {
+    await createTicketFixture();
+    const router = createWriteRouter(testDir);
+    const missing = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/log',
+      { id: 'TP-1' },
+      { body: 'Needs work', type: 'review' },
+    );
+    expect(missing.statusCode).toBe(400);
+    const badVerdict = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/log',
+      { id: 'TP-1' },
+      { body: 'Needs work', type: 'review', verdict: 'maybe', open: 'high=1,medium=0' },
+    );
+    expect(badVerdict.statusCode).toBe(400);
+    const badOpen = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/log',
+      { id: 'TP-1' },
+      { body: 'Needs work', type: 'review', verdict: 'changes', open: 'high=1' },
+    );
+    expect(badOpen.statusCode).toBe(400);
+  });
+
   it('still accepts a normal note entry (positive control)', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);

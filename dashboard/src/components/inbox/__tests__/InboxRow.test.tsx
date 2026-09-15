@@ -184,12 +184,14 @@ describe('InboxRow', () => {
     expect(html).toContain('Read plan');
   });
 
-  it('chat row renders id with literal colon in item id', () => {
+  it('chat row renders the compact-ts row key as the anchor id', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <InboxRow
           item={makeItem({
             category: 'question',
+            questionTs: '2026-06-16T00:00:00Z',
+            since: '2026-06-16T00:00:00Z',
             chat: { kind: 'reply', itemId: 'abc:def', agentId: 'claude' },
           })}
           agents={[]}
@@ -199,7 +201,7 @@ describe('InboxRow', () => {
         />
       </MemoryRouter>,
     );
-    expect(html).toContain('id="abc:def"');
+    expect(html).toContain('id="uuid-1~20260616T000000Z"');
   });
 
   it('plain row renders id from questionTs', () => {

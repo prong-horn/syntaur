@@ -253,22 +253,6 @@ export interface TicketProgress {
   entries: TicketProgressEntry[];
 }
 
-export interface TicketCommentEntry {
-  id: string;
-  timestamp: string;
-  author: string;
-  type: 'question' | 'note' | 'feedback';
-  body: string;
-  replyTo?: string;
-  resolved?: boolean;
-}
-
-export interface TicketComments {
-  updated: string;
-  entryCount: number;
-  entries: TicketCommentEntry[];
-}
-
 export interface TicketTransitionAction {
   command: string;
   label: string;

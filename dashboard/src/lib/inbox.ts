@@ -123,10 +123,10 @@ export function compactInboxTimestamp(iso: string): string {
  * Must stay in lockstep with `inboxRowKey` in `src/inbox/index.ts`.
  */
 export function rowKey(item: InboxItem): string {
-  if (item.chat?.itemId) return item.chat.itemId;
   if (item.category === 'question') {
     return `${item.ticketId}~${compactInboxTimestamp(item.since)}`;
   }
+  if (item.chat?.itemId) return item.chat.itemId;
   return `${item.ticketId}~${item.category}`;
 }
 

@@ -321,7 +321,7 @@ describe('InboxPage', () => {
       </MemoryRouter>,
     );
     expect(html).toContain('id="uuid-1~review"');
-    expect(html).toContain('id="item~tilde"');
+    expect(html).toContain('id="uuid-1~20260616T000000Z"');
   });
 
   it('shows Enable notifications when permission is default', async () => {

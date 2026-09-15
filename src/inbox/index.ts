@@ -3,7 +3,7 @@
  *
  * `computeInbox` does ONE O(n) directory scan via `listTicketsByProject`,
  * then for each entry does ONE read+parse of `ticket.md` (via the full
- * parser) and — only when `comments.md` exists — ONE read → `parseComments`.
+ * parser) and — when a log role exists — ONE read of the log-role file.
  * Every predicate, the `since` fallback chain, the accept-verb derivation, and
  * ordering are PURE EXPORTED functions so they unit-test without a server. The
  * core NEVER resolves config/dirs itself — callers pass them in.
@@ -437,10 +437,10 @@ export function compactInboxTimestamp(iso: string): string {
  * Chat rows → chat item id; log question rows → `<ID>~<compact-ts>`; ticket-level → `<ID>~<category>`.
  */
 export function inboxRowKey(item: InboxItem): string {
-  if (item.chat?.itemId) return item.chat.itemId;
   if (item.category === 'question') {
     return `${item.ticketId}~${compactInboxTimestamp(item.since)}`;
   }
+  if (item.chat?.itemId) return item.chat.itemId;
   return `${item.ticketId}~${item.category}`;
 }
 

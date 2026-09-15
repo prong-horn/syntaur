@@ -1047,12 +1047,33 @@ const id = getParam(req.params.id);
       const keys: Record<string, string> = {};
       if (type === 'review') {
         const verdict = typeof body.verdict === 'string' ? body.verdict.trim() : '';
-        const open = typeof body.open === 'string' ? body.open.trim() : '';
-        if (!verdict || !open) {
+        const openRaw = typeof body.open === 'string' ? body.open.trim() : '';
+        if (!verdict || !openRaw) {
           res.status(400).json({ error: 'review requires verdict and open' });
           return;
         }
-        keys.verdict = `${verdict} · open: ${open}`;
+        if (verdict !== 'approve' && verdict !== 'changes') {
+          res.status(400).json({ error: 'review verdict must be approve or changes' });
+          return;
+        }
+        const parts = openRaw.split(',').map((s) => s.trim());
+        let high: number | null = null;
+        let medium: number | null = null;
+        for (const part of parts) {
+          const hm = part.match(/^high=(\d+)$/);
+          const mm = part.match(/^medium=(\d+)$/);
+          if (hm) high = parseInt(hm[1], 10);
+          else if (mm) medium = parseInt(mm[1], 10);
+          else {
+            res.status(400).json({ error: `Invalid open value: ${openRaw}` });
+            return;
+          }
+        }
+        if (high === null || medium === null) {
+          res.status(400).json({ error: 'review requires verdict and open' });
+          return;
+        }
+        keys.verdict = `${verdict} · open: high=${high} medium=${medium}`;
       }
       if (type === 'answer') {
         const answers = typeof body.answers === 'string' ? body.answers.trim() : '';

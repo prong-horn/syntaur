@@ -1263,7 +1263,7 @@ describe('inboxRowKey and rowFingerprint', () => {
     const chat = (await run({ lookupChatItem: (id) => lookup.get(id) ?? null })).items.find(
       (i) => i.ticketSlug === 'chat-slug',
     )!;
-    expect(inboxRowKey(chat)).toBe('perm~chat~item');
+    expect(inboxRowKey(chat)).toBe('CHA-1~20260615T000000Z');
     expect(rowFingerprint(chat)).toContain(permId);
 
     await seed({ id: 'rev-id', slug: 'rev-slug', status: 'review', project: 'p1' });

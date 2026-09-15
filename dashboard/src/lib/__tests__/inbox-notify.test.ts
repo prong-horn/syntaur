@@ -48,19 +48,21 @@ describe('diffChatRows', () => {
   const perm = makeItem({
     category: 'question',
     questionTs: '2026-06-16T00:00:00Z',
+    since: '2026-06-16T00:00:00Z',
     chat: { kind: 'permission', itemId: 'perm-1', agentId: 'cursor' },
   });
   const plan = makeItem({ category: 'plan-approval', ticketId: 'uuid-plan' });
   const reply = makeItem({
     category: 'question',
     questionTs: '2026-06-16T00:01:00Z',
+    since: '2026-06-16T00:01:00Z',
     chat: { kind: 'reply', itemId: 'reply-1', agentId: 'claude' },
   });
 
   it('seeds seen on first paint and returns no fresh rows', () => {
     const { seen, fresh } = diffChatRows(null, [perm, plan]);
     expect(fresh).toEqual([]);
-    expect(seen).toEqual(new Set(['perm-1']));
+    expect(seen).toEqual(new Set(['uuid-1~20260616T000000Z']));
   });
 
   it('returns only new chat rows on subsequent calls', () => {
@@ -100,12 +102,13 @@ describe('notificationFor', () => {
     const item = makeItem({
       category: 'question',
       questionTs: '2026-06-16T00:02:00Z',
+      since: '2026-06-16T00:02:00Z',
       chat: { kind: 'ask', itemId: 'ask-1', agentId: 'cursor' },
     });
     const n = notificationFor(item, agents);
     expect(n.body).toBe('My Task — context line');
-    expect(n.tag).toBe('ask-1');
-    expect(n.href).toBe('/inbox#ask-1');
+    expect(n.tag).toBe('uuid-1~20260616T000200Z');
+    expect(n.href).toBe('/inbox#uuid-1~20260616T000200Z');
   });
 });
 
@@ -146,6 +149,7 @@ describe('notifyFreshRows', () => {
     const item = makeItem({
       category: 'question',
       questionTs: '2026-06-16T00:03:00Z',
+      since: '2026-06-16T00:03:00Z',
       chat: { kind: 'permission', itemId: 'p-new', agentId: 'cursor' },
     });
     const opened: string[] = [];
@@ -159,7 +163,7 @@ describe('notifyFreshRows', () => {
     expect(FakeNotification.records).toHaveLength(1);
     expect(lastInstance).not.toBeNull();
     lastInstance!.onclick?.(null);
-    expect(opened).toEqual(['/inbox#p-new']);
+    expect(opened).toEqual(['/inbox#uuid-1~20260616T000300Z']);
     expect(closeMock).toHaveBeenCalledOnce();
   });
 
