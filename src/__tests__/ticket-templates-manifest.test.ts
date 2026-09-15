@@ -23,6 +23,17 @@ describe('built-in manifests', () => {
       expect(issues).toEqual([]);
     });
   }
+
+  it('feature manifest has six playbooks and stage agents', () => {
+    const manifest = loadBuiltin('feature');
+    expect(manifest.playbooks).toHaveLength(6);
+    const planning = manifest.stages.find((s) => s.id === 'planning');
+    expect(planning?.agent).toBe('claude');
+    expect(planning?.auto).toBe(false);
+    const review = manifest.stages.find((s) => s.id === 'review');
+    expect(review?.reviewer).toBe('cursor');
+    expect(review?.auto).toBe(false);
+  });
 });
 
 function manifestYaml(body: string): string {

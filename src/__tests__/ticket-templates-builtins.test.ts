@@ -53,9 +53,23 @@ describe('built-in template lifecycle', () => {
     expect(await builtinStatus(root, 'feature')).toBe('modified');
 
     const shipped = await readFile(resolve(builtinTemplatesDir(), 'feature', 'template.md'), 'utf-8');
-    const outdated = shipped.replace('feature@1', 'feature@999');
+    const outdated = shipped.replace('feature@2', 'feature@999');
     await writeFile(manifestPath, outdated, 'utf-8');
     expect(await builtinStatus(root, 'feature')).toBe('outdated');
+  });
+
+  it('re-stamped feature@1 reports outdated then current after reset', async () => {
+    await seedMissingBuiltins(root);
+    const manifestPath = resolve(root, 'templates', 'feature', 'template.md');
+    const content = await readFile(manifestPath, 'utf-8');
+    const restamped = content.replace('feature@2', 'feature@1');
+    await writeFile(manifestPath, restamped, 'utf-8');
+    expect(await builtinStatus(root, 'feature')).toBe('outdated');
+
+    await resetBuiltin(root, 'feature');
+    expect(await builtinStatus(root, 'feature')).toBe('current');
+    const restored = await readFile(manifestPath, 'utf-8');
+    expect(restored).toContain('builtin: feature@2');
   });
 
   it('reset restores shipped files, keeps extras', async () => {
@@ -69,7 +83,7 @@ describe('built-in template lifecycle', () => {
     await resetBuiltin(root, 'feature');
 
     const restored = await readFile(manifestPath, 'utf-8');
-    expect(restored).toContain('builtin: feature@1');
+    expect(restored).toContain('builtin: feature@2');
     expect(await readFile(extraPath, 'utf-8')).toBe('keep me');
     expect(await builtinStatus(root, 'feature')).toBe('current');
   });

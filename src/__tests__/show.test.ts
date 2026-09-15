@@ -239,7 +239,7 @@ Log: last 3 entries
   ## 2026-09-10T22:40:00Z · progress · cursor — Implemented max-age filter in computeInbox
   ## 2026-09-10T20:05:00Z · decision · human — Default window is 14 days
   ## 2026-09-10T12:15:00Z · progress · cursor — Started implementation
-Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.
+Stage: in_progress. Implement the approved plan task by task; keep the plan's task checkboxes current. After every meaningful step run syntaur log <ID> -t progress; tick acceptance criteria in ticket.md the moment each is met, never in a batch. journal.md is append-only through syntaur log; never edit it directly. Commit in small logical units with clear messages tied to plan tasks; run the linter or formatter before committing when the project has one; never amend; never commit secrets. If the plan must change mid-flight, add a "Revision N" section to plan.md (reason, what changed, what was already done) and log a decision; after implementation, change course with syntaur plan version <ID> and leave the implemented plan intact. Stopping before done: log a progress entry with the current state and what comes next. Questions for the human go through syntaur log <ID> -t question.
 Next: syntaur review SYN-142
 Commands: syntaur log SYN-142 -t <type> "..."; syntaur block SYN-142 "<reason>"; ask via question log or @mention in chat`);
   });
