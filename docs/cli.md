@@ -182,7 +182,9 @@ Merge legacy per-purpose record files into `journal.md` and switch the ticket of
 syntaur migrate journal [<id>] [--project <slug>] [--all] [--template <id>] [--apply]
 ```
 
-**Sources merged (when present and non-empty):** `progress.md`, `decision-record.md`, `handoff.md`, `comments.md`, `scratchpad.md` — converted to typed log entries, sorted oldest-first, written to `journal.md`. Legacy files are moved into the backup dir on apply. Refuses when `journal.md` already has content beyond the scaffold, when the ticket is not on `legacy`, or when a prior migration left an incomplete backup (resume with `--apply`).
+**Sources merged (when present and non-empty):** `progress.md`, `decision-record.md`, `handoff.md`, `comments.md`, `scratchpad.md` — converted to typed log entries, sorted oldest-first, written to `journal.md`. Legacy files are copied into `.migrate-journal.bak/` on apply and deleted after a successful merge; the backup dir is removed on success.
+
+**Refuse / resume:** Refuses when `journal.md` exists with neither legacy sources nor a complete backup (already migrated). Refuses when the ticket template is not `legacy` and no `journal.md` exists. Resumes when `journal.md` coexists with legacy sources or a complete backup (for example after a crash between template switch and source deletion). `--all` skips tickets that are not `legacy` and have no sources or backup to resume. Both modes print `projects: <absolute path>` first, resolving the projects tree from `config.md` `defaultProjectDir` (same as `syntaur show`, `inbox`, and `search`).
 
 Default `--template` is `feature`. Per-ticket mode takes a ticket id; `--project <slug> --all` migrates every `legacy` ticket in that project.
 

@@ -70,10 +70,6 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
           journal.md                 # CLI-mediated log role: progress, decisions, handoffs, Q&A, reviews (modern templates)
           chat/                      # Kernel: chat notes when template has no log role; attachments for log entries
           scratchpad.md              # Agent-writable notes (legacy template only)
-          progress.md                # Legacy log role / progress file (legacy template only)
-          comments.md                # Legacy Q&A file (legacy template only; merged by migrate journal)
-          handoff.md                 # Legacy handoff file (legacy template only; merged by migrate journal)
-          decision-record.md         # Legacy decision file (legacy template only; merged by migrate journal)
       resources/
         <resource-slug>.md           # Shared-writable: reference material for the project
       memories/
