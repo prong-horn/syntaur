@@ -523,6 +523,37 @@ syntaur inbox --show-snoozed
 
 The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever a ticket changes.
 
+## Hooks
+
+The Claude Code plugin registers session hooks that call `syntaur session` subcommands with the hook JSON payload on stdin. All hook paths exit 0 even on failure.
+
+| Subcommand | Hook event | Purpose |
+|------------|------------|---------|
+| `session register --from-hook` | `SessionStart` | Register the session row; merge session fields into an existing `.syntaur/context.json` when present |
+| `session touch --from-hook` | `PostToolUse`, `UserPromptSubmit` | Bump `updated_at` so the stale sweep does not stop an active session |
+| `session stop --from-hook` | `SessionEnd` | Mark the session stopped and close its open engagement |
+| `session context --from-hook` | `UserPromptSubmit` (separate entry) | Print `hookSpecificOutput` JSON with ticket id, stage, stage instructions, Next, and cross-template playbooks |
+
+Text mode (`syntaur session context --session-id <id>`) prints the same block for measurement and debugging.
+
+Block shape:
+
+```
+# Syntaur
+Ticket: <ID> · <title> · <template> · stage: <stage id>
+Stage instructions: <verbatim multi-line text when declared>
+Next: <hint from syntaur show>
+Run `syntaur show <ID>` for files, gates and commands.
+
+## Playbooks
+### <name>
+<body>
+```
+
+When the session has no open engagement, only the `## Playbooks` section prints (if any cross-template playbooks are enabled). When a stage is not declared by the ticket's template, the block includes `Stage: <id> (not declared by template <t>)` and omits the instructions line. A `dropped` ticket shows `stage: dropped` with no instructions line.
+
+**Cross-template playbooks** are enabled playbooks whose slug is not listed in the `playbooks` field of any template manifest (home copies first, shipped built-ins for ids the home lacks). Disabled slugs in `config.md` and slugs claimed by any template are excluded. The derived manifest under `~/.syntaur/playbooks/` is for the dashboard Library only — the hook reads playbook files directly, not that index.
+
 ## Working a ticket
 
 Agents are worked in the dashboard's **Chat** tab, not in a terminal Syntaur

@@ -97,17 +97,11 @@ Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur unpark <id> --project <project>\` -- clear parked flag
 - \`syntaur new "Title" [-t|--template <id>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
 - \`syntaur rename <id> <new-slug>\` -- rename slug (folder becomes \`<ID>-<new-slug>\`)
-- \`syntaur log <id> -t <type> "body"\` -- append to the template log role (\`syntaur progress log\` aliases \`-t progress\`)
+- \`syntaur log <id> -t <type> "body"\` -- append to the template log role
 
-## Playbooks
+## Stage instructions and playbooks
 
-Playbooks are user-defined behavioral rules stored in \`~/.syntaur/playbooks/\`. Read the playbook manifest before starting work:
-
-\`\`\`bash
-cat ~/.syntaur/playbooks/manifest.md
-\`\`\`
-
-Follow the rules in each playbook. They take precedence over default conventions when they conflict.
+Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow **Stage** and **Next**. Template stage instructions carry the guidance for that ticket's workflow. User playbooks that are not claimed by any template manifest are injected on each prompt by the Claude Code \`UserPromptSubmit\` hook (\`syntaur session context\`); they apply on top of stage instructions when present.
 
 ## Conventions
 

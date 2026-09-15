@@ -50,6 +50,6 @@ Tell the user:
   - `project.md` — human-authored goal and context (edit this). Includes `prefix` and `nextTicket` for ticket ids.
   - `manifest.md` — derived root navigation (do not edit directly).
   - `_index-tickets.md`, `_index-plans.md`, `_index-decisions.md`, `_status.md` — derived indexes.
-- Per-project `agent.md` / `claude.md` are NOT created — protocol v2.0 removed them. Agent-level conventions live at the repo root in `CLAUDE.md` / `AGENTS.md`, and user-defined behavioral rules live in `~/.syntaur/playbooks/<slug>.md`.
+- Per-project `agent.md` / `claude.md` are NOT created — protocol v2.0 removed them. Agent-level conventions live at the repo root in `CLAUDE.md` / `AGENTS.md`; user-defined cross-template playbooks live in `~/.syntaur/playbooks/<slug>.md` and are injected by the prompt hook when not claimed by a template.
 - Suggest they edit `project.md` to fill in the goal, scope, and context sections.
 - Suggest running `syntaur new "<title>" --project <slug>` to add tickets to this project.

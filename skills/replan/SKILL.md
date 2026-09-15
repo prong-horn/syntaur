@@ -5,7 +5,7 @@ description: >-
   ticket after the current plan has been implemented (or a major scope
   shift makes editing the existing plan misleading). Use when the user wants to
   "create plan-v2", "replan", "version the plan", "make a new plan revision",
-  or when work needs another round under the Plan Versioning playbook.
+  or when work needs another round under the in_progress stage instructions for plan versioning.
 license: MIT
 metadata:
   author: prong-horn
@@ -18,14 +18,13 @@ Bump the active ticket to a new plan version (`plan.md` → `plan-v2.md`,
 `plan-v2.md` → `plan-v3.md`, …). The CLI does the deterministic file ops; this
 skill writes the **body** of the new plan.
 
-This skill follows the **Plan Versioning** playbook: prior plan files stay on
+This skill follows the **in_progress** stage instructions for plan versioning: prior plan files stay on
 disk as immutable history; write a new `plan-v<N>.md` instead of rewriting the
 old one.
 
 ## When NOT to use this skill
 
-- The current plan has not been implemented yet — per the Plan Versioning
-  playbook, iterate on `plan.md` directly while it is still in draft /
+- The current plan has not been implemented yet — per the planning and in_progress stage instructions, iterate on `plan.md` directly while it is still in draft /
   in_progress.
 - The ticket is in a terminal stage (`done`, `dropped`).
   Reopen it first via `syntaur reopen`.
@@ -51,8 +50,7 @@ not invent values.
 Read the current plan file (the highest existing `plan*.md`). If its
 `## Tasks` (or equivalent) section still contains unchecked items AND the user
 has not explicitly said the prior plan is done, ask: "The current plan still
-has N unchecked tasks. Are you sure you want to create plan-v<N>? (Plan
-Versioning playbook recommends iterating on `plan.md` until implementation
+has N unchecked tasks. Are you sure you want to create plan-v<N>? (Stage instructions recommend iterating on `plan.md` until implementation
 is complete.)" Stop unless the user confirms.
 
 ## Step 3: Run `syntaur plan version`

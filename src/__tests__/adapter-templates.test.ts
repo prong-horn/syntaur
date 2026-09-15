@@ -71,6 +71,13 @@ describe('renderCursorProtocol', () => {
     expect(out).not.toContain('decision-record.md');
   });
 
+  it('directs agents to stage instructions instead of reading the playbook manifest', () => {
+    const out = renderCursorProtocol();
+    expect(out).toContain('Stage instructions and playbooks');
+    expect(out).toContain('syntaur session context');
+    expect(out).not.toMatch(/cat .*playbooks\/manifest\.md/);
+  });
+
   it('documents scratch project and id-prefixed folders', () => {
     const out = renderCursorProtocol();
     expect(out).toContain('projects/scratch/');
@@ -177,6 +184,13 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur show');
     expect(out).toContain('Stage');
     expect(out).toContain('Commands');
+  });
+
+  it('directs agents to stage instructions instead of reading the playbook manifest', () => {
+    const out = renderCodexAgents(TEST_PARAMS);
+    expect(out).toContain('Stage instructions and playbooks');
+    expect(out).toContain('syntaur session context');
+    expect(out).not.toMatch(/cat .*playbooks\/manifest\.md/);
   });
 
   it('documents scratch project and id-prefixed folders', () => {

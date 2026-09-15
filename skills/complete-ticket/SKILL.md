@@ -27,15 +27,12 @@ From the resolved engagement, note: `projectSlug`, `ticketSlug`, `ticketDir`, `p
 
 Run `syntaur show` to discover the template's log-role file and current **Next** hint.
 
-## Step 2: Load Playbooks
+## Step 2: Follow stage instructions
 
-Read all playbook files from `~/.syntaur/playbooks/`:
-
-```bash
-ls ~/.syntaur/playbooks/*.md 2>/dev/null
-```
-
-Verify your work complies with their rules. If any playbook has completion-related rules (e.g., "run tests before done"), follow them before proceeding.
+Run `syntaur show` and follow **Stage** and **Next**. The review and done stage
+instructions require verifying acceptance criteria, tests, and build before
+handoff; cross-template playbooks injected by the prompt hook apply on top when
+enabled.
 
 ## Step 3: Verify Acceptance Criteria
 

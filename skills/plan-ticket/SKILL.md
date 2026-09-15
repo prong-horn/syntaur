@@ -29,15 +29,11 @@ From the resolved engagement, note:
 - `projectDir` — absolute path to the project folder (may be null for standalone)
 - `workspaceRoot` — absolute path to the workspace (a workspace marker; may be null)
 
-## Step 2: Load Playbooks
+## Step 2: Read stage instructions
 
-Read all playbook files from `~/.syntaur/playbooks/`:
-
-```bash
-ls ~/.syntaur/playbooks/*.md 2>/dev/null
-```
-
-For each file found, read it and follow its directives. Playbooks may contain rules about planning conventions, required steps, or quality expectations that take precedence over default conventions.
+Run `syntaur show` and follow **Stage** and **Next**. The template's stage
+instructions for `planning` carry read-before-plan, plan iteration, and decision
+logging rules — do not skip files listed there.
 
 ## Step 3: Read Ticket Details
 

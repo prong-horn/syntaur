@@ -1400,10 +1400,14 @@ Personal development machine. Projects stored in default location.
 
 ## 20. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
 
-**Ownership:** Human-authored (read-only to agents)
-**Purpose:** Define behavioral rules, workflows, and conventions that agents must follow.
+**Ownership:** Human-authored (agents edit via the dashboard Library; CLI playbook verbs were removed in v2)
+**Purpose:** Optional behavioral rules that apply on top of template stage instructions.
 
-Playbooks are global — they apply across all projects and tickets. They are composable, short markdown files with imperative rules that get injected into agent context at decision points (grabbing tickets, planning, completing work).
+Playbooks are global — they apply across all projects and tickets. Fresh homes seed two cross-template playbooks (`commit-discipline`, `test-before-done`). Template manifests may list playbook slugs in `playbooks[]` for documentation only; that guidance lives in `stages[].instructions` instead.
+
+**Injection:** Cross-template playbooks (enabled slugs not claimed by any template manifest) are injected on each Claude Code prompt by the `UserPromptSubmit` hook via `syntaur session context`. Agents should run `syntaur show <id>` and follow **Stage** and **Next** for template workflow; user playbooks from the hook apply on top when present. The derived manifest is rebuilt for the dashboard Library and is not read by the hook.
+
+The **feature** template expresses the e2e development cycle as its defaults (stages, agents, gates); session mechanics such as worktree creation, `track-session`, and compaction hooks are separate skills and hooks, not stage text.
 
 ### Frontmatter Schema
 

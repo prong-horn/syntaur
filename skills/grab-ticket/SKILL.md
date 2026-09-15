@@ -40,7 +40,8 @@ Read the project entry files:
 - `~/.syntaur/projects/<project-slug>/manifest.md`
 - `~/.syntaur/projects/<project-slug>/project.md`
 
-Repo-level `CLAUDE.md` / `AGENTS.md` and user playbooks under `~/.syntaur/playbooks/` provide agent conventions.
+Repo-level `CLAUDE.md` / `AGENTS.md` provide agent conventions. Cross-template
+playbooks are injected by the prompt hook when enabled.
 
 ## Step 2: Find Tickets
 
@@ -107,9 +108,10 @@ syntaur track-session \
   --path $(pwd)
 ```
 
-## Step 7: Load Playbooks
+## Step 7: Confirm stage context
 
-Read all playbook files from `~/.syntaur/playbooks/` and follow their directives.
+Run `syntaur show` again and read **Stage**, **Next**, and **Commands** so the
+session starts with the template's stage instructions in mind.
 
 ## Step 8: Report to User
 

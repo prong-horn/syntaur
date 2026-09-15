@@ -5,8 +5,8 @@ description: >-
   parentBranch) in the active ticket's `ticket.md` frontmatter
   before any implementation code is written. Use after creating a worktree,
   picking a branch, or any time the user wants to "set the workspace",
-  "wire the ticket to a branch", or per the Workspace Before Code
-  playbook. Validates frontmatter via `syntaur doctor --ticket --json`
+  "wire the ticket to a branch", or when the ready stage instructions require
+  workspace binding before implementation. Validates frontmatter via `syntaur doctor --ticket --json`
   before writing — refuses to touch a malformed file.
 license: MIT
 metadata:
@@ -21,7 +21,7 @@ so that write boundaries are satisfied before implementation work (the Codex plu
 Validates the file first via `syntaur doctor --ticket --json` and
 refuses to write on errors.
 
-This skill implements the **Workspace Before Code** playbook: never write
+This skill implements the **ready** stage instructions: never write
 implementation code until workspace fields are set.
 
 ## When NOT to use this skill

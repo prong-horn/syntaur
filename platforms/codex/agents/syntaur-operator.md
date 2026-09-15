@@ -51,7 +51,7 @@ Tickets live at `~/.syntaur/projects/<slug>/tickets/<ID>-<slug>/` where `<ID>` i
 
 ### Write only via CLI (never edit directly)
 
-- files `syntaur show` lists with writer `cli` — use the **Commands** line (`syntaur log`, `syntaur progress log`)
+- files `syntaur show` lists with writer `cli` — use the **Commands** line (`syntaur log <id> -t progress`, other log types)
 
 ## Protocol Rules
 
@@ -84,7 +84,6 @@ Use these commands directly when needed:
 - `syntaur park <ticket-id> "<reason>" --project <project-slug>`
 - `syntaur unpark <ticket-id> --project <project-slug>`
 - `syntaur log <ticket-id> -t <type> "..." [--project <slug>] [--answers <question-iso>] [--verdict approve|changes] [--open high=<n>,medium=<n>]`
-- `syntaur progress log "<text>" [--ticket <id>] [--project <slug>]` — alias for `-t progress`
 - `syntaur migrate journal [<id>] [--project <slug>] [--all] [--apply]`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]`
@@ -98,12 +97,6 @@ Use these commands directly when needed:
 
 If Syntaur state looks inconsistent (missing files, stale manifests, unexpected hook blocks), run `syntaur doctor` to diagnose. Use `--json` for structured output.
 
-## Playbooks
+## Stage instructions and playbooks
 
-Playbooks are user-defined behavioral rules stored in `~/.syntaur/playbooks/`. Before starting work, read the playbook manifest and then each referenced playbook:
-
-```bash
-cat ~/.syntaur/playbooks/manifest.md
-```
-
-Read each linked playbook and follow the rules in its body section.
+Run `syntaur show <id>` at the start of work and after every lifecycle verb; follow **Stage** and **Next**. Template stage instructions carry workflow guidance. Cross-template user playbooks are injected on each prompt by the Claude Code `UserPromptSubmit` hook (`syntaur session context`) when enabled and not claimed by any template manifest.

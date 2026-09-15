@@ -29,10 +29,10 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`plan-ticket\` -- write a versioned plan file (\`plan.md\`, \`plan-v2.md\`, ...)
 - \`complete-ticket\` -- record the cross-ticket handoff and a final progress entry in the files \`syntaur show\` lists, close the session, and transition state
 - \`resume-session\` -- re-orient on the active ticket from \`.syntaur/context.json\` and any open handoff so a fresh session picks up without re-reading the transcript
-- \`replan\` -- bump the active ticket to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
+- \`replan\` -- bump the active ticket to a new \`plan-v<N>.md\` when the in_progress stage instructions call for \`syntaur plan version\` (CLI does file ops, skill writes the body)
 - \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
 - \`list-tickets\` -- cross-project listing with filters by status, project, tag, age (scriptable output for automation)
-- \`log-progress\` -- append a progress entry via \`syntaur log -t progress\` (alias \`syntaur progress log\`) per Keep Records Updated
+- \`log-progress\` -- append a progress entry via \`syntaur log <ID> -t progress\`
 - \`set-workspace\` -- populate the four \`workspace.*\` fields in \`ticket.md\`; validates via \`syntaur doctor --ticket --json\` before writing
 - \`track-session\` -- register an agent session with the dashboard
 
@@ -129,21 +129,15 @@ Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug}\` -- clear blocked flag
 - \`syntaur park ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set parked flag
 - \`syntaur unpark ${params.ticketSlug} --project ${params.projectSlug}\` -- clear parked flag
-- \`syntaur log ${params.ticketSlug} -t <type> "body" --project ${params.projectSlug}\` -- append to the log role (\`syntaur progress log\` = \`-t progress\`)
+- \`syntaur log ${params.ticketSlug} -t <type> "body" --project ${params.projectSlug}\` -- append to the log role
 
 ## Troubleshooting
 
 If Syntaur state looks inconsistent (missing files, stale manifests, unexpected hook blocks), run \`syntaur doctor\` to diagnose. Use \`--json\` for structured output.
 
-## Playbooks
+## Stage instructions and playbooks
 
-Playbooks are user-defined behavioral rules stored in \`~/.syntaur/playbooks/\`. Before starting work, read the playbook manifest and then each referenced playbook:
-
-\`\`\`bash
-cat ~/.syntaur/playbooks/manifest.md
-\`\`\`
-
-Read each linked playbook and follow the rules in its body section. The \`when_to_use\` field tells you when each playbook applies. Playbooks take precedence over default conventions when they conflict.
+Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow **Stage** and **Next**. Template stage instructions carry the guidance for that ticket's workflow. User playbooks that are not claimed by any template manifest are injected on each prompt by the Claude Code \`UserPromptSubmit\` hook (\`syntaur session context\`); they apply on top of stage instructions when present.
 
 ## Conventions
 

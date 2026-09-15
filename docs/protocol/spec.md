@@ -195,6 +195,10 @@ Every ticket has a `status` field in its frontmatter holding a **stage id** from
 
 **Stage order:** `backlog < planning < ready < in_progress < review < done` (`dropped` is aside).
 
+### Stage instructions and the prompt hook
+
+Each template declares `stages[].instructions` — imperative guidance for that stage. Agents run `syntaur show <id>` and follow **Stage** and **Next**; adapter standing context includes the Stage line. The Claude Code plugin's `UserPromptSubmit` hook calls `syntaur session context --from-hook`, which injects the open engagement's ticket id, current stage, that stage's instructions (verbatim, including line breaks), the Next hint, and only **cross-template** playbooks: enabled slugs not listed in any template manifest's `playbooks` field. Template-claimed playbook slugs are omitted because their content lives in stage instructions. The derived playbook manifest is for the dashboard Library; the hook reads playbook files directly.
+
 Status moves only by explicit lifecycle verbs (`plan`, `approve`, `start`, `review`, `done`, `drop`, `reopen`). Gates declared on the template run at call time; `--force` skips gates and records `forced: true` on the `moved` event.
 
 #### Gate table
