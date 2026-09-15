@@ -148,8 +148,8 @@ export async function trackSessionCommand(
 
   if (options.ticket && ticketId && resolvedTicket) {
     const open = getOpenEngagement(sessionId);
-    if (!open || open.ticket_id !== ticketId) {
-      const oldTicketId = open?.ticket_id ?? null;
+    if (open && open.ticket_id !== ticketId) {
+      const oldTicketId = open.ticket_id;
       let stage = 'implement';
       try {
         const ticketMd = await readFile(resolve(resolvedTicket.ticketDir, 'ticket.md'), 'utf-8');
@@ -165,7 +165,7 @@ export async function trackSessionCommand(
         stage,
       });
       console.log(
-        `Re-bound session ${sessionId} from ${oldTicketId ?? 'none'} to ${ticketId}.`,
+        `Re-bound session ${sessionId} from ${oldTicketId} to ${ticketId}.`,
       );
     }
   }

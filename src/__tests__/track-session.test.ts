@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
@@ -7,7 +7,7 @@ import {
   closeSessionDb,
   resetSessionDb,
 } from '../dashboard/session-db.js';
-import { getSessionById } from '../dashboard/agent-sessions.js';
+import { getSessionById, updateSessionStatus } from '../dashboard/agent-sessions.js';
 import { getOpenEngagement } from '../db/engagement-db.js';
 import { getSessionDb } from '../dashboard/session-db.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
@@ -241,6 +241,56 @@ describe('trackSessionCommand explicit --ticket re-bind', () => {
         .get('rebind-2') as { n: number };
       expect(count.n).toBe(1);
     } finally {
+      if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
+      else process.env.SYNTAUR_HOME = prevHome;
+    }
+  });
+
+  it('does not re-bind or open an engagement on a stopped session', async () => {
+    const projectsDir = resolve(testDir, 'projects');
+    await writePairTickets(projectsDir);
+    const prevHome = process.env.SYNTAUR_HOME;
+    process.env.SYNTAUR_HOME = testDir;
+    await writeFile(
+      resolve(testDir, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
+    );
+    const logs: string[] = [];
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args.map(String).join(' '));
+    });
+    try {
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'stopped-rebind',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-1',
+        },
+        { fallbackPid: () => null },
+      );
+      await updateSessionStatus('', 'stopped-rebind', 'stopped');
+      expect(getOpenEngagement('stopped-rebind')).toBeNull();
+
+      await trackSessionCommand(
+        {
+          agent: 'claude',
+          sessionId: 'stopped-rebind',
+          path: testDir,
+          dir: projectsDir,
+          project: 'proj',
+          ticket: 'ASGN-2',
+        },
+        { fallbackPid: () => null },
+      );
+
+      expect(getOpenEngagement('stopped-rebind')).toBeNull();
+      expect(logs.some((line) => line.includes('Re-bound'))).toBe(false);
+      expect(getSessionById('stopped-rebind')?.status).toBe('stopped');
+    } finally {
+      logSpy.mockRestore();
       if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
       else process.env.SYNTAUR_HOME = prevHome;
     }

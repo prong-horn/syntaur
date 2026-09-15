@@ -443,6 +443,39 @@ describe('syntaur session context CLI', () => {
     expect(res.stdout).toContain('stage: backlog');
   });
 
+  it('text mode exits 1 with stderr when the engagement ticket directory is missing', async () => {
+    await writeFeatureTicket('SCR-99', 'planning');
+    seedEngagement('SCR-99', 'planning');
+    const ticketDir = resolve(home, 'projects', 'scratch', 'tickets', 'SCR-99-feat');
+    await rm(ticketDir, { recursive: true, force: true });
+
+    const res = await runCli(
+      ['session', 'context', '--session-id', SESSION_ID, '--cwd', cwd],
+      home,
+    );
+    expect(res.code).toBe(1);
+    expect(res.stderr).toContain('missing ticket');
+    expect(res.stdout.trim()).toBe('');
+  });
+
+  it('hook mode swallows the missing-ticket error and exits 0 with no output', async () => {
+    await writeFeatureTicket('SCR-100', 'planning');
+    seedEngagement('SCR-100', 'planning');
+    const ticketDir = resolve(home, 'projects', 'scratch', 'tickets', 'SCR-100-feat');
+    await rm(ticketDir, { recursive: true, force: true });
+
+    const payload = JSON.stringify({
+      session_id: SESSION_ID,
+      cwd,
+      hook_event_name: 'UserPromptSubmit',
+      prompt: 'hi',
+    });
+    const res = await runCli(['session', 'context', '--from-hook'], home, payload);
+    expect(res.code).toBe(0);
+    expect(res.stdout.trim()).toBe('');
+    expect(res.stderr.trim()).toBe('');
+  });
+
   it('emits hook JSON with UserPromptSubmit event name', async () => {
     await writeFeatureTicket('SCR-13', 'planning');
     seedEngagement('SCR-13', 'planning');
