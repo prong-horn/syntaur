@@ -25,6 +25,10 @@ import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/regi
 import { logRoleFile } from '../ticket-templates/manifest.js';
 import { latestEntry, parseLogEntries } from '../ticket-templates/log-reader.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import {
+  formatHookOutput,
+  runSessionContext,
+} from './session-context.js';
 
 interface ContextFile {
   sessionId?: string;
@@ -712,6 +716,37 @@ sessionCommand
       await runSessionStop(await readStdin());
     } catch {
       /* always exit 0 */
+    }
+  });
+
+sessionCommand
+  .command('context')
+  .description(
+    'Print the UserPromptSubmit prompt-hook block: ticket id, stage, stage instructions, Next, and cross-template playbooks (session context hook entry point).',
+  )
+  .option('--from-hook', 'Read the hook JSON payload from stdin; emit hookSpecificOutput JSON on stdout')
+  .option('--session-id <id>', 'Use this session id instead of resolving from the payload or context.json')
+  .option('--cwd <path>', 'Working directory for session resolution and ticket lookup', process.cwd())
+  .action(async (options: { fromHook?: boolean; sessionId?: string; cwd?: string }) => {
+    const cwd = options.cwd ?? process.cwd();
+    try {
+      const rawStdin = options.fromHook ? await readStdin() : '';
+      const result = await runSessionContext(rawStdin, {
+        cwd,
+        sessionId: options.sessionId,
+        fromHook: options.fromHook,
+      });
+      if (!result || !result.text) {
+        if (options.fromHook) return;
+        return;
+      }
+      if (options.fromHook) {
+        console.log(formatHookOutput(result.text));
+        return;
+      }
+      console.log(result.text);
+    } catch {
+      /* hook path: always exit 0 */
     }
   });
 

@@ -35,7 +35,7 @@ export interface SessionEngagement {
   open: EngagementBinding | null;
 }
 
-function rowToBinding(row: EngagementRow): EngagementBinding {
+export function rowToBinding(row: EngagementRow): EngagementBinding {
   return {
     ticketId: row.ticket_id,
     projectSlug: null,

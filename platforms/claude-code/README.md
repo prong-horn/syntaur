@@ -6,7 +6,7 @@ Syntaur plugin for Claude Code. Installed automatically during `syntaur setup`.
 
 - **Skills:** grab-ticket, plan-ticket, complete-ticket, create-project, create-ticket, syntaur-protocol, resume-session
 - **Agents:** syntaur-protocol (background)
-- **Hooks:** session-start, session-end, session-touch (PostToolUse / UserPromptSubmit). Write boundaries are documentation-enforced in Claude Code (the Codex plugin enforces them with a PreToolUse hook).
+- **Hooks:** session-start, session-end, session-touch (PostToolUse / UserPromptSubmit), prompt-context (UserPromptSubmit). Write boundaries are documentation-enforced in Claude Code (the Codex plugin enforces them with a PreToolUse hook).
 - **Commands:** track-session, resume-session
 - **References:** protocol docs
 
