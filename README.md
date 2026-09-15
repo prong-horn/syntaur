@@ -202,7 +202,9 @@ syntaur uninstall --all
 
 ### Search
 
-`syntaur search <query>` runs full-text search across the markdown bodies of all Syntaur ticket content — tickets, plans (latest plan version only), progress, comments, handoffs, decision records, and scratchpads. Archived items are excluded unless you pass `--all`.
+`syntaur search <query>` runs full-text search across ticket markdown — `ticket.md`, latest plan, `journal.md` (log role), legacy `progress.md`, scratchpads, and related sidecars until migrated. Archived items are excluded unless you pass `--all`.
+
+Typed records (progress, decisions, handoffs, Q&A, reviews) append via `syntaur log -t <type>` to the template log role (`journal.md` on modern templates). `syntaur progress log` aliases `-t progress`. Legacy tickets can merge sidecars with `syntaur migrate journal`.
 
 ```bash
 # Search across everything

@@ -90,6 +90,24 @@ const CLI_COMMANDS: HelpCommand[] = [
     description: 'Resume a parked ticket.',
     example: 'syntaur unpark UI-1 --project ui-overhaul',
   },
+  {
+    command: 'syntaur log',
+    description:
+      'Append a typed entry to the ticket log role (journal.md on modern templates). Seven types: progress, decision, handoff, note, question, answer, review.',
+    example:
+      'syntaur log UI-1 -t progress "Implemented filter" --project ui-overhaul',
+  },
+  {
+    command: 'syntaur progress log',
+    description: 'Alias of syntaur log -t progress for the active or named ticket.',
+    example: 'syntaur progress log "Shipped first slice" --ticket UI-1 --project ui-overhaul',
+  },
+  {
+    command: 'syntaur migrate journal',
+    description:
+      'Merge legacy progress, comments, handoff, decision-record, and scratchpad files into journal.md and switch off the legacy template.',
+    example: 'syntaur migrate journal LEG-1 --project scratch --apply',
+  },
 
   // --- Dashboard (index 16) ---
   {
@@ -272,14 +290,9 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
           'An underscore-prefixed file regenerated from canonical markdown sources. Read it, but do not edit it directly.',
       },
       {
-        term: 'Handoff',
+        term: 'Journal (log role)',
         description:
-          'An append-only log that records baton-passes between agents or sessions without rewriting prior history.',
-      },
-      {
-        term: 'Decision record',
-        description:
-          'An append-only record of important decisions, rationale, and follow-up consequences.',
+          'The CLI-mediated log file (usually journal.md) holding progress, decisions, handoffs, questions, answers, notes, and reviews. Append via syntaur log or the ticket Journal tab.',
       },
       {
         term: 'Playbook',
@@ -369,7 +382,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       },
       {
         label: 'Ticket page',
-        description: 'The ticket workspace shows lifecycle actions, plan editor, scratchpad, handoff log, decision records, and agent sessions.',
+        description: 'The ticket workspace shows lifecycle actions, plan editor, Journal tab (log entries), scratchpad when present, and agent sessions.',
         href: '/projects',
       },
     ],
@@ -409,6 +422,16 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         answer:
           'When an AI agent starts working on a ticket, it can register a session via the track-session CLI command or the Claude Code plugin\'s /track-session command. The Agent Sessions page shows active and completed sessions with their linked tickets and duration.',
       },
+      {
+        question: 'What is the Journal tab?',
+        answer:
+          'The Journal tab shows typed log entries from the ticket\'s log-role file (journal.md on modern templates). Append progress, decisions, handoffs, notes, questions, answers, and reviews from the UI or via syntaur log -t <type>. Entries are append-only; the CLI and API serialize writes.',
+      },
+      {
+        question: 'How do I ask the human a question?',
+        answer:
+          'Run syntaur log <ticket-id> -t question "your question" (or use the Journal tab). The question appears in Needs me until someone logs syntaur log <id> -t answer "..." --answers <question-entry-timestamp>. Do not use syntaur block for questions.',
+      },
     ],
     firstProjectChecklist: [
       {
@@ -433,8 +456,8 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         href: '/projects',
       },
       {
-        title: 'Record handoffs and decisions without rewriting history',
-        detail: 'Append new handoff and decision entries instead of editing prior entries.',
+        title: 'Record handoffs and decisions in the journal',
+        detail: 'Append via syntaur log -t handoff or -t decision (or the Journal tab) instead of editing prior entries.',
       },
       {
         title: 'Return to Overview for triage',

@@ -9,6 +9,11 @@ describe('dashboard help contract', () => {
     const projectSource = await readFile(resolve(process.cwd(), 'src/commands/project.ts'), 'utf-8');
     const verbsSource = await readFile(resolve(process.cwd(), 'src/commands/verbs.ts'), 'utf-8');
     const planSource = await readFile(resolve(process.cwd(), 'src/commands/plan.ts'), 'utf-8');
+    const progressSource = await readFile(resolve(process.cwd(), 'src/commands/progress.ts'), 'utf-8');
+    const migrateJournalSource = await readFile(
+      resolve(process.cwd(), 'src/commands/migrate-journal.ts'),
+      'utf-8',
+    );
     const commands = getHelpCommandNames();
 
     const VERB_COMMANDS = new Set([
@@ -31,6 +36,13 @@ describe('dashboard help contract', () => {
         expect(projectSource).toContain(`.command('${sub}')`);
       } else if (command === 'plan') {
         expect(indexSource).toContain(`addCommand(planCommand)`);
+      } else if (command === 'progress log') {
+        expect(progressSource).toContain(`.command('log')`);
+      } else if (command === 'migrate journal') {
+        expect(migrateJournalSource).toContain(`new Command('journal')`);
+        expect(indexSource).toContain('journalMigrateCommand');
+      } else if (command === 'log') {
+        expect(indexSource).toContain('addCommand(logCommand)');
       } else if (VERB_COMMANDS.has(command)) {
         expect(verbsSource).toContain(`.command('${command}')`);
       } else {

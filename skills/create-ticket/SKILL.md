@@ -55,8 +55,8 @@ cat ~/.syntaur/projects/<project-slug>/tickets/<ID>-<slug>/ticket.md
 
 Tell the user:
 - The ticket was created with its id (`<PREFIX>-<n>`), slug, priority, template, and location under `tickets/<ID>-<slug>/`.
-- Files created: `ticket.md`, `progress.md`, `comments.md`, `scratchpad.md`, `handoff.md`, `decision-record.md`. **`plan.md` is NOT scaffolded** — plan files are optional and created on demand by the `plan-ticket` skill.
-- Remind the user: `progress.md` is where timestamped progress entries go (NOT `ticket.md`), and `comments.md` is CLI-mediated — write only via `syntaur comment <id> "body" --type question|note|feedback [--reply-to <id>]`.
+- Files created depend on the template — run `syntaur show <id>` for the list. Modern templates scaffold `journal.md` (log role) plus `ticket.md`; `plan.md` is created on demand by `plan-ticket`.
+- Remind the user: progress, decisions, handoffs, and questions go through `syntaur log -t <type> "..."` on the log-role file (NOT inline in `ticket.md`). `syntaur progress log` is an alias for `-t progress`.
 - Suggest editing `ticket.md` to fill in the objective, acceptance criteria, and context.
 - If dependencies were set, note them (ids must resolve).
 - Suggest `grab-ticket <ticket-id>` to claim and start working on it.

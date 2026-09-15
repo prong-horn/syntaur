@@ -9,6 +9,6 @@ Print a compact orientation block from `.syntaur/context.json` and any open hand
 Follow the `resume-session` skill in full. Summary:
 
 1. Run `syntaur session resume`. Surface its output.
-2. Read `<ticketDir>/handoff.md` if present and non-placeholder (canonical single-file handoff).
+2. Read the latest `handoff` log entry (or legacy handoff file when present).
 3. Read `ticket.md` and the tail of `progress.md`.
 4. Report active project / ticket / branch / next concrete action.

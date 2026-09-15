@@ -55,7 +55,7 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 > **Note:** The \`setup-adapter\` command does not parse ticket frontmatter for workspace paths. Workspace boundaries are resolved by the agent at runtime by reading \`ticket.md\` frontmatter. If no \`workspace\` field is set, treat the current working directory as your workspace.
 
 ### Files written only via CLI (never edit directly):
-- \`comments.md\` (any ticket) -- use \`syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]\`
+- Log-role file (\`journal.md\` on modern templates) -- use \`syntaur log <id> -t <type> "body"\` (seven types: progress, decision, handoff, note, question, answer, review)
 
 ### Files you must NEVER write:
 1. \`project.md\` -- human-authored, read-only
@@ -97,7 +97,7 @@ Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur unpark <id> --project <project>\` -- clear parked flag
 - \`syntaur new "Title" [-t|--template <id>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
 - \`syntaur rename <id> <new-slug>\` -- rename slug (folder becomes \`<ID>-<new-slug>\`)
-- \`syntaur comment <id> "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (questions support resolve toggle via dashboard)
+- \`syntaur log <id> -t <type> "body"\` -- append to the template log role (\`syntaur progress log\` aliases \`-t progress\`)
 
 ## Playbooks
 

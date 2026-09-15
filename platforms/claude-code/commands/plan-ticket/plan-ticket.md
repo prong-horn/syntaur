@@ -9,7 +9,7 @@ arguments:
 
 # /plan-ticket
 
-Thin wrapper that invokes the `plan-ticket` skill. The skill lives in `~/.claude/skills/plan-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking the next `plan-v<N>.md`, writing it, and recording key decisions in `decision-record.md`.
+Thin wrapper that invokes the `plan-ticket` skill. The skill lives in `~/.claude/skills/plan-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking the next `plan-v<N>.md`, writing it, and recording key decisions via `syntaur log -t decision`.
 
 ## Instructions
 

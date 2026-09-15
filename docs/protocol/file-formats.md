@@ -196,9 +196,7 @@ The kernel defines exactly **17 fields**:
 
 Cross-ticket references live in frontmatter (`depends_on`, `links`) — not in a body section.
 
-**Q&A is now `comments.md`:** The former `## Questions & Answers` body section has moved out of `ticket.md` into a dedicated `comments.md` file. Comments support multiple types (question, note, feedback), reply threading, and a `resolved` flag on questions. All comment writes are CLI-mediated via `syntaur comment`. See section 9 for the full schema.
-
-**Progress is now `progress.md`:** The former `## Progress` body section has moved into a dedicated `progress.md` file. The agent appends timestamped entries directly. See section 8.
+**Q&A and progress live in the log role:** Modern templates declare `journal.md` with role `log`. Append typed entries via `syntaur log -t <type>` (questions, answers, progress, decisions, handoffs, notes, reviews). See section 5. Legacy templates keep separate files until `syntaur migrate journal` merges them — see sections 7–10.
 
 **Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the ticket file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
 
@@ -331,7 +329,99 @@ Follow the schema from design-auth-schema for key storage.
 
 ---
 
-## 5. scratchpad.md — legacy-template
+## 5. journal.md — log role
+
+**Ownership:** CLI-mediated append-only (`writer: cli` in the template manifest)
+
+The unified log file for modern templates (`feature`, `bug`, `spike`, etc.). One file holds every typed record that used to be spread across `progress.md`, `decision-record.md`, `handoff.md`, and `comments.md` on the `legacy` template. All writes go through `syntaur log` or the dashboard **Journal** tab — never by editing the file directly.
+
+### Frontmatter Schema
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `purpose` | string | required | — | Copied from the template manifest `description` at scaffold time. |
+
+No `entryCount` or `updated` fields — readers sort entries by timestamp in the body.
+
+### Entry grammar
+
+```markdown
+## <ISO-8601Z> · <type> · <author>
+<optional key lines>
+<markdown body>
+```
+
+**Types (exactly seven):** `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review`
+
+**Optional key lines** (directly under the heading):
+
+| Key line | When required | Format |
+|----------|---------------|--------|
+| `verdict: … · open: …` | `review` | `verdict: approve\|changes · open: high=<n> medium=<n>` |
+| `answers: <ISO>` | `answer` | Timestamp of the `question` entry being answered |
+| `attachments: <path>[, <path>]` | optional | Paths under `chat/attachments/` |
+
+New files are **oldest-first** (append at end). Legacy `progress.md` on the `legacy` template remains newest-first until migrated.
+
+### Worked entries
+
+**progress:**
+
+```markdown
+## 2026-09-10T22:40:00Z · progress · cursor
+
+Implemented max-age filter in computeInbox; added API query param and CLI flag.
+```
+
+**decision:**
+
+```markdown
+## 2026-09-10T20:05:00Z · decision · human
+
+**Status:** accepted
+**Context:** Badge counted all historical rows.
+**Decision:** Default window is 14 days; tier-1 live cards exempt from age filter.
+**Consequences:** Nav badge uses same default as page.
+```
+
+**question / answer:**
+
+```markdown
+## 2026-09-11T09:00:00Z · question · cursor
+
+Should snoozed rows appear in the CLI default view?
+
+## 2026-09-11T10:15:00Z · answer · human
+answers: 2026-09-11T09:00:00Z
+
+No — hidden unless --show-snoozed; document in cli.md.
+```
+
+**review:**
+
+```markdown
+## 2026-09-10T23:30:00Z · review · pi
+
+verdict: approve · open: high=0 medium=0
+
+Implementation matches plan. All acceptance criteria verified in tests.
+```
+
+**handoff:**
+
+```markdown
+## 2026-09-12T16:00:00Z · handoff · cursor
+
+Shipped age filter + snooze parity. Remaining: dashboard badge polish (follow-up ticket).
+```
+
+### Open questions
+
+A `question` entry is open until an `answer` entry names it via `answers: <question timestamp>`. The `_status.md` rollup `needsAttention.openQuestions` counts open questions by scanning log-role files (and legacy `comments.md` until migrated).
+
+---
+
+## 6. scratchpad.md — legacy-template
 
 **Ownership:** Agent-writable
 
@@ -379,11 +469,11 @@ Refresh token: opaque string, stored as SHA-256 hash in DB.
 
 ---
 
-## 6. handoff.md — legacy-template
+## 7. handoff.md — legacy (merged by `migrate journal`)
 
-**Ownership:** Agent-writable, append-only
+**Ownership:** Agent-writable, append-only (legacy template only)
 
-> **Note:** Preserved by the `legacy` template. Modern templates may route handoffs through a unified log file (`journal.md`) instead.
+> **Note:** Merged into `journal.md` as `handoff` log entries by `syntaur migrate journal`. Modern templates use `syntaur log -t handoff` on `journal.md` instead.
 
 The **ticket-level cross-ticket outbound** doc. Written at completion (via the `complete-ticket` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
 
@@ -448,11 +538,11 @@ rationale. The connection pooling findings are documented in the project memory
 
 ---
 
-## 7. decision-record.md — legacy-template
+## 8. decision-record.md — legacy (merged by `migrate journal`)
 
-**Ownership:** Agent-writable, append-only
+**Ownership:** Agent-writable, append-only (legacy template only)
 
-> **Note:** Preserved by the `legacy` template. Modern templates may record decisions in a unified log file instead.
+> **Note:** Merged into `journal.md` as `decision` log entries by `syntaur migrate journal`. Modern templates use `syntaur log -t decision` instead.
 
 A structured log of decisions made during the ticket. Each decision is a numbered entry with required fields. The `decisionCount` in frontmatter enables indexing without body parsing. Created as an empty template by scaffolding, optional until first use.
 
@@ -512,11 +602,11 @@ since only the public key needs to be distributed.
 
 ---
 
-## 8. progress.md — legacy-template
+## 9. progress.md — legacy (merged by `migrate journal`)
 
-**Ownership:** Agent-writable, append-only
+**Ownership:** Agent-writable, append-only (`legacy` template log role)
 
-> **Note:** The `legacy` template uses `progress.md` as its log role. Modern templates use `journal.md` (or another path declared in `template.md`). `syntaur progress log` writes to whichever log role the ticket's template declares.
+> **Note:** The `legacy` template still uses `progress.md` as its log role until migrated. `syntaur progress log` is an alias of `syntaur log -t progress`. After `migrate journal`, entries live in `journal.md`.
 
 A reverse-chronological log of work the agent has done on the ticket. This replaces the old `## Progress` body section that used to live inside `ticket.md`. The agent writes entries directly (no CLI mediation). Created as an empty template by scaffolding, optional until first use.
 
@@ -558,15 +648,13 @@ worktree and branch. Reviewed the auth schema from the dependency ticket.
 
 ---
 
-## 9. comments.md — legacy-template
+## 10. comments.md — legacy (merged by `migrate journal`)
 
-**Ownership:** CLI-mediated shared-writable (humans and other agents append via `syntaur comment`)
+**Ownership:** Retired — was CLI-mediated on the `legacy` template only
 
-> **Note:** Preserved by the `legacy` template. Modern templates may route questions and feedback through a unified log file or chat instead.
+> **Note:** Merged into `journal.md` as `question`, `answer`, and `note` log entries by `syntaur migrate journal`. Use `syntaur log -t question|answer|note` on modern templates.
 
-A threaded log of questions, notes, and feedback on the ticket. This replaces the old `## Questions & Answers` body section that used to live inside `ticket.md`. Comments may have a type (`question`, `note`, `feedback`), may reply to another comment, and questions carry a `resolved` flag.
-
-All writes are **mediated by the `syntaur comment` CLI** (or the dashboard write API) — never by directly editing the file. This preserves safe concurrent-write semantics across agents and humans. Created as an empty template by scaffolding, optional until first use.
+Historical threaded Q&A file from the `legacy` template. Preserved here for migration reference only.
 
 ### Frontmatter Schema
 
@@ -636,7 +724,7 @@ The `_status.md` frontmatter field `needsAttention.openQuestions` is computed by
 
 ---
 
-## 10. _index-tickets.md
+## 11. _index-tickets.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -692,7 +780,7 @@ by_status:
 
 ---
 
-## 11. _index-plans.md
+## 12. _index-plans.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -733,7 +821,7 @@ generated: "2026-03-18T15:00:00Z"
 
 ---
 
-## 12. _index-decisions.md
+## 13. _index-decisions.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -773,7 +861,7 @@ generated: "2026-03-18T15:00:00Z"
 
 ---
 
-## 13. Agent Sessions (SQLite)
+## 14. Agent Sessions (SQLite)
 
 **Storage:** `~/.syntaur/syntaur.db` — `sessions` table
 
@@ -844,7 +932,7 @@ syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <
 
 ---
 
-## 14. _status.md
+## 15. _status.md
 
 **Ownership:** Derived (rebuild script only)
 
@@ -959,7 +1047,7 @@ graph TD
 
 ---
 
-## 15. Resource Files
+## 16. Resource Files
 
 **Ownership:** Shared-writable (humans and agents)
 
@@ -1030,7 +1118,7 @@ Product requirements for the authentication system, summarized from the PRD.
 
 ---
 
-## 16. Memory Files
+## 17. Memory Files
 
 **Ownership:** Shared-writable (humans and agents)
 
@@ -1118,7 +1206,7 @@ especially the JWT middleware refresh endpoint which will see high concurrency.
 ---
 
 
-## 17. template.md
+## 18. template.md
 
 **Ownership:** Human-authored (built-ins seeded from the package; never overwritten on upgrade unless reset)
 

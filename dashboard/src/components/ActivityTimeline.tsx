@@ -20,8 +20,8 @@ const TYPE_LABELS: Record<string, string> = {
   created: 'Created',
   'assignee-change': 'Assignee changed',
   'priority-change': 'Priority changed',
-  'comment-added': 'Comment added',
-  'comment-resolved': 'Comment resolved',
+  'log-added': 'Log entry added',
+  'question-answered': 'Question answered',
   logged: 'Logged',
 };
 

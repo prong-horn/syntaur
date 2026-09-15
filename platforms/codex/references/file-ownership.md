@@ -1,59 +1,22 @@
 # File Ownership Rules
 
-## Human-Authored (Read-Only for Agents)
+## Human-Authored (READ-ONLY)
 
-Agents must never modify these files:
+`project.md`, `templates/<id>/template.md`
 
-| File | Location |
-|------|----------|
-| `project.md` | `<project>/project.md` |
+## Agent-Writable
 
-## Agent-Writable (Your Ticket Folder Only)
+`ticket.md`, `plan*.md`, and any file `syntaur show` lists with writer `agent` in your ticket folder only.
 
-You may only write to files inside your assigned ticket folder:
+## CLI-Mediated
 
-| File | Purpose |
-|------|---------|
-| `ticket.md` | Ticket record and source of truth for state |
-| `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). Prior plan files are kept on disk as immutable history. |
-| `progress.md` | Append-only timestamped progress log (newest first). Replaces the old `## Progress` body section. |
-| `scratchpad.md` | Working notes |
-| `handoff.md` | Append-only **ticket-level cross-ticket outbound** at completion (written by `complete-ticket`) |
-| `decision-record.md` | Append-only decision log |
+| Command | Target |
+|---------|--------|
+| `syntaur log <id> -t <type> "body"` | Log role (`journal.md`) |
+| `syntaur progress log "<text>"` | Alias for `-t progress` |
 
-Path pattern (project-nested): `~/.syntaur/projects/<project>/tickets/<your-ticket>/`
-Path pattern (standalone): `~/.syntaur/tickets/<your-ticket-uuid>/`
+Types: progress, decision, handoff, note, question, answer, review.
 
-## CLI-Mediated Shared-Writable
+## Derived (NEVER edit)
 
-Do not edit these files directly. Use the listed CLI commands:
-
-| File | Mediator |
-|------|----------|
-| `comments.md` (any ticket) | `syntaur comment <ticket-id> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
-
-These are bounded exceptions to the single-writer rule.
-
-## Shared-Writable
-
-| Location | Purpose |
-|----------|---------|
-| `<project>/resources/<slug>.md` | Reference material |
-| `<project>/memories/<slug>.md` | Learnings and reusable patterns |
-
-## Derived (Never Edit)
-
-All files prefixed with `_` are derived and rebuilt by tooling:
-
-- `manifest.md`
-- `_index-tickets.md`
-- `_index-plans.md`
-- `_index-decisions.md`
-- `_status.md`
-
-## Workspace Files
-
-When working on code, you may write to files within the workspace defined in ticket frontmatter:
-
-- `workspace.worktree` or `workspace.repository` defines the project root
-- `.syntaur/context.json` in your current working directory is also writable
+`manifest.md`, `_index-*.md`, `_status.md`

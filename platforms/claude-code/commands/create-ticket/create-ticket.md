@@ -9,7 +9,7 @@ arguments:
 
 # /create-ticket
 
-Thin wrapper that invokes the `create-ticket` skill. The skill lives in `~/.claude/skills/create-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking a project or scratch default, validating the type, scaffolding ticket.md / progress.md / comments.md.
+Thin wrapper that invokes the `create-ticket` skill. The skill lives in `~/.claude/skills/create-ticket/` (installed by `syntaur setup` / `syntaur install-plugin`) and contains the full protocol — picking a project or scratch default, validating the template, and scaffolding template-owned files.
 
 ## Instructions
 

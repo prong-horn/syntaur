@@ -32,7 +32,7 @@ If the global Syntaur Codex plugin is installed, prefer these workflows instead 
 - \`replan\` -- bump the active ticket to a new \`plan-v<N>.md\` per the Plan Versioning playbook (CLI does file ops, skill writes the body)
 - \`syntaur-worktree\` -- atomic worktree creation under \`<repository>/.worktrees/<branch>\` plus assign + start + context binding in one move
 - \`list-tickets\` -- cross-project listing with filters by status, project, tag, age (scriptable output for automation)
-- \`log-progress\` -- append a timestamped progress entry to the template's log file via \`syntaur progress log\` (Keep Records Updated playbook)
+- \`log-progress\` -- append a progress entry via \`syntaur log -t progress\` (alias \`syntaur progress log\`) per Keep Records Updated
 - \`set-workspace\` -- populate the four \`workspace.*\` fields in \`ticket.md\`; validates via \`syntaur doctor --ticket --json\` before writing
 - \`track-session\` -- register an agent session with the dashboard
 
@@ -89,7 +89,7 @@ One-off tickets default to \`projects/scratch/\` (prefix \`SCR\`) when created v
 > **Note:** Workspace boundaries are resolved by the agent at runtime by reading \`ticket.md\` frontmatter. If no \`workspace\` field is set, treat the current working directory as your workspace.
 
 ### Files written only via CLI (never edit directly):
-- \`comments.md\` (any ticket) -- use \`syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]\`
+- Log-role file (\`journal.md\` on modern templates) -- use \`syntaur log <id> -t <type> "body"\` (progress, decision, handoff, note, question, answer, review)
 
 ### Files you must NEVER write:
 1. \`project.md\` -- human-authored, read-only
@@ -129,7 +129,7 @@ Use the \`syntaur\` CLI for stage moves and flags:
 - \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug}\` -- clear blocked flag
 - \`syntaur park ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set parked flag
 - \`syntaur unpark ${params.ticketSlug} --project ${params.projectSlug}\` -- clear parked flag
-- \`syntaur comment ${params.ticketSlug} "body" --type question|note|feedback [--reply-to <id>]\` -- append to \`comments.md\` (use for all Q&A; questions support resolve toggle)
+- \`syntaur log ${params.ticketSlug} -t <type> "body" --project ${params.projectSlug}\` -- append to the log role (\`syntaur progress log\` = \`-t progress\`)
 
 ## Troubleshooting
 
@@ -151,10 +151,10 @@ Read each linked playbook and follow the rules in its body section. The \`when_t
 - Ticket folders are \`<ID>-<slug>\`. Slugs are lowercase, hyphen-separated and may be renamed with \`syntaur rename\`.
 - \`depends_on\` and \`links\` hold ticket ids, not slugs.
 - Run \`syntaur show <id>\` at the start of work and after every lifecycle verb; follow Stage and Next.
-- Keep \`ticket.md\` acceptance criteria updated as work lands; use the Commands line from \`show\` for log and comment writes.
-- Keep active plan file(s) current after planning changes. Record the cross-ticket handoff (via \`complete-ticket\`) at the cross-ticket boundary.
+- Keep \`ticket.md\` acceptance criteria updated as work lands; use the Commands line from \`show\` for \`syntaur log\` writes.
+- Keep active plan file(s) current after planning changes. Record handoffs via \`syntaur log -t handoff\` (see \`complete-ticket\`).
 - When requirements shift, write a new versioned plan file instead of rewriting the old one.
-- Record questions, notes, and feedback via \`syntaur comment\`. Never edit \`comments.md\` directly. Resolve questions via the dashboard UI (toggle on the question entry).
+- Record questions via \`syntaur log -t question\`; answer with \`-t answer --answers <question-ts>\`. Never edit the log file directly.
 - Commit frequently with messages referencing the ticket slug.
 `;
 }

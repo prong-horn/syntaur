@@ -2,38 +2,34 @@
 
 ## Human-Authored (READ-ONLY for agents)
 
-Agents must NEVER modify these files:
-
 | File | Location |
 |------|----------|
 | `project.md` | `<project>/project.md` |
+| `templates/<id>/template.md` | `~/.syntaur/templates/` |
 
 ## Agent-Writable (YOUR ticket folder ONLY)
-
-You may ONLY write to files inside your assigned ticket folder:
 
 | File | Purpose |
 |------|---------|
 | `ticket.md` | Ticket record, source of truth for state |
-| `plan*.md` | Versioned implementation plans (`plan.md`, `plan-v2.md`, ...). Prior plan files are kept on disk as immutable history. |
-| `progress.md` | Append-only timestamped progress log (newest first). Replaces the old `## Progress` body section. |
-| `scratchpad.md` | Working notes |
-| `handoff.md` | Append-only **ticket-level cross-ticket outbound** at completion (written by `complete-ticket`) |
-| `decision-record.md` | Append-only decision log |
+| `plan*.md` | Versioned implementation plans |
+| `scratchpad.md` | Working notes (legacy template) |
 
-Path pattern (project-nested): `~/.syntaur/projects/<project>/tickets/<your-ticket>/`
-Path pattern (standalone): `~/.syntaur/tickets/<your-ticket-uuid>/`
+Path: `~/.syntaur/projects/<project>/tickets/<ID>-<slug>/`
 
-## CLI-Mediated Shared-Writable
+Run `syntaur show` — edit only files listed with writer `agent`.
 
-Do NOT edit these files directly. Use the listed CLI commands:
+## CLI-Mediated (never edit directly)
 
-| File | Mediator |
-|------|----------|
-| `comments.md` (any ticket) | `syntaur comment <ticket-id> "body" [--type question\|note\|feedback] [--reply-to <id>]` |
-| Question resolution | `PATCH /api/.../comments/:id/resolved` (dashboard) or toggle in dashboard UI |
+| Mediator | Purpose |
+|----------|---------|
+| `syntaur log <id> -t <type> "body"` | Append to log role (`journal.md` on modern templates) |
+| `syntaur progress log "<text>"` | Alias of `-t progress` |
+| Dashboard **Journal** tab | Same semantics as `syntaur log` |
 
-These are bounded exceptions to the single-writer rule for ticket folders — the CLI serializes writes to avoid conflicts.
+**Types:** `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review`
+
+**Answer questions:** `syntaur log <id> -t answer "..." --answers <question-entry-iso>`
 
 ## Shared-Writable (any agent or human)
 
@@ -44,17 +40,8 @@ These are bounded exceptions to the single-writer rule for ticket folders — th
 
 ## Derived (NEVER edit)
 
-All files prefixed with `_` are derived and rebuilt by tooling:
-- `manifest.md`
-- `_index-tickets.md`
-- `_index-plans.md`
-- `_index-decisions.md`
-- `_status.md`
+- `manifest.md`, `_index-*.md`, `_status.md`
 
 ## Workspace Files
 
-When working on code (not protocol files), you may write to files within
-the workspace defined in your ticket frontmatter:
-- `workspace.worktree` or `workspace.repository` defines your project root
-- You may create and edit source code files within that workspace
-- The `.syntaur/context.json` context file in your working directory is also writable
+Source code within `workspace.worktree` / `workspace.repository` from ticket frontmatter.

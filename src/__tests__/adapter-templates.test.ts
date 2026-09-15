@@ -59,7 +59,7 @@ describe('renderCursorProtocol', () => {
     expect(out).toContain('syntaur block');
     expect(out).toContain('syntaur unblock');
     expect(out).toContain('syntaur park');
-    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur log');
     expect(out).toContain('syntaur new');
   });
 
@@ -159,7 +159,7 @@ describe('renderCodexAgents', () => {
     expect(out).toContain('syntaur assign');
     expect(out).toContain('syntaur start');
     expect(out).toContain('syntaur done');
-    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur log');
   });
 
   it('includes ticket-specific CLI commands', () => {
@@ -168,7 +168,7 @@ describe('renderCodexAgents', () => {
       `syntaur start ${TEST_PARAMS.ticketSlug} --project ${TEST_PARAMS.projectSlug}`,
     );
     expect(out).toContain(
-      `syntaur comment ${TEST_PARAMS.ticketSlug}`,
+      `syntaur log ${TEST_PARAMS.ticketSlug}`,
     );
   });
 
@@ -217,12 +217,12 @@ describe('renderOpenCodeConfig', () => {
     expect(out).toContain(TEST_PARAMS.projectDir);
   });
 
-  it('references syntaur show and comment CLI', () => {
+  it('references syntaur show and log CLI', () => {
     const out = renderOpenCodeConfig({
       projectDir: TEST_PARAMS.projectDir,
     });
     expect(out).toContain('syntaur show');
-    expect(out).toContain('syntaur comment');
+    expect(out).toContain('syntaur log');
   });
 
   it('ends with newline', () => {

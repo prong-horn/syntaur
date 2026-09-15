@@ -112,7 +112,7 @@ Body sections:
 4. **Risks and Open Questions** — anything that might block or complicate implementation.
 5. **Testing Strategy** — how to verify the implementation works.
 
-**Decision capture:** While planning, record meaningful choices (library picks, schema design, architectural calls, rejected alternatives) as numbered entries in `<ticketDir>/decision-record.md` using `## Decision N: <short title>` with Status (proposed/accepted), Context, Decision, Consequences. Downstream tickets that depend on this one auto-load these decisions.
+**Decision capture:** While planning, record meaningful choices via `syntaur log <id> -t decision "..."` with Status / Context / Decision / Consequences in the body (or follow `show` if the template still uses legacy `decision-record.md`).
 
 If the target file already exists (only possible for `plan.md` on first re-run against a scaffolded-but-empty plan), preserve the frontmatter and replace only the body, flipping `status` from `draft` to `in_progress` and updating `updated`.
 
@@ -128,6 +128,6 @@ After writing the plan:
 **Recordkeeping reminders for implementation:**
 - Check off acceptance criteria in `ticket.md` as each one is completed — not in a batch at the end.
 - Append log entries via `syntaur log <ticket-id> -t progress "..."` (or `syntaur progress log` for legacy templates).
-- Record questions via `syntaur log -t question` or `syntaur comment` per what `show` lists in **Commands**.
+- Record questions via `syntaur log <id> -t question "..."` per the **Commands** line from `show`.
 - After the plan is ready, run `syntaur approve <ticket-id>` to move to `ready` when the template declares that stage.
 - Run `syntaur show` after every lifecycle verb; follow **Next**.

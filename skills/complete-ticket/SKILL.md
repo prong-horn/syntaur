@@ -67,7 +67,7 @@ syntaur log <ticket-id> -t handoff "..." [--project <project-slug>]
 
 The body should summarize what was accomplished, current state, next steps, and important context for the reviewer.
 
-For legacy templates that still use `handoff.md`, follow `syntaur show` — append to the file `show` lists only when it is writer `agent`.
+Legacy templates may still list separate `handoff.md` until `migrate journal` — follow `syntaur show` for the writer role on that path.
 
 ## Step 5: Update Acceptance Criteria Checkboxes
 

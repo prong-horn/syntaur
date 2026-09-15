@@ -11,41 +11,27 @@ Protocol version: **2.0**
     <project-slug>/
       manifest.md            # Derived: root navigation (read-only)
       project.md             # Human-authored: project overview (read-only)
-      _index-tickets.md  # Derived (read-only)
+      _index-tickets.md      # Derived (read-only)
       _index-plans.md        # Derived (read-only)
       _index-decisions.md    # Derived (read-only)
       _status.md             # Derived (read-only)
       tickets/
-        <ticket-id>/
-          ticket.md      # Agent-writable: source of truth for state
-          plan*.md           # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
-          progress.md        # Agent-writable, append-only: timestamped progress log
-          comments.md        # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
-          scratchpad.md      # Agent-writable: working notes
-          handoff.md         # Agent-writable: append-only cross-ticket outbound at completion
-          decision-record.md # Agent-writable: append-only decision log
-          sessions/
-            <session-id>/
-              summary.md     # Agent-writable: per-session continuity (single doc, overwritten)
+        <ID>-<slug>/         # Folder name includes ticket id (<PREFIX>-<n>)
+          ticket.md          # Kernel: source of truth for state
+          plan*.md           # Agent-writable: versioned plans (optional)
+          journal.md         # CLI-mediated log role (modern templates)
+          chat/              # Chat notes when no log role; attachments
       resources/
-        _index.md            # Derived (read-only)
         <resource-slug>.md   # Shared-writable
       memories/
-        _index.md            # Derived (read-only)
         <memory-slug>.md     # Shared-writable
-  tickets/
-    <ticket-id>/         # Standalone tickets — folder named by UUID, `project: null`
-      ticket.md          # Same schema as project-nested, `slug` is display-only
-      plan*.md
-      progress.md
-      comments.md
-      scratchpad.md
-      handoff.md
-      decision-record.md
+  templates/                 # Ticket template manifests
   playbooks/
-    manifest.md              # Derived: playbook listing (read-only)
-    <slug>.md                # User-authored: behavioral rules for agents
+    manifest.md              # Derived (read-only)
+    <slug>.md                # User-authored behavioral rules
 ```
+
+One-off tickets default to `projects/scratch/` (prefix `SCR`) when created via `syntaur new` without `--project`.
 
 ## Ticket Lifecycle
 
@@ -87,13 +73,11 @@ Run `syntaur show <id>` (or `syntaur show` with an open engagement) at the start
 ## Key Rules
 
 1. **Ticket frontmatter is the single source of truth** for all ticket state.
-2. **Project-nested tickets** live at `projects/<slug>/tickets/<aslug>/` (folder name = slug). **Standalone tickets** live at `tickets/<uuid>/` (folder name = UUID, `project: null`, slug display-only).
+2. **Ticket folders** are `<ID>-<slug>` under `projects/<slug>/tickets/`.
 3. **Derived files** (underscore-prefixed) are never edited manually.
-4. **Slugs** are lowercase, hyphen-separated.
-5. **Dependencies** are declared via `depends_on` in ticket frontmatter (ticket ids such as `UI-1`). Only valid within the same project — standalone tickets cannot declare `depends_on`.
-6. A ticket cannot `start` while any dependency is not `done`.
-7. **Playbooks** in `~/.syntaur/playbooks/` define behavioral rules agents must follow. Read `manifest.md` for a summary, then read each referenced playbook before starting work.
-8. **Progress** is appended to `progress.md` as timestamped entries (newest first). Do not add a `## Progress` section to `ticket.md`.
-9. **Comments** are appended to `comments.md` via `syntaur comment <id> "body" [--type question|note|feedback] [--reply-to <id>]`. Never edit `comments.md` directly. Questions carry a `resolved` flag.
-10. On resume, read any open `handoff.md` (ticket-level cross-ticket outbound) plus `ticket.md` and the tail of `progress.md`. `syntaur session resume` surfaces the handoff path when present.
-11. **Workspace** paths live under `workspace.repository` and `workspace.worktree` in ticket frontmatter.
+4. **Dependencies** use `depends_on` ticket ids (`<PREFIX>-<n>`).
+5. **Log role** entries append via `syntaur log -t <type>` — never edit `journal.md` directly.
+6. **`syntaur progress log`** is an alias for `syntaur log -t progress`.
+7. **Questions** use `syntaur log -t question`; answers use `-t answer --answers <question-ts>`.
+8. On resume, read the latest `handoff` log entry (or legacy `handoff.md` until migrated) plus `ticket.md` and recent log tail. `syntaur session resume` surfaces handoff context.
+9. **Legacy template** tickets may still have separate `progress.md`, `comments.md`, etc. — run `syntaur migrate journal` to merge into `journal.md`.

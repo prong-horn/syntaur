@@ -56,27 +56,22 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
         <ticket-id>/
           ticket.md              # Agent-writable: source of truth for state
           plan*.md                   # Agent-writable: versioned implementation plans (0+, optional)
-          progress.md                # Agent-writable, append-only: timestamped progress log
-          comments.md                # CLI-mediated: threaded questions/notes/feedback (via `syntaur comment`)
-          scratchpad.md              # Agent-writable: working notes
-          handoff.md                 # Agent-writable: append-only cross-ticket outbound at completion
-          decision-record.md         # Agent-writable: append-only decision log
+          journal.md                 # CLI-mediated log role (progress, decisions, handoffs, Q&A, reviews)
+          chat/                      # Chat notes when no log role; log attachments
+          scratchpad.md              # Legacy template working notes
+          progress.md                # Legacy log role (until migrate journal)
+          comments.md                # Legacy Q&A (until migrate journal)
+          handoff.md                 # Legacy handoff (until migrate journal)
+          decision-record.md         # Legacy decisions (until migrate journal)
       resources/
         _index.md                    # Derived
         <resource-slug>.md           # Shared-writable
       memories/
         _index.md                    # Derived
         <memory-slug>.md             # Shared-writable
-  tickets/
-    <ticket-id>/                 # Standalone tickets — folder = UUID, project: null, slug display-only
-      ticket.md
-      plan*.md
-      progress.md
-      comments.md
-      scratchpad.md
-      handoff.md
-      decision-record.md
 ```
+
+Scratch / one-off tickets use `projects/scratch/tickets/<ID>-<slug>/` (no standalone `~/.syntaur/tickets/` tree).
 
 ---
 
@@ -88,15 +83,13 @@ Syntaur is a **markdown-based, filesystem-hosted protocol** that coordinates wor
 ### Agent-Writable (single-writer per ticket)
 - `ticket.md` — source of truth for ticket state
 - `plan*.md` — versioned implementation plans (optional: `plan.md`, `plan-v2.md`, ...)
-- `progress.md` — append-only timestamped progress log (newest first). Replaces the old `## Progress` body section.
-- `scratchpad.md` — unstructured working notes
-- `handoff.md` — append-only **ticket-level cross-ticket outbound** at completion (written by `complete-ticket`)
-- `decision-record.md` — append-only decision log
+- `scratchpad.md` — unstructured working notes (legacy template)
 
 Only the assigned agent may write to its own ticket folder.
 
-### CLI-Mediated Shared-Writable
-- `comments.md` — threaded questions/notes/feedback. Writes via `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`. Never edit directly.
+### CLI-Mediated (log role)
+- `journal.md` (or template-declared log path) — append-only typed log. Writes via `syntaur log <ticket-id> -t <type> "body"`. Types: progress, decision, handoff, note, question, answer, review. Never edit directly.
+- `chat/` notes when the template has no log role.
 
 ### Shared-Writable (any agent or human)
 - `resources/<slug>.md` — reference material
@@ -179,7 +172,8 @@ Run `syntaur show <id>` at the start of work and after every lifecycle verb. Fol
 ### Coordination (CLI-mediated writes)
 | Command | Description |
 |---------|-------------|
-| `syntaur comment <ticket-id> "body" --type question\|note\|feedback [--reply-to <id>] [--project <slug>]` | Append to `comments.md`. Questions carry a resolve flag toggleable in the dashboard. |
+| `syntaur log <ticket-id> <body> -t <type> [--project <slug>] [--agent <id>] [--verdict approve\|changes] [--open high=<n>,medium=<n>] [--answers <question-iso>] [--attach <path>]` | Append to log role (`journal.md`). Seven types. `syntaur progress log` aliases `-t progress`. |
+| `syntaur migrate journal [<id>] [--project <slug>] [--all] [--apply]` | Merge legacy sidecars into `journal.md` and switch template. |
 
 ### Lifecycle verbs
 | Command | Description |
@@ -334,19 +328,15 @@ Adapters embed protocol knowledge (write boundaries, lifecycle states, CLI comma
 
 **plan files (plan.md, plan-v2.md, ...):** ticket, status (draft/approved/in_progress/completed), created, updated — zero or more per ticket
 
-**progress.md:** ticket, entryCount, generated, updated — body is reverse-chron `## <timestamp>` entries
+**journal.md (log role):** purpose — body entries are `## <ISO> · <type> · <author>` with optional key lines (`verdict`, `answers`, `attachments`)
 
-**comments.md:** ticket, entryCount, generated, updated — body entries are `## <id>` with structured metadata lines (Recorded, Author, Type, optional Reply to, optional Resolved)
-
-**handoff.md:** ticket, updated, handoffCount
-
-**decision-record.md:** ticket, updated, decisionCount
+**progress.md / comments.md / handoff.md / decision-record.md:** legacy template sidecars (see file-formats.md §7–10; merged by `migrate journal`)
 
 **project.md:** id, slug, title, archived, archivedAt, archivedReason, created, updated, externalIds, tags
 
 **manifest.md:** version, project, generated
 
-**_status.md:** project, generated, status, progress (per-stage counts: backlog/planning/ready/in_progress/review/done/dropped), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` is counted from every ticket's `comments.md` (entries where `Type: question` and `Resolved: false` or absent).
+**_status.md:** project, generated, status, progress (per-stage counts), needsAttention (blockedCount/failedCount/**openQuestions**). `openQuestions` counts open `question` log entries (legacy `comments.md` until migrated).
 
 ### Conventions
 - **Timestamps:** RFC 3339 / ISO 8601 with UTC: `2026-03-18T14:30:00Z`
@@ -416,12 +406,12 @@ A: Use `/grab-ticket <project-slug>` — it lists backlog tickets. Or check the 
 A: No. Single-writer guarantee — one agent per ticket folder. Use separate tickets for parallel work.
 
 **Q: What if I need to ask the human a question?**
-A: Run `syntaur comment <id> "question text" --type question`. It appends to `comments.md`, which replaces the old `## Questions & Answers` body section. The question rolls up into `_status.md`'s `openQuestions` counter and shows on the dashboard. Do NOT use `syntaur block` for questions — `blocked` is for runtime obstacles only.
+A: Run `syntaur log <id> -t question "..."`. Open questions roll into Needs me until you or the human logs `syntaur log <id> -t answer "..." --answers <question-entry-iso>`. Do NOT use `syntaur block` for questions — `blocked` is for runtime obstacles only.
 
-**Q: What goes in `progress.md` vs `handoff.md`?**
-A: Two distinct artifacts.
-- `progress.md`: continuous reverse-chron log of what you've done — one entry per meaningful work unit, append-only.
-- `handoff.md`: **ticket-level cross-ticket outbound**, written at completion (via `complete-ticket`) for the next ticket / agent / human reviewer. Append-only. `syntaur session resume` surfaces an open handoff when present.
+**Q: What goes in progress vs handoff log entries?**
+A: Both live in the log role (`journal.md` on modern templates):
+- `progress`: continuous work log after meaningful steps (`syntaur log -t progress` or `syntaur progress log`).
+- `handoff`: completion baton-pass (`syntaur log -t handoff`, required for some `done` gates). `syntaur session resume` surfaces the latest handoff entry.
 
 **Q: How do indexes get updated?**
 A: Derived files are rebuilt by tooling. They are projections of ticket frontmatter. When divergence occurs, re-run rebuild.

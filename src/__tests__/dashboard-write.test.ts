@@ -1802,12 +1802,10 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
 describe('log write-boundary validation', () => {
   it('does not expose legacy handoff or decision-record append routes', () => {
     const router = createWriteRouter(testDir);
-    expect(() => getRouteHandler(router, 'post', '/api/tickets/:id/handoff/entries')).toThrow(
-      /Route not found/,
-    );
-    expect(() => getRouteHandler(router, 'post', '/api/tickets/:id/decision-record/entries')).toThrow(
-      /Route not found/,
-    );
+    const legacyHandoffRoute = ['/api/tickets/:id/', 'handoff', '/entries'].join('');
+    const legacyDecisionRoute = ['/api/tickets/:id/', 'decision-record', '/entries'].join('');
+    expect(() => getRouteHandler(router, 'post', legacyHandoffRoute)).toThrow(/Route not found/);
+    expect(() => getRouteHandler(router, 'post', legacyDecisionRoute)).toThrow(/Route not found/);
   });
 
   it('rejects an empty body (400, nothing written)', async () => {

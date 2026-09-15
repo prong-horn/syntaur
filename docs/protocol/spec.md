@@ -67,11 +67,13 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
         <ID>-<slug>/                 # Agent-writable ticket folder; ID is <PREFIX>-<n> from project.md
           ticket.md              # Agent-writable: the ticket record (source of truth for state)
           plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
-          progress.md                # Agent-writable, append-only: timestamped progress log
-          comments.md                # CLI-mediated shared-writable: threaded questions/notes/feedback
-          scratchpad.md              # Agent-writable: unstructured working memory
-          handoff.md                 # Agent-writable: append-only **ticket-level cross-ticket outbound** at completion
-          decision-record.md         # Agent-writable: append-only decision log
+          journal.md                 # CLI-mediated log role: progress, decisions, handoffs, Q&A, reviews (modern templates)
+          chat/                      # Kernel: chat notes when template has no log role; attachments for log entries
+          scratchpad.md              # Agent-writable notes (legacy template only)
+          progress.md                # Legacy log role / progress file (legacy template only)
+          comments.md                # Legacy Q&A file (legacy template only; merged by migrate journal)
+          handoff.md                 # Legacy handoff file (legacy template only; merged by migrate journal)
+          decision-record.md         # Legacy decision file (legacy template only; merged by migrate journal)
       resources/
         <resource-slug>.md           # Shared-writable: reference material for the project
       memories/
@@ -113,24 +115,24 @@ Files written and maintained exclusively by humans. Agents read these but never 
 
 ### Agent-Writable
 
-Files inside ticket folders. Only the assigned agent writes to its own ticket folder. This single-writer guarantee prevents conflicts between concurrent agents. The single exception is `comments.md`, which is CLI-mediated so other agents and humans can append.
+Files inside ticket folders. Only the assigned agent writes to its own ticket folder. This single-writer guarantee prevents conflicts between concurrent agents.
 
 | File | Purpose |
 |------|---------|
 | `ticket.md` | Ticket record and source of truth for state |
 | `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) |
-| `progress.md` | Append-only timestamped progress log (replaces the old `## Progress` body section) |
-| `scratchpad.md` | Unstructured working notes |
-| `handoff.md` | Append-only handoff log |
-| `decision-record.md` | Append-only decision log |
+| `scratchpad.md` | Unstructured working notes (legacy template) |
 
-### CLI-Mediated Shared-Writable
+### CLI-Mediated (log role and chat)
 
-Inside a ticket folder but writable by anyone through the CLI/API — never via direct editing. This preserves safe concurrency without abandoning the single-writer guarantee at the filesystem level.
+Writable only through `syntaur log` (or the dashboard Journal tab / log API) — never by directly editing the log file. Preserves safe concurrency across agents and humans.
 
-| File | Purpose | Mediator |
+| File / path | Purpose | Mediator |
 |------|---------|----------|
-| `comments.md` | Threaded questions/notes/feedback (replaces the old `## Questions & Answers` body section). Questions carry a `resolved` flag. | `syntaur comment` CLI and dashboard write API |
+| `journal.md` (or template-declared log path) | Append-only typed log: `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review` | `syntaur log` CLI and dashboard log write API |
+| `chat/` notes | Fallback when the template has no log role | `syntaur log` (appends chat notes) |
+
+Legacy templates still use separate `progress.md`, `comments.md`, `handoff.md`, and `decision-record.md` files until `syntaur migrate journal` merges them into `journal.md`.
 
 ### Shared-Writable
 
@@ -366,9 +368,9 @@ The current protocol version is **`"2.0"`**.
 ### Changes in 2.0
 
 - **`project` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone). Ticket classification moved to `template:` (see Templates section).
-- **`progress.md` and `comments.md`** replace the old `## Progress` and `## Questions & Answers` body sections in `ticket.md`. See sections 3 and 4.
+- **Log role (`journal.md`)** replaces the old body sections and legacy sidecars (`progress.md`, `comments.md`, etc.) on modern templates. Append via `syntaur log -t <type>`. See [file-formats.md](./file-formats.md) §5.
 - **Standalone tickets** at `~/.syntaur/tickets/<uuid>/` — tickets that don't belong to any project. Folder is named by UUID.
-- **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, now computed from `comments.md` (question entries with `resolved !== true`).
+- **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, computed from open `question` log entries (legacy `comments.md` until `migrate journal`).
 
 ### Forward Compatibility
 

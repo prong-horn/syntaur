@@ -126,6 +126,76 @@ syntaur show BAS-2 --json
 syntaur show BAS-2 --log -t progress
 ```
 
+Commands line (representative): `syntaur log BAS-2 -t progress "..."`; `syntaur block BAS-2 "<reason>"`; ask via `syntaur log -t question` or @mention in chat.
+
+## `syntaur log <ticket> <body>`
+
+Append a typed entry to the ticket's log-role file (`journal.md` on modern templates, `progress.md` on `legacy`). When the template has no log role, appends a chat note under `chat/` instead.
+
+```
+syntaur log <ticket> <body> -t, --type <type> [--project <slug>] [--agent <id>]
+  [--verdict approve|changes] [--open high=<n>,medium=<n>]   # required for review
+  [--answers <question-entry-iso>]                            # required for answer
+  [--attach <path>]                                           # repeatable; images only
+```
+
+### Entry types (seven)
+
+| Type | Purpose | Extra flags |
+|------|---------|-------------|
+| `progress` | Work log after meaningful steps | — |
+| `decision` | Architecturally significant choice (Status / Context / Decision / Consequences in body) | — |
+| `handoff` | Baton-pass summary for reviewers or the next session (`handoff-logged` gate) | — |
+| `note` | General record not fitting other types | — |
+| `question` | Ask the human something; rolls into Needs me until answered | — |
+| `answer` | Reply to an open question | `--answers <ISO timestamp of question entry>` |
+| `review` | Review verdict for `review-clean` gate | `--verdict`, `--open high=<n>,medium=<n>` |
+
+`--agent` defaults to the session agent id when tracked, otherwise `human`. Image paths on `--attach` are copied into `chat/attachments/` and referenced on the entry.
+
+### Examples
+
+```bash
+syntaur log API-3 -t progress "Finished OAuth callback handler" --project my-api
+syntaur log API-3 -t question "Should refresh tokens be revocable?" --project my-api
+syntaur log API-3 -t answer "Yes — store hashes in DB" --answers 2026-06-15T10:00:00Z --project my-api
+syntaur log API-3 -t review "LGTM" --verdict approve --open high=0,medium=0 --project my-api
+syntaur log API-3 -t handoff "Ready for merge; tests green" --project my-api
+syntaur show API-3 --log -t progress
+```
+
+## `syntaur progress log <text>`
+
+Alias of `syntaur log -t progress` for the active ticket (or `--ticket <id> [--project <slug>]`). Resolves the open engagement when no ticket is given.
+
+```
+syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
+```
+
+On modern templates this writes a `progress` entry to `journal.md`. The `legacy` template still targets `progress.md` (newest-first `# Progress` layout).
+
+## `syntaur migrate journal`
+
+Merge legacy per-purpose record files into `journal.md` and switch the ticket off the `legacy` template. Dry-run by default; pass `--apply` to write. Creates `.migrate-journal.bak/` before applying.
+
+```
+syntaur migrate journal [<id>] [--project <slug>] [--all] [--template <id>] [--apply]
+```
+
+**Sources merged (when present and non-empty):** `progress.md`, `decision-record.md`, `handoff.md`, `comments.md`, `scratchpad.md` — converted to typed log entries, sorted oldest-first, written to `journal.md`. Legacy files are moved into the backup dir on apply. Refuses when `journal.md` already has content beyond the scaffold, when the ticket is not on `legacy`, or when a prior migration left an incomplete backup (resume with `--apply`).
+
+Default `--template` is `feature`. Per-ticket mode takes a ticket id; `--project <slug> --all` migrates every `legacy` ticket in that project.
+
+### Examples
+
+```bash
+# Preview one ticket
+syntaur migrate journal LEG-12 --project my-api
+
+# Apply all legacy tickets in scratch
+syntaur migrate journal --project scratch --all --apply
+```
+
 ## `syntaur template`
 
 Manage ticket template manifests under `~/.syntaur/templates/`.
@@ -203,14 +273,6 @@ syntaur workspace set \
 ```
 
 Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given (`<PREFIX>-<n>`). Provide at least one field flag.
-
-## `syntaur progress log <text>`
-
-Append a progress entry to the ticket's template log-role file. For modern templates this is usually `journal.md` (`## <timestamp> · progress · <author>` entries). The `legacy` template still uses `progress.md` with reverse-chronological `# Progress` entries — the CLI help text still says `progress.md` for that path. Templates with no log role error out (use chat instead).
-
-```
-syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
-```
 
 ## `syntaur unassign <ticket>`
 
@@ -316,10 +378,8 @@ syntaur search <query> [options]
 |------|------|
 | `ticket` | `ticket.md` |
 | `plan` | Latest plan only — `plan-v<N>.md` supersedes `plan.md` when a versioned plan exists |
-| `progress` | `progress.md` |
-| `comments` | `comments.md` |
-| `handoff` | `handoff.md` |
-| `decision-record` | `decision-record.md` |
+| `journal` | `journal.md` (log role on modern templates) |
+| `progress` | `progress.md` (`legacy` log role) |
 | `scratchpad` | `scratchpad.md` |
 
 ### Options
@@ -389,7 +449,7 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 
 | Category | What it means | Action command |
 |---|---|---|
-| `question` | Ticket has an open (unresolved) comment of type `question` (plain or chat-sourced) | Plain: `syntaur comment <id> "<answer>" --reply-to <commentId> --project <p>`. Chat: the `Open chat` URL in `action.command` |
+| `question` | Ticket has an open `question` log entry with no matching `answer` (plain or chat-sourced) | Plain: `syntaur log <id> -t answer "..." --answers <question-ts> --project <p>`. Chat: the `Open chat` URL in `action.command` |
 | `review` | Ticket is in `review` stage — awaiting `done` or `reopen` | `syntaur done <id> --project <p>` or `syntaur reopen <id> --project <p>` |
 | `plan-approval` | Ticket has an unapproved plan-role file (any non-terminal stage) | `syntaur approve <id> --project <p>` |
 
@@ -400,8 +460,8 @@ Snoozes made in the dashboard are stored in `~/.syntaur/inbox-snoozes.json` and 
 - Tickets without an unapproved plan-role file (nothing to approve)
 - Terminal stages: `done`, `dropped`
 - Tickets with `parked` flag set
-- Resolved comments (`resolved: true`)
-- `note` and `feedback` comment types (only `question` awaits a human answer)
+- Answered questions (an `answer` entry names the question timestamp)
+- `note` log types (only `question` awaits a human answer)
 
 ### JSON output shape
 
