@@ -615,7 +615,7 @@ export function TicketDetail() {
       {ticket.referencedBy && ticket.referencedBy.length > 0 && (
         <SectionCard
           title="Referenced by"
-          description="Other tickets whose progress, comments, or handoffs link to this one."
+          description="Other tickets whose journal entries link to this one."
         >
           <ul className="space-y-2">
             {ticket.referencedBy.map((ref) => {
@@ -721,7 +721,7 @@ export function TicketDetail() {
       <ConfirmDialog
         open={showDeleteConfirm}
         title="Delete ticket?"
-        description={`This will permanently delete "${ticket.title}" and all its files (plan, scratchpad, handoff, decision record). This cannot be undone.`}
+        description={`This will permanently delete "${ticket.title}" and all its files (plan, scratchpad, journal, and any legacy record files). This cannot be undone.`}
         confirmLabel="Delete Ticket"
         destructive
         loading={deleteLoading}

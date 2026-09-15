@@ -56,8 +56,6 @@ export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
   'r',
   // TicketDetail page
   'p',
-  'h',
-  'd',
   's',
   '[',
   ']',

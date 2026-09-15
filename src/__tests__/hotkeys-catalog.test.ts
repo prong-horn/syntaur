@@ -137,7 +137,7 @@ describe('effectiveBindings', () => {
 
 describe('BUILTIN_RESERVED_COMBOS catalog completeness', () => {
   it('includes all ticket-detail page shortcuts', () => {
-    for (const k of ['p', 'h', 'd', 's', '[', ']', 'e']) {
+    for (const k of ['p', 's', '[', ']', 'e']) {
       expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
     }
   });
