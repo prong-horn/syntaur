@@ -298,14 +298,15 @@ Inner heading stays in the body.
     expect(counts.rawBlocks).toBe(0);
   });
 
-  it('maps comments to note/question, reply line, resolved answer, and malformed sections', () => {
+  it('maps comments to note/question, reply line, resolved answer, and raw blocks', () => {
     const { entries, counts } = parseCommentEntriesForMigrate(COMMENTS_MD);
     expect(entries.some((e) => e.type === 'question')).toBe(true);
     expect(entries.some((e) => e.type === 'answer' && e.keys?.answers)).toBe(true);
     expect(entries.some((e) => e.body.startsWith('Reply to: q1'))).toBe(true);
     expect(entries.filter((e) => e.type === 'note').length).toBeGreaterThanOrEqual(2);
     expect(entries.some((e) => e.body.includes('Malformed section without Type'))).toBe(true);
-    expect(counts.rawBlocks).toBe(0);
+    expect(entries.some((e) => e.body === 'Feedback becomes note.')).toBe(true);
+    expect(counts.rawBlocks).toBeGreaterThanOrEqual(1);
   });
 
   it('sorts by timestamp with stable source-order ties', async () => {

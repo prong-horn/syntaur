@@ -266,40 +266,69 @@ function parseCommentsForMigrate(fileContent: string): {
   const parsed: ParsedCommentLike[] = [];
   const headerRe =
     /^\s*\*\*Recorded:\*\*\s*(.*)\n\*\*Author:\*\*\s*(.*)\n\*\*Type:\*\*\s*(question|note|feedback)(?:\n\*\*Reply to:\*\*\s*(.*))?(?:\n\*\*Resolved:\*\*\s*(true|false))?\n+([\s\S]*)$/;
+  const commentSplitRe =
+    /^## (?=[^\n]*\n\s*\*\*Recorded:\*\*[^\n]*\n\*\*Author:\*\*[^\n]*\n\*\*Type:\*\*\s*(?:question|note|feedback)\b)/m;
+  const trailingMalformedRe =
+    /\n## ([^\n]+)\n\*\*Recorded:\*\*[^\n]*\n\*\*Author:\*\*[^\n]*\n(?!\*\*Type:\*\*\s*(?:question|note|feedback)\b)[\s\S]*$/;
 
-  const sections = body
-    .split(
-      /^## (?=[^\n]*\n\s*\*\*Recorded:\*\*[^\n]*\n\*\*Author:\*\*[^\n]*\n\*\*Type:\*\*\s*(?:question|note|feedback)\b)/m,
-    )
-    .slice(1);
+  const sections = body.split(commentSplitRe);
+  const preamble = sections[0]?.trim() ?? '';
+  if (preamble && nonEmptyBeyondScaffold(preamble)) {
+    parsed.push({
+      id: 'preamble',
+      timestamp: fileUpdated,
+      author: 'legacy',
+      type: 'note',
+      body: demoteBodyHeadings(preamble),
+      malformed: true,
+    });
+  }
 
-  for (const section of sections) {
+  function pushMalformedSection(sectionText: string): void {
+    const newlineIdx = sectionText.indexOf('\n');
+    const id = newlineIdx === -1 ? sectionText.trim() : sectionText.slice(0, newlineIdx).trim();
+    const rest = newlineIdx === -1 ? '' : sectionText.slice(newlineIdx + 1);
+    parsed.push({
+      id,
+      timestamp: fileUpdated,
+      author: 'legacy',
+      type: 'note',
+      body: demoteBodyHeadings(rest.trim() ? `## ${sectionText}`.trim() : `## ${id}`),
+      malformed: true,
+    });
+  }
+
+  for (const section of sections.slice(1)) {
     const newlineIdx = section.indexOf('\n');
     if (newlineIdx === -1) continue;
     const id = section.slice(0, newlineIdx).trim();
     const rest = section.slice(newlineIdx + 1);
     const headerMatch = rest.match(headerRe);
     if (!headerMatch) {
-      parsed.push({
-        id,
-        timestamp: fileUpdated,
-        author: 'legacy',
-        type: 'note',
-        body: demoteBodyHeadings(rest.trim()),
-        malformed: true,
-      });
+      pushMalformedSection(section);
       continue;
     }
     const [, timestamp, author, type, replyTo, resolvedStr, entryBody] = headerMatch;
+    let bodyText = entryBody.trim();
+    const orphans: string[] = [];
+    while (true) {
+      const orphanMatch = bodyText.match(trailingMalformedRe);
+      if (!orphanMatch || orphanMatch.index === undefined) break;
+      orphans.unshift(bodyText.slice(orphanMatch.index + 1).trimStart());
+      bodyText = bodyText.slice(0, orphanMatch.index).trimEnd();
+    }
     parsed.push({
       id,
       timestamp: normalizeRecordedTimestamp(timestamp.trim()),
       author: mapAuthor(author.trim()),
       type: type as 'question' | 'note' | 'feedback',
-      body: demoteBodyHeadings(entryBody.trim()),
+      body: demoteBodyHeadings(bodyText),
       replyTo: replyTo?.trim(),
       resolved: resolvedStr ? resolvedStr === 'true' : undefined,
     });
+    for (const orphan of orphans) {
+      pushMalformedSection(orphan.startsWith('## ') ? orphan.slice(3) : orphan);
+    }
   }
 
   return { fileUpdated, parsed };
