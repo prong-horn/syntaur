@@ -17,7 +17,9 @@ function isTableSeparatorRow(line: string): boolean {
   return /^\|[\s\-:|]+\|$/.test(line);
 }
 
-function lineHasRealContent(line: string): boolean {
+const NO_PROGRESS_PLACEHOLDER = 'No progress yet.';
+
+export function lineHasRealContent(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith('#')) return false;
@@ -47,6 +49,21 @@ export function nonEmptyBeyondScaffold(content: string): boolean {
     if (lineHasRealContent(line)) return true;
   }
   return false;
+}
+
+/** Strip scaffold from log preamble before the first `## ` entry heading. */
+export function cleanLogPreamble(preamble: string): string {
+  const withoutComments = preamble.replace(HTML_COMMENT_RE, '');
+  const kept: string[] = [];
+  for (const line of withoutComments.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^# /.test(trimmed)) continue;
+    if (trimmed === NO_PROGRESS_PLACEHOLDER) continue;
+    if (!lineHasRealContent(line)) continue;
+    kept.push(line);
+  }
+  return kept.join('\n').trim();
 }
 
 /** First paragraph of a `## <heading>` section (single line). */

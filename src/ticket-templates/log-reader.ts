@@ -1,4 +1,5 @@
 import type { LogEntryType } from './manifest.js';
+import { cleanLogPreamble } from './content.js';
 
 export interface LogEntry {
   timestamp: string;
@@ -44,16 +45,32 @@ function demoteSubHeadings(body: string): string {
   return body.replace(/^## /gm, '### ');
 }
 
-function syntheticTimestampFromFrontmatter(content: string): string {
+function normalizeFmTimestamp(raw: string): string {
+  return raw.replace(/\.\d{3}Z$/, 'Z');
+}
+
+function subtractOneSecond(iso: string): string {
+  const ms = Date.parse(iso);
+  if (Number.isNaN(ms)) return '1970-01-01T00:00:00Z';
+  return new Date(ms - 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+function syntheticTimestamp(content: string, entries: LogEntry[]): string {
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!fmMatch) return '1970-01-01T00:00:00Z';
-  const fm = fmMatch[1];
-  const updated = fm.match(/^updated:\s*"?([^"\n]+)"?\s*$/m)?.[1];
-  if (updated) return updated.replace(/\.\d{3}Z$/, 'Z');
-  const created = fm.match(/^created:\s*"?([^"\n]+)"?\s*$/m)?.[1];
-  if (created) return created.replace(/\.\d{3}Z$/, 'Z');
-  const generated = fm.match(/^generated:\s*"?([^"\n]+)"?\s*$/m)?.[1];
-  if (generated) return generated.replace(/\.\d{3}Z$/, 'Z');
+  if (fmMatch) {
+    const fm = fmMatch[1];
+    const created = fm.match(/^created:\s*"?([^"\n]+)"?\s*$/m)?.[1];
+    if (created) return normalizeFmTimestamp(created);
+    const generated = fm.match(/^generated:\s*"?([^"\n]+)"?\s*$/m)?.[1];
+    if (generated) return normalizeFmTimestamp(generated);
+  }
+  if (entries.length > 0) {
+    const earliest = entries.reduce(
+      (min, e) => (e.timestamp < min ? e.timestamp : min),
+      entries[0].timestamp,
+    );
+    return subtractOneSecond(earliest);
+  }
   return '1970-01-01T00:00:00Z';
 }
 
@@ -144,14 +161,17 @@ export function parseLogEntries(content: string): LogEntry[] {
   }
 
   if (preamble) {
-    entries.push({
-      timestamp: syntheticTimestampFromFrontmatter(normalized),
-      type: 'progress',
-      author: null,
-      keys: {},
-      body: preamble.trim(),
-      firstLine: firstBodyLine(preamble),
-    });
+    const cleaned = cleanLogPreamble(preamble);
+    if (cleaned) {
+      entries.push({
+        timestamp: syntheticTimestamp(normalized, entries),
+        type: 'progress',
+        author: null,
+        keys: {},
+        body: cleaned,
+        firstLine: firstBodyLine(cleaned),
+      });
+    }
   }
 
   entries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));

@@ -69,8 +69,32 @@ Done for the day.
     expect(entries[0].firstLine).toBe('Implementation complete');
   });
 
-  it('keeps preamble before the first entry as a synthetic progress entry', () => {
+  it('ignores scaffold-only preamble before the first entry', () => {
     const content = `---
+entryCount: 1
+created: "2026-05-20T00:00:00Z"
+updated: "2026-05-27T00:00:00Z"
+---
+
+# Progress
+
+<!-- scaffold -->
+
+No progress yet.
+
+## 2026-05-26T13:55:00Z — Implemented, merged
+
+body
+`;
+    const entries = parseLogEntries(content);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].timestamp).toBe('2026-05-26T13:55:00Z');
+    expect(entries[0].firstLine).toBe('Implemented, merged');
+  });
+
+  it('keeps real preamble as a synthetic progress entry stamped from created', () => {
+    const content = `---
+created: "2026-06-01T10:00:00Z"
 updated: "2026-06-01T12:00:00Z"
 ---
 
@@ -84,9 +108,28 @@ Real entry
 `;
     const entries = parseLogEntries(content);
     expect(entries).toHaveLength(2);
-    const synthetic = entries.find((e) => e.timestamp === '2026-06-01T12:00:00Z');
+    const synthetic = entries.find((e) => e.timestamp === '2026-06-01T10:00:00Z');
     expect(synthetic?.type).toBe('progress');
-    expect(synthetic?.body).toContain('Orphan intro line');
+    expect(synthetic?.firstLine).toBe('Orphan intro line.');
+    expect(synthetic?.body).not.toContain('# Progress');
+  });
+
+  it('stamps synthetic preamble one second before the earliest entry without created/generated', () => {
+    const content = `---
+updated: "2026-06-01T12:00:00Z"
+---
+
+# Progress
+
+Orphan intro line.
+
+## 2026-06-01T11:00:00Z · note · human
+
+Real entry
+`;
+    const entries = parseLogEntries(content);
+    const synthetic = entries.find((e) => e.firstLine === 'Orphan intro line.');
+    expect(synthetic?.timestamp).toBe('2026-06-01T10:59:59Z');
   });
 
   it('parses any \\S+ author token in typed headings', () => {

@@ -59,7 +59,8 @@ export async function runProgressLog(
       text,
       author: 'human',
     });
-    return { path, timestamp };
+    const relPath = path.startsWith(dir) ? path.slice(dir.length + 1) : path;
+    return { path: relPath, timestamp };
   }
 
   const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
@@ -100,7 +101,7 @@ progressCommand
           await runLog(fm.id, text, { type: 'progress', project: options.project }, process.cwd()),
         );
       } else {
-        const { path, timestamp } = await runProgressLog(text, options);
+        const { path, timestamp } = await runProgressLog(text, options, process.cwd());
         console.log(`Logged progress to ${path} (${timestamp})`);
       }
     } catch (error) {
