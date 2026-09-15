@@ -22,6 +22,7 @@ const TYPE_LABELS: Record<string, string> = {
   'priority-change': 'Priority changed',
   'comment-added': 'Comment added',
   'comment-resolved': 'Comment resolved',
+  logged: 'Logged',
 };
 
 function typeLabel(type: string): string {

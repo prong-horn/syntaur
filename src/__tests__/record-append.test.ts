@@ -2,8 +2,9 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { appendProgressEntry, appendProgressLog } from '../lifecycle/progress-append.js';
-import { appendDecisionEntry } from '../lifecycle/log-append.js';
+import { appendProgressEntry } from '../lifecycle/progress-append.js';
+import { appendDecisionEntry, appendTypedLogEntry, appendProgressLog } from '../lifecycle/log-append.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { parseProgress } from '../dashboard/parser.js';
 import { parseDecisionRecord } from '../dashboard/parser.js';
 
@@ -104,5 +105,26 @@ describe('appendDecisionEntry', () => {
     expect(parsed.decisionCount).toBe(2);
     expect(content).toContain('## Second');
     expect(content).toContain('## First');
+  });
+});
+
+describe('appendTypedLogEntry', () => {
+  it('writes typed headings on legacy progress.md and bumps entryCount', async () => {
+    await writeFile(
+      join(testDir, 'ticket.md'),
+      '---\nid: T-1\nslug: demo\ntemplate: legacy\nstatus: in_progress\n---\n',
+    );
+    await appendTypedLogEntry({
+      ticketDir: testDir,
+      ticketId: 'T-1',
+      type: 'handoff',
+      body: 'Baton passed',
+      author: 'human',
+    });
+    const content = await readFile(join(testDir, 'progress.md'), 'utf-8');
+    expect(content).toContain('· handoff · human');
+    expect(content).toContain('entryCount: 1');
+    const entries = parseLogEntries(content);
+    expect(entries[0].type).toBe('handoff');
   });
 });

@@ -42,6 +42,7 @@ import { retemplateCliCommand } from './commands/retemplate.js';
 import { showCommand } from './commands/show.js';
 import { workspaceCommand } from './commands/workspace.js';
 import { progressCommand } from './commands/progress.js';
+import { logCommand } from './commands/log.js';
 import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './utils/install-detection.js';
@@ -472,6 +473,7 @@ program.addCommand(templateCommand);
 program.addCommand(retemplateCliCommand);
 program.addCommand(showCommand);
 program.addCommand(workspaceCommand);
+program.addCommand(logCommand);
 program.addCommand(progressCommand);
 program.addCommand(usageCommand);
 

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { resolve } from 'node:path';
 import { fileExists } from '../utils/fs.js';
-import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { appendProgressLog } from '../lifecycle/log-append.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { assertMayMutate } from '../utils/session-id.js';
@@ -39,7 +39,7 @@ export async function runProgressLog(
   text: string,
   options: { ticket?: string; project?: string },
   cwd: string = process.cwd(),
-): Promise<string> {
+): Promise<{ path: string; timestamp: string }> {
   if (!text || text.trim().length === 0) {
     throw new Error('Provide the progress text: `syntaur progress log "<text>"`.');
   }
@@ -66,13 +66,13 @@ export async function runProgressLog(
     /* no session db — human */
   }
 
-  const { path } = await appendProgressLog({
+  const { path, timestamp } = await appendProgressLog({
     ticketDir: dir,
     ticketRef: slug,
     text,
     author,
   });
-  return path;
+  return { path, timestamp };
 }
 
 export const progressCommand = new Command('progress').description(
@@ -81,14 +81,14 @@ export const progressCommand = new Command('progress').description(
 
 progressCommand
   .command('log')
-  .description("Append a timestamped entry to the ticket's progress.md")
+  .description('Alias of `syntaur log -t progress`')
   .argument('<text>', 'Progress entry text')
   .option('--ticket <id>', "Ticket id. Defaults to the session's open engagement")
   .option('--project <slug>', 'Project slug. Required with --ticket for a project-nested ticket')
   .action(async (text: string, options: { ticket?: string; project?: string }) => {
     try {
-      const path = await runProgressLog(text, options);
-      console.log(`Logged progress to ${path}`);
+      const { path, timestamp } = await runProgressLog(text, options);
+      console.log(`Logged progress to ${path} (${timestamp})`);
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));
       process.exit(1);

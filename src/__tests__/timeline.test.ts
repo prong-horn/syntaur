@@ -189,6 +189,21 @@ describe('runTimeline', () => {
     ).toBe('plan.md');
   });
 
+  it('summarizes logged events with type and verdict', () => {
+    expect(
+      summarizeTimelineEvent({
+        ticket_id: TICKET_ID,
+        project_slug: PROJECT,
+        type: 'logged',
+        actor: 'human',
+        at: T2,
+        details: { type: 'review', verdict: 'approve' },
+        source_key: null,
+        event_id: 'e3',
+      }),
+    ).toBe('review (approve)');
+  });
+
   it('resolves a ticket by id and returns its events', async () => {
     await seedProject(PROJECT, 'solo', TICKET_ID);
     recordEvent({ ticketId: TICKET_ID, type: 'moved', actor: 'human', at: T1 });

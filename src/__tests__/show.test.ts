@@ -241,7 +241,7 @@ Log: last 3 entries
   ## 2026-09-10T12:15:00Z · progress · cursor — Started implementation
 Stage: in_progress. Implement the approved plan task by task. Log progress after meaningful steps. Tick acceptance criteria in ticket.md as each is met. Commit in small logical units with clear messages. Never commit secrets. Run linter before commit if configured.
 Next: syntaur review SYN-142
-Commands: syntaur progress log --ticket SYN-142 "..."; syntaur show SYN-142; ask via @mention in chat`);
+Commands: syntaur log SYN-142 -t <type> "..."; syntaur block SYN-142 "<reason>"; ask via question log or @mention in chat`);
   });
 });
 
@@ -312,7 +312,7 @@ Handoff: none
 Log: last 0 entries
 Stage: backlog. Do the work described in the objective, then syntaur done.
 Next: syntaur done SCR-7
-Commands: syntaur show SCR-7; ask via @mention in chat`);
+Commands: syntaur log SCR-7 -t <type> "..."; syntaur block SCR-7 "<reason>"; ask via question log or @mention in chat`);
   });
 });
 
@@ -451,7 +451,7 @@ Did work.
     expect(renderShowText(model)).toContain('Handoff: none');
     expect(renderShowText(model)).toContain('progress.md  log ·');
     expect(renderShowText(model)).toContain(
-      'Commands: syntaur progress log --ticket LEG-1 "..."; syntaur show LEG-1; syntaur comment LEG-1 "..." --type question; ask via @mention in chat',
+      'Commands: syntaur log LEG-1 -t <type> "..."; syntaur block LEG-1 "<reason>"; ask via question log or @mention in chat',
     );
   });
 });

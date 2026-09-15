@@ -88,6 +88,12 @@ export function summarizeTimelineEvent(event: TimelineEvent): string {
     const obj = d as Record<string, unknown>;
     if (obj.file != null) return String(obj.file);
   }
+  if (event.type === 'logged' && d && typeof d === 'object') {
+    const obj = d as Record<string, unknown>;
+    const type = obj.type != null ? String(obj.type) : '';
+    const verdict = obj.verdict != null ? ` (${String(obj.verdict)})` : '';
+    return `${type}${verdict}`;
+  }
   if (d && typeof d === 'object') {
     const pairs = Object.entries(d as Record<string, unknown>)
       .filter(([, v]) => v !== undefined && v !== null)

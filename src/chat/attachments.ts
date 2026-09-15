@@ -64,6 +64,8 @@ export interface ChatAttachmentRecord {
   mimeType: string;
   bytes: number;
   name: string;
+  /** On-disk filename under `chat/attachments/`. */
+  stored: string;
 }
 
 export interface ResolvedChatAttachment {
@@ -101,7 +103,41 @@ export async function writeChatAttachment(
   const tempPath = `${finalPath}.${randomUUID()}.tmp`;
   await writeFile(tempPath, input.bytes);
   await rename(tempPath, finalPath);
-  return { id, mimeType: input.mime, bytes: input.bytes.length, name };
+  return { id, mimeType: input.mime, bytes: input.bytes.length, name, stored };
+}
+
+/** Sniff image mime from magic bytes; fall back to extension when bytes are inconclusive. */
+export function resolveImageMime(bytes: Buffer, filename: string): string | null {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    bytes.length >= 6 &&
+    bytes[0] === 0x47 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x38
+  ) {
+    return 'image/gif';
+  }
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return 'image/webp';
+  }
+  const ext = extname(filename).slice(1).toLowerCase();
+  return EXT_MIME[ext] ?? null;
 }
 
 export async function resolveChatAttachment(

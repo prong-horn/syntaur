@@ -12,7 +12,7 @@ import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { logRoleFile } from './manifest.js';
 import type { StageId, TemplateManifest } from './manifest.js';
 import { markdownBody, objectiveOneLiner, sectionFirstParagraph } from './content.js';
-import { computeNextLine, hasCommentsFile, hasLogRole } from './gates.js';
+import { computeNextLine } from './gates.js';
 import { parseLogEntries, type LogEntry } from './log-reader.js';
 import { fileState } from './roles.js';
 import { stageForStatus } from './stages.js';
@@ -97,17 +97,12 @@ function buildWorkspace(manifest: TemplateManifest, fm: TicketFrontmatter): Show
   };
 }
 
-function buildCommands(ticketId: string, manifest: TemplateManifest): string[] {
-  const commands: string[] = [];
-  if (hasLogRole(manifest)) {
-    commands.push(`syntaur progress log --ticket ${ticketId} "..."`);
-  }
-  commands.push(`syntaur show ${ticketId}`);
-  if (hasCommentsFile(manifest)) {
-    commands.push(`syntaur comment ${ticketId} "..." --type question`);
-  }
-  commands.push('ask via @mention in chat');
-  return commands;
+function buildCommands(ticketId: string, _manifest: TemplateManifest): string[] {
+  return [
+    `syntaur log ${ticketId} -t <type> "..."`,
+    `syntaur block ${ticketId} "<reason>"`,
+    'ask via question log or @mention in chat',
+  ];
 }
 
 function resolveStageBlock(
