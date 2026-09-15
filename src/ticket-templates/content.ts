@@ -18,12 +18,15 @@ function isTableSeparatorRow(line: string): boolean {
 }
 
 const NO_PROGRESS_PLACEHOLDER = 'No progress yet.';
+const NO_SCRATCHPAD_PLACEHOLDER = 'No working notes yet.';
 
 export function lineHasRealContent(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith('#')) return false;
   if (isBoldLabelMetadata(trimmed)) return false;
+  if (trimmed === NO_PROGRESS_PLACEHOLDER || trimmed === NO_SCRATCHPAD_PLACEHOLDER) return false;
+
   const withoutComments = trimmed.replace(HTML_COMMENT_RE, '').trim();
   if (!withoutComments) return false;
 
@@ -59,7 +62,7 @@ export function cleanLogPreamble(preamble: string): string {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (/^# /.test(trimmed)) continue;
-    if (trimmed === NO_PROGRESS_PLACEHOLDER) continue;
+    if (trimmed === NO_PROGRESS_PLACEHOLDER || trimmed === NO_SCRATCHPAD_PLACEHOLDER) continue;
     if (!lineHasRealContent(line)) continue;
     kept.push(line);
   }

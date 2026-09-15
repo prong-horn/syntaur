@@ -257,13 +257,55 @@ describe('migrate journal parsers', () => {
     expect(entries[0].author).toBe('legacy');
   });
 
-  it('maps comments to note/question, reply line, resolved answer, and raw blocks', () => {
+  it('treats scaffold-only scratchpads as empty and yields zero entries', () => {
+    const scaffold = `---
+ticket: MJ-1
+updated: "2026-01-01T20:00:00Z"
+---
+
+# Scratchpad
+
+No working notes yet.
+`;
+    const { entries, counts } = parseScratchpadEntryForMigrate(scaffold);
+    expect(entries).toHaveLength(0);
+    expect(counts.entries).toBe(0);
+  });
+
+  it('keeps markdown headings inside comment bodies intact', () => {
+    const comments = `---
+ticket: MJ-1
+entryCount: 1
+updated: "2026-01-02T09:00:00Z"
+---
+
+# Comments
+
+## c1
+**Recorded:** 2026-01-02T08:00:00Z
+**Author:** human
+**Type:** note
+
+Intro paragraph.
+
+## Findings
+
+Inner heading stays in the body.
+`;
+    const { entries, counts } = parseCommentEntriesForMigrate(comments);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].body).toContain('### Findings');
+    expect(counts.rawBlocks).toBe(0);
+  });
+
+  it('maps comments to note/question, reply line, resolved answer, and malformed sections', () => {
     const { entries, counts } = parseCommentEntriesForMigrate(COMMENTS_MD);
     expect(entries.some((e) => e.type === 'question')).toBe(true);
     expect(entries.some((e) => e.type === 'answer' && e.keys?.answers)).toBe(true);
     expect(entries.some((e) => e.body.startsWith('Reply to: q1'))).toBe(true);
     expect(entries.filter((e) => e.type === 'note').length).toBeGreaterThanOrEqual(2);
-    expect(counts.rawBlocks).toBeGreaterThanOrEqual(1);
+    expect(entries.some((e) => e.body.includes('Malformed section without Type'))).toBe(true);
+    expect(counts.rawBlocks).toBe(0);
   });
 
   it('sorts by timestamp with stable source-order ties', async () => {
@@ -465,7 +507,31 @@ describe('migrate journal apply', () => {
     expect(await fileExists(resolve(ticketDir, MIGRATE_JOURNAL_BACKUP_DIR))).toBe(false);
   });
 
-  it('--all summarizes migrated and refused tickets', async () => {
+  it('removes empty scaffold scratchpads on apply', async () => {
+    await writeFixture({
+      'scratchpad.md': `---
+ticket: MJ-1
+updated: "2026-01-01T20:00:00Z"
+---
+
+# Scratchpad
+
+No working notes yet.
+`,
+    });
+    await migrateJournalTicket(ticketDir, {
+      targetTemplate: 'feature',
+      purpose: 'purpose text',
+      apply: true,
+      ticketId: 'MJ-1',
+      projectSlug: 'demo',
+    });
+    expect(await fileExists(resolve(ticketDir, 'scratchpad.md'))).toBe(false);
+    const journal = await readFile(resolve(ticketDir, JOURNAL_FILENAME), 'utf-8');
+    expect(parseLogEntries(journal).some((e) => e.body.includes('No working notes yet'))).toBe(false);
+  });
+
+  it('--all summarizes migrated, skipped, refused, and undated tickets', async () => {
     await writeFixture();
     const refusedDir = resolve(home, 'projects', 'demo', 'tickets', 'MJ-2-refused');
     await mkdir(refusedDir, { recursive: true });
@@ -476,14 +542,90 @@ describe('migrate journal apply', () => {
     );
     await writeFile(resolve(refusedDir, JOURNAL_FILENAME), '---\npurpose: x\n---\n', 'utf-8');
 
-    const lines = await migrateJournalCommand('MJ-1', {
+    const skippedDir = resolve(home, 'projects', 'demo', 'tickets', 'MJ-3-skipped');
+    await mkdir(skippedDir, { recursive: true });
+    await writeFile(
+      resolve(skippedDir, 'ticket.md'),
+      TICKET_MD.replace('id: MJ-1', 'id: MJ-3')
+        .replace('slug: migrate-me', 'slug: skipped')
+        .replace('template: legacy', 'template: feature'),
+      'utf-8',
+    );
+
+    const lines = await migrateJournalCommand(undefined, {
       project: 'demo',
       all: true,
       apply: false,
-      dir: home,
     });
+    expect(lines[0].text).toBe(`projects: ${resolve(home, 'projects')}`);
     const summary = lines.find((l) => l.text.includes('--all:'));
-    expect(summary?.text).toMatch(/1 migrated, 1 refused/);
+    expect(summary?.text).toMatch(/1 migrated, 1 skipped \(not legacy\), 1 refused/);
+    expect(summary?.text).toMatch(/undated 1/);
+  });
+
+  it('--all resumes non-legacy tickets that still have legacy sources', async () => {
+    await writeFixture();
+    const { entries } = await collectMigrateEntries(ticketDir);
+    await writeFile(resolve(ticketDir, JOURNAL_FILENAME), renderJournalContent(entries, 'purpose'), 'utf-8');
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      TICKET_MD.replace('template: legacy', 'template: feature'),
+      'utf-8',
+    );
+
+    const lines = await migrateJournalCommand(undefined, {
+      project: 'demo',
+      all: true,
+      apply: true,
+    });
+    expect(lines[0].text).toBe(`projects: ${resolve(home, 'projects')}`);
+    expect(await fileExists(resolve(ticketDir, 'progress.md'))).toBe(false);
+    const summary = lines.find((l) => l.text.includes('--all:'));
+    expect(summary?.text).toMatch(/1 migrated, 0 skipped \(not legacy\), 0 refused/);
+  });
+
+  it('uses defaultProjectDir for single-ticket and --all modes', async () => {
+    const altProjects = resolve(home, 'alt-projects');
+    await mkdir(altProjects, { recursive: true });
+    await writeFile(
+      join(home, 'config.md'),
+      `---\nversion: "2.0"\ndefaultProjectDir: ${altProjects}\n---\n`,
+    );
+
+    const decoyDir = resolve(home, 'projects', 'demo', 'tickets', 'MJ-99-decoy');
+    await mkdir(decoyDir, { recursive: true });
+    await writeFile(
+      resolve(decoyDir, 'ticket.md'),
+      TICKET_MD.replace('id: MJ-1', 'id: MJ-99').replace('slug: migrate-me', 'slug: decoy'),
+      'utf-8',
+    );
+    await writeFile(resolve(decoyDir, 'progress.md'), PROGRESS_MD, 'utf-8');
+
+    ticketDir = resolve(altProjects, 'demo', 'tickets', 'MJ-1-migrate-me');
+    await mkdir(resolve(altProjects, 'demo'), { recursive: true });
+    await writeFile(
+      resolve(altProjects, 'demo', 'project.md'),
+      '---\nslug: demo\ntitle: Demo\nprefix: MJ\nnextTicket: 2\n---\n',
+    );
+    await writeFixture({ 'decision-record.md': '', 'handoff.md': '', 'comments.md': '', 'scratchpad.md': '' });
+    for (const file of ['decision-record.md', 'handoff.md', 'comments.md', 'scratchpad.md'] as const) {
+      await rm(resolve(ticketDir, file), { force: true });
+    }
+
+    const singleLines = await migrateJournalCommand('MJ-1', {
+      project: 'demo',
+      apply: true,
+    });
+    expect(singleLines[0].text).toBe(`projects: ${altProjects}`);
+    expect(await fileExists(resolve(ticketDir, JOURNAL_FILENAME))).toBe(true);
+    expect(await fileExists(resolve(decoyDir, 'progress.md'))).toBe(true);
+
+    const allLines = await migrateJournalCommand(undefined, {
+      project: 'demo',
+      all: true,
+      apply: false,
+    });
+    expect(allLines[0].text).toBe(`projects: ${altProjects}`);
   });
 });
 

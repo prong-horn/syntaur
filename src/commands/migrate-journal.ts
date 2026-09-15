@@ -8,6 +8,7 @@ import { Command } from 'commander';
 import { cp, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { expandHome, syntaurRoot } from '../utils/paths.js';
+import { readConfig } from '../utils/config.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { resolveTicketTarget, type TicketTargetOptions } from '../utils/ticket-target.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
@@ -74,6 +75,8 @@ export interface MigrateJournalResult {
   resumed?: boolean;
   lines: MigrateJournalTranscriptLine[];
   totalEntries: number;
+  undated: number;
+  rawBlocks: number;
   targetPath: string;
 }
 
@@ -264,7 +267,13 @@ function parseCommentsForMigrate(fileContent: string): {
   const headerRe =
     /^\s*\*\*Recorded:\*\*\s*(.*)\n\*\*Author:\*\*\s*(.*)\n\*\*Type:\*\*\s*(question|note|feedback)(?:\n\*\*Reply to:\*\*\s*(.*))?(?:\n\*\*Resolved:\*\*\s*(true|false))?\n+([\s\S]*)$/;
 
-  for (const section of body.split(/^## /m).slice(1)) {
+  const sections = body
+    .split(
+      /^## (?=[^\n]*\n\s*\*\*Recorded:\*\*[^\n]*\n\*\*Author:\*\*[^\n]*\n\*\*Type:\*\*\s*(?:question|note|feedback)\b)/m,
+    )
+    .slice(1);
+
+  for (const section of sections) {
     const newlineIdx = section.indexOf('\n');
     if (newlineIdx === -1) continue;
     const id = section.slice(0, newlineIdx).trim();
@@ -276,7 +285,7 @@ function parseCommentsForMigrate(fileContent: string): {
         timestamp: fileUpdated,
         author: 'legacy',
         type: 'note',
-        body: demoteBodyHeadings(`## ${section}`.trimEnd()),
+        body: demoteBodyHeadings(rest.trim()),
         malformed: true,
       });
       continue;
@@ -497,6 +506,26 @@ async function removeBackup(ticketDir: string): Promise<void> {
   await rm(resolve(ticketDir, MIGRATE_JOURNAL_BACKUP_DIR), { recursive: true, force: true });
 }
 
+function sumSourceCounts(perSource: Map<MigrateJournalSource, SourceCounts>): {
+  undated: number;
+  rawBlocks: number;
+} {
+  let undated = 0;
+  let rawBlocks = 0;
+  for (const counts of perSource.values()) {
+    undated += counts.undated;
+    rawBlocks += counts.rawBlocks;
+  }
+  return { undated, rawBlocks };
+}
+
+export async function resolveMigrateProjectsDir(
+  options: TicketTargetOptions = {},
+): Promise<string> {
+  const config = await readConfig();
+  return options.dir ? expandHome(options.dir) : config.defaultProjectDir;
+}
+
 async function deleteSources(ticketDir: string, sources: MigrateJournalSource[]): Promise<void> {
   for (const file of sources) {
     await rm(resolve(ticketDir, file), { force: true });
@@ -533,6 +562,8 @@ export async function migrateJournalTicket(
       refuseReason: 'already migrated (journal.md exists with no legacy sources or backup)',
       lines: [{ source: 'summary', text: `${mode}refused: already migrated` }],
       totalEntries: 0,
+      undated: 0,
+      rawBlocks: 0,
       targetPath: JOURNAL_FILENAME,
     };
   }
@@ -544,6 +575,8 @@ export async function migrateJournalTicket(
       refuseReason: `template ${template} is not legacy and no journal.md exists`,
       lines: [{ source: 'summary', text: `${mode}refused: non-legacy ticket without journal.md` }],
       totalEntries: 0,
+      undated: 0,
+      rawBlocks: 0,
       targetPath: JOURNAL_FILENAME,
     };
   }
@@ -584,6 +617,7 @@ export async function migrateJournalTicket(
   }
 
   if (!options.apply) {
+    const { undated, rawBlocks } = sumSourceCounts(perSource);
     lines.push({
       source: 'summary',
       text: `${mode}total: ${entries.length} entries → ${JOURNAL_FILENAME} (template → ${options.targetTemplate})`,
@@ -593,6 +627,8 @@ export async function migrateJournalTicket(
       resumed: resume,
       lines,
       totalEntries: entries.length,
+      undated,
+      rawBlocks,
       targetPath: JOURNAL_FILENAME,
     };
   }
@@ -656,11 +692,14 @@ export async function migrateJournalTicket(
       text: `${mode}migrated ${ticketId}: ${entries.length} entries → ${JOURNAL_FILENAME}, template → ${options.targetTemplate}`,
     });
 
+    const { undated, rawBlocks } = sumSourceCounts(perSource);
     return {
       ticketId,
       resumed: resume,
       lines,
       totalEntries: entries.length,
+      undated,
+      rawBlocks,
       targetPath: JOURNAL_FILENAME,
     };
   } catch (err) {
@@ -697,17 +736,30 @@ export async function migrateJournalCommand(
     if (!options.project) {
       throw new Error('--all requires --project <slug>');
     }
-    const projectsDir = resolve(expandHome(options.dir ?? root), 'projects');
+    const projectsDir = await resolveMigrateProjectsDir(options);
+    const projectsLine = `projects: ${projectsDir}`;
+    allLines.push({ source: 'summary', text: projectsLine });
+    console.log(projectsLine);
+
     const walk = await listTicketsByProject(projectsDir);
     let migrated = 0;
+    let skipped = 0;
     let refused = 0;
+    let totalUndated = 0;
     const refusedIds: string[] = [];
 
     for (const entry of walk.withTicketMd) {
       if (entry.projectSlug !== options.project) continue;
       const ticketMd = await readFile(resolve(entry.ticketDir, 'ticket.md'), 'utf-8');
       const fm = parseTicketFrontmatter(ticketMd);
-      if ((fm.template ?? 'legacy') !== 'legacy') continue;
+      const isLegacy = (fm.template ?? 'legacy') === 'legacy';
+      const sources = await existingSources(entry.ticketDir);
+      const backupComplete = await backupIsComplete(entry.ticketDir);
+      const canResume = sources.length > 0 || backupComplete;
+      if (!isLegacy && !canResume) {
+        skipped += 1;
+        continue;
+      }
       const id = fm.id || entry.ticketId;
       if (!id) continue;
 
@@ -725,6 +777,8 @@ export async function migrateJournalCommand(
         console.log(line.text);
       }
 
+      totalUndated += result.undated;
+
       if (result.refused) {
         refused += 1;
         refusedIds.push(id);
@@ -734,7 +788,9 @@ export async function migrateJournalCommand(
     }
 
     const mode = options.apply ? '[apply] ' : '[dry-run] ';
-    const summary = `${mode}--all: ${migrated} migrated, ${refused} refused` +
+    const summary =
+      `${mode}--all: ${migrated} migrated, ${skipped} skipped (not legacy), ${refused} refused` +
+      (totalUndated > 0 ? `, undated ${totalUndated}` : '') +
       (refusedIds.length > 0 ? ` (${refusedIds.join(', ')})` : '');
     allLines.push({ source: 'summary', text: summary });
     console.log(summary);
@@ -744,6 +800,11 @@ export async function migrateJournalCommand(
   if (!ticketId) {
     throw new Error('ticket id required unless --project <slug> --all is used');
   }
+
+  const projectsDir = await resolveMigrateProjectsDir(options);
+  const projectsLine = `projects: ${projectsDir}`;
+  allLines.push({ source: 'summary', text: projectsLine });
+  console.log(projectsLine);
 
   const target = await resolveTicketTarget(ticketId, options);
   const result = await migrateJournalTicket(target.ticketDir, {
@@ -756,12 +817,18 @@ export async function migrateJournalCommand(
   });
 
   if (result.refused) {
-    for (const line of result.lines) console.log(line.text);
+    for (const line of result.lines) {
+      allLines.push(line);
+      console.log(line.text);
+    }
     throw new Error(result.refuseReason ?? 'migration refused');
   }
 
-  for (const line of result.lines) console.log(line.text);
-  return result.lines;
+  for (const line of result.lines) {
+    allLines.push(line);
+    console.log(line.text);
+  }
+  return allLines;
 }
 
 export const journalMigrateCommand = new Command('journal')
