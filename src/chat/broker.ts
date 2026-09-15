@@ -46,10 +46,15 @@ import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
-import { appendComment } from '../lifecycle/comment-append.js';
-import { resolveQuestionComments } from '../lifecycle/comment-resolve.js';
+import { appendTypedLogEntry } from '../lifecycle/log-append.js';
+import { answerChatQuestions } from '../lifecycle/answer-questions.js';
+import {
+  byAgentAndKind,
+  byKindAndItemIds,
+  byQuestionTimestamp,
+} from '../lifecycle/question-predicates.js';
+import type { LogEntry } from '../ticket-templates/log-reader.js';
 import { appendProgressLog, ticketHasLogRole } from '../lifecycle/progress-append.js';
-import { type ParsedComment } from '../dashboard/parser.js';
 import {
   detectOpenQuestion,
   formatChatQuestionMarker,
@@ -332,7 +337,7 @@ interface PendingPermission {
   title: string;
   options: acp.PermissionOption[];
   graceTimer: ReturnType<typeof setTimeout> | null;
-  inboxCommentId: string | null;
+  inboxQuestionTs: string | null;
   recorded: Promise<void>;
 }
 
@@ -347,7 +352,7 @@ interface PendingQuestion {
     allowMultiple?: boolean;
   }>;
   graceTimer: ReturnType<typeof setTimeout> | null;
-  inboxCommentId: string | null;
+  inboxQuestionTs: string | null;
   recorded: Promise<void>;
 }
 
@@ -552,43 +557,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
   }
 
-  function byCommentId(id: string): (c: ParsedComment) => boolean {
-    return (c) => c.id === id;
-  }
-
-  function byAgentAndKind(agentId: string, kinds: ChatQuestionKind[]): (c: ParsedComment) => boolean {
-    const kindSet = new Set(kinds);
-    return (c) => {
-      if (c.author !== agentId || c.type !== 'question' || c.resolved === true) return false;
-      const { ref } = parseChatQuestionMarker(c.body);
-      return ref !== null && kindSet.has(ref.kind);
-    };
-  }
-
-  function byKindAndItemIds(kind: ChatQuestionKind, itemIds: string[]): (c: ParsedComment) => boolean {
-    const idSet = new Set(itemIds);
-    return (c) => {
-      if (c.type !== 'question' || c.resolved === true) return false;
-      const { ref } = parseChatQuestionMarker(c.body);
-      return ref !== null && ref.kind === kind && idSet.has(ref.itemId);
-    };
-  }
-
   async function fileChatQuestion(
     session: Session,
     ref: ChatQuestionRef,
     text: string,
   ): Promise<string | null> {
     try {
-      return await withRecordLock(session.ticket.ticketDir, () =>
-        appendComment({
+      const { timestamp } = await withRecordLock(session.ticket.ticketDir, () =>
+        appendTypedLogEntry({
           ticketDir: session.ticket.ticketDir,
-          ticketRef: session.ticket.ticketSlug,
-          author: session.agentId,
+          ticketId: session.ticket.id,
+          projectSlug: session.ticket.projectSlug,
           type: 'question',
           body: `${text}\n\n${formatChatQuestionMarker(ref)}`,
+          author: session.agentId,
         }),
       );
+      return timestamp;
     } catch (err) {
       try {
         await record(
@@ -603,20 +588,23 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
   }
 
-  async function resolveChatQuestions(
+  async function answerOpenQuestions(
     target: Session | ResolvedTicket,
-    predicate: (c: ParsedComment) => boolean,
+    predicate: (e: LogEntry) => boolean,
+    body: string,
   ): Promise<void> {
-    const ticketDir = 'ticket' in target ? target.ticket.ticketDir : target.ticketDir;
+    const ticket = 'ticket' in target ? target.ticket : target;
     const session = 'ticket' in target ? target : null;
     try {
-      await withRecordLock(ticketDir, () => resolveQuestionComments(ticketDir, predicate));
+      await withRecordLock(ticket.ticketDir, () =>
+        answerChatQuestions(ticket.ticketDir, ticket.id, predicate, body),
+      );
     } catch (err) {
       if (session) {
         try {
           await record(session, 'system', {
             level: 'warn',
-            text: `Could not resolve the Inbox question: ${(err as Error).message}`,
+            text: `Could not answer the Inbox question: ${(err as Error).message}`,
           });
         } catch {
           /* swallow */
@@ -628,15 +616,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function settlePendingCard(
     session: Session,
     pending: PendingPermission | PendingQuestion,
+    answerBody: string,
   ): Promise<void> {
     if (pending.graceTimer) {
       clearTimeout(pending.graceTimer);
       pending.graceTimer = null;
     }
-    if (pending.inboxCommentId) {
-      const commentId = pending.inboxCommentId;
-      pending.inboxCommentId = null;
-      await resolveChatQuestions(session, byCommentId(commentId));
+    if (pending.inboxQuestionTs) {
+      const questionTs = pending.inboxQuestionTs;
+      pending.inboxQuestionTs = null;
+      await answerOpenQuestions(session, byQuestionTimestamp(questionTs), answerBody);
     }
   }
 
@@ -656,19 +645,19 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         await pending.recorded;
         const item = findChatItemByRequestId(session.ticket.id, requestId);
         const ref: ChatQuestionRef = { kind, itemId: item?.itemId ?? requestId };
-        const commentId = await fileChatQuestion(
+        const questionTs = await fileChatQuestion(
           session,
           ref,
           questionBodyForCard(kind, titleOrPrompt),
         );
-        if (!commentId) return;
+        if (!questionTs) return;
         const stillThere =
           session.pendingPermissions.get(requestId) === pending ||
           session.pendingQuestions.get(requestId) === pending;
         if (!stillThere) {
-          await resolveChatQuestions(session, byCommentId(commentId));
+          await answerOpenQuestions(session, byQuestionTimestamp(questionTs), 'withdrawn');
         } else {
-          pending.inboxCommentId = commentId;
+          pending.inboxQuestionTs = questionTs;
         }
       })();
     }, timeouts.inboxGraceMs);
@@ -1725,8 +1714,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (cardItemIds.length > 0) {
       try {
         await withRecordLock(session.ticket.ticketDir, () =>
-          resolveQuestionComments(session.ticket.ticketDir, (c) =>
-            cardItemIds.some((entry) => byKindAndItemIds(entry.kind, entry.ids)(c)),
+          answerChatQuestions(
+            session.ticket.ticketDir,
+            session.ticket.id,
+            (e) => cardItemIds.some((entry) => byKindAndItemIds(entry.kind, entry.ids)(e)),
+            'restarted',
           ),
         );
       } catch {
@@ -2611,7 +2603,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         title,
         options: request.options ?? [],
         graceTimer: null,
-        inboxCommentId: null,
+        inboxQuestionTs: null,
         recorded: record(session, 'acp.permission_request', { requestId, request }).catch(() => {}),
       };
       session.pendingPermissions.set(requestId, pending);
@@ -2653,7 +2645,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           toolCallId: body.toolCallId ?? requestId,
           questions: body.questions ?? [],
           graceTimer: null,
-          inboxCommentId: null,
+          inboxQuestionTs: null,
           recorded: record(session, 'acp.ext', { method, params, requestId }).catch(() => {}),
         };
         session.pendingQuestions.set(requestId, pending);
@@ -2672,7 +2664,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function timeoutQuestion(session: Session, requestId: string): Promise<void> {
     const pending = session.pendingQuestions.get(requestId);
     if (!pending) return;
-    await settlePendingCard(session, pending);
+    await settlePendingCard(session, pending, 'timeout');
     session.pendingQuestions.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve({ outcome: { outcome: 'cancelled' } });
@@ -2682,19 +2674,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   async function timeoutPermission(session: Session, requestId: string, title: string): Promise<void> {
     const pending = session.pendingPermissions.get(requestId);
     if (!pending) return;
-    await settlePendingCard(session, pending);
+    await settlePendingCard(session, pending, 'timeout');
     session.pendingPermissions.delete(requestId);
     clearTimeout(pending.timer);
     pending.resolve({ outcome: { outcome: 'selected', optionId: rejectOption(pending.options) } });
     await record(session, 'acp.permission_response', { requestId, timedOut: true });
-    // The Inbox has no write API; its `question` category is derived from
-    // unresolved comments.md questions, so that is the door (Decision 9).
     try {
-      await appendComment({
+      await appendTypedLogEntry({
         ticketDir: session.ticket.ticketDir,
-        ticketRef: session.ticket.ticketSlug,
-        author: session.agentId,
+        ticketId: session.ticket.id,
+        projectSlug: session.ticket.projectSlug,
         type: 'question',
+        author: session.agentId,
         body:
           `The chat agent asked for permission to run **${title}** and nobody answered within ` +
           `${Math.round(timeouts.permissionMs / 60000)} minutes, so it was denied and the turn moved on. ` +
@@ -2754,14 +2745,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // A cancel while a permission is pending answers it `cancelled` — the ACP
     // outcome the adapters expect (spike row 07 part B).
     for (const [requestId, pending] of session.pendingPermissions) {
-      await settlePendingCard(session, pending);
+      await settlePendingCard(session, pending, 'cancelled');
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'cancelled' } });
       session.pendingPermissions.delete(requestId);
       await record(session, 'acp.permission_response', { requestId, cancelled: true }, turn.turnId);
     }
     for (const [requestId, pending] of session.pendingQuestions) {
-      await settlePendingCard(session, pending);
+      await settlePendingCard(session, pending, 'cancelled');
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'cancelled' } });
       session.pendingQuestions.delete(requestId);
@@ -3580,6 +3571,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       fileChatRecord({
         ticketDir: ticket.ticketDir,
         ticketRef: ticket.ticketSlug,
+        ticketId: ticket.id,
         record,
         source: { agentId: item.agentId, ts: item.ts },
       }),
@@ -3680,8 +3672,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         );
       }
       if (deliveredTargets.length > 0) {
-        void resolveChatQuestions(ticket, (c) =>
-          deliveredTargets.some((agentId) => byAgentAndKind(agentId, ['reply'])(c)),
+        const firstLine = text.trim().split('\n').find((l) => l.trim()) ?? text.trim();
+        void answerOpenQuestions(
+          ticket,
+          (e) => deliveredTargets.some((agentId) => byAgentAndKind(agentId, ['reply'])(e)),
+          firstLine,
         );
       }
       if (targets.length === 0) {
@@ -3754,7 +3749,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       );
       const pending = session?.pendingPermissions.get(requestId);
       if (!session || !pending) return false;
-      await settlePendingCard(session, pending);
+      const selected = pending.options.find((o) => o.optionId === optionId);
+      await settlePendingCard(session, pending, selected?.name ?? optionId);
       session.pendingPermissions.delete(requestId);
       clearTimeout(pending.timer);
       pending.resolve({ outcome: { outcome: 'selected', optionId } });
@@ -3767,7 +3763,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         });
         for (const [otherId, other] of [...session.pendingPermissions.entries()]) {
           if (otherId === requestId) continue;
-          await settlePendingCard(session, other);
+          const autoOption = allowOption(other.options);
+          await settlePendingCard(session, other, autoOption);
           session.pendingPermissions.delete(otherId);
           clearTimeout(other.timer);
           const autoOptionId = allowOption(other.options);
@@ -3793,7 +3790,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       if (!answer.optionId && !answer.text) return false;
       session.pendingQuestions.delete(requestId);
       clearTimeout(pending.timer);
-      await settlePendingCard(session, pending);
+      const answerBody = answer.text?.trim() || answer.optionId || '';
+      await settlePendingCard(session, pending, answerBody);
       if (answer.optionId) {
         pending.resolve({
           outcome: {
@@ -3941,14 +3939,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
 
         for (const [requestId, pending] of session.pendingPermissions) {
-          await settlePendingCard(session, pending);
+          await settlePendingCard(session, pending, 'shutdown');
           clearTimeout(pending.timer);
           pending.resolve({ outcome: { outcome: 'cancelled' } });
           session.pendingPermissions.delete(requestId);
           await record(session, 'acp.permission_response', { requestId, cancelled: true });
         }
         for (const [requestId, pending] of session.pendingQuestions) {
-          await settlePendingCard(session, pending);
+          await settlePendingCard(session, pending, 'shutdown');
           clearTimeout(pending.timer);
           pending.resolve({ outcome: { outcome: 'cancelled' } });
           session.pendingQuestions.delete(requestId);

@@ -24,13 +24,11 @@ export type ChatItemType =
   | 'turn.status'
   | 'system';
 
-export type ChatRecordKind = 'decision' | 'progress' | 'comment';
+export type ChatRecordKind = 'decision' | 'progress' | 'note' | 'question';
 
 export interface FileChatRecordInput {
   kind: ChatRecordKind;
   body: string;
-  title?: string;
-  commentType?: 'note' | 'feedback' | 'question';
 }
 
 export interface FiledChatRecord {

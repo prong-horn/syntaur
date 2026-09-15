@@ -64,20 +64,18 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
-  renderComments,
-  formatCommentEntry,
-  type Comment,
-  type CommentType,
 } from '../templates/index.js';
-import { parseComments } from './parser.js';
-import { appendLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
-import { setCommentResolved } from '../lifecycle/comment-resolve.js';
-import { updatePlanBlock } from '../lifecycle/frontmatter.js';
+import { appendLogEntry, appendTypedLogEntry, setTopLevelField } from '../lifecycle/log-append.js';
+import { LOG_ENTRY_TYPES, logRoleFile, type LogEntryType } from '../ticket-templates/manifest.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
+import { buildShow } from '../ticket-templates/show.js';
+import { parseTicketFrontmatter, updatePlanBlock } from '../lifecycle/frontmatter.js';
 import { syntaurRoot } from '../utils/paths.js';
 import {
   listTemplates,
   loadTemplate,
   resolveTemplateContentDir,
+  resolveTemplateForTicket,
 } from '../ticket-templates/registry.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import {
@@ -1014,38 +1012,83 @@ const id = getParam(req.params.id);
 
 
 
-  router.post('/api/tickets/:id/comments', async (req: Request, res: Response) => {
+  router.post('/api/tickets/:id/log', async (req: Request, res: Response) => {
     try {
-const id = getParam(req.params.id);
+      const id = getParam(req.params.id);
       const resolved = await resolveTicketById(projectsDir, id);
       if (!resolved) {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
-      await appendCommentTo(resolved.ticketDir, resolved.ticketSlug, req, res, async () => {
-        return getTicketDetailById(projectsDir, id);
-      });
-    } catch (error) {
-      console.error('Error appending comment (by id):', error);
-      res.status(500).json({ error: `Failed to append comment: ${(error as Error).message}` });
-    }
-  });
-
-  router.patch('/api/tickets/:id/comments/:commentId/resolved', async (req: Request, res: Response) => {
-    try {
-const id = getParam(req.params.id);
-      const commentId = getParam(req.params.commentId);
-      const resolved = await resolveTicketById(projectsDir, id);
-      if (!resolved) {
-        res.status(404).json({ error: `Ticket "${id}" not found` });
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const typeRaw = typeof body.type === 'string' ? body.type.trim() : '';
+      const text = typeof body.body === 'string' ? body.body.trim() : '';
+      if (!typeRaw || !(LOG_ENTRY_TYPES as readonly string[]).includes(typeRaw)) {
+        res.status(400).json({ error: 'type is required and must be a valid log entry type' });
         return;
       }
-      await toggleCommentResolvedAt(resolved.ticketDir, commentId, req, res, async () => {
-        return getTicketDetailById(projectsDir, id);
+      if (!text) {
+        res.status(400).json({ error: 'body is required' });
+        return;
+      }
+      const type = typeRaw as LogEntryType;
+      const ticketMd = await readFile(resolve(resolved.ticketDir, 'ticket.md'), 'utf-8');
+      const fm = parseTicketFrontmatter(ticketMd);
+      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+      const logRole = logRoleFile(manifest);
+      if (!logRole) {
+        res.status(400).json({ error: 'template has no log role' });
+        return;
+      }
+      if (!logRole.entryTypes.includes(type)) {
+        res.status(400).json({ error: `entry type "${type}" is not allowed on this template` });
+        return;
+      }
+      const keys: Record<string, string> = {};
+      if (type === 'review') {
+        const verdict = typeof body.verdict === 'string' ? body.verdict.trim() : '';
+        const open = typeof body.open === 'string' ? body.open.trim() : '';
+        if (!verdict || !open) {
+          res.status(400).json({ error: 'review requires verdict and open' });
+          return;
+        }
+        keys.verdict = `${verdict} · open: ${open}`;
+      }
+      if (type === 'answer') {
+        const answers = typeof body.answers === 'string' ? body.answers.trim() : '';
+        if (!answers) {
+          res.status(400).json({ error: 'answer requires answers timestamp' });
+          return;
+        }
+        const logPath = resolve(resolved.ticketDir, logRole.path);
+        if (!(await fileExists(logPath))) {
+          res.status(400).json({ error: `No question entry at ${answers}` });
+          return;
+        }
+        const entries = parseLogEntries(await readFile(logPath, 'utf-8'));
+        if (!entries.some((e) => e.type === 'question' && e.timestamp === answers)) {
+          res.status(400).json({ error: `No question entry at ${answers}` });
+          return;
+        }
+        keys.answers = answers;
+      }
+      const result = await appendTypedLogEntry({
+        ticketDir: resolved.ticketDir,
+        ticketId: id,
+        projectSlug: resolved.projectSlug,
+        type,
+        body: text,
+        author: 'human',
+        keys: Object.keys(keys).length > 0 ? keys : undefined,
+      });
+      const showModel = await buildShow(syntaurRoot(), resolved.ticketDir);
+      res.status(201).json({
+        entry: { timestamp: result.timestamp, type, author: 'human', firstLine: text.split('\n')[0] ?? '' },
+        next: showModel.next,
       });
     } catch (error) {
-      console.error('Error toggling comment resolved (by id):', error);
-      res.status(500).json({ error: `Failed to toggle resolved: ${(error as Error).message}` });
+      console.error('Error appending log entry:', error);
+      res.status(500).json({ error: `Failed to append log entry: ${(error as Error).message}` });
     }
   });
 
@@ -1525,134 +1568,4 @@ function validateTitleBody(body: unknown): TitleValidation {
     return { ok: false, error: '`title` may not contain double quotes or line breaks.' };
   }
   return { ok: true, value: trimmed };
-}
-
-async function appendCommentTo(
-  ticketDir: string,
-  ticketRef: string,
-  req: Request,
-  res: Response,
-  reloadDetail: () => Promise<unknown>,
-): Promise<void> {
-  const commentsPath = resolve(ticketDir, 'comments.md');
-  const { body, author, type, replyTo } = req.body || {};
-  if (!body || typeof body !== 'string' || !body.trim()) {
-    res.status(400).json({ error: 'body is required' });
-    return;
-  }
-  const commentType: CommentType = type && ['question', 'note', 'feedback'].includes(type) ? type : 'note';
-  const timestamp = nowTimestamp();
-  // author/replyTo are single-line metadata. A newline breaks parseComments'
-  // single-line header regex and makes the whole comment unreadable, so reject it.
-  if (typeof author === 'string' && /[\r\n]/.test(author)) {
-    res.status(400).json({ error: 'author must not contain newlines' });
-    return;
-  }
-  if (typeof replyTo === 'string' && /[\r\n]/.test(replyTo)) {
-    res.status(400).json({ error: 'replyTo must not contain newlines' });
-    return;
-  }
-  const entryAuthor = (typeof author === 'string' && author.trim()) ? author.trim() : 'human';
-
-  let currentContent: string;
-  let currentCount = 0;
-  if (await fileExists(commentsPath)) {
-    currentContent = await readFile(commentsPath, 'utf-8');
-    const countMatch = currentContent.match(/^entryCount:\s*(\d+)/m);
-    if (countMatch) currentCount = parseInt(countMatch[1], 10);
-  } else {
-    currentContent = renderComments({ ticket: ticketRef, timestamp });
-  }
-
-  const comment: Comment = {
-    id: generateId().split('-')[0],
-    timestamp,
-    author: entryAuthor,
-    type: commentType,
-    body,
-    replyTo: typeof replyTo === 'string' && replyTo.trim() ? replyTo.trim() : undefined,
-    resolved: commentType === 'question' ? false : undefined,
-  };
-  const entry = formatCommentEntry(comment);
-  let next = setTopLevelField(currentContent, 'entryCount', String(currentCount + 1));
-  next = setTopLevelField(next, 'updated', timestamp);
-  if (next.includes('No comments yet.')) {
-    next = next.replace('No comments yet.', entry.trimEnd());
-  } else {
-    next = `${next.trimEnd()}\n\n${entry}`;
-  }
-  await writeFileForce(commentsPath, next);
-
-  // Audit event (best-effort): comment-added. Author + excerpt ONLY.
-  try {
-    const ticketMdPath = resolve(ticketDir, 'ticket.md');
-    if (await fileExists(ticketMdPath)) {
-      const fm = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
-      emitDashboardEvent(fm.id, fm.project, 'comment-added', {
-        commentId: comment.id,
-        author: entryAuthor,
-        commentType,
-        length: body.length,
-        excerpt: body.slice(0, 80),
-      });
-    }
-  } catch {
-    /* best-effort */
-  }
-
-  const ticket = await reloadDetail();
-  res.status(201).json({ ticket, comment: { id: comment.id } });
-}
-
-async function toggleCommentResolvedAt(
-  ticketDir: string,
-  commentId: string,
-  req: Request,
-  res: Response,
-  reloadDetail: () => Promise<unknown>,
-): Promise<void> {
-  const commentsPath = resolve(ticketDir, 'comments.md');
-  if (!(await fileExists(commentsPath))) {
-    res.status(404).json({ error: 'Comments file not found' });
-    return;
-  }
-  const { resolved: desired } = req.body || {};
-  if (typeof desired !== 'boolean') {
-    res.status(400).json({ error: 'resolved (boolean) is required' });
-    return;
-  }
-
-  const { changed, previous } = await setCommentResolved(ticketDir, commentId, desired);
-  if (previous === null) {
-    const content = await readFile(commentsPath, 'utf-8');
-    const parsed = parseComments(content);
-    const target = parsed.entries.find((e) => e.id === commentId);
-    if (!target) {
-      res.status(404).json({ error: `Comment ${commentId} not found` });
-      return;
-    }
-    res.status(400).json({ error: 'Only questions can be resolved' });
-    return;
-  }
-  if (!changed && previous !== desired) {
-    res.status(500).json({ error: 'Failed to update resolved flag' });
-    return;
-  }
-
-  // Audit event (best-effort): only on the actual unresolved→resolved
-  // transition (FIX 6) — an idempotent PATCH must not emit a duplicate.
-  if (changed && previous === false && desired === true) {
-    try {
-      const ticketMdPath = resolve(ticketDir, 'ticket.md');
-      if (await fileExists(ticketMdPath)) {
-        const fm = parseTicketFull(await readFile(ticketMdPath, 'utf-8'));
-        emitDashboardEvent(fm.id, fm.project, 'comment-resolved', { commentId });
-      }
-    } catch {
-      /* best-effort */
-    }
-  }
-
-  const ticket = await reloadDetail();
-  res.json({ ticket });
 }

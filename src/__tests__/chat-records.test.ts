@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -10,16 +10,28 @@ import {
   formatDurationMs,
   provenanceLine,
 } from '../chat/records.js';
-import { parseProgress } from '../dashboard/parser.js';
-import { parseComments } from '../dashboard/parser.js';
-import { parseDecisionRecord } from '../dashboard/parser.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { HUMAN_AGENT_ID } from '../chat/types.js';
 import type { AgentMessageItem, AgentWorkItem, ChatItem } from '../chat/types.js';
 
 let testDir: string;
 
+const TICKET_ID = 'demo-1';
+
 beforeEach(async () => {
   testDir = await mkdtemp(join(tmpdir(), 'chat-records-test-'));
+  await writeFile(
+    join(testDir, 'ticket.md'),
+    `---
+id: ${TICKET_ID}
+slug: demo
+title: Demo
+template: feature
+status: in_progress
+---
+`,
+    'utf-8',
+  );
 });
 
 afterEach(async () => {
@@ -114,14 +126,14 @@ describe('buildTurnProgressEntry', () => {
     await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',
+      ticketId: TICKET_ID,
       record: { kind: 'progress', body: entry! },
       source: { agentId: 'claude', ts: '2026-09-07T12:00:00Z' },
     });
-    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
-    const parsed = parseProgress(progressMd);
-    expect(parsed.entryCount).toBe(1);
-    expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]?.body).toContain(entry!);
+    const journalMd = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    const parsed = parseLogEntries(journalMd);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0]?.body).toContain(entry!);
   });
 
   it('returns null for a read-only turn', () => {
@@ -272,56 +284,60 @@ describe('escapeHeadings', () => {
 describe('fileChatRecord', () => {
   const source = { agentId: 'claude', ts: '2026-09-07T13:25:06Z' };
 
-  it('files decision, progress and comment records with provenance', async () => {
+  it('files decision, progress and question records with provenance', async () => {
     const decision = await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',
-      record: { kind: 'decision', title: 'Use X', body: 'Because it is simpler.' },
+      ticketId: TICKET_ID,
+      record: { kind: 'decision', body: 'Because it is simpler.' },
       source,
     });
-    expect(decision).toEqual({ kind: 'decision', ref: 'Decision 1', label: 'Decision 1: Use X' });
-    const decisionMd = await readFile(join(testDir, 'decision-record.md'), 'utf-8');
-    expect(decisionMd).toContain('## Use X');
-    expect(decisionMd).toContain('**Recorded:**');
-    expect(decisionMd.trimEnd().endsWith(provenanceLine(source))).toBe(true);
+    expect(decision.kind).toBe('decision');
+    expect(decision.label).toBe('a decision entry');
+    const journalAfterDecision = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    expect(journalAfterDecision).toContain('· decision · claude');
+    expect(journalAfterDecision).toContain('Because it is simpler.');
+    expect(journalAfterDecision.trimEnd().endsWith(provenanceLine(source))).toBe(true);
 
     const progress = await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',
+      ticketId: TICKET_ID,
       record: { kind: 'progress', body: 'Shipped the feature.' },
       source,
     });
     expect(progress.kind).toBe('progress');
-    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
-    expect(parseProgress(progressMd).entryCount).toBe(1);
-    expect(progressMd).toContain(provenanceLine(source));
+    const journalAfterProgress = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    expect(parseLogEntries(journalAfterProgress).filter((e) => e.type === 'progress')).toHaveLength(1);
+    expect(journalAfterProgress).toContain(provenanceLine(source));
 
-    const comment = await fileChatRecord({
+    const question = await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',
-      record: { kind: 'comment', body: 'Looks good.', commentType: 'question' },
+      ticketId: TICKET_ID,
+      record: { kind: 'question', body: 'Looks good?' },
       source: { agentId: HUMAN_AGENT_ID, ts: '2026-09-07T13:30:00Z' },
     });
-    expect(comment.kind).toBe('comment');
-    const commentsMd = await readFile(join(testDir, 'comments.md'), 'utf-8');
-    const parsed = parseComments(commentsMd);
-    expect(parsed.entries[0]?.author).toBe('human');
-    expect(parsed.entries[0]?.type).toBe('question');
-    expect(parsed.entries[0]?.resolved).toBe(false);
-    expect(commentsMd).not.toContain('Filed from chat');
+    expect(question.kind).toBe('question');
+    const journalAfterQuestion = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    const entries = parseLogEntries(journalAfterQuestion);
+    const filedQuestion = entries.find((e) => e.type === 'question')!;
+    expect(filedQuestion.author).toBe('human');
+    expect(filedQuestion.body).toContain('Looks good?');
+    expect(journalAfterQuestion).toContain('_Filed from chat (you,');
   });
 
   it('escapes progress headings so parseProgress sees one entry', async () => {
     await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',
+      ticketId: TICKET_ID,
       record: { kind: 'progress', body: '## Sub\nStill one entry.' },
       source,
     });
-    const progressMd = await readFile(join(testDir, 'progress.md'), 'utf-8');
-    const parsed = parseProgress(progressMd);
-    expect(parsed.entryCount).toBe(1);
-    expect(parsed.entries).toHaveLength(1);
-    expect(progressMd).toContain('\\## Sub');
+    const journalMd = await readFile(join(testDir, 'journal.md'), 'utf-8');
+    const parsed = parseLogEntries(journalMd);
+    expect(parsed).toHaveLength(1);
+    expect(journalMd).toContain('\\## Sub');
   });
 });

@@ -12,8 +12,12 @@ const base: InboxItem = {
   since: '2026-06-16T00:00:00Z',
   ageMs: 60_000,
   summary: 'Which name?',
-  commentId: 'c1',
-  action: { verb: 'Answer', command: 'syntaur comment task "<answer>" --reply-to c1 --project demo' },
+  questionTs: '2026-06-16T00:00:00Z',
+  journalTab: 'file:journal.md',
+  action: {
+    verb: 'Answer',
+    command: 'syntaur log task -t answer --answers 2026-06-16T00:00:00Z "<answer>" --project demo',
+  },
   ticketUpdated: '',
 };
 
@@ -287,13 +291,11 @@ describe('InboxPage', () => {
           {
             ...base,
             category: 'review' as const,
-            commentId: undefined,
             acceptCommand: 'done',
             reopenCommand: 'start',
           },
           {
             ...base,
-            commentId: undefined,
             chat: { kind: 'reply' as const, itemId: 'item~tilde', agentId: 'claude' },
           },
         ],

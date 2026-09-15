@@ -23,15 +23,15 @@ describe('defaultRecordTitle', () => {
 });
 
 describe('recordFiledCopy', () => {
-  it('names the tab for each record kind', () => {
-    expect(recordFiledCopy({ kind: 'decision', ref: 'Decision 6', label: 'Decision 6: Use X' })).toBe(
-      'Filed as Decision 6 — see the Decisions tab',
+  it('names the journal tab for each record kind', () => {
+    expect(recordFiledCopy({ kind: 'decision', ref: '2026-09-07T12:00:00Z', label: 'decision entry' })).toBe(
+      'Filed as decision entry (2026-09-07T12:00:00Z) — see the Journal tab',
     );
-    expect(recordFiledCopy({ kind: 'progress', ref: '2026-09-07T12:00:00Z', label: 'a progress entry' })).toBe(
-      'Filed as a progress entry — see the Progress tab',
+    expect(recordFiledCopy({ kind: 'progress', ref: '2026-09-07T12:00:00Z', label: 'progress entry' })).toBe(
+      'Filed as progress entry (2026-09-07T12:00:00Z) — see the Journal tab',
     );
-    expect(recordFiledCopy({ kind: 'comment', ref: 'abc', label: 'a note comment' })).toBe(
-      'Filed as a note comment — see the Comments tab',
+    expect(recordFiledCopy({ kind: 'note', ref: '2026-09-07T12:01:00Z', label: 'note entry' })).toBe(
+      'Filed as note entry (2026-09-07T12:01:00Z) — see the Journal tab',
     );
   });
 });

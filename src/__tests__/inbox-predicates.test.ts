@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
   isReview,
-  isUnresolvedQuestion,
-  unresolvedQuestions,
+  unresolvedLogQuestions,
   isPlanAwaitingApproval,
   resolveSince,
   computeAgeMs,
@@ -15,7 +14,8 @@ import {
   type InboxStatusConfig,
 } from '../inbox/index.js';
 import type { InboxItem } from '../inbox/types.js';
-import { parseTicketFull, type ParsedTicketFull, type ParsedComment } from '../dashboard/parser.js';
+import { parseTicketFull, type ParsedTicketFull } from '../dashboard/parser.js';
+import type { LogEntry } from '../ticket-templates/log-reader.js';
 import { planDigest } from '../ticket-templates/plan-facts.js';
 
 function buildTransitionTable(
@@ -51,15 +51,15 @@ function ticket(frontmatter: string): ParsedTicketFull {
   return parseTicketFull(`---\n${frontmatter}\n---\n# body\n`);
 }
 
-function comment(partial: Partial<ParsedComment> & { id: string }): ParsedComment {
+function logQuestion(partial: Partial<LogEntry> & { timestamp?: string }): LogEntry {
+  const timestamp = partial.timestamp ?? '2026-06-16T00:00:00Z';
   return {
-    id: partial.id,
-    timestamp: partial.timestamp ?? '2026-06-16T00:00:00Z',
-    author: partial.author ?? 'human',
+    timestamp,
     type: partial.type ?? 'question',
+    author: partial.author ?? 'human',
+    keys: partial.keys ?? {},
     body: partial.body ?? 'q?',
-    ...(partial.replyTo ? { replyTo: partial.replyTo } : {}),
-    ...(partial.resolved !== undefined ? { resolved: partial.resolved } : {}),
+    firstLine: partial.firstLine ?? (partial.body ?? 'q?'),
   };
 }
 
@@ -78,28 +78,39 @@ describe('isReview', () => {
 
 // ── question predicate ─────────────────────────────────────────────────────────
 
-describe('isUnresolvedQuestion / unresolvedQuestions', () => {
-  it('positive: question with resolved !== true', () => {
-    expect(isUnresolvedQuestion(comment({ id: 'c1', type: 'question', resolved: false }))).toBe(true);
-    // resolved absent → unresolved
-    expect(isUnresolvedQuestion(comment({ id: 'c2', type: 'question' }))).toBe(true);
-  });
-  it('negative: resolved question', () => {
-    expect(isUnresolvedQuestion(comment({ id: 'c3', type: 'question', resolved: true }))).toBe(false);
-  });
-  it('negative: note and feedback types', () => {
-    expect(isUnresolvedQuestion(comment({ id: 'c4', type: 'note' }))).toBe(false);
-    expect(isUnresolvedQuestion(comment({ id: 'c5', type: 'feedback' }))).toBe(false);
-  });
-  it('filters a mixed list to only unresolved questions', () => {
-    const list = [
-      comment({ id: 'q-open', type: 'question', resolved: false }),
-      comment({ id: 'q-resolved', type: 'question', resolved: true }),
-      comment({ id: 'n', type: 'note' }),
-      comment({ id: 'f', type: 'feedback' }),
-      comment({ id: 'q-open2', type: 'question' }),
+describe('unresolvedLogQuestions', () => {
+  it('positive: open question entries', () => {
+    const entries = [
+      logQuestion({ timestamp: '2026-06-15T00:00:00Z', type: 'question' }),
+      logQuestion({ timestamp: '2026-06-16T00:00:00Z', type: 'question' }),
     ];
-    expect(unresolvedQuestions(list).map((c) => c.id)).toEqual(['q-open', 'q-open2']);
+    expect(unresolvedLogQuestions(entries).map((e) => e.timestamp)).toEqual([
+      '2026-06-15T00:00:00Z',
+      '2026-06-16T00:00:00Z',
+    ]);
+  });
+  it('negative: answered questions', () => {
+    const entries = [
+      logQuestion({ timestamp: '2026-06-15T00:00:00Z', type: 'question' }),
+      logQuestion({ timestamp: '2026-06-16T01:00:00Z', type: 'answer', keys: { answers: '2026-06-15T00:00:00Z' }, body: 'done' }),
+    ];
+    expect(unresolvedLogQuestions(entries).map((e) => e.timestamp)).toEqual([]);
+  });
+  it('negative: note entries', () => {
+    const entries = [logQuestion({ timestamp: '2026-06-15T00:00:00Z', type: 'note', body: 'note' })];
+    expect(unresolvedLogQuestions(entries)).toEqual([]);
+  });
+  it('filters a mixed list to only open questions', () => {
+    const entries = [
+      logQuestion({ timestamp: '2026-06-15T00:00:00Z', type: 'question' }),
+      logQuestion({ timestamp: '2026-06-16T01:00:00Z', type: 'answer', keys: { answers: '2026-06-14T00:00:00Z' }, body: 'done' }),
+      logQuestion({ timestamp: '2026-06-14T00:00:00Z', type: 'note', body: 'note' }),
+      logQuestion({ timestamp: '2026-06-16T00:00:00Z', type: 'question' }),
+    ];
+    expect(unresolvedLogQuestions(entries).map((e) => e.timestamp)).toEqual([
+      '2026-06-15T00:00:00Z',
+      '2026-06-16T00:00:00Z',
+    ]);
   });
 });
 
@@ -169,10 +180,9 @@ describe('resolveSince', () => {
     expect(resolveSince('review', a, now)).toBe('2026-06-12T00:00:00Z');
   });
 
-  it('question: uses comment.timestamp', () => {
+  it('question: uses questionTs', () => {
     const a = ticket('status: in_progress');
-    const c = comment({ id: 'q', timestamp: '2026-06-09T08:00:00Z' });
-    expect(resolveSince('question', a, now, c)).toBe('2026-06-09T08:00:00Z');
+    expect(resolveSince('question', a, now, '2026-06-09T08:00:00Z')).toBe('2026-06-09T08:00:00Z');
   });
 
   it('plan-approval: falls back to updated when no moved events exist', () => {
@@ -284,10 +294,10 @@ describe('buildAction', () => {
       command: 'syntaur timeline my-slug --project proj',
     });
   });
-  it('question: Answer command with --reply-to', () => {
-    expect(buildAction('question', projItem, { commentId: 'cid' })).toEqual({
+  it('question: Answer command with log --answers', () => {
+    expect(buildAction('question', projItem, { questionTs: '2026-06-09T08:00:00Z' })).toEqual({
       verb: 'Answer',
-      command: 'syntaur comment my-slug "<answer>" --reply-to cid --project proj',
+      command: 'syntaur log my-slug -t answer --answers 2026-06-09T08:00:00Z "<answer>" --project proj',
     });
   });
   it('plan-approval: Approve plan command', () => {

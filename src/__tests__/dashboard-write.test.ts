@@ -193,6 +193,14 @@ decisionCount: 1
 ## Decision 1
 
 Keep the current layout`, 'utf-8');
+
+  await writeFile(resolve(ticketDir, 'journal.md'), `---
+purpose: journal
+---
+
+# Journal
+
+`, 'utf-8');
 }
 
 describe('dashboard write router', () => {
@@ -422,66 +430,65 @@ Keep this paragraph.`, 'utf-8');
     expect((unblocked.payload as any).ticket.status).toBe('backlog');
   });
 
-  it('POST /api/tickets/:id/comments appends a comment', async () => {
+  it('POST /api/tickets/:id/log appends a question entry', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
     const response = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/comments',
+      '/api/tickets/:id/log',
       { id: 'TP-1' },
-      { body: 'Is the migration reversible?', type: 'question', author: 'alice' },
+      { body: 'Is the migration reversible?', type: 'question' },
     );
 
     expect(response.statusCode).toBe(201);
-    const commentsPath = resolve(
+    const journalPath = resolve(
       testDir,
       'test-project',
       'tickets',
       'TP-1-test-ticket',
-      'comments.md',
+      'journal.md',
     );
-    const content = await readFile(commentsPath, 'utf-8');
-    expect(content).toContain('**Type:** question');
-    expect(content).toContain('**Author:** alice');
-    expect(content).toContain('**Resolved:** false');
+    const content = await readFile(journalPath, 'utf-8');
+    expect(content).toContain('· question · human');
     expect(content).toContain('Is the migration reversible?');
-    expect(content).toContain('entryCount: 1');
+    expect((response.payload as { entry: { type: string } }).entry.type).toBe('question');
   });
 
-  it('PATCH comments/:commentId/resolved toggles the resolved flag on a question', async () => {
+  it('POST /api/tickets/:id/log appends an answer entry for an open question', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
     const add = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/comments',
+      '/api/tickets/:id/log',
       { id: 'TP-1' },
-      { body: 'Q?', type: 'question', author: 'a' },
+      { body: 'Q?', type: 'question' },
     );
     expect(add.statusCode).toBe(201);
-    const commentId = (add.payload as any).comment.id as string;
+    const questionTs = (add.payload as { entry: { timestamp: string } }).entry.timestamp;
 
-    const toggle = await invokeRoute(
+    const answer = await invokeRoute(
       router,
-      'patch',
-      '/api/tickets/:id/comments/:commentId/resolved',
-      { id: 'TP-1', commentId },
-      { resolved: true },
+      'post',
+      '/api/tickets/:id/log',
+      { id: 'TP-1' },
+      { body: 'Yes', type: 'answer', answers: questionTs },
     );
-    expect(toggle.statusCode).toBe(200);
+    expect(answer.statusCode).toBe(201);
 
-    const commentsPath = resolve(
+    const journalPath = resolve(
       testDir,
       'test-project',
       'tickets',
       'TP-1-test-ticket',
-      'comments.md',
+      'journal.md',
     );
-    const content = await readFile(commentsPath, 'utf-8');
-    expect(content).toMatch(/^## [a-z0-9]+\n\n[\s\S]*\*\*Resolved:\*\* true/m);
+    const content = await readFile(journalPath, 'utf-8');
+    expect(content).toContain(`answers: ${questionTs}`);
+    expect(content).toContain('Yes');
   });
 
   it('does not register POST /api/tickets standalone create', () => {
@@ -489,28 +496,24 @@ Keep this paragraph.`, 'utf-8');
     expect(() => getRouteHandler(router, 'post', '/api/tickets')).toThrow(/Route not found/);
   });
 
-  it('rejects resolve toggle for a non-question comment', async () => {
+  it('rejects answer log POST without answers timestamp', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
 
-    const add = await invokeRoute(
+    const response = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/comments',
+      '/api/tickets/:id/log',
       { id: 'TP-1' },
-      { body: 'note body', type: 'note', author: 'a' },
+      { body: 'note body', type: 'answer' },
     );
-    const commentId = (add.payload as any).comment.id as string;
+    expect(response.statusCode).toBe(400);
+    expect((response.payload as { error: string }).error).toContain('answers');
+  });
 
-    const toggle = await invokeRoute(
-      router,
-      'patch',
-      '/api/tickets/:id/comments/:commentId/resolved',
-      { id: 'TP-1', commentId },
-      { resolved: true },
-    );
-    expect(toggle.statusCode).toBe(400);
-    expect((toggle.payload as any).error).toContain('Only questions');
+  it('does not register comment routes', () => {
+    const router = createWriteRouter(testDir);
+    expect(() => getRouteHandler(router, 'post', '/api/tickets/:id/comments')).toThrow(/Route not found/);
   });
 
   describe('PATCH /api/tickets/:id/assignee', () => {
@@ -1857,48 +1860,42 @@ describe('setTopLevelField (AC5: scoped to frontmatter)', () => {
   });
 });
 
-// AC1: a newline in author/replyTo breaks parseComments' single-line header
-// regex → the whole comment is dropped on read. Reject it at the write boundary.
-describe('comment write-boundary newline validation (AC1)', () => {
-  it('rejects a project comment whose author contains a newline (400, nothing written)', async () => {
+describe('log write-boundary validation', () => {
+  it('rejects an empty body (400, nothing written)', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/comments',
+      '/api/tickets/:id/log',
       { id: 'TP-1' },
-      { body: 'hi', type: 'note', author: 'alice\ninjected' },
-    );
-    expect(res.statusCode).toBe(400);
-    const commentsPath = resolve(testDir, 'test-project', 'tickets', 'TP-1-test-ticket', 'comments.md');
-    let content = '';
-    try { content = await readFile(commentsPath, 'utf-8'); } catch { /* not created */ }
-    expect(content).not.toContain('**Author:**');
-  });
-
-  it('rejects a project comment whose replyTo contains a newline (400)', async () => {
-    await createTicketFixture();
-    const router = createWriteRouter(testDir);
-    const res = await invokeRoute(
-      router,
-      'post',
-      '/api/tickets/:id/comments',
-      { id: 'TP-1' },
-      { body: 'hi', type: 'note', replyTo: 'abcd\nefgh' },
+      { body: '   ', type: 'note' },
     );
     expect(res.statusCode).toBe(400);
   });
 
-  it('still accepts a normal project comment (positive control)', async () => {
+  it('rejects an invalid log entry type (400)', async () => {
     await createTicketFixture();
     const router = createWriteRouter(testDir);
     const res = await invokeRoute(
       router,
       'post',
-      '/api/tickets/:id/comments',
+      '/api/tickets/:id/log',
       { id: 'TP-1' },
-      { body: 'all good', type: 'note', author: 'alice' },
+      { body: 'hi', type: 'rant' },
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('still accepts a normal note entry (positive control)', async () => {
+    await createTicketFixture();
+    const router = createWriteRouter(testDir);
+    const res = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/log',
+      { id: 'TP-1' },
+      { body: 'all good', type: 'note' },
     );
     expect(res.statusCode).toBe(201);
   });

@@ -202,11 +202,11 @@ describe('InboxRow', () => {
     expect(html).toContain('id="abc:def"');
   });
 
-  it('plain row renders id from commentId', () => {
+  it('plain row renders id from questionTs', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <InboxRow
-          item={makeItem({ category: 'question', commentId: 'comment-42' })}
+          item={makeItem({ category: 'question', questionTs: '2026-06-16T00:00:00Z' })}
           agents={[]}
           onMutated={noop}
           onError={noop}
@@ -221,7 +221,7 @@ describe('InboxRow', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <InboxRow
-          item={makeItem({ category: 'question', commentId: 'c1' })}
+          item={makeItem({ category: 'question', questionTs: '2026-06-16T00:00:00Z' })}
           agents={[]}
           highlighted
           onMutated={noop}
@@ -237,7 +237,7 @@ describe('InboxRow', () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <InboxRow
-          item={makeItem({ category: 'question', commentId: 'c1' })}
+          item={makeItem({ category: 'question', questionTs: '2026-06-16T00:00:00Z' })}
           agents={[]}
           onMutated={noop}
           onError={noop}
@@ -246,7 +246,7 @@ describe('InboxRow', () => {
       </MemoryRouter>,
     );
     expect(html).toContain('Reply inline');
-    expect(html).toContain('Resolve');
+    expect(html).toContain('Answer');
   });
 
   it('snoozable review row contains Not now and the three choices', () => {

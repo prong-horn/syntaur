@@ -51,6 +51,7 @@ function ticketMd(slug: string, status: string, depends_on: string[] = []): stri
 id: ${slug}-id
 slug: ${slug}
 title: ${slug}
+template: feature
 status: ${status}
 priority: medium
 created: "2026-03-20T10:00:00Z"
@@ -70,21 +71,13 @@ tags: []
 # ${slug}`;
 }
 
-const COMMENTS_OPEN_QUESTION = `---
-ticket: a
-entryCount: 1
-generated: "2026-04-07T10:00:00Z"
-updated: "2026-04-07T10:00:00Z"
+const JOURNAL_OPEN_QUESTION = `---
+purpose: journal
 ---
 
-# Comments
+# Journal
 
-## q-1
-
-**Recorded:** 2026-04-07T10:00:00Z
-**Author:** bench
-**Type:** question
-**Resolved:** false
+## 2026-04-07T10:00:00Z · question · bench
 
 Open question.
 `;
@@ -125,7 +118,7 @@ async function seedSyntheticWorkspace(
         'utf-8',
       );
       if (a % 4 === 0) {
-        await writeFile(resolve(aDir, 'comments.md'), COMMENTS_OPEN_QUESTION, 'utf-8');
+        await writeFile(resolve(aDir, 'journal.md'), JOURNAL_OPEN_QUESTION, 'utf-8');
       }
     }
   }

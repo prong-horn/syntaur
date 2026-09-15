@@ -40,8 +40,7 @@ export function slugifyHeading(text: string): string {
  * File kinds whose dashboard pane renders its WHOLE body through
  * `MarkdownRenderer` and so gets heading `id`s a `#<slug(section)>` anchor can
  * resolve against. Excluded kinds, and why a hash there would dangle:
- *   - `comments` / `progress` — render structured components (CommentsThread /
- *     progress `<li>` rows), NOT markdown headings.
+ *   - `comments` / `progress` — render structured list rows, NOT markdown headings.
  *   - `ticket` — the `summary` pane transforms `## Acceptance Criteria` into
  *     `SectionCard`s WITHOUT ids (TicketDetail.tsx), so its headings never
  *     become element ids.

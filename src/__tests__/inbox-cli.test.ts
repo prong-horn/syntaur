@@ -9,7 +9,8 @@ import { inboxRowKey, rowFingerprint, setSnooze, snoozeFilePath } from '../inbox
 import { readFile } from 'node:fs/promises';
 import { clearStageTableCache } from '../dashboard/api.js';
 import { closeEventsDb, initEventsDb, recordEvent, resetEventsDb } from '../db/events-db.js';
-import { formatCommentEntry, type Comment } from '../templates/index.js';
+import { formatLogEntry } from '../ticket-templates/log-reader.js';
+import type { Comment } from '../templates/index.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 
 /**
@@ -47,16 +48,46 @@ async function seed(o: SeedOpts): Promise<void> {
     `title: ${o.title ?? o.slug}`,
     `status: ${o.status}`,
     `project: ${o.project}`,
+    'template: feature',
   ];
   if (o.blocked) fm.push(`blocked: ${o.blocked}`);
   if (o.updated) fm.push(`updated: "${o.updated}"`);
   await writeFile(join(dir, 'ticket.md'), `---\n${fm.join('\n')}\n---\n# ${o.title ?? o.slug}\n`);
 
   if (o.comments && o.comments.length > 0) {
-    const body = o.comments.map(formatCommentEntry).join('\n');
+    const blocks: string[] = [];
+    for (let i = 0; i < o.comments.length; i++) {
+      const c = o.comments[i]!;
+      const ts = (() => {
+        const ms = Date.parse(c.timestamp);
+        return Number.isNaN(ms)
+          ? c.timestamp
+          : new Date(ms + i * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      })();
+      const logType = c.type === 'question' ? 'question' : 'note';
+      blocks.push(
+        formatLogEntry({
+          timestamp: ts,
+          type: logType,
+          author: c.author,
+          body: c.body,
+        }),
+      );
+      if (c.type === 'question' && c.resolved) {
+        blocks.push(
+          formatLogEntry({
+            timestamp: new Date(Date.parse(ts) + 500).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+            type: 'answer',
+            author: c.author,
+            body: 'answered',
+            keys: { answers: ts },
+          }),
+        );
+      }
+    }
     await writeFile(
-      join(dir, 'comments.md'),
-      `---\nticket: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
+      join(dir, 'journal.md'),
+      `---\npurpose: journal\n---\n\n# Journal\n\n${blocks.join('\n')}`,
     );
   }
 }
@@ -242,7 +273,7 @@ describe('inbox human output (grouped, smoke)', () => {
     expect(out).toContain('Review me');
     expect(out).toContain('[p1/rev]');
     expect(out).toContain('→ syntaur done rev --project p1');
-    expect(out).toContain('→ syntaur comment qs "<answer>" --reply-to c1 --project p1');
+    expect(out).toContain('→ syntaur log qs -t answer --answers 2026-06-15T00:00:00Z "<answer>" --project p1');
   });
 
   it('prints a clear empty-state message when nothing needs the human', async () => {

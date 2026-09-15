@@ -3,7 +3,8 @@ import type { ChatRecordKind, FiledChatRecord } from './chat-types';
 export const RECORD_MENU: Array<{ kind: ChatRecordKind; label: string }> = [
   { kind: 'decision', label: 'File as decision…' },
   { kind: 'progress', label: 'File as progress entry…' },
-  { kind: 'comment', label: 'File as comment…' },
+  { kind: 'note', label: 'File as note…' },
+  { kind: 'question', label: 'File as question…' },
 ];
 
 const LEADING_MARKERS = /^(\s*[-*+]\s+|\s*>\s+|\s*#{1,6}\s+|\s*[*_]+|[*_]+)/;
@@ -28,12 +29,5 @@ export function defaultRecordTitle(text: string): string {
 }
 
 export function recordFiledCopy(record: FiledChatRecord): string {
-  switch (record.kind) {
-    case 'decision':
-      return `Filed as ${record.ref} — see the Decisions tab`;
-    case 'progress':
-      return 'Filed as a progress entry — see the Progress tab';
-    case 'comment':
-      return `Filed as ${record.label} — see the Comments tab`;
-  }
+  return `Filed as ${record.label} (${record.ref}) — see the Journal tab`;
 }

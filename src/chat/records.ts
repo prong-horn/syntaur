@@ -1,7 +1,5 @@
 import { isAbsolute, relative } from 'node:path';
-import { appendComment } from '../lifecycle/comment-append.js';
-import { appendDecisionEntry } from '../lifecycle/log-append.js';
-import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { appendTypedLogEntry } from '../lifecycle/log-append.js';
 import type { ChatItem, FileChatRecordInput, FiledChatRecord } from './types.js';
 import { HUMAN_AGENT_ID } from './types.js';
 
@@ -140,62 +138,36 @@ export function escapeHeadings(text: string): string {
   });
 }
 
-function commentLabel(type: 'note' | 'feedback' | 'question'): string {
-  return `a ${type} comment`;
-}
-
 export async function fileChatRecord(input: {
   ticketDir: string;
   ticketRef: string;
+  ticketId: string;
   record: FileChatRecordInput;
   source: { agentId: string; ts: string };
 }): Promise<FiledChatRecord> {
   const { record, source } = input;
   const trimmed = record.body.trim();
+  const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
+  const author = source.agentId === HUMAN_AGENT_ID ? 'human' : source.agentId;
 
-  if (record.kind === 'decision') {
-    const title = record.title?.trim() ?? '';
-    if (!title) throw new Error('Decision title is required');
-    const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
-    const { number } = await appendDecisionEntry({
-      ticketDir: input.ticketDir,
-      ticketRef: input.ticketRef,
-      title,
-      body,
-    });
-    return {
-      kind: 'decision',
-      ref: `Decision ${number}`,
-      label: `Decision ${number}: ${title}`,
-    };
-  }
-
-  if (record.kind === 'progress') {
-    const body = `${escapeHeadings(trimmed)}\n\n${provenanceLine(source)}`;
-    const { timestamp } = await appendProgressLog({
-      ticketDir: input.ticketDir,
-      ticketRef: input.ticketRef,
-      text: body,
-      author: source.agentId,
-    });
-    return {
-      kind: 'progress',
-      ref: timestamp,
-      label: 'a progress entry',
-    };
-  }
-
-  const commentType = record.commentType ?? 'note';
-  const id = await appendComment({
+  const { timestamp } = await appendTypedLogEntry({
     ticketDir: input.ticketDir,
-    ticketRef: input.ticketRef,
-    author: HUMAN_AGENT_ID,
-    type: commentType,
-    body: trimmed,
+    ticketId: input.ticketId,
+    type: record.kind,
+    body,
+    author,
   });
+
+  const labels: Record<FileChatRecordInput['kind'], string> = {
+    decision: 'a decision entry',
+    progress: 'a progress entry',
+    note: 'a note entry',
+    question: 'a question entry',
+  };
+
   return {
-    kind: 'comment',
-    ref: id,
-    label: commentLabel(commentType),
+    kind: record.kind,
+    ref: timestamp,
+    label: labels[record.kind],
   };
 }

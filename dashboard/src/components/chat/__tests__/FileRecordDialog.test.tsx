@@ -18,7 +18,7 @@ const reply: AgentMessageItem = {
 };
 
 describe('FileRecordForm', () => {
-  it('prefills the decision title and body from the reply', () => {
+  it('prefills the body from the reply', () => {
     const html = renderToStaticMarkup(
       <FileRecordForm
         kind="decision"
@@ -29,14 +29,15 @@ describe('FileRecordForm', () => {
         onCancel={() => {}}
       />,
     );
-    expect(html).toContain('value="Sky colour"');
+    expect(html).toContain('File as decision');
+    expect(html).toContain('## Sky colour');
     expect(html).toContain('Blue.');
   });
 
-  it('renders comment radios without a title input', () => {
+  it('renders a textarea for note filing without extra type controls', () => {
     const html = renderToStaticMarkup(
       <FileRecordForm
-        kind="comment"
+        kind="note"
         item={reply}
         sourceLabel="@claude's reply"
         submitting={false}
@@ -44,10 +45,8 @@ describe('FileRecordForm', () => {
         onCancel={() => {}}
       />,
     );
-    expect(html).toContain('name="file-comment-type"');
-    expect(html).toContain('value="note"');
-    expect(html).toContain('checked=""');
-    expect(html.match(/name="file-comment-type"/g)?.length).toBe(3);
-    expect(html).not.toContain('Title');
+    expect(html).toContain('File as note');
+    expect(html).toContain('<textarea');
+    expect(html).not.toContain('file-comment-type');
   });
 });

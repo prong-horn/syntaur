@@ -25,4 +25,3 @@ export {
 } from './event-emit.js';
 export { appendProgressLog } from './progress-append.js';
 export { appendLogEntry } from './log-append.js';
-export { appendComment } from './comment-append.js';

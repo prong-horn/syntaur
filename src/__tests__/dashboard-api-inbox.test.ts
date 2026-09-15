@@ -13,7 +13,7 @@ import { upsertChatItem } from '../db/chat-db.js';
 import { inboxRowKey } from '../inbox/index.js';
 import type { InboxResult } from '../inbox/types.js';
 import { readFile } from 'node:fs/promises';
-import { formatCommentEntry } from '../templates/index.js';
+import { formatLogEntry } from '../ticket-templates/log-reader.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 
 /**
@@ -64,6 +64,7 @@ async function seed(o: SeedOpts): Promise<void> {
     `title: "${o.title ?? o.slug}"`,
     `status: ${o.status}`,
     `project: ${project}`,
+    'template: feature',
     `created: "2026-01-01T00:00:00Z"`,
     `updated: "${o.updated ?? '2026-01-01T00:00:00Z'}"`,
   ];
@@ -86,12 +87,12 @@ async function seed(o: SeedOpts): Promise<void> {
   }
 }
 
-async function seedQuestionComment(
+async function seedQuestionLog(
   project: string,
   slug: string,
   _ticketId: string,
   comment: {
-    id: string;
+    id?: string;
     author: string;
     body: string;
     timestamp?: string;
@@ -100,16 +101,15 @@ async function seedQuestionComment(
   const ts = comment.timestamp ?? '2026-06-16T00:00:00Z';
   const ticketId = toTicketId(_ticketId, slug);
   const dir = join(projectsDir, project, 'tickets', `${ticketId}-${slug}`);
+  const entry = formatLogEntry({
+    timestamp: ts,
+    type: 'question',
+    author: comment.author,
+    body: comment.body,
+  });
   await writeFile(
-    join(dir, 'comments.md'),
-    `---\nticket: ${slug}\nentryCount: 1\nupdated: "${ts}"\n---\n\n# Comments\n\n${formatCommentEntry({
-      id: comment.id,
-      timestamp: ts,
-      author: comment.author,
-      type: 'question',
-      body: comment.body,
-      resolved: false,
-    })}\n`,
+    join(dir, 'journal.md'),
+    `---\npurpose: journal\n---\n\n# Journal\n\n${entry}`,
   );
 }
 
@@ -252,16 +252,15 @@ describe('GET /api/inbox', () => {
       itemId: 'turn-1:1',
       turnId: 'turn-1',
     });
+    const entry = formatLogEntry({
+      timestamp: '2026-06-16T00:00:00Z',
+      type: 'question',
+      author: 'claude',
+      body: `Which name?\n\n${marker}`,
+    });
     await writeFile(
-      join(dir, 'comments.md'),
-      `---\nticket: chat-row\nentryCount: 1\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${formatCommentEntry({
-        id: 'c9',
-        timestamp: '2026-06-16T00:00:00Z',
-        author: 'claude',
-        type: 'question',
-        body: `Which name?\n\n${marker}`,
-        resolved: false,
-      })}\n`,
+      join(dir, 'journal.md'),
+      `---\npurpose: journal\n---\n\n# Journal\n\n${entry}`,
     );
 
     const res = await fetch(`${baseUrl}/api/inbox?project=p1`);
@@ -324,7 +323,7 @@ describe('GET /api/inbox — card enrichment', () => {
   it('enriches a permission row with requestId, options and settled:false', async () => {
     const itemId = 'perm-item-1';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
-    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
+    await seedQuestionLog('p1', 'perm-row', TICKET_ID, {
       id: 'cq-perm',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
@@ -366,7 +365,7 @@ describe('GET /api/inbox — card enrichment', () => {
   it('marks an answered permission card settled:true', async () => {
     const itemId = 'perm-item-2';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId });
-    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
+    await seedQuestionLog('p1', 'perm-row', TICKET_ID, {
       id: 'cq-perm-2',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
@@ -396,7 +395,7 @@ describe('GET /api/inbox — card enrichment', () => {
   it('enriches an ask row with two choices', async () => {
     const itemId = 'ask-item-1';
     const marker = formatChatQuestionMarker({ kind: 'ask', itemId });
-    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
+    await seedQuestionLog('p1', 'perm-row', TICKET_ID, {
       id: 'cq-ask',
       author: 'cursor',
       body: `Pick one\n\n${marker}`,
@@ -436,7 +435,7 @@ describe('GET /api/inbox — card enrichment', () => {
 
   it('returns card:null when the chat item is absent', async () => {
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: 'missing-item' });
-    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
+    await seedQuestionLog('p1', 'perm-row', TICKET_ID, {
       id: 'cq-missing',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
@@ -459,13 +458,13 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     await seed({ id: 'perm-assn', slug: 'perm-order-row', status: 'in_progress', project: 'p1' });
     await seed({ id: 'reply-assn', slug: 'reply-order-row', status: 'in_progress', project: 'p1' });
-    await seedQuestionComment('p1', 'reply-order-row', 'reply-assn', {
+    await seedQuestionLog('p1', 'reply-order-row', 'reply-assn', {
       id: 'cq-reply-order',
       author: 'claude',
       timestamp: '2026-06-01T00:00:00Z',
       body: `Need input\n\n${replyMarker}`,
     });
-    await seedQuestionComment('p1', 'perm-order-row', 'perm-assn', {
+    await seedQuestionLog('p1', 'perm-order-row', 'perm-assn', {
       id: 'cq-perm-order',
       author: 'cursor',
       timestamp: '2026-06-15T00:00:00Z',
@@ -503,13 +502,13 @@ describe('GET /api/inbox — card enrichment', () => {
     });
     await seed({ id: 'perm-assn2', slug: 'perm-settled-row', status: 'in_progress', project: 'p1' });
     await seed({ id: 'reply-assn2', slug: 'reply-older-row', status: 'in_progress', project: 'p1' });
-    await seedQuestionComment('p1', 'reply-older-row', 'reply-assn2', {
+    await seedQuestionLog('p1', 'reply-older-row', 'reply-assn2', {
       id: 'cq-reply-order2',
       author: 'claude',
       timestamp: '2026-06-01T00:00:00Z',
       body: `Need input\n\n${replyMarker}`,
     });
-    await seedQuestionComment('p1', 'perm-settled-row', 'perm-assn2', {
+    await seedQuestionLog('p1', 'perm-settled-row', 'perm-assn2', {
       id: 'cq-perm-order2',
       author: 'cursor',
       timestamp: '2026-06-15T00:00:00Z',
@@ -541,7 +540,7 @@ describe('GET /api/inbox — card enrichment', () => {
   it('returns card:null with HTTP 200 when the session db is closed', async () => {
     const permItemId = 'perm-closed-db';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
-    await seedQuestionComment('p1', 'perm-row', TICKET_ID, {
+    await seedQuestionLog('p1', 'perm-row', TICKET_ID, {
       id: 'cq-closed-db',
       author: 'cursor',
       body: `Waiting for permission\n\n${marker}`,
@@ -614,7 +613,7 @@ describe('GET /api/inbox — maxAgeDays', () => {
     const permItemId = 'perm~old~window';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
     await seed({ id: 'perm-a', slug: 'perm-old', status: 'in_progress', project: 'p1' });
-    await seedQuestionComment('p1', 'perm-old', 'perm-a', {
+    await seedQuestionLog('p1', 'perm-old', 'perm-a', {
       id: 'cq-perm-old',
       author: 'cursor',
       timestamp: oldAt,
@@ -703,7 +702,7 @@ describe('PUT/DELETE /api/inbox/snoozes/:rowKey', () => {
     const permItemId = 'perm-snooze';
     const marker = formatChatQuestionMarker({ kind: 'permission', itemId: permItemId });
     await seed({ id: 'perm-a', slug: 'perm-row', status: 'in_progress', project: 'p1' });
-    await seedQuestionComment('p1', 'perm-row', 'perm-a', {
+    await seedQuestionLog('p1', 'perm-row', 'perm-a', {
       id: 'cq-perm',
       author: 'cursor',
       body: `Waiting\n\n${marker}`,

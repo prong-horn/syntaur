@@ -100,8 +100,10 @@ export interface InboxItem {
   reopenCommand?: string | null;
   /** Review-only: gate hint to log an approving review when not yet clean. */
   logReviewHint?: string;
-  /** Question-only: the unresolved comment's id (for reply `replyTo` + resolve). */
-  commentId?: string;
+  /** Question-only: the open question entry timestamp (for answer log entries). */
+  questionTs?: string;
+  /** Question-only: journal tab id for deep links (`file:<log path>`). */
+  journalTab?: string;
   /** Question-only: chat-sourced row linking to a chat item. */
   chat?: InboxChatRef;
   /** Permission/ask chat rows: card options from the chat index (API-enriched). */

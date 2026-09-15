@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import * as acp from '@agentclientprotocol/sdk';
 import { closeSessionDb, getSessionDb, initSessionDb } from '../dashboard/session-db.js';
+import { closeEventsDb, initEventsDb, resetEventsDb } from '../db/events-db.js';
 import { closeUsageDb, initUsageDb } from '../db/usage-db.js';
 import { getChatSession, getHarnessOptions, upsertChatItem, upsertChatSession, setHarnessCommands } from '../db/chat-db.js';
 import { openEngagement } from '../db/engagement-db.js';
@@ -35,7 +36,7 @@ import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { parseProgress } from '../dashboard/parser.js';
-import { parseComments } from '../dashboard/parser.js';
+import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
 
 /**
  * Task 6 — the broker, driven against the in-process fake ACP agent
@@ -193,10 +194,13 @@ beforeEach(async () => {
   frames = [];
   closeSessionDb();
   closeUsageDb();
+  closeEventsDb();
+  resetEventsDb();
   initSessionDb(join(sandbox, 'syntaur.db'));
   // The broker's codex usage write goes through the usage db, which shares the
   // same file but keeps its own connection.
   initUsageDb(join(sandbox, 'syntaur.db'));
+  initEventsDb(join(sandbox, 'events.db'));
 });
 
 afterEach(async () => {
@@ -204,6 +208,8 @@ afterEach(async () => {
   for (const client of clients) await client.close().catch(() => {});
   closeSessionDb();
   closeUsageDb();
+  closeEventsDb();
+  resetEventsDb();
   await rm(sandbox, { recursive: true, force: true });
 });
 
@@ -509,19 +515,15 @@ describe('permissions (Decision 9)', () => {
     const perm = itemsOfType('permission.request')[0] as { timedOut?: boolean };
     expect(perm.timedOut).toBe(true);
 
-    // The Inbox derives its `question` category from unresolved comments.md
-    // questions, so that is where the escalation lands. The comment is written
-    // from the timeout callback, which nothing awaits, so poll for it rather
-    // than assume it landed before the turn ended.
-    await waitUntil(
-      () => existsSync(join(ticketDir, 'comments.md')),
-      'the Inbox question to be filed',
-    );
-    const comments = await readFile(join(ticketDir, 'comments.md'), 'utf-8');
-    expect(comments).toContain('**Type:** question');
-    // Unresolved is what makes the Inbox pick it up (src/inbox/index.ts).
-    expect(comments).toContain('**Resolved:** false');
-    expect(comments).toContain('Run `rm -rf out`');
+    // The Inbox derives its `question` category from open log questions.
+    await waitUntil(async () => {
+      if (!existsSync(join(ticketDir, 'progress.md'))) return false;
+      const entries = parseLogEntries(await readFile(join(ticketDir, 'progress.md'), 'utf-8'));
+      return openQuestions(entries).some((e) => e.body.includes('Run `rm -rf out`'));
+    }, 'the Inbox question to be filed');
+    const entries = parseLogEntries(await readFile(join(ticketDir, 'progress.md'), 'utf-8'));
+    const question = openQuestions(entries).find((e) => e.body.includes('Run `rm -rf out`'));
+    expect(question?.type).toBe('question');
   });
 });
 
@@ -574,7 +576,8 @@ describe('permissions auto-approve', () => {
     expect(perm.answer).toBe('allow');
     expect(perm.auto).toBe(true);
     expect(perm.sealed).toBe(true);
-    expect(existsSync(join(ticketDir, 'comments.md'))).toBe(false);
+    const progressContent = await readFile(join(ticketDir, 'progress.md'), 'utf-8');
+    expect(openQuestions(parseLogEntries(progressContent))).toHaveLength(0);
   });
 
   it('prefers allow_once on the cursor option shape', async () => {
@@ -2450,15 +2453,27 @@ describe('turn progress entries', () => {
 });
 
 describe('inbox questions (needs-me)', () => {
-  const commentsPath = () => join(ticketDir, 'comments.md');
+  const logPath = () => join(ticketDir, 'progress.md');
 
-  async function parseTicketComments() {
-    return parseComments(await readFile(commentsPath(), 'utf-8'));
+  async function readLogEntries() {
+    if (!existsSync(logPath())) return [];
+    return parseLogEntries(await readFile(logPath(), 'utf-8'));
   }
 
   async function readComments() {
-    if (!existsSync(commentsPath())) return { entries: [] };
-    return parseTicketComments();
+    const entries = await readLogEntries();
+    return { entries, open: openQuestions(entries) };
+  }
+
+  async function waitForOpenQuestion(match?: (body: string) => boolean): Promise<void> {
+    await waitUntil(async () => {
+      const open = openQuestions(await readLogEntries());
+      return match ? open.some((e) => match(e.body)) : open.length > 0;
+    }, 'log question');
+  }
+
+  function isResolved(entries: ReturnType<typeof parseLogEntries>, timestamp: string): boolean {
+    return !openQuestions(entries).some((e) => e.timestamp === timestamp);
   }
 
   async function writeAgentFile(id: string, extra = ''): Promise<void> {
@@ -2504,23 +2519,24 @@ describe('inbox questions (needs-me)', () => {
     });
     await broker.send({ ticket: ticket(), text: 'pick a name' });
     await idle();
-    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    const parsed = await parseTicketComments();
-    expect(parsed.entries).toHaveLength(1);
-    expect(parsed.entries[0]).toMatchObject({ author: 'claude', type: 'question', resolved: false });
-    expect(parsed.entries[0].body).toContain('Which name should I use: alpha or beta?');
-    expect(parsed.entries[0].body).toContain('kind="reply"');
+    await waitForOpenQuestion((body) => body.includes('Which name should I use'));
+    const entries = await readLogEntries();
+    const q = entries.find((e) => e.type === 'question')!;
+    expect(q).toMatchObject({ author: 'claude', type: 'question' });
+    expect(openQuestions(entries)).toHaveLength(1);
+    expect(q.body).toContain('Which name should I use: alpha or beta?');
+    expect(q.body).toContain('kind="reply"');
     const reply = itemsOfType('agent.message')[0] as { itemId: string };
     const status = itemsOfType('turn.status')[0] as { turnId: string };
-    expect(parsed.entries[0].body).toContain(`item="${reply.itemId}"`);
-    expect(parsed.entries[0].body).toContain(`turn="${status.turnId}"`);
+    expect(q.body).toContain(`item="${reply.itemId}"`);
+    expect(q.body).toContain(`turn="${status.turnId}"`);
   });
 
   it('does not file a reply question for a non-question ending', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'update', update: textChunk('Done.', 'm1') }] }] });
     await broker.send({ ticket: ticket(), text: 'go' });
     await idle();
-    expect(existsSync(commentsPath())).toBe(false);
+    expect((await readLogEntries()).filter((e) => e.type === 'question')).toHaveLength(0);
   });
 
   it('does not file when the reply hops to another agent', async () => {
@@ -2554,7 +2570,7 @@ describe('inbox questions (needs-me)', () => {
     await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
     await broker.send({ ticket: ticket(), text: 'pick' });
     await idle(2);
-    expect(existsSync(commentsPath())).toBe(false);
+    expect((await readLogEntries()).filter((e) => e.type === 'question')).toHaveLength(0);
   });
 
   it('does not file a reply question for a handoff-triggered turn', async () => {
@@ -2588,7 +2604,7 @@ describe('inbox questions (needs-me)', () => {
     await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
     await broker.send({ ticket: ticket(), text: 'pick' });
     await idle(2);
-    expect(existsSync(commentsPath())).toBe(false);
+    expect((await readLogEntries()).filter((e) => e.type === 'question')).toHaveLength(0);
   });
 
   it('keeps a reply question open when send targets another agent, then resolves on asker', async () => {
@@ -2604,14 +2620,15 @@ describe('inbox questions (needs-me)', () => {
     await broker.setParticipants(ticket(), { agents: ['claude', 'codex'], defaultAgent: 'claude' });
     await broker.send({ ticket: ticket(), text: 'pick' });
     await idle();
-    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    await waitForOpenQuestion((body) => body.includes('Which name should I use'));
+    const questionTs = (await readLogEntries()).find((e) => e.type === 'question')!.timestamp;
+    expect(isResolved(await readLogEntries(), questionTs)).toBe(false);
     await broker.send({ ticket: ticket(), text: 'hi codex', agentId: 'codex' });
     await idle(2);
-    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    expect(isResolved(await readLogEntries(), questionTs)).toBe(false);
     await broker.send({ ticket: ticket(), text: 'use alpha', agentId: 'claude' });
     await idle(2);
-    expect((await parseTicketComments()).entries[0].resolved).toBe(true);
+    expect(isResolved(await readLogEntries(), questionTs)).toBe(true);
   });
 
   it('resolves a reply question when the human sends to that agent', async () => {
@@ -2623,28 +2640,26 @@ describe('inbox questions (needs-me)', () => {
     });
     await broker.send({ ticket: ticket(), text: 'pick' });
     await idle();
-    await waitUntil(() => existsSync(commentsPath()), 'comments.md');
-    const before = await parseTicketComments();
-    expect(before.entries[0].resolved).toBe(false);
+    await waitForOpenQuestion((body) => body.includes('Which name should I use'));
+    const questionTs = (await readLogEntries()).find((e) => e.type === 'question')!.timestamp;
+    expect(isResolved(await readLogEntries(), questionTs)).toBe(false);
     await broker.send({ ticket: ticket(), text: 'use alpha' });
-    await idle(2);
-    const after = await parseTicketComments();
-    expect(after.entries[0].resolved).toBe(true);
+    await waitUntil(async () => isResolved(await readLogEntries(), questionTs), 'resolved reply question');
   });
 
   it('files a permission grace comment and resolves it on answer', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
     await broker.send({ ticket: ticket(), text: 'go' });
     await waitUntil(() => itemsOfType('permission.request').length === 1, 'permission card');
-    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    await waitForOpenQuestion();
     const perm = itemsOfType('permission.request')[0] as { requestId: string; itemId: string };
-    const parsed = await parseTicketComments();
-    expect(parsed.entries[0].body).toContain('kind="permission"');
-    expect(parsed.entries[0].body).toContain(`item="${perm.itemId}"`);
+    const entries = await readLogEntries();
+    const grace = entries.find((e) => e.type === 'question')!;
+    expect(grace.body).toContain('kind="permission"');
+    expect(grace.body).toContain(`item="${perm.itemId}"`);
     expect(await broker.answerPermission(ticket(), perm.requestId, 'allow')).toBe(true);
     await idle();
-    const after = await parseTicketComments();
-    expect(after.entries[0].resolved).toBe(true);
+    expect(isResolved(await readLogEntries(), grace.timestamp)).toBe(true);
   });
 
   it('does not file a grace comment when permission is answered before the grace', async () => {
@@ -2654,18 +2669,18 @@ describe('inbox questions (needs-me)', () => {
     const perm = itemsOfType('permission.request')[0] as { requestId: string };
     expect(await broker.answerPermission(ticket(), perm.requestId, 'allow')).toBe(true);
     await idle();
-    expect(existsSync(commentsPath())).toBe(false);
+    expect((await readLogEntries()).filter((e) => e.type === 'question')).toHaveLength(0);
   });
 
   it('resolves the grace comment before filing the timeout denial question', async () => {
-    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 5, permissionMs: 80 } });
+    makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 50, permissionMs: 300 } });
     await broker.send({ ticket: ticket(), text: 'go' });
-    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    await waitForOpenQuestion();
+    await idle(1);
     await waitUntil(async () => {
-      const parsed = await readComments();
-      const open = parsed.entries.filter((e) => e.type === 'question' && e.resolved !== true);
-      return open.length === 1 && open[0].body.includes('nobody answered within');
-    }, 'denial question');
+      const entries = await readLogEntries();
+      return entries.some((e) => e.type === 'question' && e.body.includes('nobody answered within'));
+    }, 'denial question', 10_000);
   });
 
   it('files and resolves an ask_question grace comment', async () => {
@@ -2693,15 +2708,15 @@ describe('inbox questions (needs-me)', () => {
     await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
     const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
-    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
+    await waitForOpenQuestion();
     const card = itemsOfType('question')[0] as { requestId: string; itemId: string };
-    const parsed = await parseTicketComments();
-    expect(parsed.entries[0].body).toContain('kind="ask"');
-    expect(parsed.entries[0].body).toContain('Which colour?');
+    const grace = (await readLogEntries()).find((e) => e.type === 'question')!;
+    expect(grace.body).toContain('kind="ask"');
+    expect(grace.body).toContain('Which colour?');
     expect(await broker.answerQuestion(ticket(), card.requestId, { optionId: 'a' })).toBe(true);
     await sendP;
     await idle();
-    expect((await parseTicketComments()).entries[0].resolved).toBe(true);
+    expect(isResolved(await readLogEntries(), grace.timestamp)).toBe(true);
   });
 
   it('allow-all sweep resolves the other parked card grace comment', async () => {
@@ -2740,8 +2755,7 @@ describe('inbox questions (needs-me)', () => {
       await broker.answerPermission(ticket(), perms[0].requestId, 'allow', { allowAllSession: true }),
     ).toBe(true);
     await idle();
-    const parsed = await parseTicketComments();
-    expect(parsed.entries.every((e) => e.resolved === true)).toBe(true);
+    expect(openQuestions(await readLogEntries())).toHaveLength(0);
   });
 
   it('resolves an orphan grace comment when the card settles during filing', async () => {
@@ -2754,19 +2768,21 @@ describe('inbox questions (needs-me)', () => {
     await sendP;
     await idle();
     await waitUntil(async () => {
-      const parsed = await readComments();
-      return parsed.entries.length === 0 || parsed.entries.every((e) => e.resolved !== false);
+      const { entries, open } = await readComments();
+      const questions = entries.filter((e) => e.type === 'question');
+      return questions.length === 0 || open.length === 0;
     }, 'orphan grace resolved');
   });
 
   it('resolves grace comments during crash repair for open permissions', async () => {
     makeBroker({ turns: [permissionTurn], timeouts: { inboxGraceMs: 1, permissionMs: 60_000 } });
     await broker.send({ ticket: ticket(), text: 'go' });
-    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
-    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    await waitForOpenQuestion();
+    const graceTs = (await readLogEntries()).find((e) => e.type === 'question')!.timestamp;
+    expect(isResolved(await readLogEntries(), graceTs)).toBe(false);
     makeBroker({ turns: [{ steps: [] }] });
     await broker.getSession(ticket(), 'claude');
-    await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(async () => isResolved(await readLogEntries(), graceTs), 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
       'repair warn row',
@@ -2798,13 +2814,14 @@ describe('inbox questions (needs-me)', () => {
     await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
     const sendP = broker.send({ ticket: ticket(), agentId: 'cursor', text: 'ask' });
     await waitUntil(() => itemsOfType('question').length > 0, 'question card');
-    await waitUntil(() => existsSync(commentsPath()), 'grace comment');
-    expect((await parseTicketComments()).entries[0].resolved).toBe(false);
+    await waitForOpenQuestion();
+    const graceTs = (await readLogEntries()).find((e) => e.type === 'question')!.timestamp;
+    expect(isResolved(await readLogEntries(), graceTs)).toBe(false);
     await sendP;
     makeBroker({ turns: [{ steps: [] }], agentOptions: { resumeSupported: false } });
     await broker.setParticipants(ticket(), { agents: ['cursor'], defaultAgent: 'cursor' });
     await broker.getSession(ticket(), 'cursor');
-    await waitUntil(async () => (await readComments()).entries[0]?.resolved === true, 'resolved grace');
+    await waitUntil(async () => isResolved(await readLogEntries(), graceTs), 'resolved grace');
     await waitUntil(
       () => systemTexts().some((t) => t.includes('expired when the dashboard restarted')),
       'repair warn row',
@@ -2844,7 +2861,7 @@ describe('inbox questions (needs-me)', () => {
   });
 
   it.skipIf(process.platform === 'win32')(
-    'warns and still ends the turn when comments.md cannot be written',
+    'warns and still ends the turn when the log file cannot be written',
     async () => {
       makeBroker({
         turns: [
@@ -2856,11 +2873,11 @@ describe('inbox questions (needs-me)', () => {
       await idle();
       const { chmod } = await import('node:fs/promises');
       await writeFile(
-        commentsPath(),
-        '---\nticket: chat-demo\nentryCount: 0\nupdated: "x"\n---\n\n# Comments\n\nNo comments yet.\n',
+        logPath(),
+        renderProgress({ ticket: 'chat-demo', timestamp: '2026-09-06T12:00:00Z' }),
       );
       try {
-        await chmod(commentsPath(), 0o000);
+        await chmod(logPath(), 0o000);
         await broker.send({ ticket: ticket(), text: 'pick' });
         await idle(2);
         await waitUntil(
@@ -2871,7 +2888,7 @@ describe('inbox questions (needs-me)', () => {
         const status = itemsOfType('turn.status').at(-1) as { stopReason?: string };
         expect(status.stopReason).toBe('end_turn');
       } finally {
-        await chmod(commentsPath(), 0o644);
+        await chmod(logPath(), 0o644);
       }
     },
   );

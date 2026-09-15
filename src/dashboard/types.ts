@@ -218,7 +218,6 @@ export interface TicketDetail {
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
   progress: TicketProgress | null;
-  comments: TicketComments | null;
   referencedBy: TicketReference[];
   /** Full per-session stage-attribution history (oldest first). Empty when the session DB is not initialized (non-dashboard callers). */
   engagements: EngagementInfo[];

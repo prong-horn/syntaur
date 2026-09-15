@@ -68,8 +68,10 @@ export interface InboxItem {
   acceptCommand?: string | null;
   /** Review-only: derived CLI verb that reopens the review, or null if none. */
   reopenCommand?: string | null;
-  /** Question-only: the unresolved comment's id (reply `replyTo` + resolve). */
-  commentId?: string;
+  /** Question-only: the open question entry timestamp. */
+  questionTs?: string;
+  /** Question-only: journal tab id (`file:<log path>`). */
+  journalTab?: string;
   /** Question-only: chat-sourced row linking to a chat item. */
   chat?: InboxChatRef;
   /** Permission/ask chat rows: card options from the API. */
@@ -258,27 +260,11 @@ export function planApproveEndpoint(item: RouteIdentity): EndpointDescriptor {
   };
 }
 
-/**
- * Resolve the comments POST endpoint (used to answer a question by replying).
- */
-export function commentsEndpoint(item: RouteIdentity): EndpointDescriptor {
+/** POST a typed log entry (answer questions from the inbox). */
+export function logEndpoint(item: RouteIdentity): EndpointDescriptor {
   return {
     method: 'POST',
-    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments`,
-  };
-}
-
-/**
- * Resolve the comment-resolved PATCH endpoint (mark a question answered).
- */
-export function resolveCommentEndpoint(
-  item: RouteIdentity,
-  commentId: string,
-): EndpointDescriptor {
-  const cid = encodeURIComponent(commentId);
-  return {
-    method: 'PATCH',
-    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/comments/${cid}/resolved`,
+    url: `/api/tickets/${encodeURIComponent(item.ticketId)}/log`,
   };
 }
 
@@ -287,9 +273,12 @@ export function resolveCommentEndpoint(
  * tab (`plan` for plan-approval, `comments` for questions).
  */
 export function ticketHref(
-  item: RouteIdentity,
-  tab?: 'plan' | 'comments' | 'chat',
+  item: RouteIdentity & { journalTab?: string },
+  tab?: 'plan' | 'journal' | 'chat',
 ): string {
+  if (tab === 'journal' && item.journalTab) {
+    return `/t/${encodeURIComponent(item.ticketId)}?tab=${encodeURIComponent(item.journalTab)}`;
+  }
   const query = tab ? `?tab=${tab}` : '';
   return `/t/${encodeURIComponent(item.ticketId)}${query}`;
 }

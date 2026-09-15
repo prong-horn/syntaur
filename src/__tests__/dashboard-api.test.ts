@@ -52,7 +52,7 @@ async function createProjectFiles(
     handoffMd?: string;
     decisionMd?: string;
     progressMd?: string;
-    commentsMd?: string;
+    journalMd?: string;
   }> = [],
   statusMd?: string,
 ): Promise<void> {
@@ -84,27 +84,19 @@ async function createProjectFiles(
     if (ticket.progressMd) {
       await writeFile(resolve(ticketDir, 'progress.md'), ticket.progressMd, 'utf-8');
     }
-    if (ticket.commentsMd) {
-      await writeFile(resolve(ticketDir, 'comments.md'), ticket.commentsMd, 'utf-8');
+    if (ticket.journalMd) {
+      await writeFile(resolve(ticketDir, 'journal.md'), ticket.journalMd, 'utf-8');
     }
   }
 }
 
-const COMMENTS_MD_ONE_OPEN_QUESTION = `---
-ticket: test-ticket
-entryCount: 1
-generated: "2026-04-07T10:00:00Z"
-updated: "2026-04-07T10:00:00Z"
+const JOURNAL_MD_ONE_OPEN_QUESTION = `---
+purpose: journal
 ---
 
-# Comments
+# Journal
 
-## q-1
-
-**Recorded:** 2026-04-07T10:00:00Z
-**Author:** codex-1
-**Type:** question
-**Resolved:** false
+## 2026-04-07T10:00:00Z · question · codex-1
 
 Waiting on approval?
 `;
@@ -257,7 +249,7 @@ needsAttention:
       {
         slug: 'test-ticket',
         ticketMd: TICKET_MD,
-        commentsMd: COMMENTS_MD_ONE_OPEN_QUESTION,
+        journalMd: JOURNAL_MD_ONE_OPEN_QUESTION,
       },
     ], statusMd);
 
@@ -327,7 +319,7 @@ describe('getTicketDetail', () => {
     expect(result!.availableVerbs.map((action) => action.command)).toContain('review');
   });
 
-  it('attaches progress and comments when the files exist', async () => {
+  it('attaches progress and journal log entries when the files exist', async () => {
     const progressMd = `---
 ticket: test-ticket
 entryCount: 2
@@ -351,7 +343,7 @@ First entry.
         slug: 'test-ticket',
         ticketMd: TICKET_MD,
         progressMd,
-        commentsMd: COMMENTS_MD_ONE_OPEN_QUESTION,
+        journalMd: JOURNAL_MD_ONE_OPEN_QUESTION,
       },
     ]);
 
@@ -361,19 +353,21 @@ First entry.
     expect(result!.progress!.entryCount).toBe(2);
     expect(result!.progress!.entries).toHaveLength(2);
     expect(result!.progress!.entries[0].timestamp).toBe('2026-04-07T14:00:00Z');
-    expect(result!.comments).not.toBeNull();
-    expect(result!.comments!.entries[0].type).toBe('question');
-    expect(result!.comments!.entries[0].resolved).toBe(false);
+    const journal = result!.templateBlock.files.find((f) => f.path === 'journal.md');
+    expect(journal?.logEntries?.[0]?.type).toBe('question');
+    expect(journal?.logEntries?.[0]?.firstLine).toBe('Waiting on approval?');
   });
 
-  it('leaves progress and comments null when the files are absent', async () => {
+  it('leaves progress null and journal log missing when the files are absent', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-ticket', ticketMd: TICKET_MD },
     ]);
     const result = await getTicketDetail(testDir, 'test-project', 'test-ticket');
     expect(result).not.toBeNull();
     expect(result!.progress).toBeNull();
-    expect(result!.comments).toBeNull();
+    const journal = result!.templateBlock.files.find((f) => f.path === 'journal.md');
+    expect(journal?.exists).toBe(false);
+    expect(journal?.logEntries).toBeUndefined();
   });
 
   it('includes the template block with manifest file metadata', async () => {
@@ -542,22 +536,18 @@ Show route test.
 });
 
 describe('referencedBy backlinks', () => {
-  it('lists A under B.referencedBy when A links to B via relative path in its comments', async () => {
+  it('lists A under B.referencedBy when A links to B via relative path in its progress', async () => {
     const { getTicketDetail } = await import('../dashboard/api.js');
-    const commentsWithLink = `---
+    const progressWithLink = `---
 ticket: source-a
 entryCount: 1
 generated: "2026-04-20T10:00:00Z"
 updated: "2026-04-20T10:00:00Z"
 ---
 
-# Comments
+# Progress
 
-## c-1
-
-**Recorded:** 2026-04-20T10:00:00Z
-**Author:** claude-1
-**Type:** note
+## 2026-04-20T10:00:00Z
 
 See [target](../target-b/ticket.md) for context.
 `;
@@ -566,7 +556,7 @@ See [target](../target-b/ticket.md) for context.
       {
         slug: 'source-a',
         ticketMd: TICKET_MD.replace('slug: test-ticket', 'slug: source-a').replace('id: a-123', 'id: a-111'),
-        commentsMd: commentsWithLink,
+        progressMd: progressWithLink,
       },
       {
         slug: 'target-b',
@@ -585,7 +575,7 @@ See [target](../target-b/ticket.md) for context.
 
   it('caps referencedBy at 50 entries', async () => {
     const { getTicketDetail } = await import('../dashboard/api.js');
-    const target: Array<{ slug: string; ticketMd: string; commentsMd?: string }> = [
+    const target: Array<{ slug: string; ticketMd: string; progressMd?: string }> = [
       {
         slug: 'target',
         ticketMd: TICKET_MD.replace('slug: test-ticket', 'slug: target').replace('id: a-123', 'id: t-id'),
@@ -595,20 +585,16 @@ See [target](../target-b/ticket.md) for context.
       target.push({
         slug: `src-${i}`,
         ticketMd: TICKET_MD.replace('slug: test-ticket', `slug: src-${i}`).replace('id: a-123', `id: src-${i}`),
-        commentsMd: `---
+        progressMd: `---
 ticket: src-${i}
 entryCount: 1
 generated: "2026-04-20T10:00:00Z"
 updated: "2026-04-20T10:00:00Z"
 ---
 
-# Comments
+# Progress
 
-## c-1
-
-**Recorded:** 2026-04-20T10:00:00Z
-**Author:** a
-**Type:** note
+## 2026-04-20T10:00:00Z
 
 link: [t](../target/ticket.md)
 `,
@@ -831,6 +817,7 @@ tags: []
 id: ${slug}-id
 slug: ${slug}
 title: ${slug}
+template: feature
 status: ${status}
 priority: medium
 created: "2026-03-20T10:00:00Z"
@@ -886,10 +873,10 @@ tags: []
               buildPerfTicketMd(slug, status, dependsIds),
               'utf-8',
             );
-            // Every 4th ticket gets a comments.md with an open question —
+            // Every 4th ticket gets a journal.md with an open question —
             // exercises the parallelized countOpenQuestions in buildProjectRollup.
             if (a % 4 === 0) {
-              await writeFile(resolve(aDir, 'comments.md'), COMMENTS_MD_ONE_OPEN_QUESTION, 'utf-8');
+              await writeFile(resolve(aDir, 'journal.md'), JOURNAL_MD_ONE_OPEN_QUESTION, 'utf-8');
             }
           }),
         );

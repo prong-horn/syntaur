@@ -3,13 +3,12 @@ import {
   ticketHref,
   chatItemHref,
   chatReplyText,
-  commentsEndpoint,
+  logEndpoint,
   formatAge,
   inboxRowHref,
   isSnoozable,
   planApproveEndpoint,
   projectOptions,
-  resolveCommentEndpoint,
   rowKey,
   rowKind,
   snoozeEndpoint,
@@ -38,7 +37,7 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
 
 describe('rowKey', () => {
   it('uses chat item id, compact-ts log rows, or category ticket-level keys', () => {
-    expect(rowKey(makeItem({ category: 'question', commentId: 'c1', since: '2026-06-16T00:00:00Z' }))).toBe(
+    expect(rowKey(makeItem({ category: 'question', questionTs: '2026-06-16T00:00:00Z', since: '2026-06-16T00:00:00Z' }))).toBe(
       'uuid-1~20260616T000000Z',
     );
     expect(
@@ -197,32 +196,17 @@ describe('transitionEndpoint', () => {
   });
 });
 
-describe('commentsEndpoint', () => {
-  it('maps question reply for project and standalone by ticket id', () => {
+describe('logEndpoint', () => {
+  it('maps question answer log POST for project and standalone by ticket id', () => {
     const proj = makeItem({ category: 'question' });
-    expect(commentsEndpoint(proj)).toEqual({
+    expect(logEndpoint(proj)).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-1/comments',
+      url: '/api/tickets/uuid-1/log',
     });
     const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
-    expect(commentsEndpoint(standalone)).toEqual({
+    expect(logEndpoint(standalone)).toEqual({
       method: 'POST',
-      url: '/api/tickets/uuid-q/comments',
-    });
-  });
-});
-
-describe('resolveCommentEndpoint', () => {
-  it('maps question resolve for project and standalone by ticket id (PATCH)', () => {
-    const proj = makeItem({ category: 'question' });
-    expect(resolveCommentEndpoint(proj, 'c1')).toEqual({
-      method: 'PATCH',
-      url: '/api/tickets/uuid-1/comments/c1/resolved',
-    });
-    const standalone = makeItem({ category: 'question', project: null, ticketId: 'uuid-q' });
-    expect(resolveCommentEndpoint(standalone, 'c2')).toEqual({
-      method: 'PATCH',
-      url: '/api/tickets/uuid-q/comments/c2/resolved',
+      url: '/api/tickets/uuid-q/log',
     });
   });
 });
@@ -232,7 +216,9 @@ describe('ticketHref', () => {
     const item = makeItem({ category: 'plan-approval' });
     expect(ticketHref(item)).toBe('/t/uuid-1');
     expect(ticketHref(item, 'plan')).toBe('/t/uuid-1?tab=plan');
-    expect(ticketHref(item, 'comments')).toBe('/t/uuid-1?tab=comments');
+    expect(ticketHref({ ...item, journalTab: 'file:journal.md' }, 'journal')).toBe(
+      '/t/uuid-1?tab=file%3Ajournal.md',
+    );
   });
 
   it('builds the standalone jump-href keyed on the UUID', () => {

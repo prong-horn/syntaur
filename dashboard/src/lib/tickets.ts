@@ -97,22 +97,20 @@ export async function updateTicketTitle(args: {
 /** @deprecated Use {@link updateTicketTitle} */
 export const updateTicketTitleById = updateTicketTitle;
 
-export type QuickCommentType = 'question' | 'note' | 'feedback';
+export type QuickLogType = 'question' | 'note' | 'progress' | 'decision';
 
-/** Post a single quick comment to a ticket. */
-export async function postQuickComment(args: {
+/** Post a single typed log entry to a ticket. */
+export async function postQuickLog(args: {
   id: string;
   body: string;
-  type?: QuickCommentType;
-  author?: string;
+  type?: QuickLogType;
 }): Promise<void> {
-  const response = await fetch(`/api/tickets/${args.id}/comments`, {
+  const response = await fetch(`/api/tickets/${args.id}/log`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       body: args.body,
       type: args.type ?? 'note',
-      author: args.author,
     }),
   });
 

@@ -376,12 +376,10 @@ export function createChatRouter(
       const body = (req.body ?? {}) as {
         kind?: string;
         body?: string;
-        title?: string;
-        commentType?: string;
       };
 
       if (!body.kind || !(CHAT_RECORD_KINDS as readonly string[]).includes(body.kind)) {
-        res.status(400).json({ error: 'kind must be decision, progress or comment' });
+        res.status(400).json({ error: 'kind must be decision, progress, note or question' });
         return;
       }
 
@@ -394,37 +392,9 @@ export function createChatRouter(
         return;
       }
 
-      let decisionTitle: string | undefined;
-      if (body.kind === 'decision') {
-        decisionTitle = typeof body.title === 'string' ? body.title.trim() : '';
-        if (!decisionTitle) {
-          res.status(400).json({ error: 'title is required for a decision' });
-          return;
-        }
-        if (/[\r\n]/.test(decisionTitle)) {
-          res.status(400).json({ error: 'title must be a single line' });
-          return;
-        }
-        if (decisionTitle.length > 200) {
-          res.status(400).json({ error: 'title must be at most 200 characters' });
-          return;
-        }
-      }
-
-      if (body.commentType !== undefined) {
-        if (!['note', 'feedback', 'question'].includes(body.commentType)) {
-          res.status(400).json({ error: 'commentType must be note, feedback or question' });
-          return;
-        }
-      }
-
       const record = await broker.fileRecord(ticket, String(req.params.itemId), {
-        kind: body.kind as 'decision' | 'progress' | 'comment',
+        kind: body.kind as 'decision' | 'progress' | 'note' | 'question',
         body: body.body,
-        ...(decisionTitle ? { title: decisionTitle } : {}),
-        ...(body.commentType
-          ? { commentType: body.commentType as 'note' | 'feedback' | 'question' }
-          : {}),
       });
       res.status(201).json({ record });
     } catch (err) {

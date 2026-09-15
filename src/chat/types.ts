@@ -84,14 +84,17 @@ export interface ChatEvent {
 export const HUMAN_AGENT_ID = 'human';
 export const SYSTEM_AGENT_ID = 'system';
 
-export type ChatRecordKind = 'decision' | 'progress' | 'comment';
-export const CHAT_RECORD_KINDS: readonly ChatRecordKind[] = ['decision', 'progress', 'comment'];
+export type ChatRecordKind = 'decision' | 'progress' | 'note' | 'question';
+export const CHAT_RECORD_KINDS: readonly ChatRecordKind[] = [
+  'decision',
+  'progress',
+  'note',
+  'question',
+];
 
 export interface FileChatRecordInput {
   kind: ChatRecordKind;
   body: string;
-  title?: string;
-  commentType?: 'note' | 'feedback' | 'question';
 }
 
 export interface FiledChatRecord {

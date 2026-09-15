@@ -316,7 +316,7 @@ export function ChatTab({ ticketId }: ChatTabProps) {
 
       <FileRecordDialog
         open={filing !== null}
-        kind={filing?.kind ?? 'comment'}
+        kind={filing?.kind ?? 'note'}
         item={filing?.item ?? null}
         sourceLabel={
           filing?.item.agentId === HUMAN_AGENT_ID

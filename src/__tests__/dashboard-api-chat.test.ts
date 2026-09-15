@@ -13,7 +13,7 @@ import { createChatBroker, type ChatBroker } from '../chat/broker.js';
 import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import type { WsMessage } from '../dashboard/types.js';
-import { parseDecisionRecord } from '../dashboard/parser.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
 
 /**
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
@@ -132,6 +132,7 @@ beforeEach(async () => {
       `id: ${TICKET_ID}`,
       'slug: chat-demo',
       'title: "Chat demo"',
+      'template: feature',
       'status: ready',
       'project: syntaur-meta',
       'workspace:',
@@ -827,40 +828,39 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
 
   it('files a sealed reply as a decision with a system row', async () => {
     const itemId = await replyItemId();
-    const res = await fileItem(itemId, { kind: 'decision', title: 'Use X', body: 'ok reply text' });
+    const res = await fileItem(itemId, { kind: 'decision', body: 'ok reply text' });
     expect(res.status).toBe(201);
     const { record } = (await res.json()) as { record: { ref: string; label: string } };
-    expect(record.ref).toBe('Decision 1');
-    expect(record.label).toBe('Decision 1: Use X');
+    expect(record.label).toBe('a decision entry');
 
-    const decisionMd = await readFile(join(ticketDir, 'decision-record.md'), 'utf-8');
-    expect(decisionMd).toContain('## Use X');
-    expect(decisionMd).toContain('**Recorded:**');
-    expect(decisionMd).toContain('_Filed from chat (@claude,');
-    expect(parseDecisionRecord(decisionMd).decisionCount).toBe(1);
+    const journalMd = await readFile(join(ticketDir, 'journal.md'), 'utf-8');
+    expect(journalMd).toContain('· decision · claude');
+    expect(journalMd).toContain('ok reply text');
+    expect(journalMd).toContain('_Filed from chat (@claude,');
+    expect(parseLogEntries(journalMd).some((e) => e.type === 'decision')).toBe(true);
 
     const items = (await (await fetch(url(`/tickets/${TICKET_ID}/chat/items`))).json()) as {
       items: Array<{ type: string; text?: string }>;
     };
     const filed = items.items.find((i) => i.type === 'system' && i.text?.startsWith('Filed '));
-    expect(filed?.text).toContain('Decision 1: Use X');
+    expect(filed?.text).toContain('a decision entry');
   });
 
-  it('files a progress entry and bumps entryCount', async () => {
+  it('files a progress entry to the journal', async () => {
     const itemId = await replyItemId();
     const res = await fileItem(itemId, { kind: 'progress', body: 'Filed manually.' });
     expect(res.status).toBe(201);
-    const progressMd = await readFile(join(ticketDir, 'progress.md'), 'utf-8');
-    expect(progressMd).toMatch(/entryCount: 1/);
+    const journalMd = await readFile(join(ticketDir, 'journal.md'), 'utf-8');
+    expect(parseLogEntries(journalMd).some((e) => e.type === 'progress' && e.body.includes('Filed manually.'))).toBe(true);
   });
 
-  it('files a comment with author human and default type note', async () => {
+  it('files a note with author human', async () => {
     const itemId = await replyItemId();
-    const res = await fileItem(itemId, { kind: 'comment', body: 'A note.' });
+    const res = await fileItem(itemId, { kind: 'note', body: 'A note.' });
     expect(res.status).toBe(201);
-    const commentsMd = await readFile(join(ticketDir, 'comments.md'), 'utf-8');
-    expect(commentsMd).toContain('**Author:** human');
-    expect(commentsMd).toContain('**Type:** note');
+    const journalMd = await readFile(join(ticketDir, 'journal.md'), 'utf-8');
+    expect(journalMd).toContain('· note · claude');
+    expect(journalMd).toContain('A note.');
   });
 
   it('uses (you, …) provenance for the humans own message filed as progress', async () => {
@@ -884,8 +884,8 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
       .find((i) => i.type === 'user.message' && (i as { messageId: string }).messageId === messageId)!;
     const res = await fileItem(userItem.itemId, { kind: 'progress', body: 'mine' });
     expect(res.status).toBe(201);
-    const progressMd = await readFile(join(ticketDir, 'progress.md'), 'utf-8');
-    expect(progressMd).toContain('_Filed from chat (you,');
+    const journalMd = await readFile(join(ticketDir, 'journal.md'), 'utf-8');
+    expect(journalMd).toContain('_Filed from chat (you,');
   });
 
   it('rejects an oversized body with 413', async () => {
@@ -944,36 +944,15 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
     release();
   });
 
-  it('rejects an invalid commentType with 400', async () => {
+  it('rejects an invalid kind with 400', async () => {
     const itemId = await replyItemId();
-    const res = await fileItem(itemId, { kind: 'comment', body: 'note', commentType: 'rant' });
+    const res = await fileItem(itemId, { kind: 'comment', body: 'note' });
     expect(res.status).toBe(400);
   });
 
-  it('rejects a title longer than 200 characters with 400', async () => {
+  it('rejects empty body, bad kind and unknown items', async () => {
     const itemId = await replyItemId();
-    const res = await fileItem(itemId, {
-      kind: 'decision',
-      title: 'x'.repeat(201),
-      body: 'body',
-    });
-    expect(res.status).toBe(400);
-  });
-
-  it('accepts a padded title that trims to 10 characters', async () => {
-    const itemId = await replyItemId();
-    const res = await fileItem(itemId, {
-      kind: 'decision',
-      title: `${'a'.repeat(10)}${' '.repeat(191)}`,
-      body: 'body',
-    });
-    expect(res.status).toBe(201);
-  });
-
-  it('rejects missing title, multiline title, empty body, bad kind and unknown items', async () => {
-    const itemId = await replyItemId();
-    expect((await fileItem(itemId, { kind: 'decision', body: 'x' })).status).toBe(400);
-    expect((await fileItem(itemId, { kind: 'decision', title: 'a\nb', body: 'x' })).status).toBe(400);
+    expect((await fileItem(itemId, { kind: 'decision', body: 'x' })).status).toBe(201);
     expect((await fileItem(itemId, { kind: 'progress', body: '   ' })).status).toBe(400);
     expect((await fileItem(itemId, { kind: 'nope', body: 'x' })).status).toBe(400);
     expect((await fileItem('missing-item', { kind: 'progress', body: 'x' })).status).toBe(404);
@@ -995,6 +974,7 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
         `id: ${extraId}`,
         'slug: standalone-demo',
         'title: Standalone',
+        'template: feature',
         'project: syntaur-meta',
         'workspace:',
         `  repository: ${worktree}`,
@@ -1029,11 +1009,12 @@ describe('POST /tickets/:id/chat/items/:itemId/file', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ kind: 'decision', title: 'Standalone', body: 'yes' }),
+        body: JSON.stringify({ kind: 'decision', body: 'yes' }),
       },
     );
     expect(res.status).toBe(201);
-    const decisionMd = await readFile(join(extraDir, 'decision-record.md'), 'utf-8');
-    expect(decisionMd).toContain('## Standalone');
+    const journalMd = await readFile(join(extraDir, 'journal.md'), 'utf-8');
+    expect(journalMd).toContain('yes');
+    expect(journalMd).toContain('· decision ·');
   });
 });

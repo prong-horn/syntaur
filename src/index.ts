@@ -27,7 +27,6 @@ import { disablePlaybookCommand } from './commands/disable-playbook.js';
 import { deletePlaybookCommand } from './commands/delete-playbook.js';
 import { regenPlaybookManifestCommand } from './commands/regen-playbook-manifest.js';
 import { doctorCommand } from './commands/doctor.js';
-import { commentCommand } from './commands/comment.js';
 import { usageCommand } from './commands/usage.js';
 import { planCommand } from './commands/plan.js';
 import { sessionCommand } from './commands/session.js';
@@ -119,22 +118,6 @@ program
   .action(
     runCommand(async (ticket, newSlug, options) => {
       await renameCommand(ticket, newSlug, options);
-    }),
-  );
-
-program
-  .command('comment')
-  .description('Add a comment to a ticket (CLI-mediated, append-only)')
-  .argument('<ticket>', 'Target ticket slug (with --project) or UUID (standalone)')
-  .argument('<text>', 'Comment body')
-  .option('--project <slug>', 'Project slug if the target is project-nested')
-  .option('--reply-to <id>', 'ID of the comment this replies to')
-  .option('--type <type>', 'Comment type: question | note | feedback', 'note')
-  .option('--author <name>', 'Override author (default: $USER or "unknown")')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (ticket, text, options) => {
-      await commentCommand(ticket, text, options);
     }),
   );
 

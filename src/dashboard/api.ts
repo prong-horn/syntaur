@@ -22,7 +22,8 @@ import {
 import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
 import { resolvePlanReadPath, planFileFor } from '../ticket-templates/roles.js';
 import { buildShow, type ShowModel } from '../ticket-templates/show.js';
-import { parseLogEntries } from '../ticket-templates/log-reader.js';
+import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
+import { logRoleFile } from '../ticket-templates/manifest.js';
 import { markdownBody } from '../ticket-templates/content.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { invalidateIndex } from '../search/index.js';
@@ -37,7 +38,6 @@ import {
   parseDecisionRecord,
   parsePlaybook,
   parseProgress,
-  parseComments,
   extractMermaidGraph,
 } from './parser.js';
 import { getDashboardHelp } from './help.js';
@@ -864,18 +864,6 @@ export async function getTicketDetail(
     };
   }
 
-  let comments: TicketDetail['comments'] = null;
-  const commentsPath = resolve(ticketDir, 'comments.md');
-  if (await fileExists(commentsPath)) {
-    const commentsContent = await readFile(commentsPath, 'utf-8');
-    const parsed = parseComments(commentsContent);
-    comments = {
-      updated: parsed.updated,
-      entryCount: parsed.entryCount,
-      entries: parsed.entries,
-    };
-  }
-
   const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
   const availableVerbs = (await getAvailableVerbs(
     ticketDir,
@@ -913,7 +901,6 @@ export async function getTicketDetail(
     handoff,
     decisionRecord,
     progress,
-    comments,
     referencedBy: [],
     engagements: buildTicketEngagements(ticket.id),
     availableVerbs,
@@ -1906,21 +1893,19 @@ async function countOpenQuestions(
   projectPath: string,
   ticketDirName: string,
 ): Promise<number> {
-  const commentsPath = resolve(
-    projectPath,
-    'tickets',
-    ticketDirName,
-    'comments.md',
-  );
-  if (!(await fileExists(commentsPath))) {
-    return 0;
-  }
+  const ticketDir = resolve(projectPath, 'tickets', ticketDirName);
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (!(await fileExists(ticketMdPath))) return 0;
   try {
-    const content = await readFile(commentsPath, 'utf-8');
-    const parsed = parseComments(content);
-    return parsed.entries.filter(
-      (e) => e.type === 'question' && e.resolved !== true,
-    ).length;
+    const ticketContent = await readFile(ticketMdPath, 'utf-8');
+    const fm = parseTicketFull(ticketContent);
+    const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+    const logRole = logRoleFile(manifest);
+    if (!logRole) return 0;
+    const logPath = resolve(ticketDir, logRole.path);
+    if (!(await fileExists(logPath))) return 0;
+    const entries = parseLogEntries(await readFile(logPath, 'utf-8'));
+    return openQuestions(entries).length;
   } catch {
     return 0;
   }

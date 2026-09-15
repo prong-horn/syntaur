@@ -13,7 +13,8 @@ import type { InboxCategory } from '../inbox/types.js';
 import { formatChatQuestionMarker } from '../chat/questions.js';
 import type { ChatItem, PermissionRequestItem, QuestionItem } from '../chat/types.js';
 import { planDigest } from '../ticket-templates/plan-facts.js';
-import { formatCommentEntry, type Comment } from '../templates/index.js';
+import { formatLogEntry } from '../ticket-templates/log-reader.js';
+import type { Comment } from '../templates/index.js';
 import {
   closeEventsDb,
   initEventsDb,
@@ -128,10 +129,39 @@ async function seed(o: SeedOpts): Promise<string> {
     }
   }
   if (o.comments && o.comments.length > 0) {
-    const body = o.comments.map(formatCommentEntry).join('\n');
+    const blocks: string[] = [];
+    for (let i = 0; i < o.comments.length; i++) {
+      const c = o.comments[i]!;
+      const ts = (() => {
+        const ms = Date.parse(c.timestamp);
+        return Number.isNaN(ms)
+          ? c.timestamp
+          : new Date(ms + i * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+      })();
+      const logType = c.type === 'question' ? 'question' : 'note';
+      blocks.push(
+        formatLogEntry({
+          timestamp: ts,
+          type: logType,
+          author: c.author,
+          body: c.body,
+        }),
+      );
+      if (c.type === 'question' && c.resolved) {
+        blocks.push(
+          formatLogEntry({
+            timestamp: new Date(Date.parse(ts) + 500).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+            type: 'answer',
+            author: c.author,
+            body: 'answered',
+            keys: { answers: ts },
+          }),
+        );
+      }
+    }
     await writeFile(
-      join(dir, 'comments.md'),
-      `---\nticket: ${o.slug}\nentryCount: ${o.comments.length}\nupdated: "2026-06-16T00:00:00Z"\n---\n\n# Comments\n\n${body}\n`,
+      join(dir, 'journal.md'),
+      `---\npurpose: journal\n---\n\n# Journal\n\n${blocks.join('\n')}`,
     );
   }
   return dir;
@@ -210,10 +240,10 @@ describe('computeInbox — shape', () => {
     expect(item.acceptCommand).toBe('done');
     expect(item.reopenCommand).toBeNull();
     expect(item.logReviewHint).toBe('Log an approving review');
-    expect(item.commentId).toBeUndefined();
+    expect(item.questionTs).toBeUndefined();
   });
 
-  it('question items expose the structured commentId field', async () => {
+  it('question items expose the structured questionTs field', async () => {
     await seed({
       id: 'q',
       slug: 'qs',
@@ -225,7 +255,8 @@ describe('computeInbox — shape', () => {
     });
     const result = await run();
     const q = result.items.find((i) => i.category === 'question')!;
-    expect(q.commentId).toBe('c-open');
+    expect(q.questionTs).toBe('2026-06-15T00:00:00Z');
+    expect(q.journalTab).toBe('file:journal.md');
     expect(q.acceptCommand).toBeUndefined();
     expect(q.reopenCommand).toBeUndefined();
   });
@@ -274,8 +305,9 @@ describe('computeInbox — positive categories', () => {
     const r = await run();
     expect(r.counts.question).toBe(2);
     const cmds = r.items.filter((i) => i.category === 'question').map((i) => i.action.command);
-    expect(cmds).toContain('syntaur comment qs "<answer>" --reply-to c1 --project p1');
-    expect(cmds).toContain('syntaur comment qs "<answer>" --reply-to c5 --project p1');
+    expect(cmds).toContain('syntaur log qs -t answer --answers 2026-06-15T00:00:00Z "<answer>" --project p1');
+    expect(cmds.some((c) => c.includes('c5'))).toBe(false);
+    expect(cmds.filter((c) => c.includes('syntaur log qs -t answer')).length).toBe(2);
   });
 
   it('emits a plan-approval item only with a latest unapproved plan', async () => {

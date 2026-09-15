@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Check, CheckCircle2, RotateCcw } from 'lucide-react';
+import { ArrowRight, Check, RotateCcw } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
   answerChatPermission,
@@ -16,10 +16,9 @@ import {
   ticketHref,
   chatItemHref,
   chatReplyText,
-  commentsEndpoint,
+  logEndpoint,
   isSnoozable,
   planApproveEndpoint,
-  resolveCommentEndpoint,
   rowKey,
   rowKind,
   snoozeEndpoint,
@@ -363,52 +362,32 @@ function AskActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps
 function PlainQuestionActions({ item, onMutated, onError, onSuccess }: InboxRowActionProps & { item: InboxItem }) {
   const [reply, setReply] = useState('');
   const [busy, setBusy] = useState(false);
-  const replyToId = item.commentId;
+  const questionTs = item.questionTs;
 
-  async function postReply() {
-    if (!reply.trim()) return;
+  async function postAnswer() {
+    if (!reply.trim() || !questionTs) return;
     setBusy(true);
     const ok = await runMutation(
-      commentsEndpoint(item),
+      logEndpoint(item),
       {
+        type: 'answer',
+        answers: questionTs,
         body: reply.trim(),
-        type: 'note',
-        author: 'human',
-        ...(replyToId ? { replyTo: replyToId } : {}),
       },
       { onMutated, onError, onSuccess },
-      `Replied — ${item.title}`,
+      `Answered — ${item.title}`,
     );
     setBusy(false);
     if (ok) setReply('');
   }
 
-  async function resolve() {
-    if (!replyToId) {
-      onError('Could not determine which question to resolve — open the ticket to resolve it.');
-      return;
-    }
-    setBusy(true);
-    await runMutation(
-      resolveCommentEndpoint(item, replyToId),
-      { resolved: true },
-      { onMutated, onError, onSuccess },
-      `Resolved — ${item.title}`,
-    );
-    setBusy(false);
-  }
-
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Link to={ticketHref(item, 'comments')} className={ACTION_BTN}>
+        <Link to={ticketHref(item, 'journal')} className={ACTION_BTN}>
           <ArrowRight className="h-3.5 w-3.5" />
-          Open to answer
+          Open journal
         </Link>
-        <button type="button" className={ACTION_BTN} disabled={busy || !replyToId} onClick={resolve}>
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          Resolve
-        </button>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -419,8 +398,8 @@ function PlainQuestionActions({ item, onMutated, onError, onSuccess }: InboxRowA
           className="min-w-[12rem] flex-1 rounded border border-border bg-background px-2 py-1 text-sm"
           disabled={busy}
         />
-        <button type="button" className={ACTION_BTN} disabled={busy || !reply.trim()} onClick={postReply}>
-          Reply
+        <button type="button" className={ACTION_BTN} disabled={busy || !reply.trim() || !questionTs} onClick={postAnswer}>
+          Answer
         </button>
       </div>
     </div>

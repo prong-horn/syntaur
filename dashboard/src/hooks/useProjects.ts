@@ -212,7 +212,6 @@ export interface TicketDetail {
   handoff: { updated: string; handoffCount: number; body: string } | null;
   decisionRecord: { updated: string; decisionCount: number; body: string } | null;
   progress: TicketProgress | null;
-  comments: TicketComments | null;
   referencedBy: TicketReference[];
   engagements: EngagementInfo[];
   availableVerbs: TicketTransitionAction[];
@@ -236,22 +235,6 @@ export interface TicketProgress {
   updated: string;
   entryCount: number;
   entries: TicketProgressEntry[];
-}
-
-export interface TicketCommentEntry {
-  id: string;
-  timestamp: string;
-  author: string;
-  type: 'question' | 'note' | 'feedback';
-  body: string;
-  replyTo?: string;
-  resolved?: boolean;
-}
-
-export interface TicketComments {
-  updated: string;
-  entryCount: number;
-  entries: TicketCommentEntry[];
 }
 
 export type OverviewSegmentId =

@@ -18,7 +18,7 @@ function makeItem(overrides: Partial<InboxItem> & Pick<InboxItem, 'category'>): 
     since: '2026-06-16T00:00:00Z',
     ageMs: 1000,
     summary: 'context line',
-    action: { verb: 'Answer', command: 'syntaur comment my-task' },
+    action: { verb: 'Answer', command: 'syntaur log my-task -t answer --answers 2026-06-16T00:00:00Z "<answer>"' },
     ticketUpdated: '',
     ...overrides,
   };
@@ -47,13 +47,13 @@ const agents = [
 describe('diffChatRows', () => {
   const perm = makeItem({
     category: 'question',
-    commentId: 'c-perm',
+    questionTs: '2026-06-16T00:00:00Z',
     chat: { kind: 'permission', itemId: 'perm-1', agentId: 'cursor' },
   });
   const plan = makeItem({ category: 'plan-approval', ticketId: 'uuid-plan' });
   const reply = makeItem({
     category: 'question',
-    commentId: 'c-reply',
+    questionTs: '2026-06-16T00:01:00Z',
     chat: { kind: 'reply', itemId: 'reply-1', agentId: 'claude' },
   });
 
@@ -99,7 +99,7 @@ describe('notificationFor', () => {
   it('builds body, tag and href', () => {
     const item = makeItem({
       category: 'question',
-      commentId: 'c-ask',
+      questionTs: '2026-06-16T00:02:00Z',
       chat: { kind: 'ask', itemId: 'ask-1', agentId: 'cursor' },
     });
     const n = notificationFor(item, agents);
@@ -145,7 +145,7 @@ describe('notifyFreshRows', () => {
     closeMock.mockClear();
     const item = makeItem({
       category: 'question',
-      commentId: 'c-new',
+      questionTs: '2026-06-16T00:03:00Z',
       chat: { kind: 'permission', itemId: 'p-new', agentId: 'cursor' },
     });
     const opened: string[] = [];

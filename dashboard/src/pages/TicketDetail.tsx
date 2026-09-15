@@ -36,7 +36,6 @@ import { pickPrimaryVerb, pickSecondaryVerbs } from '../lib/verbActions';
 import { splitTicketSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
 import { LinksPanel } from '../components/LinksPanel';
-import { CommentsThread } from '../components/CommentsThread';
 import { ActivityTimeline } from '../components/ActivityTimeline';
 import { SessionActivityTimeline } from '../components/SessionActivityTimeline';
 import { ChatTab } from '../components/chat/ChatTab';
@@ -182,12 +181,6 @@ export function TicketDetail() {
           <span>Edit</span>
         </Link>
       ) : undefined;
-
-      if (file.path === 'comments.md' && ticket.comments) {
-        return (
-          <CommentsThread ticketId={id} entries={ticket.comments.entries} />
-        );
-      }
 
       if (file.role === 'log' && file.logEntries && file.logEntries.length > 0) {
         return (

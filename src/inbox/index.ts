@@ -18,14 +18,10 @@ import { resolve } from 'node:path';
 import { readFile } from 'node:fs/promises';
 import { fileExists } from '../utils/fs.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
-import {
-  parseTicketFull,
-  parseComments,
-  type ParsedTicketFull,
-  type ParsedComment,
-} from '../dashboard/parser.js';
+import { parseTicketFull, type ParsedTicketFull } from '../dashboard/parser.js';
 import { isPlanApproved } from '../ticket-templates/plan-facts.js';
-import { planRoleFile } from '../ticket-templates/manifest.js';
+import { logRoleFile, planRoleFile } from '../ticket-templates/manifest.js';
+import { openQuestions, parseLogEntries, type LogEntry } from '../ticket-templates/log-reader.js';
 import { loadTemplate } from '../ticket-templates/registry.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { TERMINAL_STAGES, VERBS } from '../lifecycle/types.js';
@@ -126,14 +122,9 @@ export function isReview(a: ParsedTicketFull): boolean {
   return a.status === 'review';
 }
 
-/** A single unresolved question comment. */
-export function isUnresolvedQuestion(c: ParsedComment): boolean {
-  return c.type === 'question' && c.resolved !== true;
-}
-
-/** All unresolved question comments (one inbox item per). */
-export function unresolvedQuestions(comments: ParsedComment[]): ParsedComment[] {
-  return comments.filter(isUnresolvedQuestion);
+/** Open question log entries (one inbox item per). */
+export function unresolvedLogQuestions(entries: LogEntry[]): LogEntry[] {
+  return openQuestions(entries);
 }
 
 /**
@@ -205,11 +196,11 @@ export function resolveSince(
   category: InboxCategory,
   a: ParsedTicketFull,
   now: number,
-  comment?: ParsedComment,
+  questionTs?: string | null,
 ): string {
   let primary: string | null = null;
   if (category === 'question') {
-    primary = validTimestamp(comment?.timestamp);
+    primary = validTimestamp(questionTs ?? null);
   } else {
     try {
       initEventsDb();
@@ -327,7 +318,7 @@ export function buildAction(
     acceptCommand?: string | null;
     reopenCommand?: string | null;
     logReviewHint?: string;
-    commentId?: string;
+    questionTs?: string;
     chat?: InboxChatRef;
     dashboardUrl?: string;
   },
@@ -361,7 +352,7 @@ export function buildAction(
       }
       return {
         verb: 'Answer',
-        command: `syntaur comment ${target} "<answer>" --reply-to ${ctx.commentId ?? ''}${projectFlag}`,
+        command: `syntaur log ${target} -t answer --answers ${ctx.questionTs ?? '<ts>'} "<answer>"${projectFlag}`,
       };
     case 'plan-approval':
       return {
@@ -455,25 +446,25 @@ export function inboxRowKey(item: InboxItem): string {
 
 /** Fingerprint for "until it changes" snoozes. */
 export function rowFingerprint(item: InboxItem): string {
-  return `${item.since}|${item.ticketUpdated}|${item.chat?.itemId ?? item.commentId ?? ''}`;
+  return `${item.since}|${item.ticketUpdated}|${item.chat?.itemId ?? item.questionTs ?? ''}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Aggregation entry point.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function rawQuestionText(c: ParsedComment): string {
-  const { ref, text } = parseChatQuestionMarker(c.body);
-  const body = (ref ? text : c.body).trim();
+function rawQuestionText(e: LogEntry): string {
+  const { ref, text } = parseChatQuestionMarker(e.body);
+  const body = (ref ? text : e.body).trim();
   return body.length > 0 ? body : '(empty question)';
 }
 
-function collapsedQuestionText(c: ParsedComment): string {
-  return rawQuestionText(c).replace(/\s+/g, ' ');
+function collapsedQuestionText(e: LogEntry): string {
+  return rawQuestionText(e).replace(/\s+/g, ' ');
 }
 
-function summarizeQuestion(c: ParsedComment): string {
-  const body = collapsedQuestionText(c);
+function summarizeQuestion(e: LogEntry): string {
+  const body = collapsedQuestionText(e);
   const clipped = body.length > 140 ? `${body.slice(0, 137)}...` : body;
   return clipped;
 }
@@ -551,51 +542,56 @@ export async function computeInbox(opts: ComputeInboxOptions): Promise<InboxResu
 
     // ── question ────────────────────────────────────────────────────────────
     if (!typeFilter || typeFilter.has('question')) {
-      const commentsPath = resolve(entry.ticketDir, 'comments.md');
-      if (await fileExists(commentsPath)) {
-        try {
-          const content = await readFile(commentsPath, 'utf-8');
-          const parsedComments = parseComments(content);
-          for (const c of unresolvedQuestions(parsedComments.entries)) {
-            const { ref } = parseChatQuestionMarker(c.body);
-            const chat = ref ? { ...ref, agentId: c.author } : undefined;
-            const since = resolveSince('question', parsed, now, c);
-            let card: InboxCard | null | undefined;
-            if (
-              chat &&
-              (chat.kind === 'permission' || chat.kind === 'ask') &&
-              opts.lookupChatItem
-            ) {
-              card = (() => {
-                try {
-                  return buildCard(opts.lookupChatItem!(chat.itemId));
-                } catch {
-                  return null;
-                }
-              })();
-            }
-            matched.push({
-              ...baseItem,
-              title,
-              category: 'question',
-              since,
-              ageMs: computeAgeMs(since, now),
-              ticketUpdated: parsed.updated,
-              summary: summarizeQuestion(c),
-              body: rawQuestionText(c),
-              commentId: c.id,
-              chat,
-              ...(card !== undefined ? { card } : {}),
-              action: buildAction('question', baseItem, {
-                commentId: c.id,
+      try {
+        const manifest = await loadTemplate(syntaurRoot(), parsed.template ?? 'feature');
+        const logRole = logRoleFile(manifest);
+        if (logRole) {
+          const logPath = resolve(entry.ticketDir, logRole.path);
+          if (await fileExists(logPath)) {
+            const content = await readFile(logPath, 'utf-8');
+            const journalTab = `file:${logRole.path}`;
+            for (const q of unresolvedLogQuestions(parseLogEntries(content))) {
+              const { ref } = parseChatQuestionMarker(q.body);
+              const chat = ref ? { ...ref, agentId: q.author ?? 'human' } : undefined;
+              const since = resolveSince('question', parsed, now, q.timestamp);
+              let card: InboxCard | null | undefined;
+              if (
+                chat &&
+                (chat.kind === 'permission' || chat.kind === 'ask') &&
+                opts.lookupChatItem
+              ) {
+                card = (() => {
+                  try {
+                    return buildCard(opts.lookupChatItem!(chat.itemId));
+                  } catch {
+                    return null;
+                  }
+                })();
+              }
+              matched.push({
+                ...baseItem,
+                title,
+                category: 'question',
+                since,
+                ageMs: computeAgeMs(since, now),
+                ticketUpdated: parsed.updated,
+                summary: summarizeQuestion(q),
+                body: rawQuestionText(q),
+                questionTs: q.timestamp,
+                journalTab,
                 chat,
-                dashboardUrl,
-              }),
-            });
+                ...(card !== undefined ? { card } : {}),
+                action: buildAction('question', baseItem, {
+                  questionTs: q.timestamp,
+                  chat,
+                  dashboardUrl,
+                }),
+              });
+            }
           }
-        } catch {
-          // unreadable comments.md → no question items for this ticket
         }
+      } catch {
+        // unreadable log → no question items for this ticket
       }
     }
 

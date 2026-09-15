@@ -36,7 +36,7 @@ describe('colon-free key builders', () => {
     const question: InboxItem = {
       ...review,
       category: 'question',
-      commentId: 'c1',
+      questionTs: '2026-06-16T00:00:00Z',
       since: '2026-06-16T00:00:00Z',
     };
     expect(inboxRowKey(question)).toBe('SYN-142~20260616T000000Z');
@@ -71,7 +71,7 @@ describe('colon-free key builders', () => {
     const question: InboxItem = {
       ...review,
       category: 'question',
-      commentId: 'comment-1',
+      questionTs: '2026-06-15T00:00:00Z',
       since: '2026-06-15T00:00:00Z',
     };
     assertNoColon('log question row', inboxRowKey(question));
