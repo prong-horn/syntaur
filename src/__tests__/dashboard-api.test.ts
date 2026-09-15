@@ -1499,3 +1499,74 @@ describe('GET /api/tickets/:id/events', () => {
     expect(body.events[0].type).toBe('status-change');
   });
 });
+
+describe('ticket folders are `<ID>-<slug>`; the display slug is not the folder name', () => {
+  const projectMd = `---
+id: p1-id
+slug: p1
+title: P1
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+prefix: SV
+nextTicket: 15
+---`;
+  const ticketMd = (id: string, slug: string, status: string, dependsOn: string[]) => `---
+id: ${id}
+slug: ${slug}
+title: ${slug}
+project: p1
+template: legacy
+status: ${status}
+priority: medium
+blocked: null
+parked: null
+depends_on:${dependsOn.length === 0 ? ' []' : '\n' + dependsOn.map((d) => `  - ${d}`).join('\n')}
+assignee: null
+tags: []
+links: []
+workspace:
+  repository: null
+  branch: null
+  worktree: null
+  parentBranch: null
+plan:
+  file: null
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+created: "2026-04-20T10:00:00Z"
+updated: "2026-04-20T10:00:00Z"
+---
+
+# ${slug}
+`;
+
+  it('listTicketsBoard evaluates verb gates in the real ticket folder when the slug differs from it', async () => {
+    const { listTicketsBoard } = await import('../dashboard/api.js');
+    await createProjectFiles(testDir, 'p1', projectMd, [
+      { slug: 'SV-14-derived-state-to-db', ticketMd: ticketMd('SV-14', 'derived-state-to-db', 'planning', []) },
+    ]);
+
+    const board = await listTicketsBoard(testDir);
+    const item = board.tickets.find((t) => t.id === 'SV-14');
+    expect(item).toBeTruthy();
+    expect(item!.slug).toBe('derived-state-to-db');
+    // `approve` has gates that read files from the ticket folder; before the fix this threw ENOENT
+    // on `tickets/derived-state-to-db/ticket.md` and the whole board request failed.
+    expect(item!.availableVerbs.some((v) => v.command === 'approve')).toBe(true);
+  });
+
+  it('dependency status is resolved by ticket id, not by display slug', async () => {
+    const { getProjectDetail } = await import('../dashboard/api.js');
+    await createProjectFiles(testDir, 'p1', projectMd, [
+      { slug: 'SV-1-spec', ticketMd: ticketMd('SV-1', 'spec', 'done', []) },
+      { slug: 'SV-9-log-role', ticketMd: ticketMd('SV-9', 'log-role', 'planning', ['SV-1']) },
+    ]);
+
+    // Before the fix the status lookup matched display slugs only, so the id `SV-1` fell back to
+    // `backlog` and the graph read `SV-1:::backlog`.
+    const detail = await getProjectDetail(testDir, 'p1');
+    expect(detail).toBeTruthy();
+    expect(detail!.dependencyGraph).toContain('SV-1:::done');
+  });
+});

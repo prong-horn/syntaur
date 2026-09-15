@@ -1,5 +1,6 @@
 import { readdir, readFile, writeFile, stat } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
+import { folderNameForTicketId } from '../utils/ticket-folder.js';
 import { fileExists, writeFileForce } from '../utils/fs.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { readConfig } from '../utils/config.js';
@@ -202,7 +203,9 @@ export async function getStageTableConfig(): Promise<{
   };
 }
 
-type TicketRecord = ReturnType<typeof parseTicketFull>;
+/** Parsed ticket.md plus the on-disk folder name (`<ID>-<slug>`), which is the only
+ * reliable way back to the ticket directory: the display slug can differ from the folder. */
+type TicketRecord = ReturnType<typeof parseTicketFull> & { dirName: string };
 
 function ticketAsFrontmatter(ticket: TicketRecord): TicketFrontmatter {
   return {
@@ -797,7 +800,7 @@ export async function getTicketDetail(
   }
 
   const ticketContent = await readFile(ticketMdPath, 'utf-8');
-  const ticket = parseTicketFull(ticketContent);
+  const ticket: TicketRecord = { ...parseTicketFull(ticketContent), dirName: basename(ticketDir) };
 
   let plan: TicketDetail['plan'] = null;
   const planFile = await resolvePlanReadPath(ticketDir, ticket);
@@ -1032,7 +1035,7 @@ async function computeReferencedBy(
         slug: a.slug,
         title: a.title,
         projectSlug: rec.summary.slug,
-        ticketDir: resolve(rec.projectPath, 'tickets', a.slug),
+        ticketDir: resolve(rec.projectPath, 'tickets', a.dirName),
       });
     }
   }
@@ -1260,7 +1263,7 @@ async function listTicketRecords(
       const content = await readFile(ticketMd, 'utf-8');
       const parsed = parseTicketFull(content);
       if (traces) accumulatePhase(traces, 'read-ticket-md', performance.now() - t0);
-      return parsed;
+      return { ...parsed, dirName: entry.name };
     }),
   );
 
@@ -1318,7 +1321,7 @@ async function buildProjectRollup(
   const perTicket = await Promise.all(
     active.map(async (ticket) => {
       const t0 = traces ? performance.now() : 0;
-      const openQuestions = await countOpenQuestions(projectPath, ticket.slug);
+      const openQuestions = await countOpenQuestions(projectPath, ticket.dirName);
       if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
       return { ticket, openQuestions };
     }),
@@ -1409,7 +1412,7 @@ async function toTicketBoardItem(
   maps = loadTicketHistoryMaps([ticket.id]),
   now = Date.now(),
 ): Promise<TicketBoardItem> {
-  const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.slug);
+  const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.dirName);
   const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
   const verbs = await getAvailableVerbs(ticketDir, ticketAsFrontmatter(ticket), manifest);
 
@@ -1459,8 +1462,27 @@ function buildDependencyGraph(tickets: TicketRecord[]): string | null {
   return ['graph TD', ...edges, ...classDefs].join('\n');
 }
 
-function findTicketStatus(tickets: TicketRecord[], slug: string): string {
-  return tickets.find((ticket) => ticket.slug === slug)?.status ?? 'backlog';
+/** `key` is a ticket id (`depends_on` entries) or, for legacy data, a display slug; ids win. */
+function findTicketStatus(tickets: TicketRecord[], key: string): string {
+  const byId = tickets.find((ticket) => ticket.id === key);
+  if (byId) return byId.status;
+  return tickets.find((ticket) => ticket.slug === key)?.status ?? 'backlog';
+}
+
+/**
+ * Locate a ticket folder inside `<projectPath>/tickets` by id (`<ID>-<slug>` folders) or by
+ * exact folder name. Returns `null` when nothing matches.
+ */
+async function findTicketDir(projectPath: string, key: string): Promise<string | null> {
+  const ticketsPath = resolve(projectPath, 'tickets');
+  if (!(await fileExists(ticketsPath))) return null;
+  const entries = await readdir(ticketsPath, { withFileTypes: true });
+  // Ids are unique within a project, so at most one `<ID>-<slug>` folder parses to `key`;
+  // the exact-name branch covers folders that predate the id prefix.
+  const match = entries.find(
+    (entry) => entry.isDirectory() && (entry.name === key || folderNameForTicketId(entry.name, key)),
+  );
+  return match ? resolve(ticketsPath, match.name) : null;
 }
 
 async function getUnmetDependencies(
@@ -1485,8 +1507,9 @@ async function getUnmetDependencies(
       // Fall through to disk read only if the map didn't know about this dependency.
     }
 
-    const dependencyPath = resolve(projectPath, 'tickets', dependency, 'ticket.md');
-    if (!(await fileExists(dependencyPath))) {
+    const dependencyDir = await findTicketDir(projectPath, dependency);
+    const dependencyPath = dependencyDir ? resolve(dependencyDir, 'ticket.md') : null;
+    if (!dependencyPath || !(await fileExists(dependencyPath))) {
       unmet.push(`${dependency} (missing)`);
       continue;
     }
@@ -1610,14 +1633,17 @@ export async function collectStaleCandidates(projectsDir: string,
     if (isProjectArchived(record.summary)) continue;
     const projectPath = resolve(projectsDir, record.summary.slug);
     const depMap = new Map<string, string>();
-    for (const a of record.tickets) depMap.set(a.slug, a.status);
+    for (const a of record.tickets) {
+      depMap.set(a.slug, a.status); // legacy slug key, overridden by an id below if they collide
+      depMap.set(a.id, a.status);
+    }
     for (const ticket of activeTickets(record.tickets)) {
       const depsSatisfied =
         ticket.depends_on.length === 0
           ? true
           : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap)).length === 0;
       const lastActivityMs = await readProgressActivityMs(
-        resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
+        resolve(projectPath, 'tickets', ticket.dirName, 'progress.md'),
         now,
       );
       const reasons = classifyTicketRecord(
@@ -1668,7 +1694,8 @@ async function buildOverviewSegmentBuckets(
     // (Built over ALL tickets so dependency resolution is unaffected by hiding.)
     const depMap = new Map<string, string>();
     for (const a of record.tickets) {
-      depMap.set(a.slug, a.status);
+      depMap.set(a.slug, a.status); // legacy slug key, overridden by an id below if they collide
+      depMap.set(a.id, a.status);
     }
 
     // Individually-archived tickets are hidden from the overview segments.
@@ -1679,7 +1706,7 @@ async function buildOverviewSegmentBuckets(
     const projectPath = resolve(projectsDir, record.summary.slug);
     const resolvedTransitions = await Promise.all(
       visibleTickets.map(async (ticket) => {
-        const ticketDir = resolve(projectPath, 'tickets', ticket.slug);
+        const ticketDir = resolve(projectPath, 'tickets', ticket.dirName);
         const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
         const t0 = traces ? performance.now() : 0;
         const availableVerbs = (await getAvailableVerbs(
@@ -1694,7 +1721,7 @@ async function buildOverviewSegmentBuckets(
             : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap))
                 .length === 0;
         const lastActivityMs = await readProgressActivityMs(
-          resolve(projectPath, 'tickets', ticket.slug, 'progress.md'),
+          resolve(projectPath, 'tickets', ticket.dirName, 'progress.md'),
           now,
         );
         return { ticket, availableVerbs, depsSatisfied, lastActivityMs };
@@ -1877,12 +1904,12 @@ function countPendingAnswers(body: string): number {
 
 async function countOpenQuestions(
   projectPath: string,
-  ticketSlug: string,
+  ticketDirName: string,
 ): Promise<number> {
   const commentsPath = resolve(
     projectPath,
     'tickets',
-    ticketSlug,
+    ticketDirName,
     'comments.md',
   );
   if (!(await fileExists(commentsPath))) {
