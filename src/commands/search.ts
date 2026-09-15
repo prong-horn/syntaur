@@ -169,7 +169,7 @@ function renderTable(hits: SearchHit[]): string {
 
 export const searchCommand = new Command('search')
   .description(
-    'Full-text search across all Syntaur markdown content (tickets, plans, progress, comments, handoffs, decision records, and scratchpads).',
+    'Full-text search across all Syntaur markdown content (tickets, plans, journals, progress, comments, handoffs, decision records, and scratchpads).',
   )
   .argument('<query>', 'Search query')
   .option('--project <slug>', 'Restrict to one project')
@@ -177,7 +177,7 @@ export const searchCommand = new Command('search')
   .option('--status <list>', 'Comma-separated ticket status filter', (v) => v.split(',').map((s) => s.trim()).filter(Boolean))
   .option(
     '--in <fileKinds>',
-    'Comma-separated file-kind filter (e.g. comments,plans). Accepts singular or plural names.',
+    'Comma-separated file-kind filter (e.g. journal,comments,plans). Accepts singular or plural names.',
   )
   .option('--all', 'Include archived tickets/projects (excluded by default)')
   .option('--limit <n>', 'Maximum number of results', String(DEFAULT_LIMIT))

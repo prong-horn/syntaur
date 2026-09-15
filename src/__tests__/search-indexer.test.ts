@@ -39,6 +39,10 @@ beforeEach(async () => {
     `---\nticket: ALP-1\n---\n# Plan v2\n\nThe approved strawberry approach.\n`,
   );
   await write(
+    join(aDir, 'journal.md'),
+    `---\npurpose: Test journal\n---\n\n## 2026-01-01T12:00:00Z · note · human\n\nJournal pineapple note.\n`,
+  );
+  await write(
     join(aDir, 'comments.md'),
     `---\nticket: ALP-1\nentryCount: 1\n---\n## c1\n**Recorded:** 2026-01-01\n**Author:** brennen\n**Type:** question\n\nIs the pineapple ready?\n`,
   );
@@ -84,6 +88,7 @@ describe('buildIndex', () => {
     expect(kinds).toContain('ticket');
     expect(kinds).toContain('plan');
     expect(kinds).toContain('comments');
+    expect(kinds).toContain('journal');
     const ticketDocs = docs.filter((d) => d.fileKind === 'ticket');
     expect(ticketDocs.map((d) => d.ticketSlug).sort()).toEqual(['build-widget', 'old-task', 'oneoff']);
   });
@@ -206,10 +211,18 @@ describe('FuseProvider.query', () => {
     }
   });
 
+  it('indexes journal.md as the journal kind for feature tickets', async () => {
+    const docs = await buildIndex({ projectsDir });
+    const journal = find(docs, 'journal', 'build-widget');
+    expect(journal).toBeDefined();
+    expect(journal?.path).toMatch(/journal\.md$/);
+    expect(journal?.body).toContain('pineapple');
+  });
+
   it('populates the precomputed route', async () => {
     const p = await provider();
     const hits = p.query({ query: 'pineapple' }, 20);
     expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0].route).toContain('?tab=comments');
+    expect(hits[0].route).toContain('?tab=file:journal.md');
   });
 });

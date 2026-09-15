@@ -14,12 +14,15 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { fileExists } from '../utils/fs.js';
+import { syntaurRoot } from '../utils/paths.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
 import { resolvePlanReadPath } from '../ticket-templates/roles.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { logRoleFile } from '../ticket-templates/manifest.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import {
   parseTicketFull,
   parsePlan,
-  parseProgress,
   parseComments,
   parseHandoff,
   parseDecisionRecord,
@@ -46,14 +49,26 @@ interface TicketIdentity {
   archived: boolean;
 }
 
-/** The ticket sidecars, each with its kind + parser → body extractor. */
-const SIDECARS: Array<{ file: string; kind: FileKind; body: (content: string) => string }> = [
-  { file: 'progress.md', kind: 'progress', body: (c) => parseProgress(c).body },
+/** Legacy ticket sidecars (un-merged tickets). Log-role files are indexed separately. */
+const LEGACY_SIDECARS: Array<{ file: string; kind: FileKind; body: (content: string) => string }> = [
+  { file: 'progress.md', kind: 'progress', body: (c) => parseProgressLegacyBody(c) },
   { file: 'comments.md', kind: 'comments', body: (c) => parseComments(c).body },
   { file: 'handoff.md', kind: 'handoff', body: (c) => parseHandoff(c).body },
   { file: 'decision-record.md', kind: 'decision-record', body: (c) => parseDecisionRecord(c).body },
   { file: 'scratchpad.md', kind: 'scratchpad', body: (c) => parseScratchpad(c).body },
 ];
+
+function parseProgressLegacyBody(content: string): string {
+  return parseLogEntries(content)
+    .map((e) => [e.firstLine, e.body].filter(Boolean).join('\n'))
+    .join('\n\n');
+}
+
+function journalSearchBody(content: string): string {
+  return parseLogEntries(content)
+    .map((e) => [e.firstLine, e.body].filter(Boolean).join('\n'))
+    .join('\n\n');
+}
 
 /**
  * Build the full content index for the given dirs. Skips archived
@@ -131,8 +146,29 @@ export async function buildIndex(opts: IndexOptions): Promise<SearchDoc[]> {
       }
     }
 
-    // sidecars
-    for (const sidecar of SIDECARS) {
+    // log-role file (journal.md on feature/merged tickets)
+    let logRolePath: string | null = null;
+    try {
+      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
+      const logRole = logRoleFile(manifest);
+      if (logRole) {
+        logRolePath = logRole.path;
+        const logPath = resolve(entry.ticketDir, logRole.path);
+        if (await fileExists(logPath)) {
+          const content = await readFile(logPath, 'utf-8');
+          const kind: FileKind = logRole.path === 'journal.md' ? 'journal' : 'progress';
+          const body =
+            kind === 'journal' ? journalSearchBody(content) : parseProgressLegacyBody(content);
+          docs.push(makeTicketDoc(logPath, kind, ticket.title, body, identity));
+        }
+      }
+    } catch {
+      /* skip unreadable log role */
+    }
+
+    // legacy sidecars (skip progress.md when already indexed as the log role)
+    for (const sidecar of LEGACY_SIDECARS) {
+      if (sidecar.file === logRolePath) continue;
       const sidecarPath = resolve(entry.ticketDir, sidecar.file);
       if (!(await fileExists(sidecarPath))) continue;
       try {

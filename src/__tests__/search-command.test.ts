@@ -116,6 +116,19 @@ describe('runSearch', () => {
     }
   });
 
+  it('--in journal resolves the journal file kind', async () => {
+    const aDir = join(testDir, 'projects', 'acme', 'tickets', 'WID-1-build-widget');
+    await writeFile(
+      join(aDir, 'journal.md'),
+      `---\npurpose: Search test journal\n---\n\n## 2026-01-01T12:00:00Z · note · human\n\nwidget in the journal.\n`,
+    );
+    const onlyJournal = await runSearch('widget', { in: 'journal', limit: '50' });
+    expect(onlyJournal.length).toBeGreaterThan(0);
+    for (const h of onlyJournal) {
+      expect(h.fileKind).toBe('journal');
+    }
+  });
+
   it('--in throws a clean error (caught by the command) on an unknown kind', async () => {
     await expect(runSearch('widget', { in: 'bogus', limit: '50' })).rejects.toThrow(
       /Unknown file kind "bogus"/,

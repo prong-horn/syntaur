@@ -9,6 +9,7 @@ import { unassignCommand } from './commands/unassign.js';
 import { archiveCommand } from './commands/archive.js';
 import { restoreCommand } from './commands/restore.js';
 import { v2MigrateCommand } from './commands/migrate-v2.js';
+import { journalMigrateCommand } from './commands/migrate-journal.js';
 import { registerVerbCommands } from './commands/verbs.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { updateCommand } from './commands/update.js';
@@ -440,6 +441,7 @@ program
 
 const migrateCommand = new Command('migrate').description('One-time data migrations');
 migrateCommand.addCommand(v2MigrateCommand);
+migrateCommand.addCommand(journalMigrateCommand);
 program.addCommand(migrateCommand);
 
 program.addCommand(doctorCommand);
