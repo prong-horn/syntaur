@@ -1,7 +1,7 @@
 ---
 name: "Keep Records Updated"
 slug: keep-records-updated
-description: "Agents must keep ticket.md criteria, progress.md, and related records current in real-time"
+description: "Agents must keep ticket.md criteria and the ticket journal current in real-time"
 when_to_use: "After every meaningful action, when completing acceptance criteria, when starting or stopping work"
 created: "2026-04-02T00:00:00Z"
 updated: "2026-05-08T00:00:00Z"
@@ -12,24 +12,37 @@ tags:
 
 # Keep Records Updated
 
-## After every meaningful action:
-- Append a new entry to `progress.md` with what you did
-- Progress entries live in `progress.md` (reverse-chronological order, newest first with a `## <ISO 8601 timestamp>` heading). Do NOT add a `## Progress` section to `ticket.md` — that section is removed as of protocol v2.0.
-- Bump `entryCount` and `updated` in `progress.md`'s frontmatter.
-## When you complete an acceptance criterion:
-- Check it off in the `## Acceptance Criteria` section of `ticket.md` immediately
-- Do not batch these up -- mark them as you go
+## After every meaningful action
 
-## When you have a question, note, or piece of feedback:
-- Run `syntaur comment <ticket-id> "body" --type question|note|feedback [--reply-to <id>]`
-- Never edit `comments.md` directly — all writes are CLI-mediated
-- Questions carry a `resolved` flag that can be toggled from the dashboard
+- Append a typed entry with `syntaur log <ticket-id> -t progress "<body>" [--project <slug>]`.
+- On modern templates the log role is `journal.md` (oldest-first append-only entries). On the `legacy` template the CLI still writes `progress.md`.
+- Never edit the log file directly — all writes are CLI-mediated.
+- Run `syntaur show` to confirm the log path and **Commands** line.
 
-## When starting work:
-- Append an entry to `progress.md` noting you've begun and what your approach is
-- If any plan files exist (plan.md, plan-v2.md, ...), update their task checkboxes as you complete steps
+## When you complete an acceptance criterion
 
-## When stopping or handing off:
-- Append a final entry to `progress.md` summarizing current state
-- Write a structured handoff entry in `handoff.md`
-- Note anything the next agent needs to know
+- Check it off in the `## Acceptance Criteria` section of `ticket.md` immediately.
+- Do not batch these up — mark them as you go.
+
+## When you have a question, note, or piece of feedback
+
+- Questions: `syntaur log <ticket-id> -t question "<body>" [--project <slug>]`.
+- Notes: `syntaur log <ticket-id> -t note "<body>"`.
+- Answers (when a question is resolved): `syntaur log <ticket-id> -t answer --answers <question-ts> "<body>"`.
+- Open questions surface in the inbox and on the ticket **Journal** tab.
+
+## When starting work
+
+- Log a `progress` entry noting you've begun and your approach.
+- If any plan files exist (`plan.md`, `plan-v2.md`, …), update their task checkboxes as you complete steps.
+
+## When stopping or handing off
+
+- Log a final `progress` entry summarizing current state.
+- Pass the baton with `syntaur log <ticket-id> -t handoff "<body>"` (see `complete-ticket` for the full handoff workflow).
+- Note anything the next agent needs to know.
+
+## Related skills
+
+- `log-progress` — append `progress` entries after meaningful work.
+- `complete-ticket` — handoff and completion semantics.

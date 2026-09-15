@@ -3,9 +3,9 @@ name: log-progress
 description: >-
   Append a typed progress entry to the active ticket's log role via
   `syntaur log -t progress` (alias: `syntaur progress log`). Use after every
-  meaningful action per the Keep Records Updated playbook. Triggers on "log
-  progress", "note progress", "record this in progress", or whenever the
-  playbook says to update records.
+  meaningful action per the [Keep Records Updated](examples/playbooks/keep-records-updated.md)
+  playbook. Triggers on "log progress", "note progress", "record this in progress", or
+  whenever the playbook says to update records.
 license: MIT
 metadata:
   author: prong-horn
