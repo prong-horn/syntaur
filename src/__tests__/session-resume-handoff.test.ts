@@ -9,6 +9,7 @@ import {
   resetSessionDb,
 } from '../dashboard/session-db.js';
 import { openEngagement } from '../db/engagement-db.js';
+import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 
 const CLI_ENTRY = resolve(__dirname, '..', '..', 'bin', 'syntaur.js');
 
@@ -55,7 +56,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
   }
 }
 
-describe('syntaur session resume (handoff-only)', () => {
+describe('syntaur session resume (last handoff)', () => {
   let syntaurHome: string;
   let workspaceRoot: string;
   let ticketDir: string;
@@ -67,12 +68,13 @@ describe('syntaur session resume (handoff-only)', () => {
       resolve(syntaurHome, 'config.md'),
       `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
     );
+    await seedMissingBuiltins(syntaurHome);
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-resume-handoff-wkspc-'));
     ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', `${TICKET_ID}-demo`);
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(ticketDir, 'ticket.md'),
-      `---\nid: ${TICKET_ID}\nslug: demo\ntitle: Demo\nstatus: in_progress\n---\n# Demo\n`,
+      `---\nid: ${TICKET_ID}\nslug: demo\ntitle: Demo\nstatus: in_progress\ntemplate: legacy\n---\n# Demo\n`,
     );
   });
 
@@ -81,28 +83,75 @@ describe('syntaur session resume (handoff-only)', () => {
     await rm(workspaceRoot, { recursive: true, force: true });
   });
 
-  it('prints an open handoff when no session summary exists on disk', async () => {
+  it('prints last handoff from typed progress.md entry', async () => {
     seedOpenEngagement(syntaurHome, SID);
-    const handoffPath = resolve(ticketDir, 'handoff.md');
     await writeFile(
-      handoffPath,
-      `---\nticket: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nReal content.\n`,
+      resolve(ticketDir, 'progress.md'),
+      `---
+ticket: demo
+entryCount: 1
+updated: "2026-05-08T12:00:00Z"
+---
+
+# Progress
+
+## 2026-05-08T12:00:00Z · handoff · human
+
+Shipped the API layer.
+`,
     );
 
     const human = await runCli(['session', 'resume'], workspaceRoot, syntaurHome, {
       CLAUDE_CODE_SESSION_ID: SID,
     });
     expect(human.code, human.stderr).toBe(0);
-    expect(human.stdout).toContain('Open handoff');
-    expect(human.stdout).toContain(handoffPath);
-    expect(human.stdout).not.toContain('session summary');
+    expect(human.stdout).toContain('Last handoff: 2026-05-08T12:00:00Z · Shipped the API layer.');
 
     const json = await runCli(['session', 'resume', '--json'], workspaceRoot, syntaurHome, {
       CLAUDE_CODE_SESSION_ID: SID,
     });
-    expect(json.code, json.stderr).toBe(0);
     const data = JSON.parse(json.stdout);
-    expect(data.openHandoff).toBe(handoffPath);
-    expect(data).not.toHaveProperty('latestSession');
+    expect(data.lastHandoff).toEqual({
+      timestamp: '2026-05-08T12:00:00Z',
+      firstLine: 'Shipped the API layer.',
+    });
+  });
+
+  it('falls back to legacy handoff.md when the log has no handoff entry', async () => {
+    seedOpenEngagement(syntaurHome, SID);
+    await writeFile(
+      resolve(ticketDir, 'handoff.md'),
+      `---\nticket: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nLegacy baton content.\n`,
+    );
+
+    const human = await runCli(['session', 'resume'], workspaceRoot, syntaurHome, {
+      CLAUDE_CODE_SESSION_ID: SID,
+    });
+    expect(human.code, human.stderr).toBe(0);
+    expect(human.stdout).toContain('Last handoff: Legacy baton content.');
+  });
+
+  it('reads journal handoff on feature tickets', async () => {
+    seedOpenEngagement(syntaurHome, SID);
+    await writeFile(
+      resolve(ticketDir, 'ticket.md'),
+      `---\nid: ${TICKET_ID}\nslug: demo\ntitle: Demo\nstatus: in_progress\ntemplate: feature\n---\n# Demo\n`,
+    );
+    await writeFile(
+      resolve(ticketDir, 'journal.md'),
+      `---
+purpose: test
+---
+
+## 2026-06-01T09:00:00Z · handoff · human
+
+Journal baton line.
+`,
+    );
+
+    const human = await runCli(['session', 'resume'], workspaceRoot, syntaurHome, {
+      CLAUDE_CODE_SESSION_ID: SID,
+    });
+    expect(human.stdout).toContain('Last handoff: 2026-06-01T09:00:00Z · Journal baton line.');
   });
 });

@@ -5,8 +5,7 @@ import { countRealAcceptanceCriteria } from './plan-facts.js';
 import { buildGateContext } from './context.js';
 import type { TicketFrontmatter } from '../lifecycle/types.js';
 import { fileExists } from '../utils/fs.js';
-import { rebuildChatIndex } from '../chat/store.js';
-import { listChatItems } from '../db/chat-db.js';
+import { chatLogPath, readEvents, replayItems } from '../chat/store.js';
 import type { ChatItem } from '../chat/types.js';
 import { loadTemplate, resolveTemplateForTicket } from './registry.js';
 import { logRoleFile } from './manifest.js';
@@ -324,9 +323,12 @@ export async function renderLogOnly(
       firstLine: e.firstLine,
     }));
   } else {
-    await rebuildChatIndex(ticketDir, fm.id);
-    const items = listChatItems(fm.id, { limit: 500 });
-    entries = chatNoteEntries(items);
+    const logPath = chatLogPath(ticketDir);
+    if (!(await fileExists(logPath))) {
+      return 'no log entries';
+    }
+    const events = await readEvents(logPath);
+    entries = chatNoteEntries(replayItems(events, fm.id));
   }
 
   if (typeFilter) {

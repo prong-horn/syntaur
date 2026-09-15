@@ -21,6 +21,10 @@ import {
 } from '../utils/engagement-binding.js';
 import { getOpenEngagement } from '../db/engagement-db.js';
 import { extractFrontmatter, getField } from '../dashboard/parser.js';
+import { loadTemplate, resolveTemplateForTicket } from '../ticket-templates/registry.js';
+import { logRoleFile } from '../ticket-templates/manifest.js';
+import { latestEntry, parseLogEntries } from '../ticket-templates/log-reader.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 interface ContextFile {
   sessionId?: string;
@@ -48,20 +52,45 @@ async function readContext(cwd: string): Promise<ContextFile | null> {
   }
 }
 
-async function findOpenHandoff(ticketDir: string): Promise<string | null> {
-  // The Syntaur protocol uses a single root handoff.md per ticket (managed
-  // by complete-ticket). Surface it whenever it exists and has any body
-  // content beyond the placeholder so the resuming agent reads the latest
-  // outbound baton. We treat any non-empty handoff.md as a signal — there is
-  // currently no per-handoff `status: open` flag in the canonical schema.
+interface LastHandoffLine {
+  timestamp: string;
+  firstLine: string;
+}
+
+async function findLastHandoff(ticketDir: string): Promise<LastHandoffLine | null> {
+  const ticketMdPath = resolve(ticketDir, 'ticket.md');
+  if (await fileExists(ticketMdPath)) {
+    try {
+      const fm = parseTicketFrontmatter(await readFile(ticketMdPath, 'utf-8'));
+      const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(fm));
+      const logRole = logRoleFile(manifest);
+      if (logRole) {
+        const logPath = resolve(ticketDir, logRole.path);
+        if (await fileExists(logPath)) {
+          const entries = parseLogEntries(await readFile(logPath, 'utf-8'));
+          const handoff = latestEntry(entries, 'handoff');
+          if (handoff) {
+            return { timestamp: handoff.timestamp, firstLine: handoff.firstLine };
+          }
+        }
+      }
+    } catch {
+      /* fall through to legacy handoff.md */
+    }
+  }
+
   const handoffPath = resolve(ticketDir, 'handoff.md');
   if (!(await fileExists(handoffPath))) return null;
   const content = await readFile(handoffPath, 'utf-8');
   const body = content.replace(/^---[\s\S]*?\n---\n?/, '').trim();
   if (body.length === 0) return null;
-  // Skip the placeholder body that new scaffolds.
   if (/^<!--[\s\S]*-->$/.test(body)) return null;
-  return handoffPath;
+  const firstLine =
+    body
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0 && !l.startsWith('##')) ?? '(handoff)';
+  return { timestamp: '', firstLine };
 }
 
 interface ResumeOptions {
@@ -84,7 +113,7 @@ interface ResumeOutput {
   context: ContextFile | null;
   /** The active ticket, resolved from the session's OPEN engagement. */
   ticket: ResolvedTicketView | null;
-  openHandoff: string | null;
+  lastHandoff: LastHandoffLine | null;
   warnings: string[];
 }
 
@@ -118,7 +147,7 @@ async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
       ok: false,
       context,
       ticket: null,
-      openHandoff: null,
+      lastHandoff: null,
       warnings: [
         'No active ticket for this session. Run /grab-ticket to bind one, then resume.',
       ],
@@ -144,18 +173,18 @@ async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
       ok: false,
       context,
       ticket: null,
-      openHandoff: null,
+      lastHandoff: null,
       warnings: [error instanceof Error ? error.message : String(error)],
     };
   }
 
-  const openHandoff = await findOpenHandoff(ticket.ticketDir);
+  const lastHandoff = await findLastHandoff(ticket.ticketDir);
 
   return {
     ok: true,
     context,
     ticket,
-    openHandoff,
+    lastHandoff,
     warnings,
   };
 }
@@ -179,10 +208,14 @@ function renderHumanOutput(out: ResumeOutput): string {
   if (ctx?.branch) lines.push(`  Branch:         ${ctx.branch}`);
   if (ctx?.workspaceRoot) lines.push(`  Workspace root: ${ctx.workspaceRoot}`);
   lines.push(`  Ticket dir: ${asg.ticketDir}`);
-  if (out.openHandoff) {
+  if (out.lastHandoff) {
     lines.push('');
-    lines.push(`Open handoff: ${out.openHandoff}`);
-    lines.push('Read it before continuing — there is an outstanding baton.');
+    const { timestamp, firstLine } = out.lastHandoff;
+    if (timestamp) {
+      lines.push(`Last handoff: ${timestamp} · ${firstLine}`);
+    } else {
+      lines.push(`Last handoff: ${firstLine}`);
+    }
   }
   if (out.warnings.length > 0) {
     lines.push('');
@@ -739,6 +772,6 @@ sessionCommand
 
 export const _internal = {
   buildResumeOutput,
-  findOpenHandoff,
+  findLastHandoff,
   readContext,
 };
