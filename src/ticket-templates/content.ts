@@ -17,15 +17,21 @@ function isTableSeparatorRow(line: string): boolean {
   return /^\|[\s\-:|]+\|$/.test(line);
 }
 
-const NO_PROGRESS_PLACEHOLDER = 'No progress yet.';
-const NO_SCRATCHPAD_PLACEHOLDER = 'No working notes yet.';
+/** Placeholder lines the legacy record scaffolds ship with; never real content. */
+const SCAFFOLD_PLACEHOLDERS = new Set([
+  'No progress yet.',
+  'No working notes yet.',
+  'No comments yet.',
+  'No decisions recorded yet.',
+  'No handoffs recorded yet.',
+]);
 
 export function lineHasRealContent(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
   if (trimmed.startsWith('#')) return false;
   if (isBoldLabelMetadata(trimmed)) return false;
-  if (trimmed === NO_PROGRESS_PLACEHOLDER || trimmed === NO_SCRATCHPAD_PLACEHOLDER) return false;
+  if (SCAFFOLD_PLACEHOLDERS.has(trimmed)) return false;
 
   const withoutComments = trimmed.replace(HTML_COMMENT_RE, '').trim();
   if (!withoutComments) return false;
@@ -62,7 +68,7 @@ export function cleanLogPreamble(preamble: string): string {
     const trimmed = line.trim();
     if (!trimmed) continue;
     if (/^# /.test(trimmed)) continue;
-    if (trimmed === NO_PROGRESS_PLACEHOLDER || trimmed === NO_SCRATCHPAD_PLACEHOLDER) continue;
+    if (SCAFFOLD_PLACEHOLDERS.has(trimmed)) continue;
     if (!lineHasRealContent(line)) continue;
     kept.push(line);
   }

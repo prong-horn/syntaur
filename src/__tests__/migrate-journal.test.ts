@@ -298,6 +298,23 @@ Inner heading stays in the body.
     expect(counts.rawBlocks).toBe(0);
   });
 
+  it('treats a scaffold-only comments.md as empty rather than a raw block', () => {
+    const scaffold = `---
+assignment: stage-agents
+entryCount: 0
+generated: "2026-09-11T03:16:22Z"
+updated: "2026-09-11T03:16:22Z"
+---
+
+# Comments
+
+No comments yet.
+`;
+    const { entries, counts } = parseCommentEntriesForMigrate(scaffold);
+    expect(entries).toHaveLength(0);
+    expect(counts).toEqual({ entries: 0, undated: 0, rawBlocks: 0 });
+  });
+
   it('maps comments to note/question, reply line, resolved answer, and raw blocks', () => {
     const { entries, counts } = parseCommentEntriesForMigrate(COMMENTS_MD);
     expect(entries.some((e) => e.type === 'question')).toBe(true);
