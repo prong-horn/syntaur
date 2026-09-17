@@ -11,6 +11,7 @@ import {
   listEventsByTicket,
 } from '../db/events-db.js';
 import {
+  emitDispatched,
   emitMoved,
   withSuppressedEvents,
 } from '../lifecycle/event-emit.js';
@@ -89,7 +90,7 @@ async function readFm() {
 
 describe('moveTicket emits moved events', () => {
   it('records one moved event with correct from/to/actor', async () => {
-    await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), agent: 'codex' });
+    await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), actor: 'codex' });
     const id = (await readFm()).id;
     const events = listEventsByTicket(id);
     const moved = events.filter((e) => e.type === 'moved');
@@ -137,13 +138,41 @@ tags: []
     await moveTicket('BG-1', 'approve', {
       project: 'p1',
       dir: resolve(home, 'projects'),
-      agent: 'human',
+      actor: 'human',
     });
     const events = listEventsByTicket('BG-1');
     expect(events.filter((e) => e.type === 'moved')).toHaveLength(0);
     expect(events.filter((e) => e.type === 'plan-approved')).toHaveLength(1);
     const fm = parseTicketFrontmatter(await readFile(join(bugDir, 'ticket.md'), 'utf-8'));
     expect(fm.status).toBe('backlog');
+  });
+});
+
+describe('emitDispatched', () => {
+  it('is idempotent for duplicate source keys', () => {
+    emitDispatched({
+      ticketId: 'FTX-1',
+      projectSlug: 'p1',
+      actor: 'human',
+      agent: 'cursor',
+      stage: 'in_progress',
+      requestId: 'req-1',
+      entryId: 'entry-1',
+      source: 'manual',
+    });
+    emitDispatched({
+      ticketId: 'FTX-1',
+      projectSlug: 'p1',
+      actor: 'human',
+      agent: 'cursor',
+      stage: 'in_progress',
+      requestId: 'req-1',
+      entryId: 'entry-1',
+      source: 'manual',
+    });
+    const dispatched = listEventsByTicket('FTX-1').filter((e) => e.type === 'dispatched');
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched[0]?.source_key).toBe('dispatch~req-1');
   });
 });
 
@@ -183,7 +212,7 @@ describe('best-effort: a forced events-db failure leaves the verb succeeding', (
 
     let threw = false;
     try {
-      await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), agent: 'codex' });
+      await moveTicket('FTX-1', 'plan', { project: 'p1', dir: resolve(home, 'projects'), actor: 'codex' });
     } catch {
       threw = true;
     }

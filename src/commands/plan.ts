@@ -7,8 +7,20 @@ import {
   parseTicketFrontmatter,
   updateTicketFile,
 } from '../lifecycle/frontmatter.js';
-import { emitMoved, emitPlanVersioned } from '../lifecycle/event-emit.js';
-import { GateFailedError, moveTicket, resolveVerbActor } from '../lifecycle/verbs.js';
+import { emitPlanVersioned } from '../lifecycle/event-emit.js';
+import {
+  GateFailedError,
+  moveTicket,
+  resolveLifecycleActor,
+  resolveLifecycleCaller,
+} from '../lifecycle/verbs.js';
+import { withTicketMutationLock } from '../utils/ticket-mutation-lock.js';
+import {
+  completeStageEntry,
+  completeStageEntryAfterRecordFailure,
+  recordStageEntryLocked,
+} from '../lifecycle/stage-entry.js';
+import { postCliStageDispatch } from '../chat/dispatch-client.js';
 import type { StageId } from '../ticket-templates/manifest.js';
 import type { TemplateManifest } from '../ticket-templates/manifest.js';
 import { resolveSessionEngagement } from '../utils/engagement-binding.js';
@@ -159,16 +171,22 @@ interface PlanCreateOptions {
   project?: string;
   dir?: string;
   force?: boolean;
+  by?: string;
 }
 
 async function runPlanMove(
   ticketId: string,
-  options: Pick<PlanCreateOptions, 'project' | 'dir'>,
+  options: Pick<PlanCreateOptions, 'project' | 'dir' | 'by'>,
 ): Promise<void> {
   try {
+    const actor = resolveLifecycleActor({ actor: options.by });
+    const callerSession = await resolveLifecycleCaller({ dir: options.dir });
     await moveTicket(ticketId, 'plan', {
       project: options.project,
       dir: options.dir,
+      actor,
+      callerSession,
+      dispatch: postCliStageDispatch,
     });
   } catch (error) {
     if (error instanceof GateFailedError) {
@@ -182,36 +200,6 @@ function templateHasStage(manifest: TemplateManifest, stage: StageId): boolean {
   return manifest.stages.some((s) => s.id === stage);
 }
 
-async function applyPlanVersionStageMove(
-  ticketDir: string,
-  manifest: TemplateManifest,
-  options: Pick<PlanVersionOptions, 'project' | 'dir' | 'agent'>,
-): Promise<void> {
-  if (!templateHasStage(manifest, 'planning')) {
-    return;
-  }
-  const ticketMdPath = resolve(ticketDir, 'ticket.md');
-  const content = await readFile(ticketMdPath, 'utf-8');
-  const fm = parseTicketFrontmatter(content);
-  if (fm.status === 'planning') {
-    return;
-  }
-  const now = isoNow();
-  await writeFileForce(
-    ticketMdPath,
-    updateTicketFile(content, { status: 'planning', updated: now }),
-  );
-  const actor = await resolveVerbActor({ agent: options.agent, dir: options.dir });
-  emitMoved({
-    ticketId: fm.id,
-    projectSlug: fm.project,
-    from: fm.status,
-    to: 'planning',
-    verb: 'plan-version',
-    by: actor,
-    at: now,
-  });
-}
 
 async function runPlanCreate(options: PlanCreateOptions): Promise<void> {
   const target = await resolveTicketContext(options);
@@ -266,7 +254,7 @@ interface PlanVersionOptions {
   ticket?: string;
   project?: string;
   dir?: string;
-  agent?: string;
+  by?: string;
   force?: boolean;
 }
 
@@ -277,65 +265,134 @@ async function runPlanVersion(options: PlanVersionOptions): Promise<void> {
     throw new Error(`Ticket directory does not exist: ${ticketDir}`);
   }
 
-  const { manifest, planPath, stem, ticketSlug } = await resolvePlanRole(ticketDir);
-  const planFiles = await planRevisions(ticketDir, stem);
-  if (planFiles.length === 0) {
-    throw new Error(
-      `No ${stem}.md (or ${stem}-v<N>.md) found in ${ticketDir}. Run plan create first.`,
-    );
-  }
-
-  const current = planFiles[planFiles.length - 1];
-  const next = nextPlanFileName(stem, current.version);
-  const newPath = resolve(ticketDir, next.fileName);
-
-  if ((await fileExists(newPath)) && !options.force) {
-    throw new Error(`${next.fileName} already exists. Use --force to overwrite.`);
-  }
-
-  const oldPlanPath = resolve(ticketDir, current.fileName);
-  const oldPlanContent = await readFile(oldPlanPath, 'utf-8');
-  const oldBody = oldPlanContent.replace(/^---[\s\S]*?\n---\n?/, '');
-  const carriedTodos = extractUncheckedTodos(oldBody);
-
-  const stub = buildNewPlanStub({
-    ticketSlug,
-    stem,
-    newVersion: next.version,
-    oldVersion: current.version,
-    uncheckedTodos: carriedTodos,
-  });
-
-  await writeFileForce(newPath, stub);
-
-  console.log(`Created ${next.fileName} (superseding ${current.fileName}).`);
-  console.log(`Path: ${newPath}`);
-  console.log(`Carried forward: ${carriedTodos.length} unchecked task(s).`);
-
   const ticketMdPath = resolve(ticketDir, 'ticket.md');
-  const now = isoNow();
-  const ticketContent = await readFile(ticketMdPath, 'utf-8');
-  const fm = parseTicketFrontmatter(ticketContent);
-  await writeFileForce(
-    ticketMdPath,
-    updatePlanBlock(ticketContent, {
+  const actor = resolveLifecycleActor({ actor: options.by, dir: options.dir });
+
+  type PendingPlanCompletion =
+    | { kind: 'recorded'; entry: ReturnType<typeof recordStageEntryLocked> }
+    | { kind: 'failed'; error: string }
+    | undefined;
+
+  let pendingCompletion: PendingPlanCompletion;
+  let completionTicketId = '';
+  let completionProjectSlug: string | null = null;
+  let completionTicketSlug = '';
+
+  await withTicketMutationLock(ticketMdPath, async () => {
+    const { manifest, planPath, stem, ticketSlug } = await resolvePlanRole(ticketDir);
+    const planFiles = await planRevisions(ticketDir, stem);
+    if (planFiles.length === 0) {
+      throw new Error(
+        `No ${stem}.md (or ${stem}-v<N>.md) found in ${ticketDir}. Run plan create first.`,
+      );
+    }
+
+    const current = planFiles[planFiles.length - 1];
+    const next = nextPlanFileName(stem, current.version);
+    const newPath = resolve(ticketDir, next.fileName);
+
+    if ((await fileExists(newPath)) && !options.force) {
+      throw new Error(`${next.fileName} already exists. Use --force to overwrite.`);
+    }
+
+    const oldPlanPath = resolve(ticketDir, current.fileName);
+    const oldPlanContent = await readFile(oldPlanPath, 'utf-8');
+    const oldBody = oldPlanContent.replace(/^---[\s\S]*?\n---\n?/, '');
+    const carriedTodos = extractUncheckedTodos(oldBody);
+
+    const stub = buildNewPlanStub({
+      ticketSlug,
+      stem,
+      newVersion: next.version,
+      oldVersion: current.version,
+      uncheckedTodos: carriedTodos,
+    });
+
+    await writeFileForce(newPath, stub);
+
+    console.log(`Created ${next.fileName} (superseding ${current.fileName}).`);
+    console.log(`Path: ${newPath}`);
+    console.log(`Carried forward: ${carriedTodos.length} unchecked task(s).`);
+
+    const now = isoNow();
+    const ticketContent = await readFile(ticketMdPath, 'utf-8');
+    const fm = parseTicketFrontmatter(ticketContent);
+    let updatedTicket = updatePlanBlock(ticketContent, {
       file: next.fileName,
       approvedDigest: null,
       approvedAt: null,
       approvedBy: null,
-    }),
-  );
+    });
 
-  const actor = await resolveVerbActor({ agent: options.agent, dir: options.dir });
-  emitPlanVersioned({
-    ticketId: fm.id,
-    projectSlug: fm.project,
-    actor,
-    file: next.fileName,
-    at: now,
+    completionTicketId = fm.id;
+    completionProjectSlug = fm.project;
+    completionTicketSlug = fm.slug;
+
+    if (templateHasStage(manifest, 'planning') && fm.status !== 'planning') {
+      updatedTicket = updateTicketFile(updatedTicket, { status: 'planning', updated: now });
+    }
+
+    await writeFileForce(ticketMdPath, updatedTicket);
+
+    emitPlanVersioned({
+      ticketId: fm.id,
+      projectSlug: fm.project,
+      actor,
+      file: next.fileName,
+      at: now,
+    });
+
+    if (templateHasStage(manifest, 'planning') && fm.status !== 'planning') {
+      try {
+        pendingCompletion = {
+          kind: 'recorded',
+          entry: recordStageEntryLocked({
+            ticketId: fm.id,
+            projectSlug: fm.project,
+            actor,
+            at: now,
+            eventType: 'moved',
+            stage: 'planning',
+            manifest,
+            verb: 'plan-version',
+            from: fm.status,
+            to: 'planning',
+          }),
+        };
+      } catch (err) {
+        pendingCompletion = {
+          kind: 'failed',
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
   });
 
-  await applyPlanVersionStageMove(ticketDir, manifest, options);
+  const callerSession = await resolveLifecycleCaller({ dir: options.dir });
+  if (pendingCompletion?.kind === 'recorded') {
+    await completeStageEntry({
+      ticketId: completionTicketId,
+      ticketDir,
+      projectSlug: completionProjectSlug,
+      ticketSlug: completionTicketSlug,
+      entry: pendingCompletion.entry,
+      actor,
+      callerSession,
+      dispatch: postCliStageDispatch,
+    });
+  } else if (pendingCompletion?.kind === 'failed') {
+    await completeStageEntryAfterRecordFailure({
+      ticketId: completionTicketId,
+      ticketDir,
+      projectSlug: completionProjectSlug,
+      ticketSlug: completionTicketSlug,
+      actor,
+      callerSession,
+      dispatch: postCliStageDispatch,
+      stage: 'planning',
+      error: pendingCompletion.error,
+    });
+  }
 }
 
 export const planCommand = new Command('plan')
@@ -348,6 +405,7 @@ planCommand
   .option('--ticket <id>', 'Alias for [ticket]')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--dir <path>', 'Override default project directory')
+  .option('--by <name>', 'Audit attribution for the planning stage move')
   .option('--force', 'Overwrite an existing plan file')
   .action(async (ticket: string | undefined, options: PlanCreateOptions) => {
     try {
@@ -365,7 +423,7 @@ planCommand
   .option('--ticket <id>', 'Alias for [ticket]')
   .option('--project <slug>', 'Project slug. Required when --ticket is given for a project-nested ticket')
   .option('--dir <path>', 'Override default project directory')
-  .option('--agent <name>', 'Acting agent id')
+  .option('--by <name>', 'Audit attribution for this action')
   .option('--force', 'Overwrite if the next revision already exists')
   .action(async (ticket: string | undefined, options: PlanVersionOptions) => {
     try {

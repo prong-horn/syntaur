@@ -168,7 +168,7 @@ async function tryMove(
       dir: projectsDir,
       force,
       reason: verb === 'drop' ? 'matrix drop' : undefined,
-      agent: 'human',
+      actor: 'human',
     });
     if (result.from === result.to) return { kind: 'noop' };
     return { kind: 'moved' };
@@ -188,7 +188,7 @@ async function tryFlag(id: string, verb: typeof FLAG_VERBS[number]): Promise<Out
     await flagTicket(id, verb, verb === 'unblock' || verb === 'unpark' ? null : 'matrix reason', {
       project: 'p',
       dir: projectsDir,
-      agent: 'human',
+      actor: 'human',
     });
     return 'flag';
   } catch (error) {

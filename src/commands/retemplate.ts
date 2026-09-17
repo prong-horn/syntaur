@@ -12,6 +12,7 @@ import {
   scaffoldedPlanPaths,
 } from '../ticket-templates/scaffold.js';
 import { emitEvent } from '../lifecycle/event-emit.js';
+import { withTicketMutationLock } from '../utils/ticket-mutation-lock.js';
 
 export interface RetemplateOptions {
   project?: string;
@@ -44,44 +45,48 @@ export async function retemplateCommand(
     throw new Error(`template ${templateId} not found (syntaur template list)`);
   }
 
-  const ticketContent = await readFile(ticketMdPath, 'utf-8');
-  const fm = parseTicketFrontmatter(ticketContent);
-  const fromTemplate = fm.template ?? 'legacy';
-
   const templateDir = await resolveTemplateContentDir(root, templateId);
-  const written = await scaffoldTemplateFiles({
-    ticketDir: target.ticketDir,
-    templateDir,
-    template: manifest,
-    ticketSlug: target.ticketSlug,
-    ticketTitle: fm.title,
-    timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    ticketStatus: fm.status,
-  });
+  const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-  let nextContent = updateTicketFile(ticketContent, { template: templateId });
+  return await withTicketMutationLock(ticketMdPath, async () => {
+    const ticketContent = await readFile(ticketMdPath, 'utf-8');
+    const fm = parseTicketFrontmatter(ticketContent);
+    const fromTemplate = fm.template ?? 'legacy';
 
-  const planWritten = scaffoldedPlanPaths(written, manifest);
-  if (planWritten.length > 0) {
-    nextContent = updatePlanBlock(nextContent, {
-      file: planWritten[0],
-      approvedDigest: null,
-      approvedAt: null,
-      approvedBy: null,
+    const written = await scaffoldTemplateFiles({
+      ticketDir: target.ticketDir,
+      templateDir,
+      template: manifest,
+      ticketSlug: target.ticketSlug,
+      ticketTitle: fm.title,
+      timestamp,
+      ticketStatus: fm.status,
     });
-  }
 
-  await writeFileForce(ticketMdPath, nextContent);
+    let nextContent = updateTicketFile(ticketContent, { template: templateId });
 
-  emitEvent({
-    ticketId: fm.id,
-    projectSlug: target.projectSlug ?? null,
-    type: 'retemplated',
-    actor: 'human',
-    details: { from: fromTemplate, to: templateId, written },
+    const planWritten = scaffoldedPlanPaths(written, manifest);
+    if (planWritten.length > 0) {
+      nextContent = updatePlanBlock(nextContent, {
+        file: planWritten[0],
+        approvedDigest: null,
+        approvedAt: null,
+        approvedBy: null,
+      });
+    }
+
+    await writeFileForce(ticketMdPath, nextContent);
+
+    emitEvent({
+      ticketId: fm.id,
+      projectSlug: target.projectSlug ?? null,
+      type: 'retemplated',
+      actor: 'human',
+      details: { from: fromTemplate, to: templateId, written },
+    });
+
+    return { written, from: fromTemplate, to: templateId };
   });
-
-  return { written, from: fromTemplate, to: templateId };
 }
 
 export const retemplateCliCommand = new Command('retemplate')

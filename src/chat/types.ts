@@ -60,6 +60,8 @@ export type ChatEventKind =
   | 'session.rotated'
   | 'session.idle'
   | 'session.exited'
+  | 'stage.dispatch'
+  | 'stage.dispatch.state'
   | 'system';
 
 export interface ChatEvent {
@@ -150,7 +152,8 @@ export interface UserMessageDeliveredPayload {
  */
 export type TurnTrigger =
   | { kind: 'human'; messageId: string }
-  | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number };
+  | { kind: 'handoff'; handoffId: string; fromAgentId: string; hop: number }
+  | { kind: 'stage'; requestId: string };
 
 /** Kind of chat-sourced Inbox question (hidden marker in comment body). */
 export type ChatQuestionKind = 'reply' | 'permission' | 'ask';

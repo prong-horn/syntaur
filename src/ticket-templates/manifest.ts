@@ -167,8 +167,25 @@ function parseStage(entry: unknown, file: string, index: number): TemplateStage 
     throw new TemplateManifestError(file, `stages[${index}] is missing 'instructions'`);
   }
   const label = str(entry, 'label') ?? id;
-  const agent = str(entry, 'agent');
-  const reviewer = str(entry, 'reviewer');
+  const agentRaw = str(entry, 'agent');
+  const reviewerRaw = str(entry, 'reviewer');
+  if (agentRaw !== undefined && (typeof agentRaw !== 'string' || agentRaw.trim() === '')) {
+    throw new TemplateManifestError(file, `stages[${index}].agent must be a non-empty string`);
+  }
+  if (
+    reviewerRaw !== undefined &&
+    (typeof reviewerRaw !== 'string' || reviewerRaw.trim() === '')
+  ) {
+    throw new TemplateManifestError(file, `stages[${index}].reviewer must be a non-empty string`);
+  }
+  const agent = agentRaw?.trim();
+  const reviewer = reviewerRaw?.trim();
+  if (agent && reviewer) {
+    throw new TemplateManifestError(
+      file,
+      `stages[${index}] declares both agent and reviewer; only one target is allowed per stage`,
+    );
+  }
   let auto: boolean | undefined;
   if (entry.auto !== undefined) {
     if (typeof entry.auto !== 'boolean') {

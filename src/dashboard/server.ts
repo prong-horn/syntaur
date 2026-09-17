@@ -65,7 +65,11 @@ import { createEventsRouter } from './api-events.js';
 import { createInboxRouter } from './api-inbox.js';
 import { createChatRouter } from './api-chat.js';
 import { createChatAgentsRouter } from './api-chat-agents.js';
-import { createChatBroker } from '../chat/broker.js';
+import { createChatBroker, type ChatRuntimeIdentity } from '../chat/broker.js';
+import { acquireHomeOwnerLock, type HomeOwnerHandle } from '../chat/broker-owner.js';
+import { createStageDispatchRouter } from './api-stage-dispatch.js';
+import { captureProcessStartedAt } from '../utils/process-info.js';
+import { canonicalPath } from '../utils/path-canon.js';
 import { createPlaybooksRouter } from './api-playbooks.js';
 import {
   migrateLegacyProjectFiles,
@@ -626,30 +630,36 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.get('/api/tickets/:id/usage', getTicketUsageHandler(projectsDir));
 
+  // --- Ticket chat broker (lazy: owner lock + construction happen in start()) ---
+  let ownerHandle: HomeOwnerHandle | null = null;
+  let runtimeIdentity: ChatRuntimeIdentity | null = null;
+  let chatBroker: ReturnType<typeof createChatBroker> | null = null;
+
+  const brokerProxy = new Proxy({} as ReturnType<typeof createChatBroker>, {
+    get(_target, prop) {
+      if (!chatBroker) {
+        throw new Error('Chat broker is not ready');
+      }
+      const value = (chatBroker as unknown as Record<string | symbol, unknown>)[prop];
+      return typeof value === 'function' ? value.bind(chatBroker) : value;
+    },
+  });
+
   // --- Write API (create projects/tickets) ---
-  app.use(createWriteRouter(projectsDir));
+  app.use(createWriteRouter(projectsDir, { broker: brokerProxy }));
 
   // --- Usage API (per-ticket / per-project token usage rollups) ---
   app.use('/api/usage', createUsageRouter(projectsDir));
 
   // --- Events API (per-ticket audit Activity timeline) ---
-  // Best-effort read-only; mounted at `/api`. Returns `{ events: [] }` rather than 500ing.
   app.use('/api', createEventsRouter(projectsDir));
 
   // --- Inbox API ("Needs me" triage view) ---
-  // Best-effort read-only; returns safe empty shape rather than 500ing.
   app.use('/api', createInboxRouter(projectsDir));
 
-  // --- Ticket chat API + ACP session broker ---
-  // The broker is the only thing in Syntaur that owns an agent process. It is
-  // constructed after initSessionDb (its chat tables live in the same file) and
-  // torn down FIRST in stop(), while the DBs are still open.
-  const chatBroker = createChatBroker({
-    projectsDir,
-    broadcast: (message) => broadcast(message as WsMessage),
-  });
-  app.use('/api', createChatRouter(projectsDir, { broker: chatBroker }));
-  app.use('/api', createChatAgentsRouter({ broker: chatBroker }));
+  app.use('/api', createChatRouter(projectsDir, { broker: brokerProxy }));
+  app.use('/api', createChatAgentsRouter({ broker: brokerProxy }));
+  app.use(createStageDispatchRouter(projectsDir, brokerProxy));
 
   // --- Agent Sessions API ---
   app.use(
@@ -715,6 +725,28 @@ export function createDashboardServer(options: DashboardServerOptions) {
   const STALENESS_WATCHDOG_INTERVAL_MS = 5 * 60 * 1000;
   let stalenessWatchdogTimer: ReturnType<typeof setInterval> | null = null;
 
+  async function cleanupStartupResources(): Promise<void> {
+    if (stalenessWatchdogTimer) {
+      clearInterval(stalenessWatchdogTimer);
+      stalenessWatchdogTimer = null;
+    }
+    await stopMaintenanceLoop().catch(() => {});
+    await stopUsageCollector().catch(() => {});
+    if (watcherHandle) {
+      await watcherHandle.close().catch(() => {});
+      watcherHandle = null;
+    }
+    if (chatBroker) {
+      await chatBroker.stopAll().catch(() => {});
+      chatBroker = null;
+    }
+    if (ownerHandle) {
+      await ownerHandle.release().catch(() => {});
+      ownerHandle = null;
+      runtimeIdentity = null;
+    }
+  }
+
   return {
     async start(): Promise<void> {
       watcherHandle = createWatcher({
@@ -770,11 +802,22 @@ export function createDashboardServer(options: DashboardServerOptions) {
         stalenessWatchdogTimer.unref?.();
       }
 
+      try {
+        ownerHandle = await acquireHomeOwnerLock(port);
+        chatBroker = createChatBroker({
+          projectsDir,
+          broadcast: (message) => broadcast(message as WsMessage),
+          runtimeIdentity: () => runtimeIdentity,
+        });
+      } catch (err) {
+        await cleanupStartupResources();
+        throw err;
+      }
+
       return new Promise<void>((resolvePromise, reject) => {
-        server.on('error', (err: NodeJS.ErrnoException) => {
+        server.on('error', async (err: NodeJS.ErrnoException) => {
+          await cleanupStartupResources();
           if (err.code === 'EADDRINUSE') {
-            // Preserve the code so the dashboard command can attach actionable
-            // remediation (drop --port to auto-pick, lsof to find the holder).
             const inUse = new Error(
               `Port ${port} is already in use.`,
             ) as NodeJS.ErrnoException;
@@ -784,28 +827,43 @@ export function createDashboardServer(options: DashboardServerOptions) {
             reject(err);
           }
         });
-        server.listen(port, () => {
-          const portFile = resolve(syntaurRoot(), 'dashboard-port');
-          writeFile(portFile, String(port), 'utf-8').catch(() => {});
-          resolvePromise();
+        server.listen(port, '127.0.0.1', () => {
+          const home = syntaurRoot();
+          runtimeIdentity = {
+            protocol: 1,
+            root: canonicalPath(home),
+            projectsDir: canonicalPath(projectsDir),
+            pid: process.pid,
+            processStartedAt: captureProcessStartedAt(process.pid),
+            ownerToken: ownerHandle!.record.ownerToken,
+            port,
+          };
+          const portFile = resolve(home, 'dashboard-port');
+          void writeFile(portFile, String(port), 'utf-8')
+            .catch(() => {})
+            .finally(() => resolvePromise());
         });
       });
     },
 
     async stop(): Promise<void> {
-      if (stalenessWatchdogTimer) {
-        clearInterval(stalenessWatchdogTimer);
-        stalenessWatchdogTimer = null;
-      }
       // Chat first: stopAll() cancels in-flight turns, seals their `turn.status`
       // rows, closes their engagements and tears down the adapter process
       // groups — all of which WRITE, so it has to happen while the session and
       // usage DBs are still open.
-      await chatBroker.stopAll().catch(() => {});
+      if (chatBroker) {
+        await chatBroker.stopAll().catch(() => {});
+        chatBroker = null;
+      }
+      if (stalenessWatchdogTimer) {
+        clearInterval(stalenessWatchdogTimer);
+        stalenessWatchdogTimer = null;
+      }
       await stopMaintenanceLoop();
       await stopUsageCollector();
       if (watcherHandle) {
         await watcherHandle.close();
+        watcherHandle = null;
       }
       closeSessionDb();
       closeUsageDb();
@@ -814,11 +872,24 @@ export function createDashboardServer(options: DashboardServerOptions) {
       }
       clients.clear();
       const portFile = resolve(syntaurRoot(), 'dashboard-port');
-      await unlink(portFile).catch(() => {});
+      try {
+        const { readFile } = await import('node:fs/promises');
+        const current = (await readFile(portFile, 'utf-8')).trim();
+        if (current === String(port)) {
+          await unlink(portFile);
+        }
+      } catch {
+        /* no port file */
+      }
       server.closeAllConnections?.();
-      return new Promise<void>((resolvePromise) => {
+      await new Promise<void>((resolvePromise) => {
         server.close(() => resolvePromise());
       });
+      if (ownerHandle) {
+        await ownerHandle.release().catch(() => {});
+        ownerHandle = null;
+        runtimeIdentity = null;
+      }
     },
 
     get port(): number {

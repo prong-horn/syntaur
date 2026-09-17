@@ -69,7 +69,10 @@ function getRouteHandler(router: Router, method: string, path: string): RequestH
     }>;
   }).stack?.find((candidate) => {
     const route = candidate.route;
-    return route?.path === path && route.methods[method];
+    return (
+      route?.path === path &&
+      Boolean((route as { methods?: Record<string, boolean> }).methods?.[method])
+    );
   });
 
   if (!layer?.route?.stack?.[0]) {
@@ -2073,10 +2076,10 @@ tags: []
     const payload = response.payload as { next: string | null; ticket: { status: string } };
     expect(payload.ticket.status).toBe('ready');
     expect(payload.next).toBeTruthy();
-    expect(payload.next).toBe(payload.ticket.next);
+    expect(payload.next).toBe((payload.ticket as { next?: string | null }).next);
   });
 
-  it('POST /api/tickets/:id/verbs/approve passes agent into the verb', async () => {
+  it('POST /api/tickets/:id/verbs/approve passes by into the verb', async () => {
     const { seedMissingBuiltins } = await import('../ticket-templates/builtins.js');
     if (process.env.SYNTAUR_HOME) {
       await seedMissingBuiltins(process.env.SYNTAUR_HOME);
@@ -2090,11 +2093,25 @@ tags: []
       'post',
       '/api/tickets/:id/verbs/:verb',
       { id: 'PP-1', verb: 'approve' },
-      { agent: 'dashboard-bot' },
+      { by: 'dashboard-bot' },
     );
     expect(response.statusCode).toBe(200);
     const moved = listEventsByTicket('PP-1').find((e) => e.type === 'moved');
     expect(moved?.actor).toBe('dashboard-bot');
+  });
+
+  it('POST /api/tickets/:id/verbs/approve rejects agent override', async () => {
+    await seedProjectPlanTicket();
+    const router = createWriteRouter(testDir);
+    const response = await invokeRoute(
+      router,
+      'post',
+      '/api/tickets/:id/verbs/:verb',
+      { id: 'PP-1', verb: 'approve' },
+      { agent: 'dashboard-bot' },
+    );
+    expect(response.statusCode).toBe(400);
+    expect((response.payload as { error: string }).error).toContain('only valid for start');
   });
 
 });

@@ -71,5 +71,18 @@
     "src/__tests__/home-path-hygiene.test.ts",
     "src/__tests__/doctor-known-top-level.test.ts",
     "src/__tests__/skill-registry.test.ts",
+    "src/__tests__/stage-dispatch-policy.test.ts",
+    "src/__tests__/ticket-mutation-lock.test.ts",
+    "src/__tests__/stage-entry.test.ts",
+    "src/__tests__/dispatch-client.test.ts",
+    "src/__tests__/chat-stage-dispatch.test.ts",
+    "src/__tests__/process-owner.test.ts",
+    "src/__tests__/dashboard-api-stage-dispatch.test.ts",
+    "src/__tests__/event-emit.test.ts",
+    "src/__tests__/verbs-matrix.test.ts",
+    "src/__tests__/dashboard-write.test.ts",
+    "src/__tests__/plan-version.test.ts",
+    "src/__tests__/events-db.test.ts",
+    "src/__tests__/lock-coord-child.test.ts",
   ]
 }

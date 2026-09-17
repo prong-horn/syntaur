@@ -244,6 +244,11 @@ export class ChatNormalizer {
         this.system(event, payload.level ?? 'info', payload.text, patches);
         break;
       }
+      case 'stage.dispatch':
+        this.ingestStageDispatch(event, patches);
+        break;
+      case 'stage.dispatch.state':
+        break;
       default:
         this.system(event, 'info', `Unhandled event ${String(event.kind)}`, patches);
     }
@@ -811,6 +816,38 @@ export class ChatNormalizer {
     if (payload.by === 'timeout') item.timedOut = true;
     item.sealed = true;
     item.seqLast = event.seq;
+    patches.push({ op: 'upsert', item });
+  }
+
+  private ingestStageDispatch(event: ChatEvent, patches: ItemPatch[]): void {
+    const payload = event.payload as {
+      requestId?: string;
+      agentId?: string;
+      stage?: string;
+      role?: string;
+      source?: string;
+    };
+    if (!payload.requestId) return;
+    const scopeId = `stage~${payload.requestId}`;
+    if ((this.ordinals.get(scopeId) ?? 0) > 0) return;
+    this.ordinals.set(scopeId, 1);
+    const role = payload.role ?? 'agent';
+    const source = payload.source ?? 'manual';
+    const item: SystemItem = {
+      itemId: `${scopeId}~0`,
+      ticketId: this.ticketId,
+      turnId: null,
+      agentId: event.agentId || this.agentId,
+      type: 'system',
+      ts: event.ts,
+      seqFirst: event.seq,
+      seqLast: event.seq,
+      sealed: true,
+      level: 'info',
+      text:
+        `Stage handoff (${source}) → @${payload.agentId ?? 'agent'} as ${role}` +
+        (payload.stage ? ` on ${payload.stage}` : ''),
+    };
     patches.push({ op: 'upsert', item });
   }
 

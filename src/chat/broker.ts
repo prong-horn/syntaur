@@ -47,6 +47,7 @@ import { extractFrontmatter, getNestedField } from '../dashboard/parser.js';
 import { resolveChatCwd, type CwdTier } from './chat-cwd.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { appendTypedLogEntry } from '../lifecycle/log-append.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { answerChatQuestions } from '../lifecycle/answer-questions.js';
 import {
   byAgentAndKind,
@@ -109,7 +110,7 @@ import { DEFAULT_HOP_BUDGET, parseMentions, routeAgentReply, routeHuman } from '
 import { HARNESSES, HARNESS_IDS, probeAuth, resolveCommand, type CommandResolution } from './harnesses.js';
 import { parseHarnessOptions } from './harness-options.js';
 import { ChatNormalizer, blockText } from './normalizer.js';
-import { applyProfile, inheritedProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile } from './profile.js';
+import { applyProfile, inheritedProfile, newSessionMeta, profileEnv, profileForTier, resolveSessionProfile, serializeProfile, verifyPinnedProfileApplied } from './profile.js';
 import { textBlock } from './prompt-framing.js';
 import {
   buildCommandPrompt,
@@ -124,6 +125,27 @@ import {
 import { openChatLog, type ChatLog } from './store.js';
 import { readChatAttachmentBase64 } from './attachments.js';
 import { HUMAN_AGENT_ID, SYSTEM_AGENT_ID } from './types.js';
+import {
+  acceptanceMatchesInput,
+  findStageDispatchAcceptance,
+  prepareStageQueueEntry,
+  reconcileStageReceipt,
+  stageQueueEntriesMatch,
+  validateStageDrive,
+  StageDispatchError,
+  type StageQueueMeta,
+} from './stage-dispatch-broker.js';
+import {
+  isTerminalStageReceiptState,
+  listStageDispatchRequestIds,
+  readStageDispatchReceipt,
+  type StageDispatchReceiptState,
+} from './stage-dispatch-state.js';
+import { latestStageEntryForTicket } from '../db/events-db.js';
+import { emitDispatched } from '../lifecycle/event-emit.js';
+import { withTicketMutationLock } from '../utils/ticket-mutation-lock.js';
+import { MAX_ATTACHED_AGENTS } from './participants.js';
+import { readEvents } from './store.js';
 import type {
   AgentDefinition,
   AgentDefinitionInput,
@@ -225,6 +247,8 @@ export interface BrokerBroadcast {
 export interface CreateChatBrokerOptions {
   projectsDir: string;
   broadcast: BrokerBroadcast;
+  /** Dashboard runtime identity for /api/chat/runtime */
+  runtimeIdentity?: () => ChatRuntimeIdentity | null;
   /** Injected by tests to wire an in-process fake agent instead of a subprocess. */
   clientFactory?: ClientFactory;
   /** Injected by tests; defaults to the machine's `~/.syntaur`. */
@@ -238,6 +262,17 @@ export interface CreateChatBrokerOptions {
   routing?: { hopBudget?: number };
   /** Injected by tests; defaults to `loadAgentDefinitions`. */
   loadDefinitions?: (root: string) => Promise<LoadAgentDefinitionsResult>;
+  /** When true, accepted stage dispatch is not auto-driven (tests only). */
+  suppressStageDrive?: boolean;
+  /** Test hooks around stage drive boundaries (after engagement, before ACP). */
+  stageDriveHooks?: {
+    afterEngagementBeforePrompt?: (session: Session) => Promise<void>;
+    /** Runs after the final receipt read, immediately before the sync pre-prompt check. */
+    afterStageReceiptBeforePrompt?: (
+      session: Session,
+      ctx: { receipt: ReturnType<typeof reconcileStageReceipt> },
+    ) => Promise<void>;
+  };
 }
 
 /** A send that cannot proceed — the router turns this into an HTTP 409. */
@@ -251,7 +286,46 @@ export class ChatSendError extends Error {
   }
 }
 
+export interface ChatRuntimeIdentity {
+  protocol: 1;
+  root: string;
+  projectsDir: string;
+  pid: number;
+  processStartedAt: string | null;
+  ownerToken: string;
+  port: number;
+}
+
 export interface ChatBroker {
+  runtimeIdentity?(): ChatRuntimeIdentity | null;
+  dispatchStage(input: {
+    ticket: ResolvedTicket;
+    entryId: string;
+    requestId: string;
+    source: 'automatic' | 'manual';
+    agentId?: string;
+  }): Promise<{
+    requestId: string;
+    state: StageDispatchReceiptState;
+    agentId: string;
+    entryId?: string;
+    turnId?: string;
+    error?: string;
+  }>;
+  getStageDispatch(
+    ticket: ResolvedTicket,
+    requestId: string,
+  ): Promise<{
+    requestId: string;
+    entryId: string;
+    agentId: string;
+    stage: string;
+    state: string;
+    turnId?: string;
+    error?: string;
+  } | null>;
+  cancelStageDispatch(ticket: ResolvedTicket, requestId: string): Promise<boolean>;
+  notifyStageEntry(ticket: ResolvedTicket): Promise<void>;
   send(input: {
     ticket: ResolvedTicket;
     agentId?: string | null;
@@ -381,7 +455,12 @@ interface Session {
   standingGen: number;
   /** Persisted sha256 of the last standing block this adapter session was shown. */
   standingFingerprint: string | null;
-  queue: Array<{ text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] }>;
+  queue: Array<{
+    text: string;
+    trigger: TurnTrigger;
+    attachments?: ChatAttachment[];
+    stageMeta?: StageQueueMeta;
+  }>;
   /** Highest chat-level `seq` this session has been shown (Decision 4). */
   lastDeliveredSeq: number;
   /**
@@ -470,6 +549,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const now = () => (options.clock ? options.clock.now() : Date.now());
   const iso = () => new Date(now()).toISOString();
   const sessions = new Map<string, Session>();
+  const brokerTicketLocks = new Map<string, Promise<void>>();
   /**
    * Sessions still being built. `ensureSession` must not publish into
    * `sessions` until `repairSession` has finished, or a concurrent `send` from
@@ -815,6 +895,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   async function tearDownForHarnessChange(session: Session): Promise<void> {
     const dropped = session.queue.splice(0, session.queue.length);
+    await terminalizeDetachedStageQueue(
+      session.ticket,
+      dropped,
+      'target agent harness changed',
+    );
     for (const entry of dropped) {
       await recordTicket(
         session.ticket,
@@ -999,6 +1084,214 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       });
     }
     return event;
+  }
+
+  function withBrokerTicketLock<T>(ticketId: string, fn: () => Promise<T>): Promise<T> {
+    const prior = brokerTicketLocks.get(ticketId) ?? Promise.resolve();
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    brokerTicketLocks.set(ticketId, prior.then(() => gate));
+    return prior.then(fn).finally(() => release());
+  }
+
+  function assertRuntimeOwner(): void {
+    if (!options.runtimeIdentity) return;
+    if (!options.runtimeIdentity()) {
+      throw new StageDispatchError('chat runtime owner unavailable', 503);
+    }
+  }
+
+  async function persistStageDispatchState(
+    ticket: ResolvedTicket,
+    requestId: string,
+    state: import('./stage-dispatch-state.js').StageDispatchReceiptState,
+    opts: { turnId?: string; error?: string } = {},
+  ): Promise<void> {
+    await recordTicket(
+      ticket,
+      'stage.dispatch.state',
+      { requestId, state, ...(opts.turnId ? { turnId: opts.turnId } : {}), ...(opts.error ? { error: opts.error } : {}) },
+      { agentId: SYSTEM_AGENT_ID, turnId: null },
+    );
+  }
+
+  async function removeQueuedStageRequest(session: Session, requestId: string): Promise<void> {
+    session.queue = session.queue.filter(
+      (q) => q.trigger.kind !== 'stage' || q.trigger.requestId !== requestId,
+    );
+    emitSession(session);
+  }
+
+  async function terminalizeDetachedStageQueue(
+    ticket: ResolvedTicket,
+    entries: Array<{ trigger: TurnTrigger }>,
+    reason: string,
+  ): Promise<void> {
+    for (const entry of entries) {
+      if (entry.trigger.kind !== 'stage') continue;
+      const requestId = entry.trigger.requestId;
+      const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+      const receipt = reconcileStageReceipt(events, requestId);
+      if (!receipt || receipt.state !== 'queued') continue;
+      await persistStageDispatchState(ticket, requestId, 'superseded', { error: reason });
+    }
+  }
+
+  function receiptToDispatchResult(
+    receipt: NonNullable<ReturnType<typeof reconcileStageReceipt>>,
+  ): {
+    requestId: string;
+    state: StageDispatchReceiptState;
+    agentId: string;
+    entryId?: string;
+    turnId?: string;
+    error?: string;
+  } {
+    return {
+      requestId: receipt.requestId,
+      state: receipt.state,
+      agentId: receipt.agentId,
+      entryId: receipt.entryId,
+      turnId: receipt.turnId,
+      error: receipt.error,
+    };
+  }
+
+  async function requeueAcceptedStageDispatch(
+    ticket: ResolvedTicket,
+    acceptance: ReturnType<typeof findStageDispatchAcceptance>,
+  ): Promise<void> {
+    if (!acceptance) return;
+    const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+    const receipt = reconcileStageReceipt(events, acceptance.requestId);
+    if (!receipt || receipt.state !== 'queued') return;
+    const session = await ensureSession(ticket, receipt.agentId);
+    const stillQueued = session.queue.some(
+      (q) => q.trigger.kind === 'stage' && q.trigger.requestId === acceptance.requestId,
+    );
+    if (stillQueued) return;
+    enqueue(session, {
+      text: '',
+      trigger: { kind: 'stage', requestId: acceptance.requestId },
+      stageMeta: {
+        entryId: acceptance.entryId,
+        policyDigest: acceptance.policyDigest,
+        role: acceptance.role,
+        source: acceptance.source,
+      },
+    });
+    invalidateStanding(session);
+    void drive(session);
+  }
+
+  async function supersedeStageRequest(
+    ticket: ResolvedTicket,
+    requestId: string,
+    session?: Session | null,
+  ): Promise<void> {
+    const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+    const receipt = reconcileStageReceipt(events, requestId);
+    if (!receipt || receipt.state !== 'queued') return;
+    await persistStageDispatchState(ticket, requestId, 'superseded');
+    if (session) await removeQueuedStageRequest(session, requestId);
+    else {
+      const target = [...sessions.values()].find(
+        (s) => s.ticket.id === ticket.id && s.agentId === receipt.agentId,
+      );
+      if (target) await removeQueuedStageRequest(target, requestId);
+    }
+  }
+
+  async function failStageRequest(
+    ticket: ResolvedTicket,
+    requestId: string,
+    error: string,
+    session?: Session | null,
+  ): Promise<void> {
+    const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+    const receipt = reconcileStageReceipt(events, requestId);
+    if (!receipt || !['queued', 'running'].includes(receipt.state)) return;
+    await persistStageDispatchState(ticket, requestId, 'failed', { error });
+    if (session) await removeQueuedStageRequest(session, requestId);
+    else {
+      const target = [...sessions.values()].find(
+        (s) => s.ticket.id === ticket.id && s.agentId === receipt.agentId,
+      );
+      if (target) await removeQueuedStageRequest(target, requestId);
+    }
+  }
+
+  async function writeParticipantsLocked(
+    ticket: ResolvedTicket,
+    next: Participants,
+    definitions: AgentDefinition[],
+  ): Promise<Participants> {
+    const participants = await writeParticipants(ticket.ticketDir, next, definitions);
+    options.broadcast({
+      type: 'chat-participants',
+      projectSlug: ticket.projectSlug,
+      ticketSlug: ticket.ticketSlug,
+      timestamp: iso(),
+      payload: { ticketId: ticket.id, participants, agents: definitions.map((d) => toAgentSummary(d, commandResolver)) },
+    });
+    return participants;
+  }
+
+  async function ensureStageTargetAttachedLocked(
+    ticket: ResolvedTicket,
+    agentId: string,
+  ): Promise<void> {
+    const { definitions, participants } = await routingContext(ticket);
+    if (participants.agents.includes(agentId)) return;
+    if (participants.agents.length >= MAX_ATTACHED_AGENTS) {
+      throw new StageDispatchError(
+        `Cannot attach @${agentId}: at most ${MAX_ATTACHED_AGENTS} agents on one ticket — detach an agent first`,
+        409,
+      );
+    }
+    await writeParticipantsLocked(
+      ticket,
+      { ...participants, agents: [...participants.agents, agentId] },
+      definitions,
+    );
+  }
+
+  async function ensureStageTargetAttached(
+    ticket: ResolvedTicket,
+    agentId: string,
+  ): Promise<void> {
+    await withBrokerTicketLock(ticket.id, () =>
+      ensureStageTargetAttachedLocked(ticket, agentId),
+    );
+  }
+
+  async function reconcileStaleStageRequests(ticket: ResolvedTicket): Promise<void> {
+    const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+    const currentEntry = latestStageEntryForTicket(ticket.id);
+    const currentEntryId = currentEntry?.eventId ?? null;
+    for (const requestId of listStageDispatchRequestIds(events)) {
+      const receipt = reconcileStageReceipt(events, requestId);
+      if (!receipt || receipt.state !== 'queued') continue;
+      if (receipt.entryId === currentEntryId) continue;
+      await supersedeStageRequest(ticket, requestId);
+    }
+  }
+
+  async function applyStagePinsStrict(session: Session): Promise<string[]> {
+    if (!session.client?.alive() || !session.acpSessionId) {
+      return ['adapter not ready'];
+    }
+    const profile = profileForTier(session.profile, session.cwdTier);
+    const { applied, errors } = await applyProfile(
+      session.client,
+      session.acpSessionId,
+      profile,
+      session.harness,
+    );
+    const pinErrors = verifyPinnedProfileApplied(profile, applied, session.harness);
+    return [...errors, ...pinErrors];
   }
 
   /** Definitions and the participant set, read together on every routing pass. */
@@ -1487,6 +1780,11 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   async function detachSession(session: Session): Promise<void> {
     const dropped = session.queue.splice(0, session.queue.length);
+    await terminalizeDetachedStageQueue(
+      session.ticket,
+      dropped,
+      'target agent detached',
+    );
     for (const entry of dropped) {
       await recordTicket(
         session.ticket,
@@ -1575,11 +1873,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     let maxPermissionSeq = -1;
     let maxQuestionSeq = -1;
 
+    const openStageRequests = new Map<string, string>(); // turnId -> requestId
     for (const event of events) {
       switch (event.kind) {
         case 'turn.start': {
           const trigger = triggerOf(event);
-          if (trigger) everSent.add(triggerKey(trigger));
+          if (trigger) {
+            everSent.add(triggerKey(trigger));
+            if (trigger.kind === 'stage' && event.turnId) {
+              openStageRequests.set(event.turnId, trigger.requestId);
+            }
+          }
           if (event.turnId) openTurns.add(event.turnId);
           break;
         }
@@ -1630,7 +1934,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
      * and no new `handoff` is written: a chain survives a crash exactly as far
      * as its already-recorded handoffs and nothing beyond them is invented.
      */
-    const pending = new Map<string, { text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] }>();
+    const pending = new Map<
+      string,
+      {
+        text: string;
+        trigger: TurnTrigger;
+        attachments?: ChatAttachment[];
+        stageMeta?: StageQueueMeta;
+      }
+    >();
     for (const event of allEvents) {
       if (event.sessionKey === scopeKey) {
         if (event.kind === 'user.message') {
@@ -1654,6 +1966,28 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             hop: payload.hop,
           };
           pending.set(triggerKey(trigger), { text: payload.text, trigger });
+        } else if (event.kind === 'stage.dispatch') {
+          const payload = event.payload as {
+            requestId?: string;
+            agentId?: string;
+            entryId?: string;
+            role?: 'agent' | 'reviewer';
+            source?: 'automatic' | 'manual';
+            policyDigest?: string;
+          };
+          if (payload.agentId !== session.agentId || !payload.requestId || !payload.entryId) continue;
+          const receipt = readStageDispatchReceipt(allEvents, payload.requestId);
+          if (!receipt || receipt.state !== 'queued') continue;
+          pending.set(triggerKey({ kind: 'stage', requestId: payload.requestId }), {
+            text: '',
+            trigger: { kind: 'stage', requestId: payload.requestId },
+            stageMeta: {
+              entryId: payload.entryId,
+              policyDigest: payload.policyDigest ?? '',
+              role: payload.role ?? 'agent',
+              source: payload.source ?? 'manual',
+            },
+          });
         }
       } else if (event.sessionKey === session.key && event.kind === 'user.message') {
         // A phase-2 line: `user.message` under the handling agent's own key,
@@ -1757,6 +2091,15 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         },
         turnId,
       );
+      const stageRequestId = openStageRequests.get(turnId);
+      if (stageRequestId) {
+        await recordTicket(
+          session.ticket,
+          'stage.dispatch.state',
+          { requestId: stageRequestId, state: 'interrupted', turnId },
+          { agentId: SYSTEM_AGENT_ID, turnId: null },
+        );
+      }
     }
 
     closeDanglingEngagement(session);
@@ -2735,9 +3078,64 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     turn.idleTimer.unref?.();
   }
 
-  async function cancelTurn(session: Session): Promise<boolean> {
-    const turn = session.inFlight;
-    if (!turn || !session.acpSessionId || !session.client) return false;
+  type StagePromptAbortReason = 'cancelled' | 'stopped' | 'superseded';
+
+  function stagePromptAbortReason(
+    session: Session,
+    turnId: string,
+    receipt: ReturnType<typeof reconcileStageReceipt> | null | undefined,
+  ): StagePromptAbortReason | null {
+    if (stopping) return 'stopped';
+    const inflight = session.inFlight;
+    if (!inflight || inflight.turnId !== turnId || inflight.cancelled) return 'cancelled';
+    if (
+      receipt &&
+      isTerminalStageReceiptState(receipt.state) &&
+      receipt.state !== 'running'
+    ) {
+      return receipt.state === 'cancelled' ? 'cancelled' : 'superseded';
+    }
+    return null;
+  }
+
+  async function sealAbortedStagePromptTurn(
+    session: Session,
+    turn: InFlightTurn,
+    reason: StagePromptAbortReason,
+    receipt?: ReturnType<typeof reconcileStageReceipt> | null,
+  ): Promise<void> {
+    if (session.inFlight?.turnId === turn.turnId) {
+      session.inFlight = null;
+    }
+    closeEngagementById({
+      id: turn.engagementId,
+      startedAt: turn.engagementStartedAt,
+      closeReason: reason === 'stopped' || reason === 'cancelled' ? 'cancelled' : 'error',
+      tokensAtClose: snapshotOf(session),
+      endedAt: iso(),
+    });
+    const stopReason =
+      reason === 'cancelled' || reason === 'stopped'
+        ? 'cancelled'
+        : receipt?.state === 'cancelled'
+          ? 'cancelled'
+          : 'error';
+    await record(
+      session,
+      'turn.end',
+      {
+        stopReason,
+        endedAt: iso(),
+        durationMs: Math.max(0, now() - turn.startedMs),
+      },
+      turn.turnId,
+    );
+    void drive(session);
+  }
+
+  async function cancelCapturedTurn(session: Session, turn: InFlightTurn): Promise<boolean> {
+    if (session.inFlight?.turnId !== turn.turnId) return false;
+    if (!session.acpSessionId || !session.client) return false;
     turn.cancelled = true;
     await record(session, 'turn.cancel', {}, turn.turnId);
     // A cancel while a permission is pending answers it `cancelled` — the ACP
@@ -2758,6 +3156,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
     await session.client.cancel(session.acpSessionId).catch(() => {});
     return true;
+  }
+
+  async function cancelTurn(session: Session): Promise<boolean> {
+    const turn = session.inFlight;
+    if (!turn) return false;
+    return cancelCapturedTurn(session, turn);
   }
 
   function drive(session: Session): Promise<void> {
@@ -2793,6 +3197,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       ...(images.length ? { images } : {}),
     };
     if (entry.trigger.kind === 'human') {
+      return { author: 'human', text: entry.text, ts: new Date(now()), ...extras };
+    }
+    if (entry.trigger.kind === 'stage') {
       return { author: 'human', text: entry.text, ts: new Date(now()), ...extras };
     }
     return {
@@ -2861,12 +3268,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (trigger.kind === 'human') {
       const message = scope.messages.get(trigger.messageId);
       if (message) excludeItemIds.add(message.itemId);
-    } else {
+    } else if (trigger.kind === 'handoff') {
       const handoff = scope.handoffs.get(trigger.handoffId);
       if (handoff) {
         excludeItemIds.add(handoff.itemId);
-        // The delegator's sealed replies ARE the trigger text, so the whole
-        // turn they came from is excluded rather than just the last bubble.
         const source = handoff.triggerItemId ? getChatItem(handoff.triggerItemId) : null;
         if (source?.turnId) excludeTurnIds.add(source.turnId);
       }
@@ -2886,7 +3291,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const triggerSeq =
       trigger.kind === 'human'
         ? (scope.messages.get(trigger.messageId)?.seqFirst ?? null)
-        : (scope.handoffs.get(trigger.handoffId)?.seqFirst ?? null);
+        : trigger.kind === 'handoff'
+          ? (scope.handoffs.get(trigger.handoffId)?.seqFirst ?? null)
+          : null;
     const highest = Math.max(selection.highestSeq ?? -1, triggerSeq ?? -1);
     return { ...selection, highestSeq: highest >= 0 ? highest : null };
   }
@@ -2943,67 +3350,202 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     const next = session.queue[0];
     if (!next) return;
 
+    const isStageTurn = next.trigger.kind === 'stage';
+    const stageRequestId = next.trigger.kind === 'stage' ? next.trigger.requestId : null;
+    const stageMeta = next.stageMeta;
+
+    if (isStageTurn && stageMeta && stageRequestId) {
+      const { participants } = await routingContext(session.ticket);
+      const preflight = await validateStageDrive(
+        session.ticket,
+        stageMeta,
+        session.agentId,
+        participants.agents,
+        syntaurHome(),
+      );
+      if (!preflight.ok) {
+        await persistStageDispatchState(session.ticket, stageRequestId, preflight.state, {
+          error: preflight.error,
+        });
+        await removeQueuedStageRequest(session, stageRequestId);
+        void drive(session);
+        return;
+      }
+      next.text = preflight.promptText;
+      invalidateStanding(session);
+    }
+
     try {
       await ensureAdapter(session);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (isStageTurn && stageRequestId) {
+        await failStageRequest(session.ticket, stageRequestId, message, session);
+        void drive(session);
+        return;
+      }
       await record(session, 'system', { level: 'error', text: message }, null);
       setState(session, 'error', message);
-      // The message stays queued: the adapter never saw it, so a later send (or
-      // a fixed PATH / workspace) can still deliver it.
       flush(session);
       return;
     }
 
     if (session.queue[0] !== next) return; // withdrawn while the adapter came up
 
+    if (isStageTurn && stageRequestId) {
+      const pinErrors = await applyStagePinsStrict(session);
+      if (pinErrors.length > 0) {
+        await failStageRequest(session.ticket, stageRequestId, pinErrors.join('; '), session);
+        void drive(session);
+        return;
+      }
+    }
+
     const { participants } = await routingContext(session.ticket);
     const humanCommand =
       next.trigger.kind === 'human' ? detectCommand(next.text, participants.agents) : null;
 
-    // Task 2a: a slash command must be the only prompt block; standing goes in its own turn.
     if (humanCommand && !session.standingSent) {
       await deliverStandingAck(session);
     }
 
-    const turnId = randomUUID();
-    const startedAt = iso();
-    const tokensAtOpen = snapshotOf(session);
-    const engagement = openEngagement({
-      sessionId: session.acpSessionId!,
-      ticketId: session.ticket.id,
-      projectSlug: session.ticket.projectSlug,
-      ticketSlug: session.ticket.ticketSlug,
-      stage: 'chat',
-      startedAt,
-      tokensAtOpen,
-    });
+    let stagePromptText: string | null = null;
+    let stageStanding: ContentBlock[] | undefined;
+    let stagePendingStanding: { fingerprint: string; gen: number } | undefined;
+    let turnId = randomUUID();
+    let startedAt = iso();
+    let turn: InFlightTurn;
 
-    const turn: InFlightTurn = {
-      turnId,
-      trigger: next.trigger,
-      startedAt,
-      startedMs: now(),
-      engagementId: engagement.id,
-      engagementStartedAt: engagement.started_at,
-      reportedCumulativeCost: null,
-      costAtOpen: session.cumulative.models[modelKey(session)]?.cost ?? 0,
-      idleTimer: null,
-      maxTimer: null,
-      cancelled: false,
-      deliveredSeqCandidate: null,
-    };
-    session.inFlight = turn;
+    if (isStageTurn && stageMeta && stageRequestId) {
+      const locked = await withTicketMutationLock(
+        resolve(session.ticket.ticketDir, 'ticket.md'),
+        async () => {
+          if (session.queue[0] !== next) {
+            return { ok: false as const, state: 'superseded' as const, error: 'withdrawn from queue' };
+          }
+          const events = await readEvents(join(session.ticket.ticketDir, 'chat', 'events.jsonl'));
+          const receipt = reconcileStageReceipt(events, stageRequestId);
+          if (receipt && isTerminalStageReceiptState(receipt.state)) {
+            const state =
+              receipt.state === 'cancelled'
+                ? ('cancelled' as const)
+                : ('superseded' as const);
+            return {
+              ok: false as const,
+              state,
+              error: 'dispatch no longer active',
+            };
+          }
+          const check = await validateStageDrive(
+            session.ticket,
+            stageMeta,
+            session.agentId,
+            participants.agents,
+            syntaurHome(),
+          );
+          if (!check.ok) return check;
+          if (!session.standingSent) {
+            const built = await buildStanding(session);
+            stageStanding = built.blocks;
+            stagePendingStanding = { fingerprint: built.fingerprint, gen: built.gen };
+          }
+          turnId = randomUUID();
+          startedAt = iso();
+          const tokensAtOpen = snapshotOf(session);
+          let engagement;
+          try {
+            engagement = openEngagement({
+              sessionId: session.acpSessionId!,
+              ticketId: session.ticket.id,
+              projectSlug: session.ticket.projectSlug,
+              ticketSlug: session.ticket.ticketSlug,
+              stage: 'chat',
+              startedAt,
+              tokensAtOpen,
+            });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            return { ok: false as const, state: 'failed' as const, error: message };
+          }
+          const newTurn: InFlightTurn = {
+            turnId,
+            trigger: next.trigger,
+            startedAt,
+            startedMs: now(),
+            engagementId: engagement.id,
+            engagementStartedAt: engagement.started_at,
+            reportedCumulativeCost: null,
+            costAtOpen: session.cumulative.models[modelKey(session)]?.cost ?? 0,
+            idleTimer: null,
+            maxTimer: null,
+            cancelled: false,
+            deliveredSeqCandidate: null,
+          };
+          session.inFlight = newTurn;
+          try {
+            await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
+          } catch (err) {
+            session.inFlight = null;
+            closeEngagementById({
+              id: engagement.id,
+              startedAt: engagement.started_at,
+              closeReason: 'error',
+              tokensAtClose: snapshotOf(session),
+              endedAt: iso(),
+            });
+            const message = err instanceof Error ? err.message : String(err);
+            return { ok: false as const, state: 'failed' as const, error: message };
+          }
+          const at = session.queue.indexOf(next);
+          if (at >= 0) session.queue.splice(at, 1);
+          return check;
+        },
+        syntaurHome(),
+      );
+      if (!locked.ok) {
+        await persistStageDispatchState(session.ticket, stageRequestId, locked.state, {
+          error: locked.error,
+        });
+        await removeQueuedStageRequest(session, stageRequestId);
+        void drive(session);
+        return;
+      }
+      stagePromptText = locked.promptText;
+      next.text = locked.promptText;
+      turn = session.inFlight!;
+    } else {
+      const tokensAtOpen = snapshotOf(session);
+      const engagement = openEngagement({
+        sessionId: session.acpSessionId!,
+        ticketId: session.ticket.id,
+        projectSlug: session.ticket.projectSlug,
+        ticketSlug: session.ticket.ticketSlug,
+        stage: 'chat',
+        startedAt,
+        tokensAtOpen,
+      });
+      turn = {
+        turnId,
+        trigger: next.trigger,
+        startedAt,
+        startedMs: now(),
+        engagementId: engagement.id,
+        engagementStartedAt: engagement.started_at,
+        reportedCumulativeCost: null,
+        costAtOpen: session.cumulative.models[modelKey(session)]?.cost ?? 0,
+        idleTimer: null,
+        maxTimer: null,
+        cancelled: false,
+        deliveredSeqCandidate: null,
+      };
+      session.inFlight = turn;
+      await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
+    }
+
     if (session.idleTimer) {
       clearTimeout(session.idleTimer);
       session.idleTimer = null;
     }
-
-    await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
-    // One `user.message.delivered` per target, right after its `turn.start`:
-    // the ticket-scope item's `deliveredTo` grows and its state moves
-    // queued → partial → sent (Decision 3). The per-agent normalizer never
-    // touches that row.
     if (next.trigger.kind === 'human') {
       await recordTicket(
         session.ticket,
@@ -3012,19 +3554,33 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         { agentId: HUMAN_AGENT_ID, turnId },
       );
     }
-    // Dequeue only now that the turn is committed. Shifting earlier meant any
-    // throw between the shift and the send dropped the message with no turn and
-    // no trace (finding 5).
-    const at = session.queue.indexOf(next);
-    if (at >= 0) session.queue.splice(at, 1);
+    if (!isStageTurn) {
+      const at = session.queue.indexOf(next);
+      if (at >= 0) session.queue.splice(at, 1);
+    }
+
+    if (isStageTurn && stageRequestId) {
+      let preRunAbort = stagePromptAbortReason(session, turnId, null);
+      if (!preRunAbort) {
+        const events = await readEvents(join(session.ticket.ticketDir, 'chat', 'events.jsonl'));
+        const receipt = reconcileStageReceipt(events, stageRequestId);
+        preRunAbort = stagePromptAbortReason(session, turnId, receipt);
+        if (preRunAbort) {
+          await sealAbortedStagePromptTurn(session, turn, preRunAbort, receipt);
+          return;
+        }
+      } else {
+        await sealAbortedStagePromptTurn(session, turn, preRunAbort);
+        return;
+      }
+    }
+
     setState(session, 'running');
 
-    // What this session has not been shown yet (Decision 4). The cursor is
-    // TWO-PHASE: the candidate is computed here, with the prompt, and committed
-    // only when the turn ends without an error — a prompt that never reached the
-    // agent must be re-delivered, not skipped.
-    const history = humanCommand ? null : await buildHistory(session, next.trigger);
-    turn.deliveredSeqCandidate = humanCommand ? session.lastDeliveredSeq : history!.highestSeq;
+    const history =
+      humanCommand || isStageTurn ? null : await buildHistory(session, next.trigger);
+    turn.deliveredSeqCandidate =
+      humanCommand || isStageTurn ? session.lastDeliveredSeq : history!.highestSeq;
 
     const matchedCommand = humanCommand
       ? session.commands.find((c) => c.name === humanCommand.name) ?? null
@@ -3074,6 +3630,34 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       } else {
         blocks = buildCommandPrompt(humanCommand.line);
       }
+    } else if (isStageTurn && stagePromptText) {
+      try {
+        blocks = buildTurnPrompt(
+          { author: 'human', text: stagePromptText, ts: new Date(now()) },
+          { standing: stageStanding },
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        session.inFlight = null;
+        closeEngagementById({
+          id: turn.engagementId,
+          startedAt: turn.engagementStartedAt,
+          closeReason: 'error',
+          tokensAtClose: snapshotOf(session),
+          endedAt: iso(),
+        });
+        await record(
+          session,
+          'turn.end',
+          { stopReason: 'error', endedAt: iso(), durationMs: 0, error: message },
+          turnId,
+        );
+        if (stageRequestId) {
+          await failStageRequest(session.ticket, stageRequestId, message, session);
+        }
+        void drive(session);
+        return;
+      }
     } else {
       try {
         let standing: ContentBlock[] | undefined;
@@ -3082,7 +3666,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           standing = built.blocks;
           pendingStanding = { fingerprint: built.fingerprint, gen: built.gen };
         }
-        blocks = buildTurnPrompt(promptTrigger(session, next, images), { standing, history: history! });
+        blocks = buildTurnPrompt(promptTrigger(session, next, images), {
+          standing,
+          history: history ?? undefined,
+        });
       } catch (err) {
         blocks = buildTurnPrompt(promptTrigger(session, next, images), { history: history! });
         await record(session, 'system', {
@@ -3111,6 +3698,24 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       await record(session, 'system', { level: 'info', text: label });
       response = { stopReason: 'end_turn' } as acp.PromptResponse;
     } else {
+      if (isStageTurn && stageRequestId) {
+        await options.stageDriveHooks?.afterEngagementBeforePrompt?.(session);
+        let promptAbort = stagePromptAbortReason(session, turnId, null);
+        if (promptAbort) {
+          await sealAbortedStagePromptTurn(session, turn, promptAbort);
+          return;
+        }
+        const prePromptEvents = await readEvents(join(session.ticket.ticketDir, 'chat', 'events.jsonl'));
+        const prePromptReceipt = reconcileStageReceipt(prePromptEvents, stageRequestId);
+        await options.stageDriveHooks?.afterStageReceiptBeforePrompt?.(session, {
+          receipt: prePromptReceipt,
+        });
+        promptAbort = stagePromptAbortReason(session, turnId, prePromptReceipt);
+        if (promptAbort) {
+          await sealAbortedStagePromptTurn(session, turn, promptAbort, prePromptReceipt);
+          return;
+        }
+      }
       try {
         response = await session.client!.prompt(session.acpSessionId!, blocks!);
       } catch (err) {
@@ -3120,6 +3725,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
     if (!failure && pendingStanding) {
       await markStandingDelivered(session, pendingStanding.fingerprint, pendingStanding.gen);
+    } else if (!failure && stagePendingStanding) {
+      await markStandingDelivered(
+        session,
+        stagePendingStanding.fingerprint,
+        stagePendingStanding.gen,
+      );
     }
 
     try {
@@ -3165,7 +3776,10 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         : priceUsage(session, usage);
     addUsage(session, usage, cost, turn.reportedCumulativeCost);
 
-    const stopReason = failure ? 'error' : (response?.stopReason ?? 'end_turn');
+    let stopReason = failure ? 'error' : (response?.stopReason ?? 'end_turn');
+    if (stopping && turn.trigger.kind === 'stage') {
+      stopReason = 'interrupted';
+    }
     const durationMs = Math.max(0, now() - turn.startedMs);
     await record(
       session,
@@ -3180,6 +3794,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       },
       turn.turnId,
     );
+
+    if (turn.trigger.kind === 'stage') {
+      const requestId = turn.trigger.requestId;
+      const dispatchState: import('./stage-dispatch-state.js').StageDispatchReceiptState =
+        stopping || stopReason === 'interrupted'
+          ? 'interrupted'
+          : failure
+            ? 'failed'
+            : stopReason === 'cancelled'
+              ? 'cancelled'
+              : 'completed';
+      await persistStageDispatchState(session.ticket, requestId, dispatchState, {
+        turnId: turn.turnId,
+        ...(failure ? { error: failure.message } : {}),
+      });
+    }
 
     closeEngagementById({
       id: turn.engagementId,
@@ -3210,7 +3840,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     // A cancelled or failed turn never hops: there is no sealed reply to hand
     // on, and inventing one would restart a chain the human just stopped.
     let hopped = false;
-    if (!failure && stopReason !== 'cancelled') {
+    if (!failure && stopReason !== 'cancelled' && turn.trigger.kind !== 'stage') {
       try {
         const routeResult = await routeReply(session, turn);
         hopped = routeResult.hopped;
@@ -3363,7 +3993,12 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    */
   function enqueue(
     session: Session,
-    entry: { text: string; trigger: TurnTrigger; attachments?: ChatAttachment[] },
+    entry: {
+      text: string;
+      trigger: TurnTrigger;
+      attachments?: ChatAttachment[];
+      stageMeta?: StageQueueMeta;
+    },
   ): boolean {
     const key = triggerKey(entry.trigger);
     if (session.queue.some((queued) => triggerKey(queued.trigger) === key)) return false;
@@ -3854,31 +4489,22 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async setParticipants(ticket, next) {
-      const { definitions } = await loadDefs();
-      // Materialise every session the CURRENT set knows about before the write,
-      // so an agent about to be detached is reachable even if nothing has
-      // touched it since the dashboard started.
-      const before = await ensureTicketSessions(ticket);
-      const previous = await readParticipants(ticket.ticketDir, definitions);
-      const participants = await writeParticipants(ticket.ticketDir, next, definitions);
-      if (participantAgentsChanged(previous.agents, participants.agents)) {
-        for (const session of before) invalidateStanding(session);
-      }
-      const detached = previous.agents.filter((id) => !participants.agents.includes(id));
-      for (const agentId of detached) {
-        const session = before.find((s) => s.agentId === agentId);
-        if (session) await detachSession(session);
-      }
-      const agents = definitions.map((d) => toAgentSummary(d, commandResolver));
-      options.broadcast({
-        type: 'chat-participants',
-        projectSlug: ticket.projectSlug,
-        ticketSlug: ticket.ticketSlug,
-          timestamp: iso(),
-          payload: {
-            ticketId: ticket.id, participants, agents },
+      return withBrokerTicketLock(ticket.id, async () => {
+        const { definitions } = await loadDefs();
+        const before = await ensureTicketSessions(ticket);
+        const previous = await readParticipants(ticket.ticketDir, definitions);
+        const participants = await writeParticipantsLocked(ticket, next, definitions);
+        if (participantAgentsChanged(previous.agents, participants.agents)) {
+          for (const session of before) invalidateStanding(session);
+        }
+        const detached = previous.agents.filter((id) => !participants.agents.includes(id));
+        for (const agentId of detached) {
+          const session = before.find((s) => s.agentId === agentId);
+          if (session) await detachSession(session);
+        }
+        const agents = definitions.map((d) => toAgentSummary(d, commandResolver));
+        return { participants, agents };
       });
-      return { participants, agents };
     },
 
     items: (ticket, opts) => listChatItems(ticket.id, opts),
@@ -3891,6 +4517,178 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       const { rebuildChatIndex } = await import('./store.js');
       const result = await rebuildChatIndex(ticket.ticketDir, ticket.id);
       return { events: result.events, items: result.items };
+    },
+
+    runtimeIdentity: options.runtimeIdentity ?? (() => null),
+
+    async dispatchStage(input) {
+      assertRuntimeOwner();
+      return withBrokerTicketLock(input.ticket.id, async () => {
+        const events = await readEvents(join(input.ticket.ticketDir, 'chat', 'events.jsonl'));
+        const existing = findStageDispatchAcceptance(events, input.requestId);
+        if (existing) {
+          if (acceptanceMatchesInput(existing, input)) {
+            await reconcileStaleStageRequests(input.ticket);
+            emitDispatched({
+              ticketId: input.ticket.id,
+              projectSlug: input.ticket.projectSlug,
+              actor: HUMAN_AGENT_ID,
+              agent: existing.agentId,
+              stage: existing.stage,
+              requestId: existing.requestId,
+              entryId: existing.entryId,
+              source: existing.source,
+            });
+            await requeueAcceptedStageDispatch(input.ticket, existing);
+            const refreshed = await readEvents(join(input.ticket.ticketDir, 'chat', 'events.jsonl'));
+            const receipt = reconcileStageReceipt(refreshed, input.requestId);
+            if (receipt) return receiptToDispatchResult(receipt);
+          }
+          throw new StageDispatchError('conflicting requestId reuse', 409);
+        }
+
+        const prepared = await prepareStageQueueEntry(input.ticket, input, syntaurHome());
+
+        await ensureStageTargetAttachedLocked(input.ticket, prepared.agentId);
+
+        const session = await ensureSession(input.ticket, prepared.agentId);
+
+        const entry = await withTicketMutationLock(
+          resolve(input.ticket.ticketDir, 'ticket.md'),
+          async () => {
+            const freshEvents = await readEvents(join(input.ticket.ticketDir, 'chat', 'events.jsonl'));
+            const clash = findStageDispatchAcceptance(freshEvents, input.requestId);
+            if (clash && !acceptanceMatchesInput(clash, input)) {
+              throw new StageDispatchError('conflicting requestId reuse', 409);
+            }
+            const revalidated = await prepareStageQueueEntry(input.ticket, input, syntaurHome());
+            if (!stageQueueEntriesMatch(prepared, revalidated)) {
+              throw new StageDispatchError('stage dispatch inputs changed during acceptance', 409);
+            }
+            const { participants } = await routingContext(input.ticket);
+            if (!participants.agents.includes(revalidated.agentId)) {
+              throw new StageDispatchError('dispatch recipient detached', 409);
+            }
+            if (!clash) {
+              await recordTicket(
+                input.ticket,
+                'stage.dispatch',
+                {
+                  requestId: revalidated.requestId,
+                  entryId: revalidated.entryId,
+                  stage: revalidated.stage,
+                  role: revalidated.role,
+                  agentId: revalidated.agentId,
+                  source: revalidated.source,
+                  requestedBy: HUMAN_AGENT_ID,
+                  policyDigest: revalidated.policyDigest,
+                  state: 'queued',
+                },
+                { agentId: SYSTEM_AGENT_ID, turnId: null },
+              );
+            }
+            return revalidated;
+          },
+          syntaurHome(),
+        );
+
+        emitDispatched({
+          ticketId: input.ticket.id,
+          projectSlug: input.ticket.projectSlug,
+          actor: HUMAN_AGENT_ID,
+          agent: entry.agentId,
+          stage: entry.stage,
+          requestId: entry.requestId,
+          entryId: entry.entryId,
+          source: input.source,
+        });
+
+        enqueue(session, {
+          text: '',
+          trigger: entry.trigger,
+          stageMeta: entry.stageMeta,
+        });
+        invalidateStanding(session);
+        if (!options.suppressStageDrive) {
+          void drive(session);
+        }
+        return {
+          requestId: entry.requestId,
+          state: 'queued' as StageDispatchReceiptState,
+          agentId: entry.agentId,
+          entryId: entry.entryId,
+        };
+      });
+    },
+
+    async notifyStageEntry(ticket) {
+      await reconcileStaleStageRequests(ticket);
+    },
+
+    async getStageDispatch(ticket, requestId) {
+      await reconcileStaleStageRequests(ticket);
+      const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+      const receipt = reconcileStageReceipt(events, requestId);
+      if (!receipt) return null;
+      return {
+        requestId: receipt.requestId,
+        entryId: receipt.entryId,
+        agentId: receipt.agentId,
+        stage: receipt.stage,
+        state: receipt.state,
+        turnId: receipt.turnId,
+        error: receipt.error,
+      };
+    },
+
+    async cancelStageDispatch(ticket, requestId) {
+      await reconcileStaleStageRequests(ticket);
+      let cancelTarget: { session: Session; turn: InFlightTurn } | null = null as {
+        session: Session;
+        turn: InFlightTurn;
+      } | null;
+      const ok = await withBrokerTicketLock(ticket.id, async () =>
+        withTicketMutationLock(
+          resolve(ticket.ticketDir, 'ticket.md'),
+          async () => {
+            const events = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+            const receipt = reconcileStageReceipt(events, requestId);
+            if (!receipt) return false;
+            if (isTerminalStageReceiptState(receipt.state)) return false;
+
+            const session = [...sessions.values()].find(
+              (s) => s.ticket.id === ticket.id && s.agentId === receipt.agentId,
+            );
+            if (session) {
+              await removeQueuedStageRequest(session, requestId);
+            }
+
+            const freshEvents = await readEvents(join(ticket.ticketDir, 'chat', 'events.jsonl'));
+            const freshReceipt = reconcileStageReceipt(freshEvents, requestId);
+            if (!freshReceipt || isTerminalStageReceiptState(freshReceipt.state)) {
+              return false;
+            }
+
+            await persistStageDispatchState(ticket, requestId, 'cancelled');
+
+            if (
+              freshReceipt.state === 'running' &&
+              session?.inFlight?.trigger.kind === 'stage' &&
+              session.inFlight.trigger.requestId === requestId
+            ) {
+              const turn = session.inFlight;
+              turn.cancelled = true;
+              cancelTarget = { session, turn };
+            }
+            return true;
+          },
+          syntaurHome(),
+        ),
+      );
+      if (cancelTarget) {
+        await cancelCapturedTurn(cancelTarget.session, cancelTarget.turn);
+      }
+      return ok ?? false;
     },
 
     async stopAll() {
@@ -3919,14 +4717,20 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
         if (session.inFlight) {
           const open = session.inFlight;
+          const stageRequestId =
+            open.trigger.kind === 'stage' ? open.trigger.requestId : null;
           session.inFlight = null;
           if (open.idleTimer) clearTimeout(open.idleTimer);
           if (open.maxTimer) clearTimeout(open.maxTimer);
+          const stopReason = stageRequestId ? 'interrupted' : 'cancelled';
           await record(session, 'turn.end', {
-            stopReason: 'cancelled',
+            stopReason,
             endedAt: iso(),
             durationMs: Math.max(0, now() - open.startedMs),
           }, open.turnId);
+          if (stageRequestId) {
+            await persistStageDispatchState(session.ticket, stageRequestId, 'interrupted');
+          }
           closeEngagementById({
             id: open.engagementId,
             startedAt: open.engagementStartedAt,
@@ -3981,7 +4785,9 @@ function firstLineOf(text: string): string {
 }
 
 function triggerKey(trigger: TurnTrigger): string {
-  return trigger.kind === 'human' ? `human:${trigger.messageId}` : `handoff:${trigger.handoffId}`;
+  if (trigger.kind === 'human') return `human:${trigger.messageId}`;
+  if (trigger.kind === 'stage') return `stage~${trigger.requestId}`;
+  return `handoff:${trigger.handoffId}`;
 }
 
 function triggerOf(event: ChatEvent): TurnTrigger | null {

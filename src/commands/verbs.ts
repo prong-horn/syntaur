@@ -5,16 +5,43 @@ import {
   moveTicket,
   unapproveTicket,
   VerbRefusedError,
+  resolveLifecycleActor,
+  resolveLifecycleCaller,
   type VerbOptions,
+  type MoveTicketResult,
 } from '../lifecycle/verbs.js';
+import { postCliStageDispatch } from '../chat/dispatch-client.js';
 
 export interface VerbCommandOptions extends VerbOptions {}
 
-function reportMove(ticketId: string, result: Awaited<ReturnType<typeof moveTicket>>): void {
+function formatDispatch(dispatch: MoveTicketResult['dispatch']): string[] {
+  if (!dispatch) return [];
+  const lines: string[] = [];
+  if (dispatch.state === 'queued' && dispatch.requestId) {
+    lines.push(`Dispatch: queued (${dispatch.requestId})`);
+  } else if (dispatch.state === 'offline') {
+    lines.push(`Dispatch: offline${dispatch.warning ? ` — ${dispatch.warning}` : ''}`);
+  } else if (dispatch.state === 'unknown') {
+    lines.push(`Dispatch: unknown${dispatch.warning ? ` — ${dispatch.warning}` : ''}`);
+  } else if (dispatch.state === 'failed') {
+    lines.push(`Dispatch: failed${dispatch.error ? ` — ${dispatch.error}` : ''}`);
+  } else if (dispatch.state === 'skipped') {
+    lines.push('Dispatch: manual handoff required');
+  }
+  return lines;
+}
+
+function reportMove(ticketId: string, result: MoveTicketResult): void {
   if (result.from === result.to) {
     console.log(`${ticketId}: ${result.verb} completed (no stage change).`);
   } else {
     console.log(`${ticketId}: ${result.from} → ${result.to} (${result.verb})`);
+  }
+  for (const line of formatDispatch(result.dispatch)) {
+    console.log(line);
+  }
+  for (const warning of result.warnings ?? []) {
+    console.warn(`Warning: ${warning}`);
   }
 }
 
@@ -23,8 +50,23 @@ async function runVerb(
   verb: Parameters<typeof moveTicket>[1],
   options: VerbCommandOptions,
 ): Promise<void> {
-  const result = await moveTicket(ticketId, verb, options);
+  const cli = options as VerbCommandOptions & { by?: string; agent?: string };
+  const actor = resolveCliActor({ ...options, actor: cli.by ?? options.actor });
+  const callerSession = await resolveLifecycleCaller(options);
+  const dispatchAgent = verb === 'start' ? (cli.agent ?? options.dispatchAgent) : undefined;
+  const result = await moveTicket(ticketId, verb, {
+    ...options,
+    actor,
+    callerSession,
+    dispatchAgent,
+    dispatch: postCliStageDispatch,
+  });
   reportMove(ticketId, result);
+}
+
+function resolveCliActor(options: VerbCommandOptions): string {
+  const cli = options as VerbCommandOptions & { by?: string };
+  return resolveLifecycleActor({ ...options, actor: cli.by ?? options.actor });
 }
 
 async function runFlag(
@@ -33,7 +75,10 @@ async function runFlag(
   reason: string | null,
   options: VerbCommandOptions,
 ): Promise<void> {
-  await flagTicket(ticketId, flag, reason, options);
+  await flagTicket(ticketId, flag, reason, {
+    ...options,
+    actor: resolveCliActor(options),
+  });
   console.log(`${ticketId}: ${flag} applied.`);
 }
 
@@ -83,8 +128,14 @@ function flagAction(
 const verbOptions = (cmd: Command): Command =>
   cmd
     .option('--force', 'Skip gate checks (recorded on the moved event)')
-    .option('--agent <name>', 'Acting agent id')
+    .option('--by <name>', 'Audit attribution for this action')
     .option('--project <slug>', 'Project slug for a project-nested ticket');
+
+const startOptions = (cmd: Command): Command =>
+  verbOptions(cmd).option(
+    '--agent <id>',
+    'Dispatch recipient override for this start only (not audit attribution)',
+  );
 
 export function registerVerbCommands(program: Command): void {
   verbOptions(
@@ -102,7 +153,7 @@ export function registerVerbCommands(program: Command): void {
       .argument('<ticket>', 'Ticket id')
       .action(async (ticketId: string, options: VerbCommandOptions) => {
         try {
-          await unapproveTicket(ticketId, options);
+          await unapproveTicket(ticketId, { ...options, actor: resolveCliActor(options) });
           console.log(`${ticketId}: plan approval cleared.`);
         } catch (error) {
           console.error('Error:', error instanceof Error ? error.message : String(error));
@@ -111,7 +162,7 @@ export function registerVerbCommands(program: Command): void {
       }),
   );
 
-  verbOptions(
+  startOptions(
     program
       .command('start')
       .description('Move to in_progress')

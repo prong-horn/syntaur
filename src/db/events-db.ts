@@ -55,6 +55,13 @@ export interface RecordEventInput {
   at?: string;
   /** Deterministic key for backfilled events (null for live events; null always inserts). */
   sourceKey?: string | null;
+  /** When set, use this id for a live insert (stage entry identity). */
+  eventId?: string;
+}
+
+export interface InsertLiveEventResult {
+  eventId: string;
+  changes: number;
 }
 
 export interface ListEventsFilters {
@@ -193,13 +200,14 @@ export function insertEventOrThrow(input: RecordEventInput): number {
   }
 
   const database = getEventsDb();
+  const eventId = input.eventId ?? generateId();
   const result = database
     .prepare(
       `INSERT OR IGNORE INTO events (event_id, ticket_id, at, actor, type, details, source_key)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
-      generateId(),
+      eventId,
       ticketId,
       input.at ?? new Date().toISOString(),
       input.actor,
@@ -208,6 +216,44 @@ export function insertEventOrThrow(input: RecordEventInput): number {
       input.sourceKey ?? null,
     );
   return result.changes;
+}
+
+/**
+ * Strict live writer for stage-entry identity. Uses a plain INSERT (never
+ * INSERT OR IGNORE) and throws when zero rows are written.
+ */
+export function insertLiveEventOrThrow(input: RecordEventInput): InsertLiveEventResult {
+  if (!db) initEventsDb();
+  const ticketId = input.ticketId;
+  if (!ticketId) throw new Error('insertLiveEventOrThrow requires ticketId');
+  const eventId = input.eventId;
+  if (!eventId) throw new Error('insertLiveEventOrThrow requires eventId');
+
+  let details: string | null = null;
+  if (input.details !== undefined && input.details !== null) {
+    details =
+      typeof input.details === 'string' ? input.details : JSON.stringify(input.details);
+  }
+
+  const database = getEventsDb();
+  const result = database
+    .prepare(
+      `INSERT INTO events (event_id, ticket_id, at, actor, type, details, source_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      eventId,
+      ticketId,
+      input.at ?? new Date().toISOString(),
+      input.actor,
+      input.type,
+      details,
+      input.sourceKey ?? null,
+    );
+  if (result.changes === 0) {
+    throw new Error(`live event insert wrote zero rows for ${eventId}`);
+  }
+  return { eventId, changes: result.changes };
 }
 
 /**
@@ -234,10 +280,10 @@ export function listEventsByTicket(
     params.push(...filters.types);
   }
 
-  let sql = `SELECT event_id, ticket_id, at, actor, type, details, source_key
+  let sql = `SELECT event_id, ticket_id, at, actor, type, details, source_key, rowid
        FROM events
        WHERE ${clauses.join(' AND ')}
-       ORDER BY at DESC`;
+       ORDER BY at DESC, rowid DESC`;
 
   if (filters?.limit !== undefined) {
     sql += ' LIMIT ?';
@@ -336,6 +382,146 @@ export function latestCreatedByTicket(ticketIds: string[]): Map<string, string> 
  * Latest `moved` event whose `to` matches `stage`, per ticket (one query).
  * Used for inbox `since` on review tickets.
  */
+export interface StageEntryEvent {
+  eventId: string;
+  at: string;
+  stage: string;
+  dispatchTarget: string | null;
+  dispatchRole: string | null;
+  dispatchAuto: boolean | null;
+  dispatchOverride: boolean;
+  verb?: string;
+  type: 'created' | 'moved';
+}
+
+function parseStageEntryRow(
+  row: EventRow & { rowid?: number },
+): StageEntryEvent | null {
+  if (!row.details) return null;
+  try {
+    const parsed = JSON.parse(row.details) as {
+      to?: string;
+      stageEntryId?: string;
+      dispatchTarget?: string;
+      dispatchRole?: string;
+      dispatchAuto?: boolean;
+      dispatchOverride?: boolean;
+      verb?: string;
+    };
+    const stage =
+      row.type === 'created'
+        ? (parsed.to ?? null)
+        : (parsed.to ?? null);
+    if (!stage && row.type === 'moved') return null;
+    if (row.type === 'created' && !parsed.stageEntryId) {
+      // created events carry stage in ticket status; caller supplies destination
+    }
+    const entryStage = stage ?? '';
+    return {
+      eventId: row.event_id,
+      at: row.at,
+      stage: entryStage,
+      dispatchTarget: parsed.dispatchTarget ?? null,
+      dispatchRole: parsed.dispatchRole ?? null,
+      dispatchAuto:
+        typeof parsed.dispatchAuto === 'boolean' ? parsed.dispatchAuto : null,
+      dispatchOverride: parsed.dispatchOverride ?? false,
+      verb: parsed.verb,
+      type: row.type as 'created' | 'moved',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Latest stage-entry event (`created` or stage-changing `moved`) for a ticket.
+ * Tie-breaker: insertion order (`at DESC, rowid DESC`).
+ */
+export function latestStageEntryForTicket(ticketId: string): StageEntryEvent | null {
+  if (!db) initEventsDb();
+  const database = getEventsDb();
+  const rows = database
+    .prepare(
+      `SELECT event_id, ticket_id, at, actor, type, details, source_key, rowid
+       FROM events
+       WHERE ticket_id = ? AND type IN ('created', 'moved')
+       ORDER BY at DESC, rowid DESC`,
+    )
+    .all(ticketId) as Array<EventRow & { rowid: number }>;
+
+  for (const row of rows) {
+    if (row.type === 'moved') {
+      const parsed = parseStageEntryRow(row);
+      if (parsed?.stage) return parsed;
+      continue;
+    }
+    if (row.type === 'created') {
+      let details: Record<string, unknown> = {};
+      try {
+        details = row.details ? (JSON.parse(row.details) as Record<string, unknown>) : {};
+      } catch {
+        continue;
+      }
+      const stage = details.to;
+      if (typeof stage !== 'string' || !stage) {
+        continue;
+      }
+      return {
+        eventId: row.event_id,
+        at: row.at,
+        stage,
+        dispatchTarget: (details.dispatchTarget as string) ?? null,
+        dispatchRole: (details.dispatchRole as string) ?? null,
+        dispatchAuto:
+          typeof details.dispatchAuto === 'boolean' ? details.dispatchAuto : null,
+        dispatchOverride: Boolean(details.dispatchOverride),
+        type: 'created',
+      };
+    }
+  }
+  return null;
+}
+
+export function getStageEntryById(
+  ticketId: string,
+  entryId: string,
+): StageEntryEvent | null {
+  if (!db) initEventsDb();
+  const database = getEventsDb();
+  const row = database
+    .prepare(
+      `SELECT event_id, ticket_id, at, actor, type, details, source_key, rowid
+       FROM events WHERE ticket_id = ? AND event_id = ?`,
+    )
+    .get(ticketId, entryId) as (EventRow & { rowid: number }) | undefined;
+  if (!row) return null;
+  if (row.type === 'created') {
+    let details: Record<string, unknown> = {};
+    try {
+      details = row.details ? (JSON.parse(row.details) as Record<string, unknown>) : {};
+    } catch {
+      return null;
+    }
+    const stage = details.to;
+    if (typeof stage !== 'string' || !stage) {
+      return null;
+    }
+    return {
+      eventId: row.event_id,
+      at: row.at,
+      stage,
+      dispatchTarget: (details.dispatchTarget as string) ?? null,
+      dispatchRole: (details.dispatchRole as string) ?? null,
+      dispatchAuto:
+        typeof details.dispatchAuto === 'boolean' ? details.dispatchAuto : null,
+      dispatchOverride: Boolean(details.dispatchOverride),
+      type: 'created',
+    };
+  }
+  return parseStageEntryRow(row);
+}
+
 export function latestMovedToStageByTicket(
   ticketIds: string[],
   stage: string,

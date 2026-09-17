@@ -197,3 +197,34 @@ export function emitEvent(input: RecordEventInput): void {
   if (suppressEvents) return;
   recordEvent(input);
 }
+
+export interface EmitDispatchedInput {
+  ticketId: string;
+  projectSlug?: string | null;
+  at?: string;
+  actor: string;
+  agent: string;
+  stage: string;
+  requestId: string;
+  entryId: string;
+  source: 'automatic' | 'manual';
+}
+
+export function emitDispatched(input: EmitDispatchedInput): void {
+  if (suppressEvents) return;
+  recordEvent({
+    ticketId: input.ticketId,
+    projectSlug: input.projectSlug ?? null,
+    type: 'dispatched',
+    actor: input.actor,
+    at: input.at,
+    sourceKey: `dispatch~${input.requestId}`,
+    details: {
+      agent: input.agent,
+      stage: input.stage,
+      requestId: input.requestId,
+      entryId: input.entryId,
+      source: input.source,
+    },
+  });
+}

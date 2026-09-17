@@ -22,7 +22,15 @@ import {
 import { parseProject } from '../dashboard/parser.js';
 import { renderTicket } from '../templates/index.js';
 import { updatePlanBlock } from '../lifecycle/frontmatter.js';
-import { emitCreated, resolveActor } from '../lifecycle/event-emit.js';
+import { resolveActor } from '../lifecycle/event-emit.js';
+import { withTicketMutationLock } from '../utils/ticket-mutation-lock.js';
+import {
+  completeStageEntry,
+  completeStageEntryAfterRecordFailure,
+  recordStageEntryLocked,
+} from '../lifecycle/stage-entry.js';
+import { postCliStageDispatch } from '../chat/dispatch-client.js';
+import { resolveLifecycleCaller } from '../lifecycle/verbs.js';
 
 export interface NewTicketOptions {
   project?: string;
@@ -190,14 +198,62 @@ export async function newCommand(
     });
   }
 
-  await writeFileForce(resolve(ticketDir, 'ticket.md'), ticketContent);
+  const ticketPath = resolve(ticketDir, 'ticket.md');
+  await writeFileForce(ticketPath, ticketContent);
 
-  emitCreated({
-    ticketId: id,
-    projectSlug,
-    actor: resolveActor('human'),
-    at: timestamp,
+  const actor = resolveActor('human');
+  type PendingCreation =
+    | { kind: 'recorded'; entry: ReturnType<typeof recordStageEntryLocked> }
+    | { kind: 'failed'; error: string };
+  let pending: PendingCreation | undefined;
+
+  await withTicketMutationLock(ticketPath, async () => {
+    try {
+      pending = {
+        kind: 'recorded',
+        entry: recordStageEntryLocked({
+          ticketId: id,
+          projectSlug,
+          actor,
+          at: timestamp,
+          eventType: 'created',
+          stage: initialStatus,
+          manifest,
+        }),
+      };
+    } catch (err) {
+      pending = {
+        kind: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   });
+
+  const callerSession = await resolveLifecycleCaller({ dir: options.dir });
+  if (pending?.kind === 'recorded') {
+    await completeStageEntry({
+      ticketId: id,
+      ticketDir,
+      projectSlug,
+      ticketSlug,
+      entry: pending.entry,
+      actor,
+      callerSession,
+      dispatch: postCliStageDispatch,
+    });
+  } else if (pending?.kind === 'failed') {
+    await completeStageEntryAfterRecordFailure({
+      ticketId: id,
+      ticketDir,
+      projectSlug,
+      ticketSlug,
+      actor,
+      callerSession,
+      dispatch: postCliStageDispatch,
+      stage: initialStatus,
+      error: pending.error,
+    });
+  }
 
   const allWritten = ['ticket.md', ...written];
 

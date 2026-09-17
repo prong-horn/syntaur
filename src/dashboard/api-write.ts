@@ -2,15 +2,23 @@ import { Router, type Request, type Response } from 'express';
 import { resolve, basename, isAbsolute } from 'node:path';
 import { rm, readFile, stat as fsStat, realpath as fsRealpath } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { emitCreated } from '../lifecycle/event-emit.js';
 import {
   moveTicket,
   flagTicket,
   VerbRefusedError,
   GateFailedError,
+  resolveLifecycleActor,
   type MoveVerb,
   type FlagVerb,
 } from '../lifecycle/verbs.js';
+import {
+  completeStageEntry,
+  completeStageEntryAfterRecordFailure,
+  recordStageEntryLocked,
+} from '../lifecycle/stage-entry.js';
+import { withTicketMutationLock } from '../utils/ticket-mutation-lock.js';
+import { createInProcessStageDispatch } from '../chat/dispatch-client.js';
+import type { ChatBroker } from '../chat/broker.js';
 import { PROJECT_ROLLUP_STATUSES } from './stage-config.js';
 import { recordEvent } from '../db/events-db.js';
 import { isValidSlug, slugify } from '../utils/slug.js';
@@ -452,7 +460,14 @@ async function handleWorktreeCreate(
 }
 
 
-export function createWriteRouter(projectsDir: string): Router {
+export interface WriteRouterOptions {
+  broker?: ChatBroker;
+}
+
+export function createWriteRouter(projectsDir: string, opts: WriteRouterOptions = {}): Router {
+  const inProcessDispatch = opts.broker
+    ? createInProcessStageDispatch(opts.broker, projectsDir)
+    : undefined;
   const router = Router();
   // Every mutation here writes a record file; clear the shared records cache
   // once each handler resolves so the next read reflects the change.
@@ -681,12 +696,57 @@ export function createWriteRouter(projectsDir: string): Router {
         throw companionError;
       }
 
-      emitCreated({
-        ticketId: parsedCreate.id,
-        projectSlug,
-        at: timestamp,
-        actor: 'human',
+      const initialStatus = manifest.stages[0]?.id ?? 'backlog';
+      const ticketPath = resolve(ticketDir, 'ticket.md');
+      type PendingCreation =
+        | { kind: 'recorded'; entry: ReturnType<typeof recordStageEntryLocked> }
+        | { kind: 'failed'; error: string };
+      let pending: PendingCreation | undefined;
+
+      await withTicketMutationLock(ticketPath, async () => {
+        try {
+          pending = {
+            kind: 'recorded',
+            entry: recordStageEntryLocked({
+              ticketId: parsedCreate.id,
+              projectSlug,
+              actor: 'human',
+              at: timestamp,
+              eventType: 'created',
+              stage: initialStatus,
+              manifest,
+            }),
+          };
+        } catch (err) {
+          pending = {
+            kind: 'failed',
+            error: err instanceof Error ? err.message : String(err),
+          };
+        }
       });
+
+      if (pending?.kind === 'recorded') {
+        await completeStageEntry({
+          ticketId: parsedCreate.id,
+          ticketDir,
+          projectSlug,
+          ticketSlug,
+          entry: pending.entry,
+          actor: 'human',
+          dispatch: inProcessDispatch,
+        });
+      } else if (pending?.kind === 'failed') {
+        await completeStageEntryAfterRecordFailure({
+          ticketId: parsedCreate.id,
+          ticketDir,
+          projectSlug,
+          ticketSlug,
+          actor: 'human',
+          dispatch: inProcessDispatch,
+          stage: initialStatus,
+          error: pending.error,
+        });
+      }
 
       res.status(201).json({ slug: ticketSlug, projectSlug });
     } catch (error) {
@@ -1411,17 +1471,27 @@ const id = getParam(req.params.id);
 
       const body = req.body ?? {};
       const reason = typeof body.reason === 'string' ? body.reason : undefined;
-      const agent = typeof body.agent === 'string' ? body.agent : undefined;
+      const by = typeof body.by === 'string' ? body.by : undefined;
+      const dispatchAgent =
+        verb === 'start' && typeof body.agent === 'string' ? body.agent : undefined;
+      if (typeof body.agent === 'string' && verb !== 'start') {
+        res.status(400).json({ error: 'agent override is only valid for start' });
+        return;
+      }
       const force = Boolean(body.force);
+      const actor = resolveLifecycleActor({ actor: by });
       const options = {
         force,
         reason,
-        agent,
+        actor,
+        dispatchAgent,
+        dispatch: inProcessDispatch,
         project: resolved.projectSlug ?? undefined,
       };
 
+      let moveResult: Awaited<ReturnType<typeof moveTicket>> | undefined;
       if (MOVE_VERBS.has(verb)) {
-        await moveTicket(id, verb as MoveVerb, options);
+        moveResult = await moveTicket(id, verb as MoveVerb, options);
       } else if (FLAG_VERBS.has(verb)) {
         await flagTicket(id, verb as FlagVerb, reason ?? null, options);
       } else {
@@ -1430,7 +1500,12 @@ const id = getParam(req.params.id);
       }
 
       const ticket = await getTicketDetailById(projectsDir, id);
-      res.json({ ticket, next: ticket?.next ?? null });
+      res.json({
+        ticket,
+        next: ticket?.next ?? null,
+        ...(moveResult?.dispatch ? { dispatch: moveResult.dispatch } : {}),
+        ...(moveResult?.warnings?.length ? { warnings: moveResult.warnings } : {}),
+      });
     } catch (error) {
       if (error instanceof GateFailedError) {
         res.status(409).json({ error: error.message, next: error.next });

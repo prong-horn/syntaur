@@ -175,3 +175,32 @@ export function profileForTier(profile: SessionProfile, tier: CwdTier | null): S
   }
   return profile;
 }
+
+/**
+ * Stage dispatch requires every pinned field to apply before a turn starts.
+ * Ordinary chat keeps the softer applyProfile behaviour.
+ */
+export function verifyPinnedProfileApplied(
+  profile: SessionProfile,
+  applied: AppliedProfile,
+  harness: HarnessSpec,
+): string[] {
+  const errors: string[] = [];
+  if (profile.mode.kind === 'pinned') {
+    const expected = resolveModeId(harness, profile.mode.value);
+    if (applied.mode !== expected) {
+      errors.push(`mode ${expected} was not applied`);
+    }
+  }
+  if (profile.model.kind === 'pinned' && applied.model !== profile.model.value) {
+    errors.push(`${harness.configIds.model} ${profile.model.value} was not applied`);
+  }
+  if (profile.effort.kind === 'pinned') {
+    if (!harness.configIds.effort) {
+      errors.push(`effort ${profile.effort.value}: ignored — ${harness.label} has no effort config id`);
+    } else if (applied.effort !== profile.effort.value) {
+      errors.push(`${harness.configIds.effort} ${profile.effort.value} was not applied`);
+    }
+  }
+  return errors;
+}

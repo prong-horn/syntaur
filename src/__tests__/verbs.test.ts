@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,6 +18,8 @@ import {
   moveTicket,
   VerbRefusedError,
 } from '../lifecycle/verbs.js';
+import { validateDispatchRecipient as validateRecipient } from '../lifecycle/stage-entry.js';
+import type { StageDispatchCallback } from '../lifecycle/stage-entry.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { renderPlanStub } from '../templates/plan.js';
 
@@ -143,7 +145,7 @@ describe('feature template verb happy paths', () => {
 
   it('approve moves planning → ready with plan-approved event', async () => {
     await writeFeatureTicket('FE-2', 'feat2', 'planning');
-    const result = await moveTicket('FE-2', 'approve', { project: 'p', dir: projectsDir, agent: 'human' });
+    const result = await moveTicket('FE-2', 'approve', { project: 'p', dir: projectsDir, actor: 'human' });
     expect(result).toMatchObject({ from: 'planning', to: 'ready', planApproved: true });
     const events = listEventsByTicket('FE-2');
     expect(events.some((e) => e.type === 'plan-approved')).toBe(true);
@@ -179,7 +181,7 @@ describe('feature template verb happy paths', () => {
       project: 'p',
       dir: projectsDir,
       reason: 'no longer needed',
-      agent: 'human',
+      actor: 'human',
     });
     expect(result).toMatchObject({ from: 'in_progress', to: 'dropped', verb: 'drop' });
     const moved = listEventsByTicket('FE-6').find((e) => e.type === 'moved');
@@ -194,7 +196,7 @@ describe('feature template verb happy paths', () => {
 
   it('block/park/unblock/unpark set flags without stage change', async () => {
     await writeFeatureTicket('FE-8', 'feat8', 'in_progress', { approved: true, workspace: true });
-    await flagTicket('FE-8', 'block', 'waiting on API', { project: 'p', dir: projectsDir, agent: 'codex' });
+    await flagTicket('FE-8', 'block', 'waiting on API', { project: 'p', dir: projectsDir, actor: 'codex' });
     let fm = parseTicketFrontmatter(await readFile(resolve(await ticketDir('FE-8', 'feat8'), 'ticket.md'), 'utf-8'));
     expect(fm.blocked).toBe('waiting on API');
     expect(fm.status).toBe('in_progress');
@@ -350,7 +352,7 @@ Fix it.
       project: 'p',
       dir: projectsDir,
       force: true,
-      agent: 'pi',
+      actor: 'pi',
     });
     expect(result.forced).toBe(true);
     const moved = listEventsByTicket('FE-12').find((e) => e.type === 'moved');
@@ -358,6 +360,108 @@ Fix it.
     const details = JSON.parse(moved!.details ?? '{}');
     expect(details.forced).toBe(true);
     expect(details.verb).toBe('start');
+  });
+});
+
+describe('stage entry side effects', () => {
+  it('does not dispatch or emit moved on file-only approve', async () => {
+    await mkdir(resolve(projectsDir, 'p'), { recursive: true });
+    await writeFile(resolve(projectsDir, 'p', 'project.md'), '---\nslug: p\ntitle: P\nprefix: BG\nnextTicket: 2\n---\n', 'utf-8');
+    const dir = await ticketDir('BG-2', 'bug2');
+    const planBody = '# Plan\n\nFix details.\n';
+    await writeFile(
+      resolve(dir, 'ticket.md'),
+      `---
+id: BG-2
+slug: bug2
+title: Bug
+project: p
+template: bug
+status: backlog
+priority: high
+created: "2026-01-01T00:00:00Z"
+updated: "2026-01-01T00:00:00Z"
+depends_on: []
+links: []
+blocked: null
+parked: null
+plan:
+  file: plan.md
+  approvedDigest: null
+  approvedAt: null
+  approvedBy: null
+tags: []
+---
+
+## Objective
+
+Fix it.
+`,
+      'utf-8',
+    );
+    await writeFile(resolve(dir, 'plan.md'), planBody, 'utf-8');
+    const dispatch = vi.fn() as StageDispatchCallback;
+    await moveTicket('BG-2', 'approve', { project: 'p', dir: projectsDir, dispatch });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(listEventsByTicket('BG-2').some((e) => e.type === 'moved')).toBe(false);
+  });
+
+  it('does not dispatch on flag verbs', async () => {
+    await writeFeatureTicket('FE-30', 'feat30', 'in_progress', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    await flagTicket('FE-30', 'block', 'wait', { project: 'p', dir: projectsDir, dispatch });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(listEventsByTicket('FE-30').some((e) => e.type === 'moved')).toBe(false);
+  });
+
+  it('records exactly one stage-entry event per stage change', async () => {
+    await writeFeatureTicket('FE-31', 'feat31', 'backlog', { planBody: undefined });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    await moveTicket('FE-31', 'plan', { project: 'p', dir: projectsDir, dispatch });
+    const stageEvents = listEventsByTicket('FE-31').filter(
+      (e) => e.type === 'moved' || e.type === 'created',
+    );
+    expect(stageEvents).toHaveLength(1);
+    const details = JSON.parse(stageEvents[0]!.details ?? '{}');
+    expect(details.stageEntryId).toBe(stageEvents[0]!.event_id);
+  });
+
+  it('validateDispatchRecipient ignores unrelated broken agent definitions', async () => {
+    await mkdir(resolve(home, 'agents'), { recursive: true });
+    await writeFile(resolve(home, 'agents', 'broken.md'), 'not valid frontmatter', 'utf-8');
+    await expect(validateRecipient('cursor', home)).resolves.toBeUndefined();
+  });
+
+  it('records actor and start dispatchAgent overrides on moveTicket', async () => {
+    await writeFeatureTicket('FE-33', 'feat33', 'ready', { approved: true, workspace: true });
+    const dispatch = vi.fn().mockResolvedValue({ state: 'queued', requestId: 'auto~x' });
+    await moveTicket('FE-33', 'start', {
+      project: 'p',
+      dir: projectsDir,
+      actor: 'alice',
+      dispatchAgent: 'codex',
+      dispatch,
+    });
+    const moved = listEventsByTicket('FE-33').find((e) => e.type === 'moved');
+    expect(moved?.actor).toBe('alice');
+    const details = JSON.parse(moved?.details ?? '{}');
+    expect(details.dispatchTarget).toBe('codex');
+    expect(details.dispatchOverride).toBe(true);
+  });
+
+  it('rejects unknown override ids before mutation', async () => {
+    await writeFeatureTicket('FE-32', 'feat32', 'ready', { approved: true, workspace: true });
+    await expect(
+      moveTicket('FE-32', 'start', {
+        project: 'p',
+        dir: projectsDir,
+        dispatchAgent: 'no-such-agent',
+      }),
+    ).rejects.toThrow(/Unknown agent id/);
+    const fm = parseTicketFrontmatter(
+      await readFile(resolve(await ticketDir('FE-32', 'feat32'), 'ticket.md'), 'utf-8'),
+    );
+    expect(fm.status).toBe('ready');
   });
 });
 

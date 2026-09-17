@@ -14,6 +14,7 @@ import {
   deliverableRoleFile,
   stageIds,
 } from './manifest.js';
+import { validateStageTargetDeclarations } from './stage-dispatch.js';
 
 export interface TemplateIssue {
   rule: number | string;
@@ -151,6 +152,10 @@ export function validateTemplate(
   // Rule 16: dropped not in stages (also checked above)
   if (ids.includes('dropped' as (typeof ids)[number])) {
     issues.push({ rule: 16, message: 'dropped must not appear in stages[]' });
+  }
+
+  for (const message of validateStageTargetDeclarations(manifest)) {
+    issues.push({ rule: 'stage-target', message });
   }
 
   // stages non-empty and containing done
