@@ -26,6 +26,7 @@ import {
   type TokenSnapshot,
 } from '../db/engagement-tokens.js';
 import { priceForModel, type TokenBuckets } from './pricing.js';
+import { chunkTicketIds } from '../db/usage-db.js';
 
 export interface WindowCostResult {
   /** Summed per-window snapshot cost (USD) across the matched closed windows. */
@@ -212,34 +213,43 @@ export function ticketWindowCost(opts: TicketWindowCostOpts): WindowCostResult {
 
 /**
  * Per-ticket cost for EVERY ticket in `ticketIds` that has at least one closed
- * engagement window, keyed by `ticket_id`.
+ * engagement window, keyed by `ticket_id`. Ids are de-duplicated and bound in
+ * chunks below the SQLite parameter limit (one SELECT per chunk); every
+ * ticket's windows land in exactly one chunk, so the per-ticket rollup is
+ * identical to a single unchunked query.
  */
 export function projectWindowCosts(
   opts: ProjectWindowCostsOpts,
 ): Map<string, TicketWindowCost> {
+  const ids = [...new Set(opts.ticketIds)];
+  if (ids.length === 0) return new Map();
   const db = engagementDb();
-  if (!db || opts.ticketIds.length === 0) return new Map();
-  const placeholders = opts.ticketIds.map(() => '?').join(', ');
-  const clauses = ['ended_at IS NOT NULL', `ticket_id IN (${placeholders})`];
-  const params: unknown[] = [...opts.ticketIds];
+  if (!db) return new Map();
   const since = sinceBound(opts.since);
   const until = untilBound(opts.until);
-  if (since) {
-    clauses.push('ended_at >= ?');
-    params.push(since);
-  }
-  if (until) {
-    clauses.push('ended_at <= ?');
-    params.push(until);
-  }
 
-  const rows = db
-    .prepare(
-      `SELECT ticket_id, tokens_at_open, tokens_at_close
-         FROM engagement
-        WHERE ${clauses.join(' AND ')}`,
-    )
-    .all(...params) as EngagementCostRow[];
+  const rows: EngagementCostRow[] = [];
+  for (const chunk of chunkTicketIds(ids)) {
+    const clauses = ['ended_at IS NOT NULL', `ticket_id IN (${chunk.map(() => '?').join(', ')})`];
+    const params: unknown[] = [...chunk];
+    if (since) {
+      clauses.push('ended_at >= ?');
+      params.push(since);
+    }
+    if (until) {
+      clauses.push('ended_at <= ?');
+      params.push(until);
+    }
+    rows.push(
+      ...(db
+        .prepare(
+          `SELECT ticket_id, tokens_at_open, tokens_at_close
+             FROM engagement
+            WHERE ${clauses.join(' AND ')}`,
+        )
+        .all(...params) as EngagementCostRow[]),
+    );
+  }
 
   const grouped = new Map<string, EngagementCostRow[]>();
   for (const row of rows) {
@@ -260,3 +270,40 @@ export function projectWindowCosts(
   return out;
 }
 
+export interface TicketEngagementTotals {
+  /** COUNT(DISTINCT session_id) across ALL windows (open, closed, archived sessions). */
+  sessionCount: number;
+  /** Windows still open (`ended_at IS NULL`) — unpriced, so recorded spend is partial. */
+  openWindowCount: number;
+}
+
+/**
+ * Distinct engaged sessions + open-window count per ticket id, one GROUP BY
+ * per id chunk. Returns null when the session db / engagement table is
+ * unavailable (unknown), otherwise a map in which an id with no windows is
+ * simply absent (known zero). Null/empty ticket bindings never match.
+ */
+export function engagementTotalsByTicket(
+  ticketIds: readonly string[],
+): Map<string, TicketEngagementTotals> | null {
+  const db = engagementDb();
+  if (!db) return null;
+  const out = new Map<string, TicketEngagementTotals>();
+  const ids = [...new Set(ticketIds.filter((id) => id !== ''))];
+  for (const chunk of chunkTicketIds(ids)) {
+    const rows = db
+      .prepare(
+        `SELECT ticket_id,
+                COUNT(DISTINCT session_id) AS session_count,
+                SUM(CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) AS open_count
+           FROM engagement
+          WHERE ticket_id IN (${chunk.map(() => '?').join(', ')})
+          GROUP BY ticket_id`,
+      )
+      .all(...chunk) as Array<{ ticket_id: string; session_count: number; open_count: number }>;
+    for (const r of rows) {
+      out.set(r.ticket_id, { sessionCount: r.session_count, openWindowCount: r.open_count });
+    }
+  }
+  return out;
+}

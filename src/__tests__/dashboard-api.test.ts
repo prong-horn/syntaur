@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1552,5 +1552,151 @@ updated: "2026-04-20T10:00:00Z"
     const detail = await getProjectDetail(testDir, 'p1');
     expect(detail).toBeTruthy();
     expect(detail!.dependencyGraph).toContain('SV-1:::done');
+  });
+});
+
+describe('SV-12 read-time ticket metrics on board and detail', () => {
+  let dbDir: string;
+
+  async function openDbs(): Promise<void> {
+    const { initUsageDb, resetUsageDb } = await import('../db/usage-db.js');
+    dbDir = await mkdtemp(join(tmpdir(), 'syntaur-metrics-db-'));
+    resetSessionDb();
+    resetUsageDb();
+    initSessionDb(resolve(dbDir, 'syntaur.db'));
+    initUsageDb(resolve(dbDir, 'syntaur.db'));
+  }
+
+  afterEach(async () => {
+    const { closeUsageDb } = await import('../db/usage-db.js');
+    closeSessionDb();
+    closeUsageDb();
+    if (dbDir) await rm(dbDir, { recursive: true, force: true });
+  });
+
+  function ticketMd(id: string, slug: string): string {
+    return TICKET_MD.replace('id: a-123', `id: ${id}`).replace('slug: test-ticket', `slug: ${slug}`);
+  }
+
+  async function seedUsage(sessionId: string, ticketId: string, cost: number, projectSlug = ''): Promise<void> {
+    const { upsertEvent } = await import('../db/usage-db.js');
+    upsertEvent({
+      sessionId,
+      model: 'claude-opus-4-7',
+      tool: 'claude',
+      eventTs: '2026-06-01T12:00:00.000Z',
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalTokens: 10,
+      totalCost: cost,
+      cwd: null,
+      projectSlug,
+      ticketSlug: ticketId,
+      rawJson: null,
+    });
+  }
+
+  async function seedEngagement(sessionId: string, ticketId: string, closeCost: number | null): Promise<void> {
+    const { openEngagement, closeEngagementById } = await import('../db/engagement-db.js');
+    const m = 'claude-opus-4-7';
+    const snap = (cost: number) => ({
+      models: { [m]: { input: 0, output: 0, cacheCreation: 0, cacheRead: 0, total: 0, cost } },
+      collectorRunAt: null,
+      capturedAt: '2026-06-01T00:00:00.000Z',
+    });
+    const startedAt = '2026-06-01T01:00:00.000Z';
+    const row = openEngagement({ sessionId, ticketId, startedAt, tokensAtOpen: snap(0) });
+    if (closeCost !== null) {
+      closeEngagementById({
+        id: row.id,
+        startedAt,
+        closeReason: 'switch',
+        tokensAtClose: snap(closeCost),
+        endedAt: '2026-06-01T02:00:00.000Z',
+      });
+    }
+  }
+
+  it('board cards and ticket detail carry the same batched metrics', async () => {
+    await openDbs();
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'm-eng', ticketMd: ticketMd('MET-1', 'm-eng') },
+      { slug: 'm-use', ticketMd: ticketMd('MET-2', 'm-use') },
+      { slug: 'm-none', ticketMd: ticketMd('MET-3', 'm-none') },
+    ]);
+    // MET-1: priced closed window + an open window (another session) → partial.
+    await seedEngagement('s-a', 'MET-1', 1.5);
+    await seedEngagement('s-a', 'MET-1', 2.0); // same session again → counts once
+    await seedEngagement('s-b', 'MET-1', null); // open
+    await seedUsage('u-1', 'MET-1', 99); // ignored: priced windows win
+    // MET-2: usage only, one row left with empty project slug, one known $0.
+    await seedUsage('u-2', 'MET-2', 0.4, '');
+    await seedUsage('u-3', 'MET-2', 0, 'test-project');
+
+    const board = await listTicketsBoard(testDir);
+    const byId = Object.fromEntries(board.tickets.map((t) => [t.id, t.metrics]));
+    expect(byId['MET-1']).toEqual({ costUsd: 3.5, sessionCount: 2, costSource: 'engagement', partial: true });
+    expect(byId['MET-2']).toEqual({ costUsd: 0.4, sessionCount: 0, costSource: 'usage', partial: false });
+    expect(byId['MET-3']).toEqual({ costUsd: null, sessionCount: 0, costSource: 'none', partial: false });
+
+    for (const [slug, id] of [['m-eng', 'MET-1'], ['m-use', 'MET-2'], ['m-none', 'MET-3']]) {
+      const detail = await getTicketDetail(testDir, 'test-project', slug);
+      expect(detail!.metrics).toEqual(byId[id]);
+    }
+
+    const project = await getProjectDetail(testDir, 'test-project');
+    expect(Object.fromEntries(project!.tickets.map((t) => [t.id, t.metrics]))).toEqual(byId);
+  });
+
+  it('without a session db, sessionCount is unknown (null) and nothing throws', async () => {
+    resetSessionDb();
+    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
+      { slug: 'test-ticket', ticketMd: TICKET_MD },
+    ]);
+    const board = await listTicketsBoard(testDir);
+    expect(board.tickets[0].metrics).toEqual({
+      costUsd: null,
+      sessionCount: null,
+      costSource: 'none',
+      partial: false,
+    });
+    const detail = await getTicketDetail(testDir, 'test-project', 'test-ticket');
+    expect(detail!.metrics.sessionCount).toBeNull();
+  });
+
+  it('listTicketsBoard metric statements do not scale with card count (no N+1)', async () => {
+    await openDbs();
+    const { getUsageDb } = await import('../db/usage-db.js');
+    const { getSessionDb } = await import('../dashboard/session-db.js');
+
+    async function countFor(n: number): Promise<{ usage: number; session: number; cards: number }> {
+      await rm(testDir, { recursive: true, force: true });
+      await mkdir(testDir, { recursive: true });
+      await createProjectFiles(
+        testDir,
+        'test-project',
+        PROJECT_MD,
+        Array.from({ length: n }, (_, i) => ({ slug: `t-${n}-${i}`, ticketMd: ticketMd(`N${n}-${i}`, `t-${n}-${i}`) })),
+      );
+      const { invalidateRecordsCache } = await import('../dashboard/api.js');
+      invalidateRecordsCache();
+      const usageSpy = vi.spyOn(getUsageDb(), 'prepare');
+      const sessionSpy = vi.spyOn(getSessionDb(), 'prepare');
+      const board = await listTicketsBoard(testDir);
+      const out = { usage: usageSpy.mock.calls.length, session: sessionSpy.mock.calls.length, cards: board.tickets.length };
+      usageSpy.mockRestore();
+      sessionSpy.mockRestore();
+      return out;
+    }
+
+    const small = await countFor(2);
+    const large = await countFor(25);
+    expect(small.cards).toBe(2);
+    expect(large.cards).toBe(25);
+    expect(large.usage).toBe(1);
+    expect(large.usage).toBe(small.usage);
+    expect(large.session).toBe(small.session);
   });
 });

@@ -19,7 +19,7 @@ describe('Start agent picker', () => {
   beforeEach(() => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ ticket: { id: 'T-1' } }) })),
+      vi.fn(async () => new Response(JSON.stringify({ ticket: { id: 'T-1' } }), { status: 200 })),
     );
   });
 

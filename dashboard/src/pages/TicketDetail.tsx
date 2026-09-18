@@ -77,13 +77,12 @@ export function TicketDetail() {
   const { data: project } = useProject(projectSlug);
   const { data: sessionsData, loading: sessionsLoading, error: sessionsError } = useTicketSessions(id);
   const { data: usageData, loading: usageLoading, error: usageError } = useTicketUsage(id);
-  const eventsUrl = id ? `/api/tickets/${id}/events` : null;
   const {
     events,
     loading: eventsLoading,
     error: eventsError,
     refetch: refetchEvents,
-  } = useTicketEvents(eventsUrl);
+  } = useTicketEvents(id);
 
   const stageDispatch = useStageDispatch({
     ticketId: id ?? '',

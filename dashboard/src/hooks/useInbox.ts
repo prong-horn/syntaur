@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useWebSocket, type WsMessage } from './useWebSocket';
-import type { InboxCategory, InboxItem, InboxResult } from '../lib/inbox';
+import { useMemo } from 'react';
+import { useResource } from '../data/useResource';
+import { resources } from '../data/resources';
+import type { InboxCategory, InboxItem } from '../lib/inbox';
 
 export type { InboxCategory, InboxItem, InboxResult } from '../lib/inbox';
 
@@ -25,70 +26,31 @@ const EMPTY_COUNTS: Record<InboxCategory, number> = {
   review: 0,
   'plan-approval': 0,
 };
+const NO_ITEMS: InboxItem[] = [];
 
 /**
- * Fetch the cross-project "needs me" inbox (`GET /api/inbox`) and keep it live.
+ * The cross-project "needs me" inbox (`GET /api/inbox`), live via the shared
+ * resource store. Callers with the same options (the page and the shell badge)
+ * share one cache entry and one request.
  */
 export function useInbox(opts?: UseInboxOptions): UseInboxResult {
-  const project = opts?.project ?? null;
-  const maxAgeDays = opts?.maxAgeDays ?? null;
-  const includeSnoozed = opts?.includeSnoozed ?? false;
-  const [items, setItems] = useState<InboxItem[]>([]);
-  const [counts, setCounts] = useState<Record<InboxCategory, number>>(EMPTY_COUNTS);
-  const [total, setTotal] = useState(0);
-  const [snoozedCount, setSnoozedCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [fetchCount, setFetchCount] = useState(0);
-
-  const refetch = useCallback(() => {
-    setFetchCount((count) => count + 1);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-
-    const params = new URLSearchParams();
-    if (project) params.set('project', project);
-    if (maxAgeDays !== null && maxAgeDays > 0) params.set('maxAgeDays', String(maxAgeDays));
-    if (includeSnoozed) params.set('includeSnoozed', '1');
-    const query = params.toString();
-    const url = query ? `/api/inbox?${query}` : '/api/inbox';
-
-    fetch(url)
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = await response.json().catch(() => null);
-          throw new Error(body?.error || `HTTP ${response.status}`);
-        }
-        return response.json() as Promise<InboxResult>;
-      })
-      .then((json) => {
-        if (cancelled) return;
-        setItems(Array.isArray(json.items) ? json.items : []);
-        setCounts(json.counts ?? EMPTY_COUNTS);
-        setTotal(typeof json.total === 'number' ? json.total : 0);
-        setSnoozedCount(typeof json.snoozedCount === 'number' ? json.snoozedCount : 0);
-        setLoading(false);
-      })
-      .catch((fetchError: Error) => {
-        if (cancelled) return;
-        setError(fetchError.message);
-        setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [fetchCount, project, maxAgeDays, includeSnoozed]);
-
-  useWebSocket((message: WsMessage) => {
-    if (message.type === 'ticket-updated' || message.type === 'project-updated') {
-      refetch();
-    }
-  });
-
-  return { items, counts, total, snoozedCount, loading, error, refetch };
+  const { data, loading, error, refetch } = useResource(
+    resources.inbox({
+      project: opts?.project ?? null,
+      maxAgeDays: opts?.maxAgeDays ?? null,
+      includeSnoozed: opts?.includeSnoozed ?? false,
+    }),
+  );
+  return useMemo(
+    () => ({
+      items: Array.isArray(data?.items) ? data.items : NO_ITEMS,
+      counts: data?.counts ?? EMPTY_COUNTS,
+      total: typeof data?.total === 'number' ? data.total : 0,
+      snoozedCount: typeof data?.snoozedCount === 'number' ? data.snoozedCount : 0,
+      loading,
+      error: error ? error.message : null,
+      refetch,
+    }),
+    [data, loading, error, refetch],
+  );
 }

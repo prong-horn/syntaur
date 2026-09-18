@@ -86,6 +86,7 @@ import {
 } from '../staleness/classify.js';
 import type { StaleCandidate } from '../staleness/watchdog.js';
 import { initEventsDb } from '../db/events-db.js';
+import { ticketTotals, unknownTicketMetrics } from '../usage/ticket-totals.js';
 import {
   deriveStatusVirtualsForTicket,
   loadTicketHistoryMaps,
@@ -493,6 +494,8 @@ export async function listTicketsBoard(projectsDir: string,
     isProjectArchived(r.summary) ? [] : r.tickets,
   );
   const historyMaps = loadTicketHistoryMaps(allTickets.map((t) => t.id));
+  // Batched read-time totals (bounded statements, independent of card count).
+  const metrics = ticketTotals(allTickets.map((t) => t.id));
   const now = Date.now();
 
   const projectItems = await Promise.all(
@@ -500,7 +503,7 @@ export async function listTicketsBoard(projectsDir: string,
       if (isProjectArchived(record.summary)) return [] as TicketBoardItem[];
       return Promise.all(
         record.tickets.map(async (ticket) =>
-          toTicketBoardItem(projectsDir, record, ticket, historyMaps, now),
+          toTicketBoardItem(projectsDir, record, ticket, historyMaps, now, metrics),
         ),
       );
     }),
@@ -696,8 +699,9 @@ export async function getProjectDetail(
 
   initEventsDb();
   const historyMaps = loadTicketHistoryMaps(tickets.map((t) => t.id));
+  const metrics = ticketTotals(tickets.map((t) => t.id));
   const ticketSummaries = tickets
-    .map((a) => toTicketSummary(a, historyMaps))
+    .map((a) => toTicketSummary(a, historyMaps, Date.now(), metrics))
     .sort((left, right) => compareTimestamps(right.updated, left.updated));
 
   return {
@@ -890,6 +894,7 @@ export async function getTicketDetail(
     engagements: buildTicketEngagements(ticket.id),
     availableVerbs,
     templateBlock: await buildTicketTemplateBlock(ticketDir, ticket),
+    metrics: ticketTotals([ticket.id]).get(ticket.id) ?? unknownTicketMetrics(),
   };
 
   // Compute reverse links and enrich all links
@@ -1404,6 +1409,7 @@ function toTicketSummary(
   ticket: TicketRecord,
   maps = loadTicketHistoryMaps([ticket.id]),
   now = Date.now(),
+  metrics = ticketTotals([ticket.id]),
 ): TicketSummary {
   const virtuals = deriveStatusVirtuals(ticket, maps, now);
   return {
@@ -1423,6 +1429,7 @@ function toTicketSummary(
     created: ticket.created,
     updated: ticket.updated,
     ...virtuals,
+    metrics: metrics.get(ticket.id) ?? unknownTicketMetrics(),
   };
 }
 
@@ -1432,13 +1439,14 @@ async function toTicketBoardItem(
   ticket: TicketRecord,
   maps = loadTicketHistoryMaps([ticket.id]),
   now = Date.now(),
+  metrics = ticketTotals([ticket.id]),
 ): Promise<TicketBoardItem> {
   const ticketDir = resolve(projectRecord.projectPath, 'tickets', ticket.dirName);
   const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
   const verbs = await getAvailableVerbs(ticketDir, ticketAsFrontmatter(ticket), manifest);
 
   return {
-    ...toTicketSummary(ticket, maps, now),
+    ...toTicketSummary(ticket, maps, now, metrics),
     projectSlug: projectRecord.summary.slug,
     projectTitle: projectRecord.summary.title,
     availableVerbs: verbs as TicketTransitionAction[],

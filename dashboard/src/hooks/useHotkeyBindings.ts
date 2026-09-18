@@ -1,10 +1,15 @@
-import { useState, useEffect } from 'react';
+// Retained only until Task 6 removes the custom binding editor (hotkey choice A).
+import { useMemo } from 'react';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
   isBindableActionKind,
   type BindableActionKind,
 } from '@shared/hotkeys-catalog';
+import { getDefaultResourceStore } from '../data/cache';
+import { mutate } from '../data/mutate';
+import { resources } from '../data/resources';
+import { useResource } from '../data/useResource';
 
 export interface HotkeyBindingsResponse {
   bindings: Partial<Record<BindableActionKind, string>>;
@@ -16,14 +21,7 @@ const DEFAULT_BINDINGS: HotkeyBindingsResponse = {
   custom: false,
 };
 
-let cachedConfig: HotkeyBindingsResponse | null = null;
-let fetchPromise: Promise<HotkeyBindingsResponse> | null = null;
-const subscribers = new Set<(value: HotkeyBindingsResponse) => void>();
-
-function notify(next: HotkeyBindingsResponse): void {
-  cachedConfig = next;
-  for (const sub of subscribers) sub(next);
-}
+const hotkeysResource = () => resources.config<unknown>('hotkeys');
 
 function normalize(data: unknown): HotkeyBindingsResponse {
   if (!data || typeof data !== 'object') return DEFAULT_BINDINGS;
@@ -42,51 +40,18 @@ function normalize(data: unknown): HotkeyBindingsResponse {
 }
 
 export function fetchHotkeyBindings(): Promise<HotkeyBindingsResponse> {
-  if (cachedConfig) return Promise.resolve(cachedConfig);
-  if (fetchPromise) return fetchPromise;
-
-  fetchPromise = fetch('/api/config/hotkeys')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      const normalized = normalize(data);
-      cachedConfig = normalized;
-      fetchPromise = null;
-      return normalized;
-    })
-    .catch(() => {
-      fetchPromise = null;
-      return DEFAULT_BINDINGS;
-    });
-
-  return fetchPromise;
+  return getDefaultResourceStore()
+    .read(hotkeysResource())
+    .then(normalize, () => DEFAULT_BINDINGS);
 }
 
 export function useHotkeyBindings(): HotkeyBindingsResponse {
-  const [config, setConfig] = useState<HotkeyBindingsResponse>(
-    () => cachedConfig ?? DEFAULT_BINDINGS,
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchHotkeyBindings().then((next) => {
-      if (!cancelled) setConfig(next);
-    });
-    subscribers.add(setConfig);
-    return () => {
-      cancelled = true;
-      subscribers.delete(setConfig);
-    };
-  }, []);
-
-  return config;
+  const { data } = useResource(hotkeysResource());
+  return useMemo(() => normalize(data), [data]);
 }
 
 export function invalidateHotkeyBindingsCache(): void {
-  cachedConfig = null;
-  fetchPromise = null;
+  getDefaultResourceStore().invalidate([{ tag: 'config', configKind: 'hotkeys' }]);
 }
 
 export async function saveHotkeyBindings(
@@ -102,25 +67,13 @@ export async function saveHotkeyBindings(
     if (!canonical) continue;
     payload[kind] = canonical;
   }
-
-  const res = await fetch('/api/config/hotkeys', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bindings: payload }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error ?? 'Failed to save hotkey bindings');
-  }
-  const normalized = normalize(await res.json());
-  notify(normalized);
-  return normalized;
+  const response = await mutate<unknown>('PUT', hotkeysResource().url, { bindings: payload });
+  getDefaultResourceStore().write(hotkeysResource(), response);
+  return normalize(response);
 }
 
 export async function resetHotkeyBindings(): Promise<HotkeyBindingsResponse> {
-  const res = await fetch('/api/config/hotkeys', { method: 'DELETE' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const normalized = normalize(await res.json());
-  notify(normalized);
-  return normalized;
+  const response = await mutate<unknown>('DELETE', hotkeysResource().url);
+  getDefaultResourceStore().write(hotkeysResource(), response);
+  return normalize(response);
 }

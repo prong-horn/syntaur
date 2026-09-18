@@ -8,12 +8,19 @@ import {
   listEvents,
   type ListDailyFilter,
   type ListEventsFilter,
+  type ProjectScope,
 } from '../db/usage-db.js';
 import {
   ticketWindowCost,
   projectWindowCosts,
   type WindowCostResult,
 } from '../usage/engagement-cost.js';
+import {
+  resolveTicketCost,
+  ticketTotals,
+  unknownTicketMetrics,
+} from '../usage/ticket-totals.js';
+import type { TicketCostSource, TicketMetrics, UsageCostBasis } from './types.js';
 
 /**
  * Token-usage dashboard API. Read-only; localhost-only per existing
@@ -45,11 +52,26 @@ export function createUsageRouter(projectsDir: string): Router {
   router.get('/', async (req, res) => {
     try {
       initUsageDb();
-      const filter: ListDailyFilter = extractCommonFilter(req.query);
+      const common = extractCommonFilter(req.query);
+      // A `project` filter selects the project's rows by scope (its current
+      // ticket ids + genuine project-only rows) instead of an exact
+      // `project_slug` match, which dropped ticket rows whose attribution left
+      // the slug empty. All other window/model/tool filters are unchanged.
+      let scope: ProjectScope | undefined;
+      const filter: ListDailyFilter = { ...common };
+      if (common.projectSlug !== undefined) {
+        scope = await projectScopeFor(projectsDir, common.projectSlug);
+        delete filter.projectSlug;
+        filter.projectScope = scope;
+      }
       const rows = listDaily(filter);
+      const costBasis: UsageCostBasis = 'usage-daily';
       res.json({
         daily: rows,
-        summary: summarize(rows, groupByMode(req.query.groupBy)),
+        summary: summarize(rows, groupByMode(req.query.groupBy), scope?.projectSlug),
+        // Windowed usage_daily sums; card/header totals are window-first
+        // lifetime (ticket-totals) and may differ.
+        costBasis,
       });
     } catch (error) {
       res.status(500).json({
@@ -63,16 +85,16 @@ export function createUsageRouter(projectsDir: string): Router {
       initUsageDb();
       const projectSlug = req.params.projectSlug;
       const common = extractCommonFilter(req.query);
-      const rows = listDaily({ ...common, projectSlug });
-      const { listTicketsByProject } = await import('../utils/ticket-walk.js');
-      const walk = await listTicketsByProject(projectsDir);
-      const ticketIds = walk.withTicketMd
-        .filter((t) => t.projectSlug === projectSlug && t.ticketId)
-        .map((t) => t.ticketId as string);
+      const scope = await projectScopeFor(projectsDir, projectSlug);
+      const filter: ListDailyFilter = { ...common, projectScope: scope };
+      delete filter.projectSlug;
+      const rows = listDaily(filter);
+      const costBasis: UsageCostBasis = 'window-first';
       res.json({
         projectSlug,
         daily: rows,
-        summary: projectTicketRollup(projectSlug, rows, common, ticketIds),
+        summary: projectTicketRollup(projectSlug, rows, common, [...scope.ticketIds]),
+        costBasis,
       });
     } catch (error) {
       res.status(500).json({
@@ -94,25 +116,21 @@ export function getTicketUsageHandler(projectsDir: string): RequestHandler {
         res.status(404).json({ error: `Ticket "${id}" not found` });
         return;
       }
-      const projectSlug = resolved.projectSlug ?? '';
       const ticketId = resolved.id;
       const ticketSlug = resolved.ticketSlug;
       const common = extractCommonFilter(req.query);
-      const dailyRows = listDaily({
-        ...common,
-        projectSlug,
-        ticketSlug: ticketId,
-      });
-      const eventRows = listEvents(
-        eventsFilterFromDaily({ ...common, projectSlug, ticketSlug: ticketId }),
-      );
+      // Ticket ids are globally unique: filter by `ticket_id` ONLY. Attribution
+      // can leave `project_slug` empty, so a project match undercounted.
+      delete common.projectSlug;
+      const dailyRows = listDaily({ ...common, ticketSlug: ticketId });
+      const eventRows = listEvents(eventsFilterFromDaily({ ...common, ticketSlug: ticketId }));
       res.json({
         ticketId,
         projectSlug: resolved.projectSlug,
         ticketSlug,
         daily: dailyRows,
         events: eventRows,
-        summary: buildTicketSummary(dailyRows, {
+        summary: buildTicketSummary(dailyRows, eventRows, {
           ticketId,
           projectSlug: resolved.projectSlug,
           ticketSlug,
@@ -130,6 +148,16 @@ export function getTicketUsageHandler(projectsDir: string): RequestHandler {
 }
 
 // --- internals ------------------------------------------------------------
+
+/** The project's CURRENT ticket ids (from the ticket walk) as a usage scope. */
+async function projectScopeFor(projectsDir: string, projectSlug: string): Promise<ProjectScope> {
+  const { listTicketsByProject } = await import('../utils/ticket-walk.js');
+  const walk = await listTicketsByProject(projectsDir);
+  const ticketIds = walk.withTicketMd
+    .filter((t) => t.projectSlug === projectSlug && t.ticketId)
+    .map((t) => t.ticketId as string);
+  return { projectSlug, ticketIds };
+}
 
 interface CommonFilter {
   since?: string;
@@ -184,6 +212,8 @@ interface SummaryRow {
   pricedWindowCount?: number;
   uncomputableWindowCount?: number;
   negativeDeltaCount?: number;
+  /** Per-ticket project rollups: which ledger `totalCost` came from. */
+  costSource?: TicketCostSource;
 }
 
 /** Per-model token/cost breakdown for one ticket. */
@@ -211,6 +241,17 @@ export interface TicketUsageSummary {
   pricedWindowCount: number;
   uncomputableWindowCount: number;
   negativeDeltaCount: number;
+  /**
+   * Which ledger the (window/filter-scoped) `totalCost` came from — same
+   * precedence as the card/header: priced windows, else attributed
+   * `usage_events` rows, else `none` (totalCost 0 means "unknown" then).
+   */
+  costSource: TicketCostSource;
+  /**
+   * Lifetime, unfiltered totals from the SAME helper as the board card and
+   * ticket header (`ticketTotals`). Unaffected by since/until/model/tool.
+   */
+  lifetime: TicketMetrics;
 }
 
 /** The (id-or-slugs) key + filters identifying one ticket's cost windows. */
@@ -245,54 +286,71 @@ function byModelBreakdown(rows: ReturnType<typeof listDaily>): ModelUsage[] {
 /**
  * Roll a single ticket's daily rows into an {@link TicketUsageSummary}.
  * Tokens/`lastEventDay`/`byModel` come from `usage_daily` (legitimately
- * cumulative), but `totalCost` is the SNAPSHOT-window cost for the ticket
- * (M2) — so a session that worked this ticket then another on the same model
- * is not over-attributed the whole cumulative.
+ * cumulative). `totalCost` follows the card/header precedence within the
+ * requested filter: the SNAPSHOT-window cost when a priced window exists (M2 —
+ * a session that worked this ticket then another on the same model is not
+ * over-attributed), else the SUM of the ticket's attributed `usage_events`
+ * rows in the same filter (so the header reconciles with `byModel` instead of
+ * showing $0), never both. `lifetime` is the unfiltered `ticketTotals` value.
  */
 function buildTicketSummary(
   rows: ReturnType<typeof listDaily>,
+  eventRows: ReturnType<typeof listEvents>,
   costKey: TicketCostKey,
 ): TicketUsageSummary {
   const totals = summarize(rows, 'ticket')[0];
   const windows: WindowCostResult = ticketWindowCost(costKey);
-  // When the ticket has NO computable engagement window (e.g. usage attributed
-  // by slug to a ticket that never registered an agent session), the window
-  // ledger has nothing to attribute and `windows.cost` is 0 — but `byModel` still
-  // sums the cumulative `usage_daily` cost. Showing $0 over a non-zero breakdown is
-  // the reconciliation bug. With no window to split, the cumulative daily cost is
-  // the best (and self-consistent) estimate, so fall back to it. Whenever a real
-  // priced window exists, keep the snapshot-window cost (the M2 attribution model),
-  // including a legitimately $0-cost window.
-  const totalCost = windows.pricedWindowCount > 0 ? windows.cost : totals?.totalCost ?? 0;
+  const usage = {
+    cost: eventRows.reduce((acc, r) => acc + r.total_cost, 0),
+    rowCount: eventRows.length,
+  };
+  // Open windows only affect `partial`, which this windowed total doesn't carry
+  // (the lifetime block does), so pass 0.
+  const cost = resolveTicketCost(windows, usage, 0);
+  const ticketId = costKey.ticketId ?? costKey.ticketSlug;
   return {
     totalTokens: totals?.totalTokens ?? 0,
-    totalCost,
+    totalCost: cost.costUsd ?? 0,
     lastEventDay: totals?.lastEventDay ?? null,
     byModel: byModelBreakdown(rows),
     pricedWindowCount: windows.pricedWindowCount,
     uncomputableWindowCount: windows.uncomputableWindowCount,
     negativeDeltaCount: windows.negativeDeltaCount,
+    costSource: cost.costSource,
+    lifetime: ticketTotals([ticketId]).get(ticketId) ?? unknownTicketMetrics(),
   };
 }
 
+/**
+ * Group daily rows. `ticket` mode keys attributed rows by `ticket_id` alone
+ * (ids are globally unique), so one ticket whose rows carry both an empty and
+ * a real `project_slug` is ONE row (with the non-empty slug); unattributed
+ * rows (`ticket_id = ''`) stay grouped per project slug. `scopedProjectSlug`
+ * (a project-scoped query) labels every row with that project.
+ */
 function summarize(
   rows: ReturnType<typeof listDaily>,
   mode: GroupByMode,
+  scopedProjectSlug?: string,
 ): SummaryRow[] {
   const map = new Map<string, SummaryRow>();
   for (const r of rows) {
+    const projectSlug = scopedProjectSlug ?? r.project_slug;
     const key =
       mode === 'project'
-        ? r.project_slug
-        : `${r.project_slug}\x00${r.ticket_id}`;
+        ? projectSlug
+        : r.ticket_id !== ''
+          ? `\x01${r.ticket_id}`
+          : `${projectSlug}\x00`;
     const existing = map.get(key);
     if (existing) {
       existing.totalTokens += r.total_tokens;
       existing.totalCost += r.total_cost;
       if (r.day > existing.lastEventDay) existing.lastEventDay = r.day;
+      if (existing.projectSlug === '' && projectSlug !== '') existing.projectSlug = projectSlug;
     } else {
       map.set(key, {
-        projectSlug: r.project_slug,
+        projectSlug,
         ticketSlug: mode === 'project' ? '' : r.ticket_id,
         totalTokens: r.total_tokens,
         totalCost: r.total_cost,
@@ -305,12 +363,15 @@ function summarize(
 
 /**
  * Per-ticket rollup for a project's usage page (M2). The ticket SET is
- * the UNION of (the `usage_daily` ticket keys) ∪ (the tickets that have
+ * the UNION of (the scoped `usage_daily` ticket keys) ∪ (the tickets that have
  * a closed engagement snapshot window) — because in an A-then-B same-model
  * session the cumulative `usage_events` row attributes only to the latest
  * ticket, so a ticket with a real window but no `usage_daily` row would
- * otherwise be MISSING entirely. Each row's `totalCost` is the snapshot-window
- * cost (the per-ticket source of truth); tokens stay from `usage_daily`.
+ * otherwise be MISSING entirely. Each row's `totalCost` follows the card/header
+ * precedence within the requested filter: the snapshot-window cost when ≥1
+ * window is priced, else the ticket's windowed `usage_daily` cost (unpriced
+ * attribution is never silently zeroed), labelled by `costSource`. The
+ * project-only group (`ticketSlug === ''`) is always `usage`-sourced.
  */
 function projectTicketRollup(
   projectSlug: string,
@@ -318,21 +379,12 @@ function projectTicketRollup(
   common: CommonFilter,
   ticketIds: string[],
 ): SummaryRow[] {
-  // Start from the usage_daily groups but RESET cost to 0 — per-ticket cost
-  // is snapshot-derived (overlaid below), never the cumulative usage_events row.
-  // A daily-only ticket with no closed window stays at 0 (its window cost is
-  // not yet computable), consistent with the ticket-detail summary.
+  const dailyRowCount = new Map<string, number>();
+  for (const r of rows) dailyRowCount.set(r.ticket_id, (dailyRowCount.get(r.ticket_id) ?? 0) + 1);
+
   const byTicket = new Map<string, SummaryRow>();
-  for (const row of summarize(rows, 'ticket')) {
-    byTicket.set(row.ticketSlug, {
-      ...row,
-      totalCost: 0,
-      // Counts present on EVERY per-ticket row (a daily-only ticket with
-      // no closed window stays at 0/0/0); window overlay below replaces them.
-      pricedWindowCount: 0,
-      uncomputableWindowCount: 0,
-      negativeDeltaCount: 0,
-    });
+  for (const row of summarize(rows, 'ticket', projectSlug)) {
+    byTicket.set(row.ticketSlug, row);
   }
 
   const windows = projectWindowCosts({
@@ -343,26 +395,28 @@ function projectTicketRollup(
   });
 
   for (const [ticketSlug, w] of windows) {
-    const existing = byTicket.get(ticketSlug);
-    if (existing) {
-      existing.totalCost = w.cost;
-      existing.pricedWindowCount = w.pricedWindowCount;
-      existing.uncomputableWindowCount = w.uncomputableWindowCount;
-      existing.negativeDeltaCount = w.negativeDeltaCount;
-    } else {
-      // Present ONLY in snapshot windows (no usage_daily row) — surface it with
-      // its window cost so the A-then-B case can't drop it from the rollup.
-      byTicket.set(ticketSlug, {
-        projectSlug,
-        ticketSlug,
-        totalTokens: 0,
-        totalCost: w.cost,
-        lastEventDay: '',
-        pricedWindowCount: w.pricedWindowCount,
-        uncomputableWindowCount: w.uncomputableWindowCount,
-        negativeDeltaCount: w.negativeDeltaCount,
-      });
-    }
+    if (byTicket.has(ticketSlug)) continue;
+    // Present ONLY in snapshot windows (no usage_daily row) — surface it so the
+    // A-then-B case can't drop it from the rollup.
+    byTicket.set(ticketSlug, {
+      projectSlug,
+      ticketSlug,
+      totalTokens: 0,
+      totalCost: 0,
+      lastEventDay: '',
+    });
+  }
+
+  for (const row of byTicket.values()) {
+    const w = windows.get(row.ticketSlug);
+    const rowCount = dailyRowCount.get(row.ticketSlug) ?? 0;
+    const cost = resolveTicketCost(w, { cost: row.totalCost, rowCount }, 0);
+    row.totalCost = cost.costUsd ?? 0;
+    row.costSource = cost.costSource;
+    // Counts present on EVERY per-ticket row (0/0/0 without a closed window).
+    row.pricedWindowCount = w?.pricedWindowCount ?? 0;
+    row.uncomputableWindowCount = w?.uncomputableWindowCount ?? 0;
+    row.negativeDeltaCount = w?.negativeDeltaCount ?? 0;
   }
 
   return [...byTicket.values()].sort(

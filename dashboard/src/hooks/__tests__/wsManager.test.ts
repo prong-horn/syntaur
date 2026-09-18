@@ -5,6 +5,7 @@ import {
   setWsUrlResolver,
   subscribe,
   subscribeConnectionStatus,
+  subscribeReconnect,
   type ConnectionStatus,
 } from '../wsManager';
 
@@ -157,5 +158,50 @@ describe('wsManager connection status', () => {
 
     expect(getConnectionStatus()).toBe('closed');
     expect(FakeWebSocket.instances).toHaveLength(1); // reconnect was cancelled
+  });
+
+  it('signals reconnect only on reconnecting → open, never on the first open or connected frames', () => {
+    const reconnects = vi.fn();
+    const messages: unknown[] = [];
+    subscribeReconnect(reconnects);
+    const unsubscribe = subscribe((m) => messages.push(m));
+
+    const first = FakeWebSocket.instances[0];
+    first.readyState = FakeWebSocket.OPEN;
+    first.onopen?.();
+    first.onmessage?.({ data: JSON.stringify({ type: 'connected', timestamp: 't' }) });
+    expect(reconnects).not.toHaveBeenCalled();
+    expect(messages).toHaveLength(1);
+
+    // Genuine drop → reconnecting → retry opens → exactly one reconnect signal.
+    first.readyState = FakeWebSocket.CLOSED;
+    first.onclose?.();
+    expect(getConnectionStatus()).toBe('reconnecting');
+    vi.advanceTimersByTime(2000);
+    const second = FakeWebSocket.instances[1];
+    second.readyState = FakeWebSocket.OPEN;
+    second.onopen?.();
+    second.onmessage?.({ data: JSON.stringify({ type: 'connected', timestamp: 't' }) });
+    expect(reconnects).toHaveBeenCalledTimes(1);
+
+    // Full teardown and a fresh dial is a first connect again, not a reconnect.
+    unsubscribe();
+    const again = subscribe(() => {});
+    const third = FakeWebSocket.instances[2];
+    third.readyState = FakeWebSocket.OPEN;
+    third.onopen?.();
+    expect(reconnects).toHaveBeenCalledTimes(1);
+    again();
+  });
+
+  it('passes the top-level ticketId through to listeners', () => {
+    const seen: Array<{ type: string; ticketId?: string }> = [];
+    const unsubscribe = subscribe((m) => seen.push(m));
+    const socket = FakeWebSocket.instances[0];
+    socket.onmessage?.({
+      data: JSON.stringify({ type: 'ticket-updated', ticketId: 'SV-12', projectSlug: 'p', timestamp: 't' }),
+    });
+    expect(seen[0]).toMatchObject({ type: 'ticket-updated', ticketId: 'SV-12' });
+    unsubscribe();
   });
 });

@@ -1,4 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
+import { getDefaultResourceStore } from '../data/cache';
+import { resources, type TicketTemplateSummaryResponse } from '../data/resources';
+import { useResource } from '../data/useResource';
 
 export interface TemplateDefinition {
   id: string;
@@ -20,56 +23,22 @@ const DEFAULT_TEMPLATES_CONFIG: TemplatesConfigResponse = {
   default: 'feature',
 };
 
-let cachedConfig: TemplatesConfigResponse | null = null;
-let fetchPromise: Promise<TemplatesConfigResponse> | null = null;
-
-function fetchTemplatesConfig(): Promise<TemplatesConfigResponse> {
-  if (cachedConfig) return Promise.resolve(cachedConfig);
-  if (fetchPromise) return fetchPromise;
-
-  fetchPromise = fetch('/api/ticket-templates')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json() as Promise<{
-        templates: Array<{ id: string; description: string }>;
-      }>;
-    })
-    .then((data) => {
-      const mapped: TemplatesConfigResponse = {
-        definitions: data.templates.map((t) => ({
-          id: t.id,
-          label: t.id,
-          description: t.description,
-        })),
-        default: 'feature',
-      };
-      cachedConfig = mapped;
-      fetchPromise = null;
-      return mapped;
-    })
-    .catch(() => {
-      fetchPromise = null;
-      return DEFAULT_TEMPLATES_CONFIG;
-    });
-
-  return fetchPromise;
+function toConfig(data: TicketTemplateSummaryResponse | undefined): TemplatesConfigResponse {
+  if (!data || !Array.isArray(data.templates)) return DEFAULT_TEMPLATES_CONFIG;
+  return {
+    definitions: data.templates.map((t) => ({ id: t.id, label: t.id, description: t.description })),
+    default: 'feature',
+  };
 }
 
+/** Ticket templates (read-only) from the shared store; defaults until loaded or on failure. */
 export function useTemplates(): TemplatesConfigResponse {
-  const [config, setConfig] = useState<TemplatesConfigResponse>(
-    () => cachedConfig ?? DEFAULT_TEMPLATES_CONFIG,
-  );
-
-  useEffect(() => {
-    fetchTemplatesConfig().then(setConfig);
-  }, []);
-
-  return config;
+  const { data } = useResource(resources.templates());
+  return useMemo(() => toConfig(data), [data]);
 }
 
 export function invalidateTemplatesCache(): void {
-  cachedConfig = null;
-  fetchPromise = null;
+  getDefaultResourceStore().invalidate([{ tag: 'templates' }]);
 }
 
 export function getTemplateLabel(config: TemplatesConfigResponse, templateId: string | null): string {

@@ -88,5 +88,8 @@
     "src/__tests__/show.test.ts",
     "src/__tests__/ticket-templates-builtins.test.ts",
     "src/__tests__/switch-session-stage.test.ts",
+    "src/__tests__/ticket-totals.test.ts",
+    "src/__tests__/dashboard-api-usage.test.ts",
+    "src/__tests__/engagement-cost.test.ts",
   ]
 }

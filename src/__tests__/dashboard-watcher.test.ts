@@ -94,3 +94,79 @@ describe('watcher ticket hooks', () => {
   });
 });
 
+
+// ── SV-12: config / view-prefs / agents / templates notifications ───────────
+
+describe('watcher config, agents and templates notifications', () => {
+  it('emits scoped config-updated, agents-updated and templates-updated frames', async () => {
+    const { mkdtemp, mkdir, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-config-'));
+    const projectsDir = join(root, 'projects');
+    const agents = join(root, 'agents');
+    const templates = join(root, 'templates');
+    await mkdir(projectsDir, { recursive: true });
+    await mkdir(agents, { recursive: true });
+    await mkdir(join(templates, 'custom'), { recursive: true });
+
+    const messages: Array<{ type: string; payload?: unknown }> = [];
+    const watcher = createWatcher({
+      projectsDir,
+      configPath: join(root, 'config.md'),
+      viewPrefsPath: join(root, 'view-prefs.json'),
+      agentsDir: agents,
+      templatesDir: templates,
+      onMessage: (m) => messages.push({ type: m.type, payload: m.payload }),
+      debounceMs: 50,
+    });
+
+    await new Promise((r) => setTimeout(r, 300));
+    await writeFile(join(root, 'config.md'), '---\nversion: "2.0"\n---\n');
+    await writeFile(join(root, 'view-prefs.json'), '{}\n');
+    // Unrelated root file: must not produce a config frame.
+    await writeFile(join(root, 'notes.txt'), 'x');
+    await writeFile(join(agents, 'reviewer.md'), '---\nid: reviewer\n---\n');
+    await writeFile(join(templates, 'custom', 'template.md'), '---\nid: custom\n---\n');
+    await new Promise((r) => setTimeout(r, 1200));
+    await watcher.close();
+
+    // Debouncing may still split one file's add/change pair into two frames
+    // under heavy fs-event latency, so assert the scoped kinds, not counts.
+    const configKinds = [
+      ...new Set(
+        messages
+          .filter((m) => m.type === 'config-updated')
+          .map((m) => (m.payload as { kind: string }).kind),
+      ),
+    ].sort();
+    expect(configKinds).toEqual(['config', 'view-prefs']);
+    expect(messages.some((m) => m.type === 'agents-updated')).toBe(true);
+    expect(messages.some((m) => m.type === 'templates-updated')).toBe(true);
+    expect(messages.some((m) => m.type === 'ticket-updated' || m.type === 'project-updated')).toBe(false);
+  });
+
+  it('tolerates watched roots that do not exist yet', async () => {
+    const { mkdtemp, mkdir } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const root = await mkdtemp(join(tmpdir(), 'syntaur-watch-missing-'));
+    await mkdir(join(root, 'projects'), { recursive: true });
+    const watcher = createWatcher({
+      projectsDir: join(root, 'projects'),
+      agentsDir: join(root, 'agents'),
+      templatesDir: join(root, 'templates'),
+      onMessage: () => {},
+      debounceMs: 50,
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    await watcher.close();
+  });
+
+  it('builds config-updated frames that carry only the kind', async () => {
+    const { configUpdatedMessage } = await import('../dashboard/watcher.js');
+    const message = configUpdatedMessage('view-prefs');
+    expect(message.type).toBe('config-updated');
+    expect(message.payload).toEqual({ kind: 'view-prefs' });
+  });
+});

@@ -49,6 +49,18 @@ export interface WatcherOptions {
    * `agent-sessions-updated`. chokidar 4 removed glob support so we must filter by
    * basename in the change handler. */
   dbPath?: string;
+  /** Absolute path to `<root>/config.md`. A change broadcasts
+   * `config-updated` with `payload.kind: 'config'` (theme/search/hotkeys/…
+   * sections all live in this one file). */
+  configPath?: string;
+  /** Absolute path to `<root>/view-prefs.json` → `config-updated`
+   * `payload.kind: 'view-prefs'`. */
+  viewPrefsPath?: string;
+  /** `<root>/agents` — external edits broadcast `agents-updated` (API writes
+   * already emit `chat-agents` from the broker). */
+  agentsDir?: string;
+  /** `<root>/templates` — home template packages → `templates-updated`. */
+  templatesDir?: string;
   onMessage: (message: WsMessage) => void;
   debounceMs?: number;
 }
@@ -58,6 +70,10 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     projectsDir,
     playbooksDir,
     dbPath,
+    configPath,
+    viewPrefsPath,
+    agentsDir,
+    templatesDir,
     onMessage,
     onTicketChanged,
     debounceMs = 300,
@@ -203,6 +219,79 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
     sessionsDbWatcher.on('unlink', handleDbChange);
   }
 
+  // --- Config / view-prefs / agents / templates watchers ---
+  // None of these had a realtime signal before, so the dashboard's cached
+  // config/template/agent reads only refreshed on reload. Each is debounced
+  // under its own key; the client coalesces further before refetching.
+  function debounced(key: string, build: () => WsMessage): void {
+    const existing = pendingEvents.get(key);
+    if (existing) clearTimeout(existing);
+    pendingEvents.set(
+      key,
+      setTimeout(() => {
+        pendingEvents.delete(key);
+        onMessage(build());
+      }, debounceMs),
+    );
+  }
+
+  const extraWatchers: Array<ReturnType<typeof watch>> = [];
+
+  // config.md and view-prefs.json are single files in the root. Watch their
+  // parent directories (depth 0) and filter by basename: editors and
+  // writeFileAtomic replace the file by rename, which a direct file watch can
+  // lose track of.
+  const rootFiles = new Map<string, Map<string, ConfigUpdateKind>>();
+  for (const [path, kind] of [
+    [configPath, 'config'],
+    [viewPrefsPath, 'view-prefs'],
+  ] as Array<[string | undefined, ConfigUpdateKind]>) {
+    if (!path) continue;
+    const dir = dirname(path);
+    const byName = rootFiles.get(dir) ?? new Map<string, ConfigUpdateKind>();
+    byName.set(basename(path), kind);
+    rootFiles.set(dir, byName);
+  }
+  for (const [dir, byName] of rootFiles) {
+    const w = watch(dir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth: 0,
+      ignored: ignoreDotSegmentsBelow(dir),
+    });
+    const handle = (filePath: string): void => {
+      const kind = byName.get(basename(filePath));
+      if (!kind || dirname(filePath) !== dir) return;
+      debounced(`__config__:${kind}`, () => configUpdatedMessage(kind));
+    };
+    w.on('change', handle);
+    w.on('add', handle);
+    w.on('unlink', handle);
+    extraWatchers.push(w);
+  }
+
+  for (const [dir, type, depth] of [
+    [agentsDir, 'agents-updated', 0],
+    [templatesDir, 'templates-updated', 2],
+  ] as Array<[string | undefined, 'agents-updated' | 'templates-updated', number]>) {
+    if (!dir) continue;
+    const w = watch(dir, {
+      ignoreInitial: true,
+      persistent: true,
+      depth,
+      ignored: ignoreDotSegmentsBelow(dir),
+    });
+    const handle = (): void => {
+      debounced(`__${type}__`, () => ({ type, timestamp: new Date().toISOString() }));
+    };
+    w.on('change', handle);
+    w.on('add', handle);
+    w.on('unlink', handle);
+    w.on('addDir', handle);
+    w.on('unlinkDir', handle);
+    extraWatchers.push(w);
+  }
+
   return {
     close: async () => {
       pendingEvents.forEach((timeout) => {
@@ -212,6 +301,14 @@ export function createWatcher(options: WatcherOptions): { close: () => Promise<v
       await projectsWatcher.close();
       if (playbooksWatcher) await playbooksWatcher.close();
       if (sessionsDbWatcher) await sessionsDbWatcher.close();
+      for (const w of extraWatchers) await w.close();
     },
   };
+}
+
+export type ConfigUpdateKind = 'config' | 'view-prefs';
+
+/** The `config-updated` frame: which config family changed, never its content. */
+export function configUpdatedMessage(kind: ConfigUpdateKind): WsMessage {
+  return { type: 'config-updated', timestamp: new Date().toISOString(), payload: { kind } };
 }

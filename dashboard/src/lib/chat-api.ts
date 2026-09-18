@@ -26,6 +26,10 @@ import type {
   ItemPatch,
   Participants,
 } from './chat-types';
+import { requestJson, uploadBinary, type JsonRequestInit } from '../data/client';
+import { mutate } from '../data/mutate';
+import { agentWriteTargets, resources } from '../data/resources';
+import { getDefaultResourceStore } from '../data/cache';
 
 /** The author sentinels the server stamps on ticket-scope rows. */
 export const HUMAN_AGENT_ID = 'human';
@@ -37,22 +41,12 @@ export interface ChatItemsPage {
   oldestSeq: number | null;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: init?.body ? { 'content-type': 'application/json', ...(init.headers ?? {}) } : init?.headers,
-  });
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // non-JSON body; keep the status line
-    }
-    throw new Error(message);
-  }
-  return (await res.json()) as T;
+// Chat bootstrap/paging reads and chat writes are imperative: their responses
+// merge into the ordered chat state machine (`useTicketChat`), so they are not
+// cached resources. They still go through the one client transport; errors are
+// `ApiError`s carrying the server's `error` text as their message.
+function request<T>(path: string, init?: JsonRequestInit): Promise<T> {
+  return requestJson<T>(path, init);
 }
 
 export function fetchChatItems(
@@ -78,8 +72,9 @@ export function fetchChatSession(
   );
 }
 
+/** The shared agents resource, read through the cache (same entry as `useChatAgents`). */
 export function fetchChatAgents(): Promise<{ agents: ChatAgentSummary[]; errors: string[] }> {
-  return request<{ agents: ChatAgentSummary[]; errors: string[] }>('/api/chat/agents');
+  return getDefaultResourceStore().read(resources.agents());
 }
 
 export function fetchChatAgent(id: string): Promise<{ definition: AgentDefinition }> {
@@ -90,9 +85,11 @@ export function createChatAgent(
   id: string,
   input: AgentDefinitionInput,
 ): Promise<{ agent: ChatAgentSummary; definition: AgentDefinition }> {
-  return request<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+  return mutate<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+    'POST',
     `/api/chat/agents/${encodeURIComponent(id)}`,
-    { method: 'POST', body: JSON.stringify(input) },
+    input,
+    { invalidates: agentWriteTargets },
   );
 }
 
@@ -100,18 +97,22 @@ export function updateChatAgent(
   id: string,
   input: AgentDefinitionInput,
 ): Promise<{ agent: ChatAgentSummary; definition: AgentDefinition }> {
-  return request<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+  return mutate<{ agent: ChatAgentSummary; definition: AgentDefinition }>(
+    'PUT',
     `/api/chat/agents/${encodeURIComponent(id)}`,
-    { method: 'PUT', body: JSON.stringify(input) },
+    input,
+    { invalidates: agentWriteTargets },
   );
 }
 
 export function deleteChatAgent(
   id: string,
 ): Promise<{ deleted: string; restoredBuiltin: boolean; agents: ChatAgentSummary[] }> {
-  return request<{ deleted: string; restoredBuiltin: boolean; agents: ChatAgentSummary[] }>(
+  return mutate<{ deleted: string; restoredBuiltin: boolean; agents: ChatAgentSummary[] }>(
+    'DELETE',
     `/api/chat/agents/${encodeURIComponent(id)}`,
-    { method: 'DELETE' },
+    undefined,
+    { invalidates: agentWriteTargets },
   );
 }
 
@@ -121,14 +122,17 @@ export function testChatAgent(id: string): Promise<AgentTestResult> {
   });
 }
 
+/** The shared harnesses resource, read through the cache (same entry as `useChatAgents`). */
 export function fetchChatHarnesses(): Promise<{ harnesses: ChatHarnessSummary[] }> {
-  return request<{ harnesses: ChatHarnessSummary[] }>('/api/chat/harnesses');
+  return getDefaultResourceStore().read(resources.harnesses());
 }
 
 export function refreshChatHarness(id: string): Promise<{ harness: ChatHarnessSummary }> {
-  return request<{ harness: ChatHarnessSummary }>(
+  return mutate<{ harness: ChatHarnessSummary }>(
+    'POST',
     `/api/chat/harnesses/${encodeURIComponent(id)}/refresh`,
-    { method: 'POST' },
+    undefined,
+    { invalidates: [{ tag: 'harnesses' }] },
   );
 }
 
@@ -189,26 +193,17 @@ export async function uploadChatAttachment(
   name: string,
   mimeType: string,
 ): Promise<UploadedChatAttachment> {
-  const res = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/chat/attachments`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/octet-stream',
-      'x-attachment-filename': encodeURIComponent(name),
-      'x-attachment-mime': mimeType,
+  return uploadBinary<UploadedChatAttachment>(
+    `/api/tickets/${encodeURIComponent(ticketId)}/chat/attachments`,
+    blob,
+    {
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'x-attachment-filename': encodeURIComponent(name),
+        'x-attachment-mime': mimeType,
+      },
     },
-    body: blob,
-  });
-  if (!res.ok) {
-    let message = `${res.status} ${res.statusText}`;
-    try {
-      const body = (await res.json()) as { error?: string };
-      if (body.error) message = body.error;
-    } catch {
-      // keep status line
-    }
-    throw new Error(message);
-  }
-  return (await res.json()) as UploadedChatAttachment;
+  );
 }
 
 export function withdrawChatMessage(ticketId: string, messageId: string): Promise<{ withdrawn: boolean }> {

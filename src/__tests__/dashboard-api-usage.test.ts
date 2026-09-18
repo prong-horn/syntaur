@@ -54,17 +54,6 @@ async function writeProjectTicket(
   );
 }
 
-/** Write a minimal standalone ticket.md (folder name = id). */
-async function writeStandalone(id: string, archived = false): Promise<void> {
-  const dir = resolve(ticketsPath, id);
-  await mkdir(dir, { recursive: true });
-  await writeFile(
-    resolve(dir, 'ticket.md'),
-    `---\nid: ${id}\nslug: ${id}\ntitle: ${id}\nstatus: pending\npriority: medium\ncreated: "2026-05-01T00:00:00Z"\nupdated: "2026-05-01T00:00:00Z"\narchived: ${archived}\ntags: []\n---\n\n# ${id}\n`,
-    'utf-8',
-  );
-}
-
 beforeEach(async () => {
   sandbox = await mkdtemp(join(tmpdir(), 'syntaur-api-usage-'));
   projectsDir = resolve(sandbox, 'projects');
@@ -197,9 +186,13 @@ describe('GET /api/usage', () => {
 
 describe('GET /api/usage/projects/:projectSlug', () => {
   it('restricts to a single project and groups by ticket', async () => {
-    seed('p1', 'a1', 100, 0.5);
-    seed('p1', 'a2', 200, 1.0);
-    seed('p2', 'a1', 300, 2.0);
+    // Ticket ids are globally unique; the project scope is its CURRENT tickets.
+    await writeProjectTicket('p1', 'a1', 'PA-1');
+    await writeProjectTicket('p1', 'a2', 'PA-2');
+    await writeProjectTicket('p2', 'b1', 'PB-1');
+    seed('p1', 'a1', 100, 0.5, undefined, undefined, 'PA-1');
+    seed('p1', 'a2', 200, 1.0, undefined, undefined, 'PA-2');
+    seed('p2', 'b1', 300, 2.0, undefined, undefined, 'PB-1');
     runRollup();
 
     const res = await fetch(`${baseUrl}/api/usage/projects/p1`);
@@ -232,9 +225,10 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     expect(cost[idB]).toBeCloseTo(2.5, 6);
   });
 
-  it('surfaces zeroed confidence counts for a project-rollup ticket with no closed window', async () => {
+  it('falls back to usage_daily cost (costSource usage) with zeroed counts for a rollup ticket with no closed window', async () => {
     // a1 has usage_daily but NO engagement window — it must still carry the
-    // window-confidence count fields (all 0), not omit them.
+    // window-confidence count fields (all 0), and its attributed cost is NOT
+    // silently zeroed: it falls back to the windowed daily cost, labelled.
     const ticketId = ticketIdForSlug('a1');
     await writeProjectTicket('p1', 'a1', ticketId);
     seed('p1', 'a1', 100, 0.5, undefined, undefined, ticketId);
@@ -244,7 +238,8 @@ describe('GET /api/usage/projects/:projectSlug', () => {
     const body = await res.json();
     const a1 = body.summary.find((s: { ticketSlug: string }) => s.ticketSlug === ticketId);
     expect(a1).toBeDefined();
-    expect(a1.totalCost).toBe(0); // snapshot-derived: no closed window yet
+    expect(a1.totalCost).toBe(0.5);
+    expect(a1.costSource).toBe('usage');
     expect(a1.pricedWindowCount).toBe(0);
     expect(a1.uncomputableWindowCount).toBe(0);
     expect(a1.negativeDeltaCount).toBe(0);
@@ -433,5 +428,202 @@ describe('GET /api/usage/facets', () => {
     const body = await res.json();
     expect(body.models).toEqual(['claude-opus-4-7', 'claude-sonnet-4-6']);
     expect(body.tools).toEqual(['claude']);
+  });
+});
+
+/** A CLOSED window with no snapshots (uncomputable — contributes 0, counted). */
+function seedUncomputableWindow(ticketId: string, sessionId: string): void {
+  const startedAt = '2026-05-21T09:00:00.000Z';
+  const row = openEngagement({ sessionId, ticketId, stage: 'implement', startedAt });
+  closeEngagementById({
+    id: row.id,
+    startedAt,
+    closeReason: 'switch',
+    endedAt: '2026-05-21T10:00:00.000Z',
+  });
+}
+
+describe('SV-12 ticket usage — ticket-id attribution and lifetime alignment', () => {
+  it('includes rows whose attribution left project_slug empty (no undercount)', async () => {
+    const ticketId = 'EMP-1';
+    await writeProjectTicket('p1', 'emp', ticketId);
+    seed('p1', 'emp', 100, 0.5, '2026-05-20T12:00:00.000Z', undefined, ticketId);
+    seed('', 'emp', 40, 0.25, '2026-05-21T12:00:00.000Z', undefined, ticketId);
+    seed('p1', 'other', 999, 9, undefined, undefined, 'OTH-9');
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.daily.length).toBe(2);
+    expect(body.events.length).toBe(2);
+    expect(body.summary.totalTokens).toBe(140);
+    expect(body.summary.totalCost).toBeCloseTo(0.75, 9);
+    expect(body.summary.costSource).toBe('usage');
+    // Lifetime block = the card/header helper, identical when unfiltered.
+    expect(body.summary.lifetime).toEqual({
+      costUsd: 0.75,
+      sessionCount: 0,
+      costSource: 'usage',
+      partial: false,
+    });
+  });
+
+  it('a ?since window narrows totalCost but NOT the lifetime block', async () => {
+    const ticketId = 'WIN-1';
+    await writeProjectTicket('p1', 'win', ticketId);
+    seed('p1', 'win', 100, 0.5, '2026-05-19T12:00:00.000Z', undefined, ticketId);
+    seed('', 'win', 40, 0.25, '2026-05-21T12:00:00.000Z', undefined, ticketId);
+    runRollup();
+
+    const res = await fetch(`${baseUrl}/api/tickets/${ticketId}/usage?since=2026-05-20`);
+    const body = await res.json();
+    expect(body.daily.length).toBe(1);
+    expect(body.summary.totalCost).toBeCloseTo(0.25, 9);
+    expect(body.summary.lifetime.costUsd).toBeCloseTo(0.75, 9);
+  });
+
+  it('engagement-sourced summary: window cost, never added to the event sum; partial from uncomputable window', async () => {
+    const ticketId = 'ENG-7';
+    await writeProjectTicket('p1', 'eng', ticketId);
+    seed('p1', 'eng', 100, 5, undefined, undefined, ticketId);
+    runRollup();
+    seedWindow('p1', ticketId, 1.25);
+    seedUncomputableWindow(ticketId, 'unc-session');
+
+    const body = await (await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`)).json();
+    expect(body.summary.costSource).toBe('engagement');
+    expect(body.summary.totalCost).toBeCloseTo(1.25, 9);
+    expect(body.summary.uncomputableWindowCount).toBe(1);
+    expect(body.summary.lifetime).toEqual({
+      costUsd: 1.25,
+      sessionCount: 2,
+      costSource: 'engagement',
+      partial: true,
+    });
+  });
+
+  it('no usage at all → costSource none, lifetime cost unknown (null)', async () => {
+    const ticketId = 'NIL-1';
+    await writeProjectTicket('p1', 'nil', ticketId);
+    const body = await (await fetch(`${baseUrl}/api/tickets/${ticketId}/usage`)).json();
+    expect(body.summary.totalCost).toBe(0);
+    expect(body.summary.costSource).toBe('none');
+    expect(body.summary.lifetime).toEqual({
+      costUsd: null,
+      sessionCount: 0,
+      costSource: 'none',
+      partial: false,
+    });
+  });
+});
+
+describe('SV-12 usage rollups — project scope by ticket id', () => {
+  async function seedScopeFixture(): Promise<void> {
+    await writeProjectTicket('p1', 'one', 'SCP-1');
+    await writeProjectTicket('p1', 'two', 'SCP-2');
+    await writeProjectTicket('p2', 'three', 'SCP-3');
+    // SCP-1: one slugged row + one empty-slug row (attribution left it empty).
+    seed('p1', 'one', 100, 1.0, '2026-05-20T12:00:00.000Z', undefined, 'SCP-1');
+    seed('', 'one', 50, 0.5, '2026-05-21T12:00:00.000Z', undefined, 'SCP-1');
+    // SCP-2: slugged row only.
+    seed('p1', 'two', 30, 0.3, '2026-05-21T12:00:00.000Z', undefined, 'SCP-2');
+    // Genuine project-only row (project slug, no ticket).
+    upsertEvent({
+      sessionId: 'proj-only',
+      model: 'claude-opus-4-7',
+      tool: 'claude',
+      eventTs: '2026-05-21T12:00:00.000Z',
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      totalTokens: 7,
+      totalCost: 0.07,
+      cwd: null,
+      projectSlug: 'p1',
+      ticketSlug: '',
+      rawJson: null,
+    });
+    // Another project's ticket, and a fully unattributed row: both excluded.
+    seed('p2', 'three', 1000, 10, '2026-05-21T12:00:00.000Z', undefined, 'SCP-3');
+    seed('', 'x', 2000, 20, '2026-05-21T12:00:00.000Z', undefined, '');
+    runRollup();
+  }
+
+  it('/api/usage?project= counts member-ticket rows with empty slug and project-only rows exactly once', async () => {
+    await seedScopeFixture();
+    const body = await (await fetch(`${baseUrl}/api/usage?project=p1`)).json();
+    expect(body.costBasis).toBe('usage-daily');
+    expect(body.summary).toHaveLength(1);
+    expect(body.summary[0].projectSlug).toBe('p1');
+    expect(body.summary[0].totalTokens).toBe(100 + 50 + 30 + 7);
+    expect(body.summary[0].totalCost).toBeCloseTo(1.87, 9);
+  });
+
+  it('/api/usage?project=&groupBy=ticket merges a ticket split across empty/real slugs into one row', async () => {
+    await seedScopeFixture();
+    const body = await (await fetch(`${baseUrl}/api/usage?project=p1&groupBy=ticket`)).json();
+    const byTicket = Object.fromEntries(
+      body.summary.map((r: { ticketSlug: string; totalCost: number; projectSlug: string }) => [
+        r.ticketSlug,
+        r,
+      ]),
+    );
+    expect(Object.keys(byTicket).sort()).toEqual(['', 'SCP-1', 'SCP-2']);
+    expect(byTicket['SCP-1'].totalCost).toBeCloseTo(1.5, 9);
+    expect(byTicket['SCP-1'].projectSlug).toBe('p1');
+    expect(byTicket[''].totalCost).toBeCloseTo(0.07, 9);
+  });
+
+  it('unfiltered groupBy=ticket also merges split rows; groupBy=project semantics unchanged', async () => {
+    await seedScopeFixture();
+    const tickets = await (await fetch(`${baseUrl}/api/usage?groupBy=ticket`)).json();
+    const scp1 = tickets.summary.filter((r: { ticketSlug: string }) => r.ticketSlug === 'SCP-1');
+    expect(scp1).toHaveLength(1);
+    expect(scp1[0].projectSlug).toBe('p1');
+    expect(scp1[0].totalCost).toBeCloseTo(1.5, 9);
+
+    const projects = await (await fetch(`${baseUrl}/api/usage`)).json();
+    const slugs = projects.summary.map((r: { projectSlug: string }) => r.projectSlug).sort();
+    // Without a project filter the per-project grouping stays by recorded slug.
+    expect(slugs).toEqual(['', 'p1', 'p2']);
+  });
+
+  it('project scope preserves the since/until window filter', async () => {
+    await seedScopeFixture();
+    const body = await (await fetch(`${baseUrl}/api/usage?project=p1&since=2026-05-21`)).json();
+    // The 2026-05-20 SCP-1 row falls outside the window.
+    expect(body.summary[0].totalTokens).toBe(50 + 30 + 7);
+    expect(body.daily.every((d: { day: string }) => d.day >= '2026-05-21')).toBe(true);
+  });
+
+  it('/api/usage/projects/:slug: window-first per ticket, labelled, mixed complete/incomplete windows', async () => {
+    await seedScopeFixture();
+    // SCP-1: priced window 0.9 + an uncomputable one → engagement (not + daily).
+    seedWindow('p1', 'SCP-1', 0.9);
+    seedUncomputableWindow('SCP-1', 'scp1-unc');
+    // SCP-2: only an uncomputable window → falls back to its windowed daily cost.
+    seedUncomputableWindow('SCP-2', 'scp2-unc');
+
+    const body = await (await fetch(`${baseUrl}/api/usage/projects/p1`)).json();
+    expect(body.costBasis).toBe('window-first');
+    const rows = Object.fromEntries(
+      body.summary.map((r: { ticketSlug: string }) => [r.ticketSlug, r]),
+    );
+    expect(Object.keys(rows).sort()).toEqual(['', 'SCP-1', 'SCP-2']);
+    expect(rows['SCP-1']).toMatchObject({
+      totalTokens: 150,
+      costSource: 'engagement',
+      pricedWindowCount: 1,
+      uncomputableWindowCount: 1,
+    });
+    expect(rows['SCP-1'].totalCost).toBeCloseTo(0.9, 9);
+    expect(rows['SCP-2']).toMatchObject({ costSource: 'usage', uncomputableWindowCount: 1 });
+    expect(rows['SCP-2'].totalCost).toBeCloseTo(0.3, 9);
+    expect(rows[''].costSource).toBe('usage');
+    expect(rows[''].totalCost).toBeCloseTo(0.07, 9);
+    // Daily rows: SCP-1 ×2, SCP-2, project-only — p2 and unattributed excluded.
+    expect(body.daily).toHaveLength(4);
   });
 });

@@ -1,11 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useWebSocket } from './useWebSocket';
-import {
-  fetchChatAgents,
-  fetchChatHarnesses,
-} from '../lib/chat-api';
-import type { ChatAgentSummary } from '../lib/chat-types';
-import type { ChatHarnessSummary } from '../lib/chat-types';
+import { useCallback, useMemo } from 'react';
+import { useResource } from '../data/useResource';
+import { resources } from '../data/resources';
+import type { ChatAgentSummary, ChatHarnessSummary } from '../lib/chat-types';
 
 export interface ChatAgentsData {
   agents: ChatAgentSummary[];
@@ -13,39 +9,36 @@ export interface ChatAgentsData {
   harnesses: ChatHarnessSummary[];
 }
 
+/**
+ * Agent definitions + harness availability from the shared store. Refreshed by
+ * `chat-agents` / `agents-updated` / `chat-participants` invalidations; every
+ * consumer (shell, pickers, Library) shares the two cache entries.
+ */
 export function useChatAgents() {
-  const [data, setData] = useState<ChatAgentsData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const agents = useResource(resources.agents());
+  const harnesses = useResource(resources.harnesses());
 
-  const refetch = useCallback(async () => {
-    try {
-      const [agentsRes, harnessesRes] = await Promise.all([
-        fetchChatAgents(),
-        fetchChatHarnesses(),
-      ]);
-      setData({
-        agents: agentsRes.agents,
-        errors: agentsRes.errors,
-        harnesses: harnessesRes.harnesses,
-      });
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch agents');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const refetchAgents = agents.refetch;
+  const refetchHarnesses = harnesses.refetch;
+  const refetch = useCallback(
+    () => Promise.all([refetchAgents(), refetchHarnesses()]).then(() => undefined),
+    [refetchAgents, refetchHarnesses],
+  );
 
-  useEffect(() => {
-    void refetch();
-  }, [refetch]);
+  const data = useMemo<ChatAgentsData | null>(() => {
+    if (!agents.data || !harnesses.data) return null;
+    return {
+      agents: agents.data.agents,
+      errors: agents.data.errors,
+      harnesses: harnesses.data.harnesses,
+    };
+  }, [agents.data, harnesses.data]);
 
-  useWebSocket((msg) => {
-    if (msg.type === 'chat-agents' || msg.type === 'chat-participants') {
-      void refetch();
-    }
-  });
-
-  return { data, loading, error, refetch };
+  const error = agents.error ?? harnesses.error;
+  return {
+    data,
+    loading: agents.loading || harnesses.loading,
+    error: error ? error.message : null,
+    refetch,
+  };
 }

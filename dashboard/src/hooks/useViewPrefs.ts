@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   DEFAULT_VIEW_PREFS_FILE,
   mergeForScope,
@@ -7,6 +7,10 @@ import {
   type ViewPrefsFile,
   type ViewPrefsPatch,
 } from '@shared/view-prefs-schema';
+import { getDefaultResourceStore } from '../data/cache';
+import { mutate } from '../data/mutate';
+import { resources } from '../data/resources';
+import { useResource } from '../data/useResource';
 
 export interface ViewPrefsResponse extends ViewPrefsFile {
   custom: boolean;
@@ -21,21 +25,13 @@ const DEFAULT_RESPONSE: ViewPrefsResponse = {
 // this key changes too — old caches are ignored instead of mis-parsed.
 const CACHE_KEY = `view-prefs.cache.v${DEFAULT_VIEW_PREFS_FILE.version}`;
 
-let cachedFile: ViewPrefsResponse | null = readLocalCache();
-let fetchPromise: Promise<ViewPrefsResponse> | null = null;
-const subscribers = new Set<(value: ViewPrefsResponse) => void>();
+const viewPrefsResource = () => resources.viewPrefs<unknown>();
 
-// Monotonic request sequence. Every fetch / POST / DELETE claims a fresh seq
-// before issuing; on completion the response only `notify()`s if its seq is
-// still the latest. This prevents a stale in-flight GET or an out-of-order
-// POST from overwriting a newer just-saved value.
+// Monotonic write sequence. Every POST / DELETE claims a fresh seq; its
+// response is written into the shared cache only while it is still the latest
+// write, so an out-of-order older write never overwrites a newer saved value.
+// (A store `write` also supersedes any in-flight GET for the key.)
 let latestSeq = 0;
-function claimSeq(): number {
-  return ++latestSeq;
-}
-function isLatest(seq: number): boolean {
-  return seq === latestSeq;
-}
 
 function readLocalCache(): ViewPrefsResponse | null {
   if (typeof window === 'undefined' || !window.localStorage) return null;
@@ -68,12 +64,6 @@ function clearLocalCache(): void {
   }
 }
 
-function notify(next: ViewPrefsResponse): void {
-  cachedFile = next;
-  writeLocalCache(next);
-  for (const sub of subscribers) sub(next);
-}
-
 function normalize(data: unknown): ViewPrefsResponse {
   if (!data || typeof data !== 'object') return DEFAULT_RESPONSE;
   const raw = data as Partial<ViewPrefsResponse>;
@@ -87,107 +77,67 @@ function normalize(data: unknown): ViewPrefsResponse {
   };
 }
 
-// Always hits the server (with in-flight dedupe). Cache is for first-paint
-// only; server fetch reconciles whenever a consumer mounts.
+/**
+ * Read view-prefs through the shared cache (first-paint localStorage copy is
+ * only a fallback until the server answers). Never rejects.
+ */
 export function fetchViewPrefs(): Promise<ViewPrefsResponse> {
-  if (fetchPromise) return fetchPromise;
+  return getDefaultResourceStore()
+    .read(viewPrefsResource())
+    .then(
+      (data) => {
+        const normalized = normalize(data);
+        writeLocalCache(normalized);
+        return normalized;
+      },
+      () => readLocalCache() ?? DEFAULT_RESPONSE,
+    );
+}
 
-  const seq = claimSeq();
-  fetchPromise = fetch('/api/view-prefs')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      const normalized = normalize(data);
-      // Drop the result if a newer write has been issued in the meantime;
-      // its response (or an even later one) will produce the canonical state.
-      if (isLatest(seq)) notify(normalized);
-      fetchPromise = null;
-      return cachedFile ?? normalized;
-    })
-    .catch(() => {
-      fetchPromise = null;
-      return cachedFile ?? DEFAULT_RESPONSE;
-    });
-
-  return fetchPromise;
+// Returns the full file (for Settings page rendering).
+export function useViewPrefsFile(): ViewPrefsResponse {
+  const { data } = useResource(viewPrefsResource());
+  const file = useMemo(
+    () => (data !== undefined ? normalize(data) : readLocalCache() ?? DEFAULT_RESPONSE),
+    [data],
+  );
+  useEffect(() => {
+    if (data !== undefined) writeLocalCache(file);
+  }, [data, file]);
+  return file;
 }
 
 // Returns the effective merged ViewPrefs for a scope.
 // scope === undefined → global. Density always comes from global.
 export function useViewPrefs(scope?: string | null): ViewPrefs {
-  const [file, setFile] = useState<ViewPrefsResponse>(() => cachedFile ?? DEFAULT_RESPONSE);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchViewPrefs().then((next) => {
-      if (!cancelled) setFile(next);
-    });
-    subscribers.add(setFile);
-    return () => {
-      cancelled = true;
-      subscribers.delete(setFile);
-    };
-  }, []);
-
-  return mergeForScope(file, scope ?? null);
+  const file = useViewPrefsFile();
+  return useMemo(() => mergeForScope(file, scope ?? null), [file, scope]);
 }
 
-// Returns the full file (for Settings page rendering).
-export function useViewPrefsFile(): ViewPrefsResponse {
-  const [file, setFile] = useState<ViewPrefsResponse>(() => cachedFile ?? DEFAULT_RESPONSE);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchViewPrefs().then((next) => {
-      if (!cancelled) setFile(next);
-    });
-    subscribers.add(setFile);
-    return () => {
-      cancelled = true;
-      subscribers.delete(setFile);
-    };
-  }, []);
-
-  return file;
-}
-
-async function postPatch(patch: ViewPrefsPatch): Promise<ViewPrefsResponse> {
-  const seq = claimSeq();
-  const res = await fetch('/api/view-prefs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-    throw new Error(err.error ?? 'Failed to save view-prefs');
+async function writeViewPrefs(method: 'POST' | 'DELETE', patch?: ViewPrefsPatch): Promise<ViewPrefsResponse> {
+  const seq = ++latestSeq;
+  const response = await mutate<unknown>(method, viewPrefsResource().url, patch);
+  const normalized = normalize(response);
+  if (seq === latestSeq) {
+    getDefaultResourceStore().write(viewPrefsResource(), response);
+    writeLocalCache(normalized);
   }
-  const normalized = normalize(await res.json());
-  if (isLatest(seq)) notify(normalized);
   return normalized;
 }
 
 export function saveGlobalViewPrefs(patch: Partial<ViewPrefs>): Promise<ViewPrefsResponse> {
-  return postPatch({ global: patch });
+  return writeViewPrefs('POST', { global: patch });
 }
 
 export function saveScopeViewPrefs(scope: string, patch: ProjectViewPrefs): Promise<ViewPrefsResponse> {
-  return postPatch({ projects: { [scope]: patch } });
+  return writeViewPrefs('POST', { projects: { [scope]: patch } });
 }
 
-export async function resetViewPrefs(): Promise<ViewPrefsResponse> {
-  const seq = claimSeq();
-  const res = await fetch('/api/view-prefs', { method: 'DELETE' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const normalized = normalize(await res.json());
-  if (isLatest(seq)) notify(normalized);
-  return normalized;
+export function resetViewPrefs(): Promise<ViewPrefsResponse> {
+  return writeViewPrefs('DELETE');
 }
 
 export function invalidateViewPrefsCache(): void {
-  cachedFile = null;
-  fetchPromise = null;
   clearLocalCache();
+  getDefaultResourceStore().invalidate([{ tag: 'view-prefs' }]);
 }

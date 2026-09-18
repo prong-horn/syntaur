@@ -1,8 +1,11 @@
-import type { StageHandoffReceiptSummary } from '../hooks/useProjects';
+import type { StageHandoffReceiptSummary } from '../data/types';
+import { requestResponse, type FetchLike } from '../data/client';
 
 export const STAGE_DISPATCH_POST_TIMEOUT_MS = 15_000;
 
-type FetchImpl = typeof fetch;
+// The receipt protocol needs raw status + body (2xx-unreadable ⇒ unknown), so
+// it uses the client's untouched passthrough rather than `requestJson`.
+type FetchImpl = FetchLike;
 
 const RECEIPT_STATES = new Set<StageHandoffReceiptSummary['state']>([
   'queued',
@@ -43,7 +46,7 @@ export async function readStageDispatchReceipt(
   ticketId: string,
   requestId: string,
   signal?: AbortSignal,
-  fetchImpl: FetchImpl = fetch,
+  fetchImpl: FetchImpl = requestResponse,
 ): Promise<StageHandoffReceiptSummary | null> {
   const response = await fetchImpl(
     `/api/tickets/${encodeURIComponent(ticketId)}/dispatch/${encodeURIComponent(requestId)}`,
@@ -85,7 +88,7 @@ export async function submitStageDispatchPost(args: {
     requestId,
     source,
     agentId,
-    fetchImpl = fetch,
+    fetchImpl = requestResponse,
     timeoutMs = STAGE_DISPATCH_POST_TIMEOUT_MS,
   } = args;
   const body = {

@@ -1,7 +1,8 @@
 import type {
   StageHandoffDescriptor,
   StageHandoffReceiptSummary,
-} from '../hooks/useProjects';
+} from '../data/types';
+import { requestResponse, type FetchLike } from '../data/client';
 import {
   STAGE_DISPATCH_POST_TIMEOUT_MS,
   parseStageHandoffReceipt,
@@ -373,7 +374,8 @@ export interface StageDispatchControllerOptions {
   ticketId: string;
   onTicketRefetch: () => void;
   mintUuid?: () => string;
-  fetchImpl?: typeof fetch;
+  /** Injected transport; defaults to the client's raw `requestResponse`. */
+  fetchImpl?: FetchLike;
   pollMs?: number;
   postTimeoutMs?: number;
 }
@@ -401,7 +403,7 @@ export class StageDispatchController {
   private readonly listeners = new Set<() => void>();
   private readonly onTicketRefetch: () => void;
   private readonly mintUuid: () => string;
-  private readonly fetchImpl: typeof fetch;
+  private readonly fetchImpl: FetchLike;
   private readonly pollMs: number;
   private readonly postTimeoutMs: number;
   private lifecycle: AbortController | null = null;
@@ -414,7 +416,7 @@ export class StageDispatchController {
     this.state = initialStageDispatchState(options.ticketId);
     this.onTicketRefetch = options.onTicketRefetch;
     this.mintUuid = options.mintUuid ?? (() => crypto.randomUUID());
-    this.fetchImpl = options.fetchImpl ?? ((input, init) => fetch(input, init));
+    this.fetchImpl = options.fetchImpl ?? requestResponse;
     this.pollMs = options.pollMs ?? STAGE_DISPATCH_POLL_MS;
     this.postTimeoutMs = options.postTimeoutMs ?? STAGE_DISPATCH_POST_TIMEOUT_MS;
   }

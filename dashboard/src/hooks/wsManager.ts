@@ -17,8 +17,15 @@ export interface WsMessage {
     | 'chat-participants'
     | 'chat-agents'
     | 'stage-dispatch'
+    /** `payload.kind`: 'config' (config.md) or 'view-prefs' (view-prefs.json). */
+    | 'config-updated'
+    | 'templates-updated'
+    /** External agent-definition file edits (API writes emit `chat-agents`). */
+    | 'agents-updated'
     | 'connected';
-  projectSlug?: string;
+  projectSlug?: string | null;
+  /** Ticket id from the `<ID>-<slug>` folder (mirrors the server `WsMessage`). */
+  ticketId?: string;
   ticketSlug?: string;
   timestamp: string;
   /**
@@ -55,6 +62,13 @@ let intentionalClose = false;
 let connectionStatus: ConnectionStatus = 'closed';
 const statusListeners = new Set<ConnectionStatusListener>();
 
+// Fired only on reconnecting → open: the socket came back after a genuine drop,
+// so anything broadcast while it was down was missed. The first open of a fresh
+// connection (closed/connecting → open) is NOT a reconnect — the initial REST
+// reads are already current — and the server's per-connection `connected`
+// frame is never used as the signal.
+const reconnectListeners = new Set<() => void>();
+
 function setConnectionStatus(next: ConnectionStatus): void {
   if (connectionStatus === next) return;
   connectionStatus = next;
@@ -79,6 +93,18 @@ export function subscribeConnectionStatus(
   statusListeners.add(listener);
   return () => {
     statusListeners.delete(listener);
+  };
+}
+
+/**
+ * Subscribe to "reconnected after a connection loss". Does not hold the socket
+ * open on its own (message subscribers own the lifecycle). Returns an
+ * unsubscribe fn.
+ */
+export function subscribeReconnect(listener: () => void): () => void {
+  reconnectListeners.add(listener);
+  return () => {
+    reconnectListeners.delete(listener);
   };
 }
 
@@ -134,7 +160,11 @@ export function connect(): void {
 
   socket.onopen = () => {
     if (ws !== socket) return; // a stale open from an old socket — ignore
+    const recovered = connectionStatus === 'reconnecting';
     setConnectionStatus('open');
+    if (recovered) {
+      for (const listener of [...reconnectListeners]) listener();
+    }
   };
 
   socket.onmessage = (event) => {
@@ -203,6 +233,7 @@ export function subscribe(listener: WsListener): () => void {
 export function __resetWsManagerForTests(): void {
   listeners.clear();
   statusListeners.clear();
+  reconnectListeners.clear();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;

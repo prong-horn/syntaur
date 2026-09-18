@@ -1,9 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useMemo } from 'react';
 import {
   DEFAULT_SEARCH_CONFIG,
   normalizeSearchConfig,
   type SearchConfig,
 } from '@shared/search-schema';
+import { getDefaultResourceStore } from '../data/cache';
+import { mutate } from '../data/mutate';
+import { resources } from '../data/resources';
+import { useResource } from '../data/useResource';
 
 export interface SearchConfigResponse {
   search: SearchConfig;
@@ -12,20 +16,7 @@ export interface SearchConfigResponse {
 
 const DEFAULT: SearchConfigResponse = { search: DEFAULT_SEARCH_CONFIG, custom: false };
 
-// Module-level cache + subscriber set. `saveSearchConfig`/`resetSearchConfig`
-// call notify(), which re-renders every useSearchConfig() subscriber — this is how
-// an in-app Settings save propagates live to the permanently-mounted palette
-// (HotkeyProvider/CommandPalette) without a page reload. Only EXTERNAL edits to
-// config.md require a reload (parity with useTerminalConfig).
-let cachedConfig: SearchConfigResponse | null = null;
-let fetchPromise: Promise<SearchConfigResponse> | null = null;
-let generation = 0;
-const subscribers = new Set<(value: SearchConfigResponse) => void>();
-
-function notify(next: SearchConfigResponse): void {
-  cachedConfig = next;
-  for (const sub of subscribers) sub(next);
-}
+const searchConfigResource = () => resources.config<unknown>('search');
 
 function normalize(data: unknown): SearchConfigResponse {
   if (!data || typeof data !== 'object') return DEFAULT;
@@ -33,87 +24,36 @@ function normalize(data: unknown): SearchConfigResponse {
   return { search: normalizeSearchConfig(raw.search), custom: raw.custom === true };
 }
 
+/** One-shot read through the shared cache; never rejects (defaults on failure). */
 export function fetchSearchConfig(): Promise<SearchConfigResponse> {
-  if (cachedConfig) return Promise.resolve(cachedConfig);
-  if (fetchPromise) return fetchPromise;
-
-  const gen = ++generation;
-  fetchPromise = fetch('/api/config/search')
-    .then((res) => {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    })
-    .then((data) => {
-      fetchPromise = null;
-      const normalized = normalize(data);
-      if (gen !== generation) {
-        return cachedConfig ?? normalized;
-      }
-      cachedConfig = normalized;
-      return normalized;
-    })
-    .catch(() => {
-      fetchPromise = null;
-      return DEFAULT;
-    });
-
-  return fetchPromise;
+  return getDefaultResourceStore()
+    .read(searchConfigResource())
+    .then(normalize, () => DEFAULT);
 }
 
+/**
+ * Search config from the shared store. A Settings save writes the server's
+ * response into the same cache entry, so every mounted consumer (the palette
+ * included) re-renders without a reload; external config.md edits arrive via
+ * the `config-updated` websocket invalidation.
+ */
 export function useSearchConfig(): SearchConfigResponse {
-  const [config, setConfig] = useState<SearchConfigResponse>(
-    () => cachedConfig ?? DEFAULT,
-  );
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchSearchConfig().then((next) => {
-      if (!cancelled) setConfig(next);
-    });
-    subscribers.add(setConfig);
-    return () => {
-      cancelled = true;
-      subscribers.delete(setConfig);
-    };
-  }, []);
-
-  return config;
+  const { data } = useResource(searchConfigResource());
+  return useMemo(() => normalize(data), [data]);
 }
 
 export function invalidateSearchConfigCache(): void {
-  cachedConfig = null;
-  fetchPromise = null;
-  ++generation;
+  getDefaultResourceStore().invalidate([{ tag: 'config', configKind: 'search' }]);
 }
 
-export async function saveSearchConfig(
-  search: SearchConfig,
-): Promise<SearchConfigResponse> {
-  ++generation;
-  const res = await fetch('/api/config/search', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(search),
-  });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as
-      | { error?: string; errors?: string[] }
-      | null;
-    throw new Error(body?.errors?.join('; ') ?? body?.error ?? `HTTP ${res.status}`);
-  }
-  const normalized = normalize(await res.json());
-  notify(normalized);
-  return normalized;
+export async function saveSearchConfig(search: SearchConfig): Promise<SearchConfigResponse> {
+  const response = await mutate<unknown>('POST', searchConfigResource().url, search);
+  getDefaultResourceStore().write(searchConfigResource(), response);
+  return normalize(response);
 }
 
 export async function resetSearchConfig(): Promise<SearchConfigResponse> {
-  ++generation;
-  const res = await fetch('/api/config/search', { method: 'DELETE' });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `HTTP ${res.status}`);
-  }
-  const normalized = normalize(await res.json());
-  notify(normalized);
-  return normalized;
+  const response = await mutate<unknown>('DELETE', searchConfigResource().url);
+  getDefaultResourceStore().write(searchConfigResource(), response);
+  return normalize(response);
 }

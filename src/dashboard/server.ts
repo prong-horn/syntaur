@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 import { connect as netConnect } from 'node:net';
 import { resolve } from 'node:path';
 import { writeFile, unlink } from 'node:fs/promises';
-import { syntaurRoot } from '../utils/paths.js';
+import { syntaurRoot, viewPrefsFile } from '../utils/paths.js';
 import { WebSocketServer, WebSocket } from 'ws';
 import {
   listProjects,
@@ -27,7 +27,8 @@ import {
   deleteHotkeyBindingsConfig,
   readConfig,
 } from '../utils/config.js';
-import { listTemplates } from '../ticket-templates/registry.js';
+import { listTemplates, templatesDir } from '../ticket-templates/registry.js';
+import { agentsDir } from '../chat/agents.js';
 import {
   BINDABLE_ACTION_KINDS,
   canonicalizeCombo,
@@ -753,6 +754,10 @@ export function createDashboardServer(options: DashboardServerOptions) {
         projectsDir,
         playbooksDir,
         dbPath: resolve(syntaurRoot(), 'syntaur.db'),
+        configPath: resolve(syntaurRoot(), 'config.md'),
+        viewPrefsPath: viewPrefsFile(),
+        agentsDir: agentsDir(),
+        templatesDir: templatesDir(syntaurRoot()),
         onMessage: broadcast,
       });
 

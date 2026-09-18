@@ -162,6 +162,18 @@ export interface WorkspaceMembers {
   standaloneTicketIds: string[];
 }
 
+/**
+ * A project expanded to the rows it owns for usage rollups: rows attributed to
+ * one of the project's CURRENT ticket ids (regardless of `project_slug`, which
+ * attribution can leave empty) plus genuine project-only rows
+ * (`project_slug = projectSlug AND ticket_id = ''`). One OR predicate, so a row
+ * carrying both the slug and a member ticket id is counted once.
+ */
+export interface ProjectScope {
+  projectSlug: string;
+  ticketIds: readonly string[];
+}
+
 export interface ListEventsFilter {
   since?: string;
   until?: string;
@@ -170,6 +182,7 @@ export interface ListEventsFilter {
   tool?: string;
   model?: string;
   workspaceMembers?: WorkspaceMembers;
+  projectScope?: ProjectScope;
 }
 
 export interface ListDailyFilter {
@@ -180,6 +193,19 @@ export interface ListDailyFilter {
   tool?: string;
   model?: string;
   workspaceMembers?: WorkspaceMembers;
+  projectScope?: ProjectScope;
+}
+
+/**
+ * Append the project-scope disjunction. The id set travels as ONE JSON
+ * parameter (`json_each`), so arbitrarily large projects never approach the
+ * SQLite bound-parameter limit.
+ */
+function pushProjectScopeClause(scope: ProjectScope, where: string[], params: unknown[]): void {
+  where.push(
+    `(ticket_id IN (SELECT value FROM json_each(?)) OR (project_slug = ? AND ticket_id = ''))`,
+  );
+  params.push(JSON.stringify(scope.ticketIds.filter((id) => id !== '')), scope.projectSlug);
 }
 
 /**
@@ -317,6 +343,11 @@ export function initUsageDb(dbPath?: string): Database.Database {
   runMigrations.exclusive();
 
   return db;
+}
+
+/** True once initUsageDb() has run (and the handle wasn't closed/reset). */
+export function isUsageDbInitialized(): boolean {
+  return db !== null;
 }
 
 export function getUsageDb(): Database.Database {
@@ -484,6 +515,9 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
   if (filter.workspaceMembers) {
     pushWorkspaceClause(filter.workspaceMembers, where, params);
   }
+  if (filter.projectScope) {
+    pushProjectScopeClause(filter.projectScope, where, params);
+  }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   return database
     .prepare(
@@ -495,6 +529,53 @@ export function listEvents(filter: ListEventsFilter = {}): UsageEventRow[] {
         ORDER BY event_ts DESC`,
     )
     .all(...params) as UsageEventRow[];
+}
+
+// --- Per-ticket totals ----------------------------------------------------
+
+/** Max ticket ids bound per statement — below SQLite's legacy 999 limit. */
+export const TICKET_ID_CHUNK_SIZE = 900;
+
+/** Split ids into chunks of at most {@link TICKET_ID_CHUNK_SIZE}. */
+export function chunkTicketIds(ids: readonly string[]): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += TICKET_ID_CHUNK_SIZE) {
+    out.push(ids.slice(i, i + TICKET_ID_CHUNK_SIZE));
+  }
+  return out;
+}
+
+export interface TicketUsageEventTotal {
+  /** SUM(total_cost) over every `usage_events` row attributed to the id. */
+  cost: number;
+  /** Row count (one per `(session_id, model)`); ≥1 means usage was observed. */
+  rowCount: number;
+}
+
+/**
+ * Lifetime `usage_events` cost per ticket id, filtered by `ticket_id` ONLY
+ * (ids are globally unique; attribution can leave `project_slug` empty).
+ * One GROUP BY statement per {@link TICKET_ID_CHUNK_SIZE} ids. Ids with no
+ * attributed rows are absent from the map. Never reads `usage_daily` (derived).
+ */
+export function usageEventTotalsByTicket(
+  ticketIds: readonly string[],
+): Map<string, TicketUsageEventTotal> {
+  const database = getUsageDb();
+  const out = new Map<string, TicketUsageEventTotal>();
+  const ids = [...new Set(ticketIds.filter((id) => id !== ''))];
+  for (const chunk of chunkTicketIds(ids)) {
+    const rows = database
+      .prepare(
+        `SELECT ticket_id, SUM(total_cost) AS cost, COUNT(*) AS row_count
+           FROM usage_events
+          WHERE ticket_id IN (${chunk.map(() => '?').join(', ')})
+          GROUP BY ticket_id`,
+      )
+      .all(...chunk) as Array<{ ticket_id: string; cost: number; row_count: number }>;
+    for (const r of rows) out.set(r.ticket_id, { cost: r.cost, rowCount: r.row_count });
+  }
+  return out;
 }
 
 // --- Per-session usage ----------------------------------------------------
@@ -678,6 +759,9 @@ export function listDaily(filter: ListDailyFilter = {}): UsageDailyRow[] {
   }
   if (filter.workspaceMembers) {
     pushWorkspaceClause(filter.workspaceMembers, where, params);
+  }
+  if (filter.projectScope) {
+    pushProjectScopeClause(filter.projectScope, where, params);
   }
   const whereSql = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
   return database

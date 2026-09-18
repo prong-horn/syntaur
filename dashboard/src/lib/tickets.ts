@@ -1,4 +1,8 @@
-import type { TicketDetail, TicketTransitionAction } from '../hooks/useProjects';
+import type { TicketDetail, TicketTransitionAction } from '../data/types';
+import { ApiError, isApiError } from '../data/client';
+import { mutate } from '../data/mutate';
+import { getDefaultResourceStore } from '../data/cache';
+import { apiUrl, sessionWriteTargets, ticketWriteTargets } from '../data/resources';
 import { recreateRequest, type RecreateIdentity } from './recreate';
 
 export interface DispatchVerbResult {
@@ -39,6 +43,13 @@ export function dispatchVerbMessages(result: VerbResult): string[] {
   return messages;
 }
 
+/**
+ * Run a lifecycle verb. A 200 is a successful move even when its stage
+ * dispatch failed or is unknown — `dispatch`/`warnings` carry that outcome and
+ * the ticket/board/project/inbox reads are invalidated either way. A refusal
+ * rethrows the {@link ApiError} (body, `next` and warnings intact) with the
+ * server's `next` hint appended to the message.
+ */
 export async function runTicketVerb(
   id: string,
   verb: string,
@@ -49,20 +60,25 @@ export async function runTicketVerb(
   if (options.agent) body.agent = options.agent;
   if (options.by) body.by = options.by;
 
-  const response = await fetch(`/api/tickets/${id}/verbs/${verb}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const next = (payload as { next?: string } | null)?.next;
-    const base = (payload as { error?: string } | null)?.error || `HTTP ${response.status}`;
-    throw new Error(next ? `${base} — Next: ${next}` : base);
+  let result: VerbResult;
+  try {
+    result = await mutate<VerbResult>('POST', apiUrl(['tickets', id, 'verbs', verb]), body, {
+      invalidates: ticketWriteTargets(id),
+    });
+  } catch (err) {
+    if (isApiError(err) && err.next) {
+      throw new ApiError({
+        message: `${err.message} — Next: ${err.next}`,
+        status: err.status,
+        kind: err.kind,
+        body: err.body,
+        url: err.url,
+        cause: err,
+      });
+    }
+    throw err;
   }
 
-  const result = payload as VerbResult;
   return {
     ticket: result.ticket,
     next: result.next ?? null,
@@ -82,12 +98,7 @@ export const runTicketTransition = (
 export const runTicketTransitionById = runTicketTransition;
 
 export async function deleteTicket(id: string): Promise<void> {
-  const response = await fetch(`/api/tickets/${id}`, { method: 'DELETE' });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.error || `HTTP ${response.status}`);
-  }
+  await mutate('DELETE', apiUrl(['tickets', id]), undefined, { invalidates: ticketWriteTargets(id) });
 }
 
 export function verbNeedsReason(verb: string): boolean {
@@ -107,16 +118,13 @@ export async function claimTicket(args: {
   id: string;
   assignee: string | null;
 }): Promise<TicketDetail> {
-  const response = await fetch(`/api/tickets/${args.id}/assignee`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ assignee: args.assignee }),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return (payload as { ticket: TicketDetail }).ticket;
+  const payload = await mutate<{ ticket: TicketDetail }>(
+    'PATCH',
+    apiUrl(['tickets', args.id, 'assignee']),
+    { assignee: args.assignee },
+    { invalidates: ticketWriteTargets(args.id) },
+  );
+  return payload.ticket;
 }
 
 /** @deprecated Use {@link claimTicket} */
@@ -126,16 +134,13 @@ export async function updateTicketTitle(args: {
   id: string;
   title: string;
 }): Promise<TicketDetail> {
-  const response = await fetch(`/api/tickets/${args.id}/title`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: args.title }),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return (payload as { ticket: TicketDetail }).ticket;
+  const payload = await mutate<{ ticket: TicketDetail }>(
+    'PATCH',
+    apiUrl(['tickets', args.id, 'title']),
+    { title: args.title },
+    { invalidates: ticketWriteTargets(args.id) },
+  );
+  return payload.ticket;
 }
 
 /** @deprecated Use {@link updateTicketTitle} */
@@ -149,19 +154,12 @@ export async function postQuickLog(args: {
   body: string;
   type?: QuickLogType;
 }): Promise<void> {
-  const response = await fetch(`/api/tickets/${args.id}/log`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      body: args.body,
-      type: args.type ?? 'note',
-    }),
-  });
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((payload as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
+  await mutate(
+    'POST',
+    apiUrl(['tickets', args.id, 'log']),
+    { body: args.body, type: args.type ?? 'note' },
+    { invalidates: ticketWriteTargets(args.id) },
+  );
 }
 
 const CLAIM_AS_STORAGE_KEY = 'syntaur:dashboard:claimAs';
@@ -217,51 +215,50 @@ export class CreateWorktreeError extends Error {
   }
 }
 
-async function readError(response: Response): Promise<CreateWorktreeError> {
-  const body = await response.json().catch(() => null);
-  const error = new CreateWorktreeError(
-    (body as { error?: string } | null)?.error || `HTTP ${response.status}`,
-    (body as { stderr?: string } | null)?.stderr,
-  );
-  return error;
+/** Worktree errors keep the git `stderr` the server returns for display. */
+function toWorktreeError(err: unknown): unknown {
+  if (!isApiError(err)) return err;
+  const stderr = (err.body as { stderr?: unknown } | null)?.stderr;
+  return new CreateWorktreeError(err.message, typeof stderr === 'string' ? stderr : undefined);
+}
+
+// Repository/branch/source-ticket lookups are one-shot reads that feed a
+// dialog's local form state (fetched when the dialog opens), not shared
+// resources; they go through the store's client directly.
+function readOnce<T>(url: string): Promise<T> {
+  return getDefaultResourceStore().client.requestJson<T>(url);
 }
 
 export async function getProjectRepositoryCandidates(
   projectSlug: string,
 ): Promise<RepositoryCandidate[]> {
-  const response = await fetch(`/api/projects/${projectSlug}/repository-candidates`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return (body as { candidates: RepositoryCandidate[] }).candidates;
+  const body = await readOnce<{ candidates: RepositoryCandidate[] }>(
+    apiUrl(['projects', projectSlug, 'repository-candidates']),
+  );
+  return body.candidates;
 }
 
 export async function getTicketRepositoryCandidates(
   id: string,
 ): Promise<RepositoryCandidate[]> {
-  const response = await fetch(`/api/tickets/${id}/repository-candidates`);
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return (body as { candidates: RepositoryCandidate[] }).candidates;
+  const body = await readOnce<{ candidates: RepositoryCandidate[] }>(
+    apiUrl(['tickets', id, 'repository-candidates']),
+  );
+  return body.candidates;
 }
 
 export async function createTicketWorktree(
   id: string,
   payload: CreateWorktreePayload,
 ): Promise<TicketDetail> {
-  const response = await fetch(`/api/tickets/${id}/worktree`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-  if (!response.ok) {
-    throw await readError(response);
+  try {
+    const body = await mutate<{ ticket: TicketDetail }>('POST', apiUrl(['tickets', id, 'worktree']), payload, {
+      invalidates: ticketWriteTargets(id),
+    });
+    return body.ticket;
+  } catch (err) {
+    throw toWorktreeError(err);
   }
-  const body = await response.json();
-  return (body as { ticket: TicketDetail }).ticket;
 }
 
 export interface RecreateWorktreeResult {
@@ -275,15 +272,13 @@ export async function recreateWorktree(
   identity: RecreateIdentity,
 ): Promise<RecreateWorktreeResult> {
   const { url } = recreateRequest(identity);
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: '{}',
-  });
-  if (!response.ok) {
-    throw await readError(response);
+  try {
+    return await mutate<RecreateWorktreeResult>('POST', url, {}, {
+      invalidates: identity.kind === 'ticket' ? ticketWriteTargets(identity.id) : sessionWriteTargets,
+    });
+  } catch (err) {
+    throw toWorktreeError(err);
   }
-  return (await response.json()) as RecreateWorktreeResult;
 }
 
 export { validateBranchName } from '@shared/branch-name';
@@ -301,26 +296,14 @@ export interface SourceTicket {
   branch: string;
 }
 
-async function readJsonOrThrow<T>(response: Response): Promise<T> {
-  const body = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error((body as { error?: string } | null)?.error || `HTTP ${response.status}`);
-  }
-  return body as T;
-}
-
 export async function getRepositoryBranches(
   id: string,
   repo: string,
 ): Promise<RepositoryBranches> {
-  const response = await fetch(
-    `/api/tickets/${id}/repository-branches?repo=${encodeURIComponent(repo)}`,
-  );
-  return readJsonOrThrow<RepositoryBranches>(response);
+  return readOnce<RepositoryBranches>(apiUrl(['tickets', id, 'repository-branches'], { repo }));
 }
 
 export async function getSourceTickets(id: string): Promise<SourceTicket[]> {
-  const response = await fetch(`/api/tickets/${id}/source-tickets`);
-  const body = await readJsonOrThrow<{ sourceTickets: SourceTicket[] }>(response);
+  const body = await readOnce<{ sourceTickets: SourceTicket[] }>(apiUrl(['tickets', id, 'source-tickets']));
   return body.sourceTickets;
 }

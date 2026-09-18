@@ -61,7 +61,38 @@ export interface TicketSummary {
   completedAt: string | null;
   /** Loader-derived from events: ms since latest `moved` or `created`. */
   statusAge: number | null;
+  /** Read-time lifetime cost + distinct session count (never persisted). */
+  metrics: TicketMetrics;
 }
+
+/**
+ * Which ledger a ticket's lifetime `costUsd` came from:
+ * - `engagement`: ≥1 priced closed engagement window (snapshot-delta cost).
+ * - `usage`: no priced window, but ≥1 `usage_events` row attributed to the
+ *   ticket id (a recorded $0 counts).
+ * - `none`: neither — cost is unknown (null), not zero.
+ */
+export type TicketCostSource = 'engagement' | 'usage' | 'none';
+
+/** Read-time ticket totals (src/usage/ticket-totals.ts). */
+export interface TicketMetrics {
+  /** Lifetime cost in USD; null when `costSource === 'none'`. */
+  costUsd: number | null;
+  /** COUNT(DISTINCT session_id) over all engagement windows; null when the session DB is unavailable. */
+  sessionCount: number | null;
+  costSource: TicketCostSource;
+  /** Engagement cost with uncomputable, open, or negative-delta windows. */
+  partial: boolean;
+}
+
+/**
+ * What a usage rollup's cost column sums:
+ * - `usage-daily`: the windowed `usage_daily` sum (Sessions usage panel) — may
+ *   differ from card/header totals, which are window-first.
+ * - `window-first`: per-ticket engagement-window cost when priced, else the
+ *   windowed `usage_daily` sum (per-row `costSource` says which).
+ */
+export type UsageCostBasis = 'usage-daily' | 'window-first';
 
 export interface TicketBoardItem extends TicketSummary {
   /** `null` for standalone tickets that live outside any project. */
@@ -262,6 +293,8 @@ export interface TicketDetail {
   engagements: EngagementInfo[];
   availableVerbs: TicketTransitionAction[];
   templateBlock: TicketTemplateBlock;
+  /** Read-time lifetime cost + distinct session count (same helper as board cards). */
+  metrics: TicketMetrics;
 }
 
 /**
@@ -544,6 +577,12 @@ export type WsMessageType =
   | 'chat-participants'
   | 'chat-agents'
   | 'stage-dispatch'
+  /** `payload.kind`: 'config' (config.md) or 'view-prefs' (view-prefs.json). */
+  | 'config-updated'
+  /** Home ticket-template packages changed on disk. */
+  | 'templates-updated'
+  /** Agent definition files changed on disk (API writes emit `chat-agents`). */
+  | 'agents-updated'
   | 'connected';
 
 export interface WsMessage {
