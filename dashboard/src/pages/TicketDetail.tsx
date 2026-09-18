@@ -27,9 +27,13 @@ import { OverflowMenu, type OverflowMenuItem } from '../components/OverflowMenu'
 import { CreateWorktreeButton } from '../components/CreateWorktreeButton';
 import {
   deleteTicket,
+  dispatchVerbMessages,
   runTicketVerb,
   transitionNeedsReason,
 } from '../lib/tickets';
+import { StartAgentPicker, resolveStartAgentOverride } from '../components/StartAgentPicker';
+import { StageHandoffControl } from '../components/StageHandoffControl';
+import { useStageDispatch } from '../hooks/useStageDispatch';
 import { pickPrimaryVerb, pickSecondaryVerbs } from '../lib/verbActions';
 import { splitTicketSummary } from '../lib/acceptanceCriteria';
 import { DependencyPanel } from '../components/DependencyPanel';
@@ -64,6 +68,7 @@ export function TicketDetail() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [reviewGlowKey, setReviewGlowKey] = useState(0);
+  const [startAgentOverride, setStartAgentOverride] = useState<string | null>(null);
   const tab = searchParams.get('tab') ?? 'summary';
   // Honor `#section` deep-links from the command palette once the pane renders.
   useHashScroll(tab);
@@ -79,6 +84,16 @@ export function TicketDetail() {
     error: eventsError,
     refetch: refetchEvents,
   } = useTicketEvents(eventsUrl);
+
+  const stageDispatch = useStageDispatch({
+    ticketId: id ?? '',
+    descriptor: ticket?.stageHandoff,
+    onTicketRefetch: refetch,
+  });
+
+  useEffect(() => {
+    setStartAgentOverride(null);
+  }, [id]);
 
   const enrichedDeps = useMemo(() => {
     if (!ticket || !project) return [];
@@ -374,7 +389,18 @@ export function TicketDetail() {
     setTransitioning(action.command);
 
     try {
-      await runTicketVerb(id!, action.command, reason);
+      const agent =
+        action.command === 'start'
+          ? resolveStartAgentOverride(
+              startAgentOverride,
+              ticket!.stageHandoff?.startDefaultAgentId ?? null,
+            )
+          : undefined;
+      const result = await runTicketVerb(id!, action.command, { reason, agent });
+      for (const message of dispatchVerbMessages(result)) {
+        showToast(message, 'error');
+      }
+      setStartAgentOverride(null);
       refetch();
       refetchEvents();
       return true;
@@ -485,6 +511,7 @@ export function TicketDetail() {
   ];
 
   const primaryIsReview = primaryTransition?.command === 'review';
+  const offersStart = transitions.some((action) => action.command === 'start' && !action.disabled);
 
   return (
     <div className="space-y-5">
@@ -499,6 +526,9 @@ export function TicketDetail() {
             title={ticket.title}
             availableVerbs={ticket.availableVerbs}
             progress={progress}
+            startAgentOverride={startAgentOverride}
+            startDefaultAgentId={ticket.stageHandoff?.startDefaultAgentId ?? null}
+            onStartSuccess={() => setStartAgentOverride(null)}
             onChange={() => refetch()}
           />
           <div className="min-w-0 flex-1">
@@ -540,6 +570,15 @@ export function TicketDetail() {
                 onCreated={() => refetch()}
               />
             )}
+            {offersStart ? (
+              <StartAgentPicker
+                defaultAgentId={ticket.stageHandoff?.startDefaultAgentId ?? null}
+                defaultAuto={ticket.stageHandoff?.startDefaultAuto ?? true}
+                value={startAgentOverride}
+                onChange={setStartAgentOverride}
+                disabled={Boolean(transitioning)}
+              />
+            ) : null}
             {primaryTransition && (
               <button
                 key={primaryIsReview ? `review-${reviewGlowKey}` : primaryTransition.command}
@@ -558,6 +597,13 @@ export function TicketDetail() {
                 </span>
               </button>
             )}
+            {ticket.stageHandoff ? (
+              <StageHandoffControl
+                ticketId={ticket.id}
+                descriptor={ticket.stageHandoff}
+                dispatch={stageDispatch}
+              />
+            ) : null}
             {secondaryTransitions.map((action) => (
               <button
                 key={action.command}

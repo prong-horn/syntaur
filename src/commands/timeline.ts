@@ -94,6 +94,14 @@ export function summarizeTimelineEvent(event: TimelineEvent): string {
     const verdict = obj.verdict != null ? ` (${String(obj.verdict)})` : '';
     return `${type}${verdict}`;
   }
+  if (event.type === 'dispatched' && d && typeof d === 'object') {
+    const obj = d as Record<string, unknown>;
+    const agent = obj.agent != null ? `@${String(obj.agent)}` : 'agent';
+    const stage = obj.stage != null ? String(obj.stage) : '';
+    const source = obj.source != null ? String(obj.source) : '';
+    const requestId = obj.requestId != null ? String(obj.requestId) : '';
+    return `${source} handoff to ${agent}${stage ? ` on ${stage}` : ''}${requestId ? ` (${requestId})` : ''}`;
+  }
   if (d && typeof d === 'object') {
     const pairs = Object.entries(d as Record<string, unknown>)
       .filter(([, v]) => v !== undefined && v !== null)

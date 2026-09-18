@@ -236,7 +236,7 @@ export type ClientFactory = (input: ClientFactoryInput) => AcpClient;
 
 export interface BrokerBroadcast {
   (message: {
-    type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents';
+    type: 'chat-item' | 'chat-session' | 'chat-participants' | 'chat-agents' | 'stage-dispatch';
     projectSlug?: string | null;
     ticketSlug?: string;
     timestamp: string;
@@ -1103,6 +1103,16 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     }
   }
 
+  function emitStageDispatch(ticket: ResolvedTicket, requestId: string): void {
+    options.broadcast({
+      type: 'stage-dispatch',
+      projectSlug: ticket.projectSlug,
+      ticketSlug: ticket.ticketSlug,
+      timestamp: iso(),
+      payload: { ticketId: ticket.id, requestId },
+    });
+  }
+
   async function persistStageDispatchState(
     ticket: ResolvedTicket,
     requestId: string,
@@ -1115,6 +1125,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       { requestId, state, ...(opts.turnId ? { turnId: opts.turnId } : {}), ...(opts.error ? { error: opts.error } : {}) },
       { agentId: SYSTEM_AGENT_ID, turnId: null },
     );
+    emitStageDispatch(ticket, requestId);
   }
 
   async function removeQueuedStageRequest(session: Session, requestId: string): Promise<void> {
@@ -3135,7 +3146,9 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   async function cancelCapturedTurn(session: Session, turn: InFlightTurn): Promise<boolean> {
     if (session.inFlight?.turnId !== turn.turnId) return false;
-    if (!session.acpSessionId || !session.client) return false;
+    const client = session.client;
+    const acpSessionId = session.acpSessionId;
+    if (!client || !acpSessionId) return false;
     turn.cancelled = true;
     await record(session, 'turn.cancel', {}, turn.turnId);
     // A cancel while a permission is pending answers it `cancelled` — the ACP
@@ -3154,7 +3167,14 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       session.pendingQuestions.delete(requestId);
       await record(session, 'question.answered', { requestId, by: 'cancel' }, turn.turnId);
     }
-    await session.client.cancel(session.acpSessionId).catch(() => {});
+    if (
+      session.inFlight?.turnId !== turn.turnId ||
+      session.client !== client ||
+      session.acpSessionId !== acpSessionId
+    ) {
+      return false;
+    }
+    await client.cancel(acpSessionId).catch(() => {});
     return true;
   }
 
@@ -4602,6 +4622,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           entryId: entry.entryId,
           source: input.source,
         });
+        emitStageDispatch(input.ticket, entry.requestId);
 
         enqueue(session, {
           text: '',

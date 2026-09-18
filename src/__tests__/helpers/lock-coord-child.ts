@@ -24,6 +24,26 @@ async function waitForFile(path: string, timeoutMs = 10_000): Promise<void> {
   throw new Error(`timed out waiting for ${path}`);
 }
 
+/** Retry acquire after EEXIST so contenders wait for the live holder to release. */
+async function acquireOwnerAfterContention(
+  ownerPath: string,
+  port: number,
+  home: string,
+  timeoutMs = 10_000,
+) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      return await acquireOwnerRecord(ownerPath, port, home);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== 'EEXIST') throw err;
+      await sleep(5);
+    }
+  }
+  throw new Error(`timed out acquiring owner record at ${ownerPath}`);
+}
+
 export async function runLockCoordChild(op: string): Promise<void> {
   const home = process.env.LOCK_COORD_HOME ?? process.env.SYNTAUR_HOME;
   const barrierDir = process.env.LOCK_BARRIER_DIR;
@@ -38,7 +58,7 @@ export async function runLockCoordChild(op: string): Promise<void> {
     const recovered = await recoverStaleOwnerRecord(ownerPath, home);
     await writeFile(join(barrierDir, `recovered-${slot}`), recovered ? '1' : '0');
     await waitForFile(join(barrierDir, 'go'));
-    const handle = await acquireOwnerRecord(ownerPath, Number(slot) + 10, home);
+    const handle = await acquireOwnerAfterContention(ownerPath, Number(slot) + 10, home);
     await writeFile(join(barrierDir, `acquired-${slot}`), handle.record.ownerToken);
     await handle.release();
     await writeFile(join(barrierDir, `done-${slot}`), '1');

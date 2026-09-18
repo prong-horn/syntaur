@@ -23,6 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   'log-added': 'Log entry added',
   'question-answered': 'Question answered',
   logged: 'Logged',
+  dispatched: 'Stage handoff',
 };
 
 function typeLabel(type: string): string {

@@ -880,6 +880,7 @@ export async function getTicketDetail(
     tags: ticket.tags,
     ...deriveStatusVirtuals(ticket),
     next: showModel.next,
+    stageHandoff: showModel.stageHandoff,
     created: ticket.created,
     updated: ticket.updated,
     body: ticket.body,

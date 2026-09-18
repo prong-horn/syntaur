@@ -29,10 +29,18 @@ Run `syntaur show` to discover the template's log-role file and current **Next**
 
 ## Step 2: Follow stage instructions
 
-Run `syntaur show` and follow **Stage** and **Next**. The review and done stage
+Run `syntaur show` and follow **Stage**, **Next**, and **Agent:**. The review and done stage
 instructions require verifying acceptance criteria, tests, and build before
 handoff; cross-template playbooks injected by the prompt hook apply on top when
 enabled.
+
+Review stages are usually manual handoff (`auto: false`): after `syntaur review`,
+use the dashboard **Hand to** control (or wait for automatic dispatch when
+`auto: true`). The reviewer agent records a verdict with
+`syntaur log <id> -t review --agent <actual-id> --verdict approve|changes --open high=<n>,medium=<n> "<body>"`
+when the template log role allows it — never fabricate approval in prose alone.
+Fix findings via chat; request another review handoff when needed. Finishing a
+stage dispatch turn does not satisfy `review-clean` or move the ticket to done.
 
 ## Step 3: Verify Acceptance Criteria
 
@@ -84,16 +92,16 @@ If this fails (e.g., dashboard not running), it is non-critical.
 
 ## Step 7: Transition Ticket State
 
-If the user requested `--done` and all criteria are met:
+If the user requested `--done` and all criteria and template gates are met:
 
 ```bash
-syntaur done <ticket-id> --project <project-slug>
+syntaur done <ticket-id> --project <project-slug> [--by <name>]
 ```
 
 Otherwise, transition to review:
 
 ```bash
-syntaur review <ticket-id> --project <project-slug>
+syntaur review <ticket-id> --project <project-slug> [--by <name>]
 ```
 
 If the command fails, report the error and the **Next** hint from `syntaur show`. Common failures: wrong stage, unmet gate.

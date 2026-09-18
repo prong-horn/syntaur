@@ -60,15 +60,19 @@ Run `syntaur show <id>` (or `syntaur show` with an open engagement) at the start
 
 | Verb | Typical effect |
 |------|----------------|
-| `syntaur plan create` | Scaffold plan file; move toward `planning` |
+| `syntaur plan create` | Scaffold plan file; move toward `planning` (`--by` for audit attribution) |
 | `syntaur approve` | `planning` → `ready` when gates pass |
-| `syntaur start` | → `in_progress` |
+| `syntaur start` | → `in_progress`; optional `--agent` one-use dispatch recipient; `--by` for audit attribution |
 | `syntaur review` | → `review` |
 | `syntaur done` | → `done` |
 | `syntaur drop` | → `dropped` |
 | `syntaur reopen` | Reopen toward an earlier stage per template |
 | `syntaur block` / `syntaur unblock` | Set or clear the `blocked` reason |
 | `syntaur park` / `syntaur unpark` | Set or clear the `parked` reason |
+
+**Actor vs dispatch:** `--by <name>` on lifecycle verbs, plan create/version, and flag verbs attributes the action in the audit log (`human` by default). On `start` only, `--agent <id>` selects a one-use stage dispatch recipient — not audit attribution. `assign --agent`, `log --agent`, and `track-session --agent` keep their existing meanings.
+
+**Stage handoff:** template stages may declare `agent` or `reviewer` with optional `auto`. Entering a stage may queue one exact-target dashboard turn (automatic when `auto: true`, or **Hand to** when manual). Ordinary chat stays available. `show` lists **Handoff:** (log) and **Agent:** (dispatch) separately. Reviewers log verdicts with `syntaur log -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n>` when the template allows.
 
 ## Key Rules
 

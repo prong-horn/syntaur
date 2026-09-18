@@ -3,7 +3,8 @@ import { StatusPillPicker } from './StatusPillPicker';
 import { TicketTransitionDialog } from './TicketTransitionDialog';
 import { Toaster, useToast } from './Toast';
 import { useStatusConfig, getStatusLabel } from '../hooks/useStatusConfig';
-import { runTicketVerb, verbNeedsReason } from '../lib/tickets';
+import { runTicketVerb, verbNeedsReason, dispatchVerbMessages } from '../lib/tickets';
+import { resolveStartAgentOverride } from './StartAgentPicker';
 import type { TicketTransitionAction, TicketDetail } from '../hooks/useProjects';
 
 interface TicketStatusPillProps {
@@ -18,6 +19,11 @@ interface TicketStatusPillProps {
   disabled?: boolean;
   className?: string;
   onSelectAction?: (action: TicketTransitionAction) => void;
+  /** One-use start dispatch override from TicketDetail (does not change chat default). */
+  startAgentOverride?: string | null;
+  startDefaultAgentId?: string | null;
+  /** Clears one-use start override after a successful Start via the pill. */
+  onStartSuccess?: () => void;
 }
 
 export function TicketStatusPill({
@@ -32,6 +38,9 @@ export function TicketStatusPill({
   disabled,
   className,
   onSelectAction,
+  startAgentOverride = null,
+  startDefaultAgentId = null,
+  onStartSuccess,
 }: TicketStatusPillProps) {
   const config = useStatusConfig();
   const { toast, showToast, dismissToast } = useToast();
@@ -88,9 +97,20 @@ export function TicketStatusPill({
   }
 
   function runVerb(action: TicketTransitionAction, reason?: string): Promise<boolean> {
-    return runMutation(action.targetStatus, () =>
-      runTicketVerb(id as string, action.command, reason),
-    );
+    return runMutation(action.targetStatus, async () => {
+      const agent =
+        action.command === 'start'
+          ? resolveStartAgentOverride(startAgentOverride, startDefaultAgentId)
+          : undefined;
+      const result = await runTicketVerb(id as string, action.command, { reason, agent });
+      for (const message of dispatchVerbMessages(result)) {
+        showToast(message, 'error');
+      }
+      if (action.command === 'start') {
+        onStartSuccess?.();
+      }
+      return result.ticket;
+    });
   }
 
   function handleSelect(action: TicketTransitionAction) {

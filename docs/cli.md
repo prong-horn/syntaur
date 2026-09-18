@@ -9,18 +9,19 @@ Status moves only by explicit verbs. Each verb evaluates template gates at call 
 ### Stage verbs
 
 ```
-syntaur plan <id> [--project <slug>] [--force]
-syntaur approve <id> [--project <slug>] [--force]
-syntaur start <id> [--project <slug>] [--agent <id>] [--force]
-syntaur review <id> [--project <slug>] [--force]
-syntaur done <id> [--project <slug>] [--force]
-syntaur drop <id> "<reason>" [--project <slug>]
-syntaur reopen <id> [--project <slug>]
+syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]
+syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]
+syntaur approve <id> [--project <slug>] [--by <name>] [--force]
+syntaur start <id> [--project <slug>] [--agent <id>] [--by <name>] [--force]
+syntaur review <id> [--project <slug>] [--by <name>] [--force]
+syntaur done <id> [--project <slug>] [--by <name>] [--force]
+syntaur drop <id> "<reason>" [--project <slug>] [--by <name>]
+syntaur reopen <id> [--project <slug>] [--by <name>]
 ```
 
-- `plan` — move to `planning` (or scaffold plan file only when the template has no `planning` stage).
+- `plan create` / `plan version` — scaffold or version the plan file; `plan version` also moves to `planning` when the template declares that stage. Use `--by` for audit attribution on the stage move.
 - `approve` — approve the plan and move to `ready` when the template declares it.
-- `start` — move to `in_progress`; runs `plan-approved`, `deps-done`, and `workspace-set` gates per template.
+- `start` — move to `in_progress`; runs `plan-approved`, `deps-done`, and `workspace-set` gates per template. On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
 - `review` — move to `review`.
 - `done` — move to `done`; runs template `gates.done`.
 - `drop` — move to `dropped`; reason required.
@@ -29,13 +30,13 @@ syntaur reopen <id> [--project <slug>]
 ### Flag verbs
 
 ```
-syntaur block <id> "<reason>" [--project <slug>]
-syntaur unblock <id> [--project <slug>]
-syntaur park <id> "<reason>" [--project <slug>]
-syntaur unpark <id> [--project <slug>]
+syntaur block <id> "<reason>" [--project <slug>] [--by <name>]
+syntaur unblock <id> [--project <slug>] [--by <name>]
+syntaur park <id> "<reason>" [--project <slug>] [--by <name>]
+syntaur unpark <id> [--project <slug>] [--by <name>]
 ```
 
-`block` and `park` set frontmatter flags (`blocked`, `parked`) without changing stage. Reason is required.
+`block` and `park` set frontmatter flags (`blocked`, `parked`) without changing stage. Reason is required. `--by` attributes the flag change in the audit log.
 
 ### Plan file verbs
 
@@ -116,7 +117,7 @@ syntaur show [ticket] [--project <slug>] [--json] [--log] [-t, --type <type>]
 - `--log` — print log entries only (falls back to chat notes when the template has no log role).
 - `-t, --type` — filter log entries by entry type (with `--log`).
 
-Chat standing context and adapter rules use this rendered text (not a hardcoded file list). Run at the start of work and after every lifecycle verb.
+Chat standing context and adapter rules use this rendered text (not a hardcoded file list). Run at the start of work and after every lifecycle verb. The text includes **Handoff:** (latest log handoff entry) and **Agent:** (stage dispatch status) on separate lines.
 
 ### Examples
 
@@ -298,8 +299,8 @@ Manage git worktrees bound to tickets.
 
 Manage plan files for a ticket.
 
-- `syntaur plan create [--ticket <id> [--project <slug>]] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`.
-- `syntaur plan version [--ticket <id> [--project <slug>]] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
+- `syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`. Moves to `planning` when the template declares that stage.
+- `syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
 
 ## `syntaur timeline <ticket>`
 
@@ -330,7 +331,7 @@ syntaur timeline <ticket> [options]
 | `plan-approved` | `file`, `digest` | Plan is approved via `approve` |
 | `plan-versioned` | `file` | New plan version created |
 | `logged` | `type` | Log-role entry appended via `syntaur log` |
-| `dispatched` | `agent`, `stage` | Agent auto-dispatched on stage entry |
+| `dispatched` | `agent`, `stage`, `requestId`, `entryId`, `source` | Stage handoff accepted by the chat broker (one turn queued) |
 | `retemplated` | `from`, `to` | Template switched via `retemplate` |
 
 ### JSON output shape
@@ -556,13 +557,13 @@ When the session has no open engagement, only the `## Playbooks` section prints 
 
 **Cross-template playbooks** are enabled playbooks whose slug is not listed in the `playbooks` field of any template manifest (home copies first, shipped built-ins for ids the home lacks). Disabled slugs in `config.md` and slugs claimed by any template are excluded. The derived manifest under `~/.syntaur/playbooks/` is for the dashboard Library only — the hook reads playbook files directly, not that index.
 
-## Working a ticket
+## Stage dispatch and offline behavior
 
-Agents are worked in the dashboard's **Chat** tab, not in a terminal Syntaur
-opens for you. Open a ticket, send a message, and the dashboard server
-speaks the Agent Client Protocol to a `claude-agent-acp` or `codex-acp` adapter
-running in the ticket's worktree. See
-[ticket-chat.md](./ticket-chat.md).
+Stage-owned handoff requires the dashboard server for this Syntaur home (`syntaur dashboard`). The CLI reads `~/.syntaur/dashboard-port` and POSTs dispatch to `127.0.0.1` — no automatic server start and no default-port fallback.
+
+When a lifecycle verb succeeds but dispatch cannot be accepted (dashboard stopped, wrong home, timeout before acceptance), the CLI still exits 0 for the stage move and prints dispatch status separately. Retry from the ticket page **Hand to** control; do not repeat the lifecycle verb. After network uncertainty, retry the **same** request id until the receipt is terminal; mint a new id only for an intentional new handoff after failure or completion.
+
+Automatic request ids are `auto~<stageEntryId>` (one automatic dispatch per stage entry). Manual handoffs use a fresh UUID per intentional attempt.
 
 ```
 syntaur open <ticket>

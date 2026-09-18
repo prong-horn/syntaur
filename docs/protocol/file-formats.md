@@ -1227,9 +1227,9 @@ All fields below live in the YAML frontmatter of `template.md`.
 | `stages[].id` | stage id | yes | — | Must be in fixed vocabulary |
 | `stages[].label` | string | no | id | Display label |
 | `stages[].instructions` | string | yes | — | Shown in `show` at this stage |
-| `stages[].agent` | string | no | — | Agent id for hand-off default |
-| `stages[].reviewer` | string | no | — | Reviewer agent id |
-| `stages[].auto` | boolean | no | `true` for agent, `false` for reviewer | Auto-dispatch on stage entry |
+| `stages[].agent` | string | no | — | Implementer agent id for stage handoff default |
+| `stages[].reviewer` | string | no | — | Reviewer agent id for stage handoff default |
+| `stages[].auto` | boolean | no | `true` for agent, `false` for reviewer | When `true`, entering the stage queues one automatic exact-target turn (requires a running dashboard on this home) |
 | `files` | array | yes | — | Template-owned files (not kernel) |
 | `files[].path` | string | yes | — | Relative path under ticket folder |
 | `files[].role` | role or omitted | no | plain | Omitted = plain (no kernel behaviour) |
@@ -1260,8 +1260,11 @@ All fields below live in the YAML frontmatter of `template.md`.
 14. `createOn` values are `ticket-creation`, a declared stage id, or `never`.
 15. Kernel paths (`ticket.md`, `chat/`) do not appear in `files[]`.
 16. `dropped` does not appear in `stages[]`.
+17. Each stage declares at most one of `agent` or `reviewer`; both on one stage is invalid.
 
-`template check` implements rules 1–16. Built-ins (`feature`, `bug`, `spike`, `quick`, `legacy`) are seeded by `syntaur init` and `migrate v2`. Do not use `legacy` for new tickets.
+`template check` implements rules 1–17. Built-ins (`feature`, `bug`, `spike`, `quick`, `legacy`) are seeded by `syntaur init` and `migrate v2`. Do not use `legacy` for new tickets.
+
+**Stage dispatch semantics:** ids name agent **definitions** (`~/.syntaur/agents/<id>.md` plus built-ins), not harness registry entries. The `harness` field (`claude` | `codex` | `cursor`) selects the ACP adapter; separate ids with the same harness can pin different models. `auto: false` means the driver uses **Hand to** on the ticket page for a one-turn handoff; `start --agent <id>` is a one-use recipient override for automatic dispatch on that start only. Receipt `completed` means the ACP turn finished, not that `review-clean` or `done` gates passed. Offline CLI lifecycle moves succeed; dispatch is retried from the dashboard without repeating the verb.
 
 ### Example (abbreviated)
 

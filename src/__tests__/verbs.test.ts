@@ -449,6 +449,73 @@ Fix it.
     expect(details.dispatchOverride).toBe(true);
   });
 
+  async function setInProgressAgent(agent: string, auto: boolean): Promise<void> {
+    const path = resolve(home, 'templates', 'feature', 'template.md');
+    const text = await readFile(path, 'utf-8');
+    const replaced = text.replace(
+      /(- id: in_progress[\s\S]*?)agent: cursor\n    auto: true/,
+      `$1agent: ${agent}\n    auto: ${auto}`,
+    );
+    expect(replaced).not.toBe(text);
+    await writeFile(path, replaced, 'utf-8');
+  }
+
+  it('start without an override on an auto:false stage records no override and never dispatches', async () => {
+    await setInProgressAgent('cursor', false);
+    await writeFeatureTicket('FE-34', 'feat34', 'ready', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('FE-34', 'start', { project: 'p', dir: projectsDir, dispatch });
+    expect(result.to).toBe('in_progress');
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(dispatch).not.toHaveBeenCalled();
+    const moved = listEventsByTicket('FE-34').find((e) => e.type === 'moved');
+    const details = JSON.parse(moved?.details ?? '{}');
+    expect(details.dispatchTarget).toBe('cursor');
+    expect(details.dispatchAuto).toBe(false);
+    expect(details.dispatchOverride).toBe(false);
+  });
+
+  it('an explicit start override on an auto:false stage is the only way to auto dispatch', async () => {
+    await setInProgressAgent('cursor', false);
+    await writeFeatureTicket('FE-35', 'feat35', 'ready', { approved: true, workspace: true });
+    const dispatch = vi.fn().mockResolvedValue({ state: 'queued', requestId: 'auto~x' });
+    await moveTicket('FE-35', 'start', {
+      project: 'p',
+      dir: projectsDir,
+      dispatchAgent: 'codex',
+      dispatch,
+    });
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0]![0]).toMatchObject({
+      source: 'automatic',
+      dispatchOverride: true,
+      dispatchTarget: expect.objectContaining({ agentId: 'codex' }),
+    });
+  });
+
+  it('a missing template default does not trap the ticket in ready', async () => {
+    await setInProgressAgent('ghost', true);
+    await writeFeatureTicket('FE-36', 'feat36', 'ready', { approved: true, workspace: true });
+    // Sending the missing default as an explicit override is refused before mutation...
+    await expect(
+      moveTicket('FE-36', 'start', { project: 'p', dir: projectsDir, dispatchAgent: 'ghost' }),
+    ).rejects.toThrow(/Unknown agent id/);
+    // ...but a plain start moves the ticket and reports the dispatch failure.
+    const dispatch = vi.fn().mockRejectedValue(new Error('agent "ghost" is unavailable'));
+    const result = await moveTicket('FE-36', 'start', { project: 'p', dir: projectsDir, dispatch });
+    expect(result.to).toBe('in_progress');
+    expect(result.dispatch).toEqual({ state: 'failed', error: 'agent "ghost" is unavailable' });
+    const fm = parseTicketFrontmatter(
+      await readFile(resolve(await ticketDir('FE-36', 'feat36'), 'ticket.md'), 'utf-8'),
+    );
+    expect(fm.status).toBe('in_progress');
+    const details = JSON.parse(
+      listEventsByTicket('FE-36').find((e) => e.type === 'moved')?.details ?? '{}',
+    );
+    expect(details.dispatchTarget).toBe('ghost');
+    expect(details.dispatchOverride).toBe(false);
+  });
+
   it('rejects unknown override ids before mutation', async () => {
     await writeFeatureTicket('FE-32', 'feat32', 'ready', { approved: true, workspace: true });
     await expect(

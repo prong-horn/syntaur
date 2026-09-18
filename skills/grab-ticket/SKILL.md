@@ -61,6 +61,14 @@ If the current stage is `backlog` or `ready` (pre-`in_progress`), also run:
 syntaur start <ticket-id> --project <project-slug>
 ```
 
+Optional one-use dispatch recipient on start (not audit attribution):
+
+```bash
+syntaur start <ticket-id> --project <project-slug> --agent <agent-id>
+```
+
+Use `--by <name>` on lifecycle verbs when you need a specific audit attribution in the event log.
+
 For `planning` stage, run `syntaur plan` first if no plan file exists, then `syntaur approve` and `start` when gates pass. Skip `start` for `in_progress`, `review`, `done`, or `dropped` — grabbing must never rewind terminal or in-flight work.
 
 > **Agent identity:** Use an identifier for your agent platform — e.g., `claude`, `cursor`, `codex`, `opencode`.

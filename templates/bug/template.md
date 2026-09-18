@@ -1,7 +1,7 @@
 ---
 id: bug
 version: 1
-builtin: bug@1
+builtin: bug@2
 description: Bug fix flow with optional plan, required review, and workspace.
 whenToUse: Defect fixes where plan is optional but review and workspace are required.
 workspace: required
@@ -15,7 +15,7 @@ stages:
     auto: true
   - id: review
     instructions: Verify fix and regression tests. Log review verdict.
-    reviewer: pi
+    reviewer: cursor
     auto: false
   - id: done
     instructions: Terminal.

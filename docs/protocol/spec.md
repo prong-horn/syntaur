@@ -201,6 +201,22 @@ Each template declares `stages[].instructions` — imperative guidance for that 
 
 Status moves only by explicit lifecycle verbs (`plan`, `approve`, `start`, `review`, `done`, `drop`, `reopen`). Gates declared on the template run at call time; `--force` skips gates and records `forced: true` on the `moved` event.
 
+Use `--by <name>` on lifecycle verbs, plan create/version, and flag verbs for **audit attribution** in the event log (`human` by default). On `start` only, `--agent <id>` names a **one-use stage dispatch recipient** override — not the audit actor. `assign --agent`, `log --agent`, and `track-session --agent` keep their separate existing meanings.
+
+#### Stage-owned dispatch
+
+Each template stage may declare at most one of `agent` or `reviewer` (an implementer target or a review target), plus optional `auto` (default `true` for `agent`, `false` for `reviewer`). Terminal stages never auto-dispatch even when a target is named; ordinary chat stays available at every stage.
+
+On every **live** stage entry (`created` or stage-changing `moved`), the lifecycle records a UUID **stage entry id** and the resolved dispatch policy. When `auto: true` (or `start --agent` authorizes a one-shot override on a manual stage), the dashboard broker may accept **one** exact-target ACP turn for that entry — distinct from ordinary chat fanout, `@mention` routing, or reply hops. A completed receipt means the agent **turn** ended normally, not that review passed, gates cleared, or the ticket is done. Agents never advance stages, approve plans, or call `done` on behalf of the driver.
+
+Manual stages, missed automatic dispatch, or failed receipts expose **Hand to** on the ticket page. Manual handoff mints a fresh request id; ambiguous network acceptance retries the original id (`auto~<entryId>` for automatic entries). Receipt states include `queued`, `running`, `completed`, `failed`, `cancelled`, `interrupted`, and `superseded`. CLI lifecycle moves succeed even when dispatch is offline; dispatch failure is reported separately and recovered from the dashboard — never by repeating the lifecycle verb.
+
+`review-clean` still reads the latest `review` log entry (`approve` with `high=0`) independently of author; the driver's stricter no-high/no-medium review policy is separate. Reviewer stages instruct the target to record findings with `syntaur log <ID> -t review --agent <actual-id> --verdict approve|changes --open high=<n>,medium=<n> "<body>"` when the template log role allows it; otherwise findings stay in chat and no gate pass is fabricated.
+
+Agent ids resolve through `~/.syntaur/agents/<id>.md` (user overrides plus built-ins `claude`, `codex`, `cursor`). The `harness` field selects the ACP adapter; separate ids sharing one harness can pin different models and sessions. Example Library definitions (documented, not shipped into every home): implementer `cursor` with model `composer-2.5`; reviewer `reviewer` with harness `cursor` and model `cursor-grok-4.6-high`.
+
+`syntaur show` renders **Handoff:** (latest log handoff entry) and **Agent:** (stage dispatch status) on separate lines.
+
 #### Gate table
 
 | Gate id | Reads | Passes when |
@@ -222,8 +238,8 @@ Gate failure shape: `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exi
 |------|-------------------|-----|-----------------|--------------|
 | `plan` | stage before `planning`, or any active if no `planning` | `planning` or file-only | — | create/scaffold plan file |
 | `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | `plan-exists` | set `plan.approved*` |
-| `start` | stage before `in_progress` | `in_progress` | `plan-approved`, `deps-done`, `workspace-set` (per template) | dispatch if `auto` |
-| `review` | stage before `review` | `review` | — | dispatch reviewer if configured |
+| `start` | stage before `in_progress` | `in_progress` | `plan-approved`, `deps-done`, `workspace-set` (per template) | stage entry; auto-dispatch when `auto: true` or `start --agent` override |
+| `review` | stage before `review` | `review` | — | stage entry; auto-dispatch reviewer when `auto: true` |
 | `done` | stage before `done` | `done` | per template `gates.done` | — |
 | `drop` | any active | `dropped` | reason required | — |
 | `reopen` | `done` or `dropped` | stage before `done` in subset | — | keeps `plan.approvedDigest` |

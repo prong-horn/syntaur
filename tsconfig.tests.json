@@ -78,11 +78,15 @@
     "src/__tests__/chat-stage-dispatch.test.ts",
     "src/__tests__/process-owner.test.ts",
     "src/__tests__/dashboard-api-stage-dispatch.test.ts",
+    "src/__tests__/stage-handoff.test.ts",
     "src/__tests__/event-emit.test.ts",
     "src/__tests__/verbs-matrix.test.ts",
     "src/__tests__/dashboard-write.test.ts",
     "src/__tests__/plan-version.test.ts",
     "src/__tests__/events-db.test.ts",
     "src/__tests__/lock-coord-child.test.ts",
+    "src/__tests__/show.test.ts",
+    "src/__tests__/ticket-templates-builtins.test.ts",
+    "src/__tests__/switch-session-stage.test.ts",
   ]
 }

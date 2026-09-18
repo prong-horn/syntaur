@@ -82,22 +82,26 @@ Flags (not stages): \`blocked\` and \`parked\` hold reason strings or \`null\`.
 
 ## Lifecycle Commands
 
-Use the \`syntaur\` CLI for stage moves and flags:
-- \`syntaur assign <id> --agent <name> --project <project>\` -- set assignee
-- \`syntaur plan <id> --project <project>\` -- move to planning (or scaffold plan)
-- \`syntaur approve <id> --project <project>\` -- approve plan, move to ready
-- \`syntaur start <id> --project <project>\` -- move to in_progress
-- \`syntaur review <id> --project <project>\` -- move to review
-- \`syntaur done <id> --project <project>\` -- move to done
-- \`syntaur drop <id> "<reason>" --project <project>\` -- move to dropped
-- \`syntaur reopen <id> --project <project>\` -- reopen from done/dropped
-- \`syntaur block <id> "<reason>" --project <project>\` -- set blocked flag
-- \`syntaur unblock <id> --project <project>\` -- clear blocked flag
-- \`syntaur park <id> "<reason>" --project <project>\` -- set parked flag
-- \`syntaur unpark <id> --project <project>\` -- clear parked flag
+Use the \`syntaur\` CLI for stage moves and flags (\`--by <name>\` attributes the action in the audit log; default \`human\`):
+- \`syntaur assign <id> --agent <name> --project <project>\` -- set assignee (not stage dispatch)
+- \`syntaur plan create [--ticket <id>] [--project <project>] [--by <name>]\` -- scaffold plan; may move to planning
+- \`syntaur approve <id> --project <project> [--by <name>]\` -- approve plan, move to ready
+- \`syntaur start <id> --project <project> [--agent <id>] [--by <name>]\` -- move to in_progress; \`--agent\` is a one-use stage dispatch recipient only
+- \`syntaur review <id> --project <project> [--by <name>]\` -- move to review
+- \`syntaur done <id> --project <project> [--by <name>]\` -- move to done
+- \`syntaur drop <id> "<reason>" --project <project> [--by <name>]\` -- move to dropped
+- \`syntaur reopen <id> --project <project> [--by <name>]\` -- reopen from done/dropped
+- \`syntaur block <id> "<reason>" --project <project> [--by <name>]\` -- set blocked flag
+- \`syntaur unblock <id> --project <project> [--by <name>]\` -- clear blocked flag
+- \`syntaur park <id> "<reason>" --project <project> [--by <name>]\` -- set parked flag
+- \`syntaur unpark <id> --project <project> [--by <name>]\` -- clear parked flag
 - \`syntaur new "Title" [-t|--template <id>] [--project <slug>]\` -- create ticket (defaults to scratch); allocates \`<PREFIX>-<n>\` id
 - \`syntaur rename <id> <new-slug>\` -- rename slug (folder becomes \`<ID>-<new-slug>\`)
-- \`syntaur log <id> -t <type> "body"\` -- append to the template log role
+- \`syntaur log <id> -t <type> "body" [--agent <id>]\` -- append to the template log role (\`--agent\` is log author, not dispatch)
+
+## Stage handoff
+
+Template stages may declare \`agent\` or \`reviewer\` (not both) with optional \`auto\`. Entering a stage may queue **one** exact-target dashboard turn — separate from ordinary chat, which stays available at every stage. \`syntaur show\` lists **Handoff:** (latest log handoff) and **Agent:** (dispatch status) on separate lines. A \`completed\` receipt means the agent turn ended, not that review passed or the ticket is done. Offline dispatch leaves the stage move intact; retry from the ticket page **Hand to** without repeating the lifecycle verb. Example Library definitions: implementer \`cursor\` / \`composer-2.5\`; reviewer \`reviewer\` on harness \`cursor\` / \`cursor-grok-4.6-high\`.
 
 ## Stage instructions and playbooks
 

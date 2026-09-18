@@ -9,6 +9,8 @@ import {
   seedMissingBuiltins,
   builtinTemplatesDir,
 } from '../ticket-templates/builtins.js';
+import { loadTemplate } from '../ticket-templates/registry.js';
+import { validateTemplateDir } from '../ticket-templates/registry.js';
 
 describe('built-in template lifecycle', () => {
   let root: string;
@@ -70,6 +72,27 @@ describe('built-in template lifecycle', () => {
     expect(await builtinStatus(root, 'feature')).toBe('current');
     const restored = await readFile(manifestPath, 'utf-8');
     expect(restored).toContain('builtin: feature@2');
+  });
+
+  it('ships bug@2 with a cursor reviewer stage target', async () => {
+    const shipped = await readFile(resolve(builtinTemplatesDir(), 'bug', 'template.md'), 'utf-8');
+    expect(shipped).toContain('builtin: bug@2');
+    expect(shipped).toContain('reviewer: cursor');
+    expect(shipped).not.toContain('reviewer: pi');
+  });
+
+  it('feature@2 and bug@2 seed, validate, and load as built-ins', async () => {
+    await seedMissingBuiltins(root);
+    for (const id of ['feature', 'bug'] as const) {
+      const content = await readFile(resolve(root, 'templates', id, 'template.md'), 'utf-8');
+      expect(content).toContain(`builtin: ${id}@2`);
+      const { issues } = await validateTemplateDir(root, id);
+      expect(issues).toEqual([]);
+      const manifest = await loadTemplate(root, id);
+      for (const stage of manifest.stages) {
+        expect(Boolean(stage.agent) && Boolean(stage.reviewer)).toBe(false);
+      }
+    }
   });
 
   it('reset restores shipped files, keeps extras', async () => {

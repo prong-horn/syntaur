@@ -15,6 +15,12 @@ import { computeNextLine } from './gates.js';
 import { parseLogEntries, type LogEntry } from './log-reader.js';
 import { fileState } from './roles.js';
 import { stageForStatus } from './stages.js';
+import { loadAgentDefinitions } from '../chat/agents.js';
+import {
+  buildStageHandoffDescriptor,
+  formatStageHandoffLine,
+  type StageHandoffDescriptor,
+} from './stage-handoff.js';
 
 export interface ShowTicket {
   id: string;
@@ -71,6 +77,7 @@ export interface ShowModel {
   links: string[];
   files: ShowFile[];
   handoff: ShowHandoff;
+  stageHandoff: StageHandoffDescriptor;
   log: ShowLogLine[];
   stage: ShowStage;
   next: string;
@@ -164,6 +171,16 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
   }
 
   const next = await computeNextLine(fm.id, stage, manifest, gateCtx);
+  const chatEvents = await readEvents(chatLogPath(ticketDir));
+  const { definitions } = await loadAgentDefinitions(root);
+  const stageHandoff = buildStageHandoffDescriptor({
+    ticketId: fm.id,
+    status: fm.status,
+    templateId,
+    manifest,
+    chatEvents,
+    definitions,
+  });
 
   return {
     ticket: {
@@ -185,6 +202,7 @@ export async function buildShow(root: string, ticketDir: string): Promise<ShowMo
     links: fm.links,
     files,
     handoff: { text: latestHandoff(logEntries) },
+    stageHandoff,
     log: logTail(logEntries),
     stage: resolveStageBlock(manifest, stage),
     next,
@@ -252,6 +270,7 @@ export function renderShowText(model: ShowModel): string {
   }
 
   lines.push(`Handoff: ${model.handoff.text ?? 'none'}`);
+  lines.push(formatStageHandoffLine(model.stageHandoff));
   lines.push(`Log: last ${model.log.length} entries`);
   for (const entry of model.log) {
     lines.push(formatLogLine(entry));

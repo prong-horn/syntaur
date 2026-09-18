@@ -11,6 +11,7 @@ import {
 import {
   runTicketVerb,
   updateTicketTitle,
+  dispatchVerbMessages,
 } from '../lib/tickets';
 import { isTerminalStatus, resolveStatusAppearance } from '../lib/statusMeta';
 import { getTicketColumns } from '../lib/kanban';
@@ -841,7 +842,11 @@ export function TicketsPage() {
     );
 
     try {
-      const updated = await runTicketVerb(item.id, action.command, reason);
+      const result = await runTicketVerb(item.id, action.command, { reason });
+      const updated = result.ticket;
+      for (const message of dispatchVerbMessages(result)) {
+        showToast(message, 'error');
+      }
 
       setBoardItems((current) =>
         current.map((candidate) =>

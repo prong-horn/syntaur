@@ -116,20 +116,24 @@ Flags (not stages): \`blocked\` and \`parked\` hold reason strings or \`null\`.
 
 ## Lifecycle Commands
 
-Use the \`syntaur\` CLI for stage moves and flags:
-- \`syntaur assign ${params.ticketSlug} --agent <name> --project ${params.projectSlug}\` -- set assignee
-- \`syntaur plan ${params.ticketSlug} --project ${params.projectSlug}\` -- move to planning
-- \`syntaur approve ${params.ticketSlug} --project ${params.projectSlug}\` -- approve plan
-- \`syntaur start ${params.ticketSlug} --project ${params.projectSlug}\` -- move to in_progress
-- \`syntaur review ${params.ticketSlug} --project ${params.projectSlug}\` -- move to review
-- \`syntaur done ${params.ticketSlug} --project ${params.projectSlug}\` -- move to done
-- \`syntaur drop ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- move to dropped
-- \`syntaur reopen ${params.ticketSlug} --project ${params.projectSlug}\` -- reopen
-- \`syntaur block ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set blocked flag
-- \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug}\` -- clear blocked flag
-- \`syntaur park ${params.ticketSlug} "<reason>" --project ${params.projectSlug}\` -- set parked flag
-- \`syntaur unpark ${params.ticketSlug} --project ${params.projectSlug}\` -- clear parked flag
-- \`syntaur log ${params.ticketSlug} -t <type> "body" --project ${params.projectSlug}\` -- append to the log role
+Use the \`syntaur\` CLI for stage moves and flags (\`--by <name>\` attributes the action in the audit log; default \`human\`):
+- \`syntaur assign ${params.ticketSlug} --agent <name> --project ${params.projectSlug}\` -- set assignee (not stage dispatch)
+- \`syntaur plan create [--ticket ${params.ticketSlug}] --project ${params.projectSlug} [--by <name>]\` -- scaffold plan; may move to planning
+- \`syntaur approve ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- approve plan
+- \`syntaur start ${params.ticketSlug} --project ${params.projectSlug} [--agent <id>] [--by <name>]\` -- move to in_progress; \`--agent\` is a one-use stage dispatch recipient only
+- \`syntaur review ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- move to review
+- \`syntaur done ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- move to done
+- \`syntaur drop ${params.ticketSlug} "<reason>" --project ${params.projectSlug} [--by <name>]\` -- move to dropped
+- \`syntaur reopen ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- reopen
+- \`syntaur block ${params.ticketSlug} "<reason>" --project ${params.projectSlug} [--by <name>]\` -- set blocked flag
+- \`syntaur unblock ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- clear blocked flag
+- \`syntaur park ${params.ticketSlug} "<reason>" --project ${params.projectSlug} [--by <name>]\` -- set parked flag
+- \`syntaur unpark ${params.ticketSlug} --project ${params.projectSlug} [--by <name>]\` -- clear parked flag
+- \`syntaur log ${params.ticketSlug} -t <type> "body" --project ${params.projectSlug} [--agent <id>]\` -- append to the log role
+
+## Stage handoff
+
+Template stages may declare \`agent\` or \`reviewer\` (not both) with optional \`auto\`. Entering a stage may queue **one** exact-target dashboard turn — separate from ordinary chat. \`syntaur show\` lists **Handoff:** (log) and **Agent:** (dispatch) separately. Reviewers log verdicts with \`syntaur log -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n>\` when the template allows. Offline dispatch: retry **Hand to** without repeating the lifecycle verb.
 
 ## Troubleshooting
 

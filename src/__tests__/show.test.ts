@@ -235,6 +235,7 @@ Files:
   journal.md  log · 8 entries · last progress 2h
     Append-only log for progress, decisions, handoffs, questions, answers, and reviews.
 Handoff: none
+Agent: hand off to @cursor when ready
 Log: last 3 entries
   ## 2026-09-10T22:40:00Z · progress · cursor — Implemented max-age filter in computeInbox
   ## 2026-09-10T20:05:00Z · decision · human — Default window is 14 days
@@ -309,6 +310,7 @@ Files:
   ticket.md  kernel · editable
     Add skills.sh install path to README.
 Handoff: none
+Agent: select an agent and hand off work manually
 Log: last 0 entries
 Stage: backlog. Do the work described in the objective, then syntaur done.
 Next: syntaur done SCR-7

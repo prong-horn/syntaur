@@ -851,6 +851,185 @@ describe('stage dispatch broker integration', () => {
     expect(receipt?.state).toBe('completed');
   });
 
+  it('late stage cancel does not invoke ACP cancel on the next queued turn', async () => {
+    const entry = await recordEntryAsync('in_progress');
+    let releaseCancel!: () => void;
+    const cancelBarrier = new Promise<void>((r) => {
+      releaseCancel = r;
+    });
+    const clientFactory: ClientFactory = (input) => {
+      const inner = connectAcpClient(fake.app, {
+        onUpdate: input.onUpdate,
+        onPermissionRequest: input.onPermissionRequest,
+        onExtRequest: input.onExtRequest,
+        onExtNotification: input.onExtNotification,
+      });
+      return {
+        ...inner,
+        cancel: async (sessionId: string) => {
+          void inner.cancel(sessionId);
+          await cancelBarrier;
+        },
+      };
+    };
+    makeBroker(
+      [
+        {
+          steps: [
+            {
+              kind: 'permission',
+              request: {
+                toolCall: { toolCallId: 't1', title: 'Run test' },
+                options: [
+                  { optionId: 'allow', name: 'Allow', kind: 'allow_once' },
+                  { optionId: 'reject', name: 'Deny', kind: 'reject_once' },
+                ],
+              },
+            },
+          ],
+        },
+        { steps: [{ kind: 'update', update: textChunk('second turn', 'm2') }] },
+      ],
+      { clientFactory },
+    );
+    const requestId1 = `auto~${entry.entryId}`;
+    const requestId2 = randomUUID();
+    await broker.dispatchStage({
+      ticket: ticket(),
+      entryId: entry.entryId,
+      requestId: requestId1,
+      source: 'automatic',
+    });
+    await waitUntil(() => fake.prompts.length === 1, 'first turn permission pending');
+    await broker.dispatchStage({
+      ticket: ticket(),
+      entryId: entry.entryId,
+      requestId: requestId2,
+      source: 'manual',
+    });
+    const cancelPromise = broker.cancelStageDispatch(ticket(), requestId1);
+    await waitUntil(() => fake.prompts.length >= 2, 'second turn started');
+    expect(fake.calls.filter((c) => c === 'session/cancel')).toHaveLength(0);
+    releaseCancel();
+    await cancelPromise;
+    await waitUntil(async () => {
+      const receipt = await broker.getStageDispatch(ticket(), requestId2);
+      return receipt?.state === 'completed';
+    }, 'second turn completed');
+    expect(fake.calls.filter((c) => c === 'session/cancel')).toHaveLength(0);
+    const second = await broker.getStageDispatch(ticket(), requestId2);
+    expect(second?.state).toBe('completed');
+  });
+
+  it('reviewer stage dispatch includes fresh show and syntaur log verdict command', async () => {
+    await writeTicket('review');
+    const entry = await recordEntryAsync('review');
+    const requestId = randomUUID();
+    makeBroker([{ steps: [{ kind: 'update', update: textChunk('reviewed', 'm1') }] }]);
+    await broker.dispatchStage({
+      ticket: ticket(),
+      entryId: entry.entryId,
+      requestId,
+      source: 'manual',
+    });
+    await waitUntil(async () => {
+      const receipt = await broker.getStageDispatch(ticket(), requestId);
+      return receipt?.state === 'completed';
+    }, 'reviewer turn');
+    expect(promptTexts(fake).length).toBe(1);
+    const prompt = promptTexts(fake)[0];
+    expect(prompt).toContain('Stage dispatch');
+    expect(prompt).toContain(`syntaur log ${TICKET_ID} -t review`);
+    expect(prompt).toContain('--verdict approve|changes');
+    expect(prompt).toContain('reviewing work');
+  });
+
+  it('reviewer stage dispatch explains missing review log role in prompt', async () => {
+    const templatesDir = join(sandbox, 'templates', 'no-review-log');
+    await mkdir(templatesDir, { recursive: true });
+    await writeFile(
+      join(templatesDir, 'template.md'),
+      [
+        '---',
+        'id: no-review-log',
+        'version: 1',
+        'description: Test template without review log role.',
+        'whenToUse: Tests only.',
+        'workspace: none',
+        'stages:',
+        '  - id: backlog',
+        '    instructions: backlog',
+        '  - id: review',
+        '    instructions: Inspect carefully.',
+        '    reviewer: cursor',
+        '    auto: false',
+        '  - id: done',
+        '    instructions: done',
+        'files:',
+        '  - path: journal.md',
+        '    role: log',
+        '    writer: cli',
+        '    createOn: ticket-creation',
+        '    description: log',
+        '    entryTypes: [progress, note]',
+        '---',
+        'test',
+      ].join('\n'),
+    );
+    await writeFile(
+      join(ticketDir, 'ticket.md'),
+      [
+        '---',
+        `id: ${TICKET_ID}`,
+        'slug: stage-dispatch',
+        'title: "Stage dispatch"',
+        'template: no-review-log',
+        'status: review',
+        'project: demo',
+        'depends_on: []',
+        'links: []',
+        'plan:',
+        '  file: null',
+        '  approvedDigest: null',
+        '  approvedAt: null',
+        '  approvedBy: null',
+        'workspace:',
+        '  repository: null',
+        '  branch: null',
+        '  worktree: null',
+        '---',
+        '# Stage dispatch test',
+      ].join('\n'),
+    );
+    const manifest = await loadTemplate(sandbox, 'no-review-log');
+    const entry = recordStageEntryLocked({
+      ticketId: TICKET_ID,
+      projectSlug: 'demo',
+      actor: 'human',
+      at: new Date().toISOString(),
+      eventType: 'moved',
+      stage: 'review',
+      manifest,
+      from: 'in_progress',
+      verb: 'review',
+    });
+    const requestId = randomUUID();
+    makeBroker([{ steps: [{ kind: 'update', update: textChunk('findings', 'm1') }] }]);
+    await broker.dispatchStage({
+      ticket: ticket(),
+      entryId: entry.entryId,
+      requestId,
+      source: 'manual',
+    });
+    await waitUntil(async () => {
+      const receipt = await broker.getStageDispatch(ticket(), requestId);
+      return receipt?.state === 'completed';
+    }, 'reviewer without log role');
+    const prompt = promptTexts(fake)[0];
+    expect(prompt).toContain('no review-capable log role');
+    expect(prompt).not.toContain(`syntaur log ${TICKET_ID} -t review`);
+  });
+
   it('getStageDispatch reconciles without starting work', async () => {
     const old = await recordEntryAsync('in_progress');
     makeBroker([{ steps: [{ kind: 'hang' }] }]);

@@ -185,6 +185,44 @@ export interface TicketTemplateBlock {
   files: TicketTemplateFileDetail[];
 }
 
+export interface StageHandoffReceiptSummary {
+  requestId: string;
+  entryId: string;
+  agentId: string;
+  stage: string;
+  state:
+    | 'queued'
+    | 'running'
+    | 'completed'
+    | 'failed'
+    | 'cancelled'
+    | 'interrupted'
+    | 'superseded';
+  turnId?: string;
+  error?: string;
+}
+
+export interface StageHandoffDescriptor {
+  entryId: string;
+  stage: string;
+  role: 'agent' | 'reviewer' | null;
+  /** Template default agent for this stage (manual hand-off recipient). */
+  defaultAgentId: string | null;
+  startDefaultAgentId: string | null;
+  /** Template auto policy on the stage entered by `start`. */
+  startDefaultAuto: boolean;
+  /** Effective auto for the current entry (recorded dispatchAuto || dispatchOverride). */
+  auto: boolean;
+  /** Configured template auto policy for this stage. */
+  templateAuto: boolean;
+  /** Recipient recorded on the current stage entry; automatic requests go here. */
+  recordedTargetId: string | null;
+  canDispatch: boolean;
+  reason?: string;
+  manualFallback: boolean;
+  latestReceipt?: StageHandoffReceiptSummary;
+}
+
 export interface TicketDetail {
   id: string;
   projectSlug: string | null;
@@ -206,6 +244,7 @@ export interface TicketDetail {
   completedAt: string | null;
   statusAge: number | null;
   next: string | null;
+  stageHandoff: StageHandoffDescriptor;
   created: string;
   updated: string;
   body: string;
@@ -511,7 +550,11 @@ function useFetch<T>(
       return;
     }
 
-    if (message.type === 'project-updated' || message.type === 'ticket-updated') {
+    if (
+      message.type === 'project-updated' ||
+      message.type === 'ticket-updated' ||
+      (message.type === 'stage-dispatch' && websocketScope === 'ticket')
+    ) {
       refetch();
     }
 

@@ -47,12 +47,13 @@ const CLI_COMMANDS: HelpCommand[] = [
   },
   {
     command: 'syntaur start',
-    description: 'Move a ticket to in_progress.',
-    example: 'syntaur start UI-1 --project ui-overhaul',
+    description:
+      'Move a ticket to in_progress. Optional --agent selects a one-use stage dispatch recipient; --by attributes the move in the audit log.',
+    example: 'syntaur start UI-1 --project ui-overhaul --by human',
   },
   {
     command: 'syntaur review',
-    description: 'Move active work into review.',
+    description: 'Move active work into review. Use --by to attribute the move.',
     example: 'syntaur review UI-1 --project ui-overhaul',
   },
   {
@@ -278,6 +279,11 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         description:
           'A tracked AI session tied to ticket work. Sessions are registered via the track-session CLI command or the Claude Code plugin and visible on the Agent Sessions page.',
       },
+      {
+        term: 'Stage handoff',
+        description:
+          'Template-owned one-turn dispatch to a declared agent or reviewer on stage entry (automatic when auto: true, or via Hand to on the ticket page). Distinct from ordinary chat and from the latest log Handoff entry. A completed receipt means the agent turn ended, not that the ticket passed review or is done.',
+      },
     ],
     workflow: WORKFLOW,
     statusGuide: await buildStatusGuide(),
@@ -370,7 +376,7 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
       {
         question: 'How do I change a ticket\'s status?',
         answer:
-          'Use lifecycle verbs: `syntaur plan create`, `approve`, `start`, `review`, `done`, `drop`, `reopen`, `block`/`unblock`, and `park`/`unpark`. Tickets move through the fixed stages backlog, planning, ready, in_progress, review, done, and dropped. On the kanban board, drag a card only when a verb reaches the target column — there is no direct status override.',
+          'Use lifecycle verbs: `syntaur plan create`, `approve`, `start`, `review`, `done`, `drop`, `reopen`, `block`/`unblock`, and `park`/`unpark`. Add `--by <name>` on lifecycle verbs, plan create/version, and flag verbs for audit attribution (`human` by default). On `start` only, `--agent <id>` selects a one-use stage dispatch recipient — not the audit actor. Tickets move through the fixed stages backlog, planning, ready, in_progress, review, done, and dropped. On the kanban board, drag a card only when a verb reaches the target column — there is no direct status override.',
       },
       {
         question: 'Can I add or rename lifecycle stages?',
@@ -401,6 +407,11 @@ export async function getDashboardHelp(): Promise<HelpResponse> {
         question: 'How do I ask the human a question?',
         answer:
           'Run syntaur log <ticket-id> -t question "your question" (or use the Journal tab). The question appears in Needs me until someone logs syntaur log <id> -t answer "..." --answers <question-entry-timestamp>. Do not use syntaur block for questions.',
+      },
+      {
+        question: 'What is stage handoff vs Chat?',
+        answer:
+          'Stage handoff queues one exact-target agent turn when a template stage declares an agent or reviewer and you enter that stage (automatic when auto: true, or via Hand to on the ticket page). Ordinary Chat stays available for multi-turn work, @mentions, and follow-ups. show lists Handoff: (latest log handoff) and Agent: (dispatch status) separately. Offline dispatch leaves the stage move intact — retry from Hand to without repeating the lifecycle verb.',
       },
     ],
     firstProjectChecklist: [

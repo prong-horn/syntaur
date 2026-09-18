@@ -166,7 +166,27 @@ npm i -g @agentclientprotocol/claude-agent-acp   # or …/codex-acp
 ```
 
 See [docs/ticket-chat.md](docs/ticket-chat.md) for agent definitions,
-routing, hand-offs and where the data lives.
+routing, hand-offs, **stage-owned one-turn dispatch**, and where the data lives.
+
+### Stage handoff
+
+Template stages may declare an `agent` or `reviewer` target with optional `auto`.
+When you enter a stage, the dashboard may run **one** exact-target agent turn
+for that stage (automatic when `auto: true`, or after **Hand to** when manual).
+Ordinary **Chat** stays available at every stage — stage dispatch does not
+replace multi-turn work in chat.
+
+- `syntaur start <id> --agent <id>` — one-use dispatch recipient override only
+  (not audit attribution); use `--by <name>` on lifecycle verbs for the event log
+- Offline dispatch leaves the stage move intact; recover from the ticket page
+- A `completed` receipt means the agent turn ended, not that review passed or the
+  ticket is done
+
+Create separate agent definitions in the dashboard **Library** when you want
+different models on the same harness — for example implementer `cursor` with
+model `composer-2.5` and reviewer `reviewer` with harness `cursor` and model
+`cursor-grok-4.6-high`. Reviewers record verdicts with
+`syntaur log <ID> -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n>`.
 
 Syntaur used to launch an agent into a terminal for you — an "Open in agent"
 button, a `syntaur://` deep link, a transcript scanner and a PTY daemon. All of
@@ -187,7 +207,7 @@ Tickets move through fixed **stages** via explicit CLI verbs. `blocked` and `par
 | `done` | Completed | `syntaur done` |
 | `dropped` | Abandoned | `syntaur drop` |
 
-Flag verbs: `syntaur block`, `unblock`, `park`, `unpark`. Reopen terminal tickets: `syntaur reopen`. Run `syntaur show <id>` for the **Next** hint and gate checks.
+Flag verbs: `syntaur block`, `unblock`, `park`, `unpark`. Reopen terminal tickets: `syntaur reopen`. Add `--by <name>` on any lifecycle verb, plan create/version, or flag verb to attribute the action in the audit log (`human` by default). On `start` only, `--agent <id>` selects a one-use stage dispatch recipient — not the audit actor. Run `syntaur show <id>` for the **Next** hint, **Agent:** handoff status, and gate checks.
 
 ## Common Commands
 

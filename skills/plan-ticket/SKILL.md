@@ -77,13 +77,13 @@ Remember this `planFilename` and `versionLabel` for Step 5b.
 - **Initial plan** (`planFilename` is `plan.md`, no plan files exist yet): run
 
   ```bash
-  syntaur plan create
+  syntaur plan create [--by <name>]
   ```
 
-  (or `--ticket <id> [--project <slug>]` to target one explicitly). This
+  (or `--ticket <id> [--project <slug>] [--by <name>]` to target one explicitly). This
   writes `plan.md` with the standard `draft` frontmatter.
 
-- **New version** (`planFilename` is `plan-v<N>.md`): run `syntaur plan version`,
+- **New version** (`planFilename` is `plan-v<N>.md`): run `syntaur plan version [--by <name>]`,
   which scaffolds `plan-v<N>.md` and carries forward unchecked tasks from the
   prior plan body.
 

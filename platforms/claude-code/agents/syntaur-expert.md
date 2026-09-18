@@ -125,15 +125,17 @@ Run `syntaur show <id>` at the start of work and after every lifecycle verb. Fol
 ### Lifecycle verbs
 | Verb | Typical effect |
 |------|----------------|
-| `syntaur plan create` | Scaffold plan file; move toward `planning` |
+| `syntaur plan create` | Scaffold plan file; move toward `planning` when declared (`--by` for audit attribution) |
 | `syntaur approve` | `planning` → `ready` when gates pass |
-| `syntaur start` | → `in_progress` |
+| `syntaur start` | → `in_progress`; optional `--agent` one-use dispatch recipient; `--by` for audit attribution |
 | `syntaur review` | → `review` |
 | `syntaur done` | → `done` |
 | `syntaur drop` | → `dropped` |
 | `syntaur reopen` | Reopen toward an earlier stage per template |
 | `syntaur block` / `syntaur unblock` | Set or clear the `blocked` reason |
 | `syntaur park` / `syntaur unpark` | Set or clear the `parked` reason |
+
+**Stage handoff:** template stages may declare `agent` or `reviewer` with optional `auto`. Entering a stage may queue one exact-target dashboard turn (automatic when `auto: true`, or **Hand to** when manual). Ordinary chat stays available. `show` lists **Handoff:** (log) and **Agent:** (dispatch) separately. Reviewers record verdicts with `syntaur log -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n>` when allowed. Separate Library agent ids (for example implementer `cursor` / `composer-2.5` and reviewer `reviewer` / `cursor-grok-4.6-high` on harness `cursor`) pin models without editing global settings.
 
 ### Dependency Semantics
 - `depends_on` lists ticket ids (`<PREFIX>-<n>`) that must be `done` before this ticket can `start`
@@ -178,18 +180,18 @@ Run `syntaur show <id>` at the start of work and after every lifecycle verb. Fol
 ### Lifecycle verbs
 | Command | Description |
 |---------|-------------|
-| `syntaur show [<id>]` | Protocol entry point — stage, files, next steps |
-| `syntaur plan create <id> --project <project>` | Scaffold plan; move toward `planning` |
-| `syntaur approve <id> --project <project>` | `planning` → `ready` when gates pass |
-| `syntaur start <id> --project <project>` | → `in_progress` |
-| `syntaur review <id> --project <project>` | → `review` |
-| `syntaur done <id> --project <project>` | → `done` |
-| `syntaur drop <id> "<reason>" --project <project>` | → `dropped` |
-| `syntaur reopen <id> --project <project>` | Reopen toward earlier stage per template |
-| `syntaur block <id> "<reason>" --project <project>` | Set `blocked` reason (stage unchanged) |
-| `syntaur unblock <id> --project <project>` | Clear `blocked` reason |
-| `syntaur park <id> "<reason>" --project <project>` | Set `parked` reason (stage unchanged) |
-| `syntaur unpark <id> --project <project>` | Clear `parked` reason |
+| `syntaur show [<id>]` | Protocol entry point — stage, files, next steps, Agent handoff status |
+| `syntaur plan create <id> --project <project> [--by <name>]` | Scaffold plan; move toward `planning` |
+| `syntaur approve <id> --project <project> [--by <name>]` | `planning` → `ready` when gates pass |
+| `syntaur start <id> --project <project> [--agent <id>] [--by <name>]` | → `in_progress`; `--agent` is one-use dispatch recipient only |
+| `syntaur review <id> --project <project> [--by <name>]` | → `review` |
+| `syntaur done <id> --project <project> [--by <name>]` | → `done` |
+| `syntaur drop <id> "<reason>" --project <project> [--by <name>]` | → `dropped` |
+| `syntaur reopen <id> --project <project> [--by <name>]` | Reopen toward earlier stage per template |
+| `syntaur block <id> "<reason>" --project <project> [--by <name>]` | Set `blocked` reason (stage unchanged) |
+| `syntaur unblock <id> --project <project> [--by <name>]` | Clear `blocked` reason |
+| `syntaur park <id> "<reason>" --project <project> [--by <name>]` | Set `parked` reason (stage unchanged) |
+| `syntaur unpark <id> --project <project> [--by <name>]` | Clear `parked` reason |
 
 ### Session Tracking
 | Command | Description |

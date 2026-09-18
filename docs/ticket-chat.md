@@ -16,6 +16,53 @@ it owns. The terminal-launch stack it replaced — the `syntaur://` deep link,
 launch prompts, `AgentConfig` profiles, the transcript scanner and the `syntaurd`
 daemon — was deleted in v0.80.
 
+## Stage handoff (template-owned agents)
+
+Template stages may declare an `agent` or `reviewer` target with optional `auto`.
+On a live stage entry the broker may run **one** exact-target turn for that
+stage — distinct from ordinary chat, which stays available at every stage.
+
+- **Automatic** — when `auto: true`, entering the stage queues one turn to the
+  template target (or to `start --agent <id>` when you override the recipient).
+- **Manual** — when `auto: false` or dispatch was missed, use **Hand to** on the
+  ticket page. A one-use agent picker can override the template default without
+  changing chat participants.
+- **Receipts** — `queued`, `running`, `completed`, `failed`, `cancelled`, etc.
+  `completed` means the agent turn ended, not that the ticket passed review or
+  is done. Retry with the same `requestId` after network uncertainty; mint a new
+  id only after the original receipt is terminal.
+- **Reviewer** — reviewer stages are prompted to record
+  `syntaur log <ID> -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n> "<body>"`
+  when the template log role allows it; otherwise they report findings in chat only.
+
+Example pair (library agent definitions, not global settings): implementer
+`cursor` with model `composer-2.5`, reviewer `reviewer` with harness `cursor` and
+model `cursor-grok-4.6-high`.
+
+### Driver loop (implement → review → done)
+
+1. **Stage entry** — entering `in_progress` or `review` may queue one automatic
+   turn when `auto: true` (or after **Hand to** when manual). That turn includes
+   fresh `syntaur show` text with stage instructions; it is not a substitute for
+   ongoing chat.
+2. **Implement** — inspect the turn, diff, and tests; send follow-ups in **Chat**
+   to the same participant. ACP resumes the same session when possible.
+3. **Review** — when implementation is ready, run `syntaur review`. On manual
+   review stages, **Hand to** a separately configured reviewer definition (for
+   example `reviewer` on harness `cursor` with Grok pinned in the Library — not
+   by editing global settings).
+4. **Verdict** — the reviewer records
+   `syntaur log <ID> -t review --agent <actual-id> --verdict approve|changes --open high=<n>,medium=<n> "<body>"`
+   when the template allows; fix findings via chat; hand off again for another
+   review when needed.
+5. **Complete** — run template gates (`review-clean`, `handoff-logged`, etc.)
+   and explicitly `syntaur done`. Finishing an agent turn never satisfies gates
+   or moves the ticket for you.
+
+Offline or unknown dispatch acceptance: the stage move still succeeds; retry the
+same request id from **Hand to** until the receipt is terminal, then mint a new
+id only for a deliberate new attempt.
+
 ## How a turn works
 
 1. You send a message. It may include up to four images pasted, dropped or picked in the composer; they are uploaded first, then referenced from the message. The addressed agents receive them as image blocks right after your text; other agents see `[image attached: name]` in their history. The message is persisted immediately and shown as **queued**.

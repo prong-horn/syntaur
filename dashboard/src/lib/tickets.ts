@@ -1,20 +1,58 @@
 import type { TicketDetail, TicketTransitionAction } from '../hooks/useProjects';
 import { recreateRequest, type RecreateIdentity } from './recreate';
 
-interface VerbResponse {
+export interface DispatchVerbResult {
+  requestId?: string;
+  state?: string;
+  agentId?: string;
+  entryId?: string;
+  error?: string;
+  warning?: string;
+}
+
+export interface RunTicketVerbOptions {
+  reason?: string;
+  /** Dispatch recipient for `start` only — does not change chat default participant. */
+  agent?: string;
+  /** Audit attribution (`--by` on CLI). */
+  by?: string;
+}
+
+export interface VerbResult {
   ticket: TicketDetail;
   next: string | null;
+  dispatch?: DispatchVerbResult;
+  warnings?: string[];
+}
+
+/** User-visible messages after a lifecycle verb with optional stage dispatch. */
+export function dispatchVerbMessages(result: VerbResult): string[] {
+  const messages: string[] = [];
+  if (result.warnings?.length) {
+    messages.push(...result.warnings);
+  }
+  const dispatch = result.dispatch;
+  if (!dispatch) return messages;
+  if (dispatch.state === 'failed' || dispatch.state === 'offline' || dispatch.state === 'unknown') {
+    messages.push(dispatch.error || dispatch.warning || `Dispatch ${dispatch.state}`);
+  }
+  return messages;
 }
 
 export async function runTicketVerb(
   id: string,
   verb: string,
-  reason?: string,
-): Promise<TicketDetail> {
+  options: RunTicketVerbOptions = {},
+): Promise<VerbResult> {
+  const body: Record<string, string> = {};
+  if (options.reason) body.reason = options.reason;
+  if (options.agent) body.agent = options.agent;
+  if (options.by) body.by = options.by;
+
   const response = await fetch(`/api/tickets/${id}/verbs/${verb}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reason ? { reason } : {}),
+    body: JSON.stringify(body),
   });
 
   const payload = await response.json().catch(() => null);
@@ -24,7 +62,13 @@ export async function runTicketVerb(
     throw new Error(next ? `${base} — Next: ${next}` : base);
   }
 
-  return (payload as VerbResponse).ticket;
+  const result = payload as VerbResult;
+  return {
+    ticket: result.ticket,
+    next: result.next ?? null,
+    ...(result.dispatch ? { dispatch: result.dispatch } : {}),
+    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+  };
 }
 
 /** @deprecated Use {@link runTicketVerb} */
@@ -32,7 +76,7 @@ export const runTicketTransition = (
   id: string,
   action: TicketTransitionAction,
   reason?: string,
-): Promise<TicketDetail> => runTicketVerb(id, action.command, reason);
+): Promise<VerbResult> => runTicketVerb(id, action.command, { reason });
 
 /** @deprecated Use {@link runTicketVerb} */
 export const runTicketTransitionById = runTicketTransition;

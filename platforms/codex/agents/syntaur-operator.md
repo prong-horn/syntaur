@@ -60,7 +60,9 @@ Tickets live at `~/.syntaur/projects/<slug>/tickets/<ID>-<slug>/` where `<ID>` i
 - Stages (`backlog`, `planning`, `ready`, `in_progress`, `review`, `done`, `dropped`) move only via lifecycle verbs. `blocked` and `parked` are flags (reason strings), not stages.
 - Pre-`in_progress` stage with unmet `depends_on` means structural waiting; the `blocked` flag means a runtime obstacle.
 - `depends_on` and `links` hold ticket ids (`<PREFIX>-<n>`).
-- Run `syntaur show` at the start of work and after every lifecycle verb; follow Stage and Next.
+- Run `syntaur show` at the start of work and after every lifecycle verb; follow Stage, Next, and Agent (stage dispatch status).
+- `--by <name>` on lifecycle verbs, plan create/version, and flag verbs attributes the action in the audit log (`human` by default). On `start` only, `--agent <id>` is a one-use stage dispatch recipient — not audit attribution. `assign --agent`, `log --agent`, and `track-session --agent` keep their existing meanings.
+- Template stages may declare `agent` or `reviewer` with optional `auto`. One exact-target dashboard turn may run on stage entry; ordinary chat stays available. A completed dispatch receipt means the turn ended, not that review passed or the ticket is done. Reviewers log verdicts with `syntaur log -t review --agent <id> --verdict approve|changes --open high=<n>,medium=<n>` when the template allows.
 
 ## CLI Reference
 
@@ -72,23 +74,23 @@ Use these commands directly when needed:
 - `syntaur show [<ticket-id>] [--project <slug>]`
 - `syntaur setup [--yes] [--claude] [--codex] [--claude-dir <path>] [--codex-dir <path>] [--codex-marketplace-path <path>] [--dashboard]`
 - `syntaur assign <ticket-id> --agent codex --project <project-slug>`
-- `syntaur plan <ticket-id> --project <project-slug>`
-- `syntaur approve <ticket-id> --project <project-slug>`
-- `syntaur start <ticket-id> --project <project-slug>`
-- `syntaur review <ticket-id> --project <project-slug>`
-- `syntaur done <ticket-id> --project <project-slug>`
-- `syntaur drop <ticket-id> "<reason>" --project <project-slug>`
-- `syntaur reopen <ticket-id> --project <project-slug>`
-- `syntaur block <ticket-id> "<reason>" --project <project-slug>`
-- `syntaur unblock <ticket-id> --project <project-slug>`
-- `syntaur park <ticket-id> "<reason>" --project <project-slug>`
-- `syntaur unpark <ticket-id> --project <project-slug>`
-- `syntaur log <ticket-id> -t <type> "..." [--project <slug>] [--answers <question-iso>] [--verdict approve|changes] [--open high=<n>,medium=<n>]`
+- `syntaur plan create [--ticket <id>] [--project <slug>] [--by <name>]`
+- `syntaur approve <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur start <ticket-id> --project <project-slug> [--agent <id>] [--by <name>]`
+- `syntaur review <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur done <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur drop <ticket-id> "<reason>" --project <project-slug> [--by <name>]`
+- `syntaur reopen <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur block <ticket-id> "<reason>" --project <project-slug> [--by <name>]`
+- `syntaur unblock <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur park <ticket-id> "<reason>" --project <project-slug> [--by <name>]`
+- `syntaur unpark <ticket-id> --project <project-slug> [--by <name>]`
+- `syntaur log <ticket-id> -t <type> "..." [--project <slug>] [--agent <id>] [--answers <question-iso>] [--verdict approve|changes] [--open high=<n>,medium=<n>]`
 - `syntaur migrate journal [<id>] [--project <slug>] [--all] [--apply]`
 - `syntaur uninstall [--all] [--yes]`
 - `syntaur track-session --project <project-slug> --ticket <ticket-id> --agent codex --session-id <real-id> --transcript-path <rollout-path> --path <cwd> [--pid <n>]`
 - `syntaur setup-adapter codex --project <project-slug> --ticket <ticket-id>`
-- `syntaur plan version --ticket <id> [--project <slug>]`
+- `syntaur plan version --ticket <id> [--project <slug>] [--by <name>]`
 - `syntaur session resume [--json]`
 - `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <id>] [--project <slug>]`
 - `syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--json]`
