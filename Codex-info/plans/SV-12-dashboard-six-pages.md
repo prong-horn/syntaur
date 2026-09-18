@@ -1,6 +1,6 @@
 # SV-12 — Six-page dashboard and shared resource layer
 
-Date: 2026-09-18. Status: independently reviewed READY (0 high/0 medium); hotkey choice A/B pending; not approved for implementation. This is planning only; do not approve or start implementation automatically.
+Date: 2026-09-18. Status: independently reviewed READY (0 high/0 medium). Brennen selected navigation/new-ticket hotkeys (Option A) and authorized full implementation, independent review and verification on 2026-09-18.
 
 ## Objective and ownership
 
@@ -80,13 +80,13 @@ Board URL grammar (serialize via URLSearchParams, repeated keys for multi-select
 
 Preference scope is `p:<slug>` only when the URL contains exactly one nonempty project slug, otherwise global/null; choose this key directly from the URL without waiting for the projects request. Scope identity does not change when active/archived lookup finishes; missing/archived projects render the specified disclosure/panel instead of reseeding filters. The global saved project filter is deliberately ignored on both read and write, including query construction, and remains untouched on disk. No URL project means all projects; this small behavior change prevents recursive preference-scope selection. Add a regression with a saved single-project filter proving it is ignored and byte-preserved; density always stays global. A project's identity is resolved from the URL before reading scope preferences. On first load, merge existing defaults→scope preferences→explicit URL fields exactly once, guarded by a navigation/user-edit generation. User changes persist only supported existing fields to that scope; browser back/forward consumes the URL without writing prefs. New project scope loads cannot overwrite newer query/control input. No storage migration or change to CLI AQL semantics. Add fixtures for commas in tags, empty vs absent filters, multi-project scope, complex query roundtrip and conflicting query/chips (query wins).
 
-### Hotkeys — explicit user decision pending
+### Hotkeys — Option A selected by Brennen
 
-Question logged at 2026-09-18T13:27:37Z and asked in the thread. The ticket reserves this decision to Brennen; elapsed time is not an answer. Complete independent planning for both bounded variants, but Task 6 cannot start until his choice is recorded.
+Question logged at 2026-09-18T13:27:37Z. Brennen answered "keep hot keys" in response to navigation/new-ticket versus removal, and authorized the whole implementation/review workflow. Option A below is binding; Option B is retained only as historical planning context and must not be implemented.
 
-A (recommended): retain navigation and new-ticket only. Fixed chords `g n` Needs me, `g b` Board, `g s` Sessions, `g l` Library, `g ,` Settings, `n` new ticket; no ticket navigation chord without an id. Retain ordinary semantic keyboard interaction (Tab/Enter/Escape in focused controls/dialogs); remove global theme/actions/edit/search/reload/tab-cycle/list-jump chords, custom binding editor and command/action palette infrastructure. Visible search and creation buttons replace palette-only access. Native browser shortcuts remain untouched. A small visible shortcut reference lists only these six bindings; no `?` shortcut. Guard editable targets, composition, modifiers, repeats and modal focus, and time out a g chord after 1 second.
+A (selected): retain navigation and new-ticket only. Fixed chords `g n` Needs me, `g b` Board, `g s` Sessions, `g l` Library, `g ,` Settings, `n` new ticket; no ticket navigation chord without an id. Retain ordinary semantic keyboard interaction (Tab/Enter/Escape in focused controls/dialogs); remove global theme/actions/edit/search/reload/tab-cycle/list-jump chords, custom binding editor and command/action palette infrastructure. Visible search and creation buttons replace palette-only access. Native browser shortcuts remain untouched. A small visible shortcut reference lists only these six bindings; no `?` shortcut. Guard editable targets, composition, modifiers, repeats and modal focus, and time out a g chord after 1 second.
 
-B: remove app-level hotkey registration, providers/catalog/editor/palettes entirely; all six pages and creation/search remain visibly reachable. Keep browser and semantic component keyboard behavior. No retained Mod+k exception.
+B (rejected alternative): remove app-level hotkey registration, providers/catalog/editor/palettes entirely; all six pages and creation/search remain visibly reachable. Keep browser and semantic component keyboard behavior. No retained Mod+k exception.
 
 For either choice, remove obsolete catalog tests/actions and keep backend config backward-safe: historical hotkey settings are ignored, not rewritten or deleted from the user's config. Remove the unused config route and its dedicated types only after confirming no staying caller. Record the exact decision through `syntaur log -t answer --answers <question timestamp>` and a decision entry. Do not silently implement A as if approved.
 
@@ -201,3 +201,7 @@ Opus confirmed all initial findings fixed except the saved-project filter ambigu
 ## Independent review result
 
 Claude Code Opus closure review: **READY, high=0, medium=0**, conditional only on Brennen recording hotkey choice A/B before Task6 hotkey edits. Review progression:0H/10M →0H/1M →0H/0M. All six acceptance criteria have implementation and verification mappings. Reviewed scope is planning only; no production code changed and no test/build execution was needed for this document change. Report: `Codex-info/plans/SV-12-dashboard-six-pages-review.md`. Ticket remains planning/unapproved; this review does not stand in for implementation authorization.
+
+## Implementation authorization — 2026-09-18
+
+Brennen selected Option A and instructed the orchestrator to complete review, implementation and independent review using Claude Code Opus or Cursor Composer2.5 when quota is available. This resolves the plan review's sole condition and authorizes approve/start and implementation. No additional permission is needed for those steps. Codex remains planning/orchestration only; implementation/test work and independent review/QA are delegated. Historical references above to pending choice/planning-only describe prior checkpoints and are superseded by this section. No merge/push/live dashboard restart is inferred.
