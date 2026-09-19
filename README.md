@@ -18,7 +18,7 @@ Two supported install styles. Both pull the same package from npm; the only diff
 Best for trying Syntaur once, or for users who don't want anything on their `$PATH`.
 
 ```bash
-npx syntaur@latest           # first run: initializes ~/.syntaur/ and walks setup
+npx syntaur@latest           # first run: initializes ~/.syntaur/ and prints the set-up steps
 npx syntaur@latest dashboard
 npx syntaur@latest doctor
 ```
@@ -31,7 +31,7 @@ Best for day-to-day use. You can run `syntaur ...` directly.
 
 ```bash
 npm install -g syntaur
-syntaur                        # first run: initializes ~/.syntaur/ and walks setup
+syntaur                        # first run: initializes ~/.syntaur/ and prints the set-up steps
 syntaur dashboard
 ```
 
