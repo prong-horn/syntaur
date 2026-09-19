@@ -153,7 +153,7 @@ const workspaceMissing: Check = {
           category: this.category,
           title: this.title,
           status: 'error',
-          detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktree set — the PreToolUse hook will block implementation work`,
+          detail: `${a.projectSlug}/${a.ticketSlug} (status: ${parsed.status}) has no workspace.repository or workspace.worktree set`,
           affected: [path],
           remediation: {
             kind: 'manual',

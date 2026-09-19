@@ -14,6 +14,7 @@ import { registerVerbCommands } from './commands/verbs.js';
 import { installPluginCommand } from './commands/install-plugin.js';
 import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
+import { installHooksCommand, uninstallHooksCommand } from './commands/hooks.js';
 import { configureStatuslineCommand, PRESETS as STATUSLINE_PRESETS } from './commands/configure-statusline.js';
 import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
 import { uninstallSkillsCommand } from './commands/uninstall-skills.js';
@@ -236,6 +237,25 @@ program
       await updateCommand({ ...options, scriptUrl: import.meta.url });
     }),
   );
+
+const hooksCommand = new Command('hooks').description('Install or remove Syntaur session hooks in Claude Code settings');
+hooksCommand
+  .command('install')
+  .description('Copy hook scripts to ~/.syntaur/hooks and wire SessionStart, PostToolUse, and UserPromptSubmit in settings.json')
+  .action(
+    runCommand(async () => {
+      await installHooksCommand();
+    }),
+  );
+hooksCommand
+  .command('uninstall')
+  .description('Remove Syntaur hook entries from settings.json and delete ~/.syntaur/hooks')
+  .action(
+    runCommand(async () => {
+      await uninstallHooksCommand();
+    }),
+  );
+program.addCommand(hooksCommand);
 
 program
   .command('install-statusline')

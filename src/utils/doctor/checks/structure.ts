@@ -27,11 +27,11 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'statusline.config.json', // configure-statusline.ts
   'statusline.sh', // install-statusline.ts
   'statusline-wrapped.sh', // install-statusline.ts
+  'hooks', // hooks install
+  'hooks.backup.json', // hooks install
   'syntaur.db', // events-db.ts
   'syntaur.db-shm', // sqlite WAL
   'syntaur.db-wal', // sqlite WAL
-  'targets', // user-descriptors.ts
-  'tier3-violations.log', // hermes plugin write-boundary violations (platforms/hermes)
   'view-prefs.json', // paths.ts
   'worktrees', // worktree-defaults.ts
 ]);

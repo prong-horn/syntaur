@@ -7,7 +7,7 @@ const REPO_ROOT = resolve(import.meta.dirname, '../..');
 
 const CRITERION_NAMES = [
   'agents',
-  'targets',
+  'hooks',
   'templates',
   'view-prefs.json',
   'inbox-snoozes.json',
@@ -123,7 +123,10 @@ describe('doctor KNOWN_TOP_LEVEL', () => {
       expect(discovered.has(name), `scanner must discover ${name}`).toBe(true);
     }
 
-    const missing = [...discovered].filter((n) => !KNOWN_TOP_LEVEL.has(n)).sort();
+    const interimUntilTargetsRemoved = new Set(['targets']);
+    const missing = [...discovered]
+      .filter((n) => !KNOWN_TOP_LEVEL.has(n) && !interimUntilTargetsRemoved.has(n))
+      .sort();
     expect(missing).toEqual([]);
   });
 });

@@ -4,11 +4,9 @@ import { structureChecks } from './checks/structure.js';
 import { projectChecks } from './checks/project.js';
 import { ticketChecks } from './checks/ticket.js';
 import { dashboardChecks } from './checks/dashboard.js';
-import { integrationChecks } from './checks/integrations.js';
 import { workspaceChecks } from './checks/workspace.js';
 import { skillsChecks } from './checks/skills.js';
-import { crossAgentChecks } from './checks/cross-agent.js';
-import { pluginChecks } from './checks/plugin.js';
+import { hooksChecks } from './checks/hooks.js';
 import { stalenessChecks } from './checks/staleness.js';
 
 export function allChecks(): Check[] {
@@ -18,11 +16,9 @@ export function allChecks(): Check[] {
     ...projectChecks,
     ...ticketChecks,
     ...dashboardChecks,
-    ...integrationChecks,
     ...workspaceChecks,
+    ...hooksChecks,
     ...skillsChecks,
-    ...crossAgentChecks,
-    ...pluginChecks,
     ...stalenessChecks,
   ];
 }

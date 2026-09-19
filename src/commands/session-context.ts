@@ -14,6 +14,7 @@ import {
 } from '../utils/playbooks.js';
 import { isSafeSessionId } from '../utils/session-id.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
+import { touchSession } from '../dashboard/agent-sessions.js';
 
 export interface BuildPromptContextInput {
   root?: string;
@@ -217,6 +218,15 @@ export async function runSessionContext(
 
   if (!sessionId) {
     sessionId = await readContextSessionId(cwd);
+  }
+
+  if (sessionId && isSafeSessionId(sessionId)) {
+    try {
+      initSessionDb();
+      touchSession(sessionId);
+    } catch {
+      // Touch is best-effort; never affects hook output or exit code.
+    }
   }
 
   return buildPromptContext({ cwd, sessionId });

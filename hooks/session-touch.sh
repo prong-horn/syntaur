@@ -7,13 +7,14 @@
 # longer than the idle window would be swept while it is alive.
 #
 # RATE LIMITED to one write per five minutes per session via a stamp file, so a
-# tool-heavy turn does not hammer SQLite. Wired to both PostToolUse (the common
-# case) and UserPromptSubmit (so a planning-only session with no tool calls is
-# still counted as alive).
+# tool-heavy turn does not hammer SQLite. Wired to PostToolUse (the common
+# case).
 #
 # Reads the hook JSON from stdin. Always exits 0.
 
 set -o pipefail 2>/dev/null || true
+
+. "${BASH_SOURCE[0]%/*}/lib.sh"
 
 command -v jq >/dev/null 2>&1 || exit 0
 command -v syntaur >/dev/null 2>&1 || exit 0
@@ -42,23 +43,7 @@ if [ -f "$STAMP" ]; then
   fi
 fi
 
-# Bounded SIGKILL watchdog (portable — no `timeout` on stock macOS). ~4s stays
-# under the hook's `timeout: 5` budget. A stale CLI without the subcommand exits
-# non-zero — swallowed; the row just goes without a heartbeat this tick.
-syntaur_bounded_touch() {
-  local cpid kpid rc
-  printf '%s' "$INPUT" | syntaur session touch --from-hook >/dev/null 2>&1 &
-  cpid=$!
-  ( sleep 4; kill -KILL "$cpid" 2>/dev/null ) >/dev/null 2>&1 &
-  kpid=$!
-  wait "$cpid" 2>/dev/null
-  rc=$?
-  kill -KILL "$kpid" 2>/dev/null
-  wait "$kpid" 2>/dev/null
-  return "$rc"
-}
-
-if syntaur_bounded_touch; then
+if printf '%s' "$INPUT" | syntaur_bounded 4 session touch --from-hook >/dev/null 2>&1; then
   # Only stamp on success, so a failed touch retries on the next tool call
   # rather than going quiet for five minutes.
   : > "$STAMP" 2>/dev/null || true

@@ -40,7 +40,8 @@
     "examples",
     "templates",
     "dashboard/dist",
-    "statusline"
+    "statusline",
+    "hooks"
   ],
   "scripts": {
     "build": "tsup",

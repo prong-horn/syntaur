@@ -7,10 +7,8 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const hookPath = resolve(
-  here,
-  '../../platforms/claude-code/hooks/session-start.sh',
-);
+const hookPath = resolve(here, '../../hooks/session-start.sh');
+const libPath = resolve(here, '../../hooks/lib.sh');
 
 let sandbox: string;
 
@@ -70,30 +68,20 @@ async function makeTermIgnoringSyntaur(): Promise<string> {
   return binDir;
 }
 
-async function makePluginRoot(markerVersion: string | null): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'syntaur-pluginroot-'));
-  if (markerVersion !== null) {
-    await writeFile(
-      join(root, '.syntaur-install.json'),
-      JSON.stringify({
-        packageName: 'syntaur',
-        packageVersion: markerVersion,
-        pluginKind: 'claude',
-        installMode: 'copy',
-        installedAt: '2026-06-06T00:00:00Z',
-      }),
-    );
-  }
-  return root;
-}
-
 const STDIN = JSON.stringify({
   session_id: 'sess-thin-1',
   transcript_path: '/tmp/transcripts/sess-thin-1.jsonl',
   cwd: '/tmp/no-syntaur-context-xyz',
 });
 
-describe('claude-code session-start.sh (thin wrapper)', () => {
+describe('session-start.sh (thin wrapper)', () => {
+  it('sources lib.sh for syntaur_bounded', async () => {
+    const body = await readFile(hookPath, 'utf-8');
+    expect(body).toContain('. "${BASH_SOURCE[0]%/*}/lib.sh"');
+    const lib = await readFile(libPath, 'utf-8');
+    expect(lib).toContain('syntaur_bounded()');
+  });
+
   it('invokes `syntaur session register --from-hook` with the payload on stdin — no context.json required', async () => {
     const recordDir = await mkdtemp(join(tmpdir(), 'syntaur-record-'));
     const binDir = await makeRecordingSyntaur(recordDir);
@@ -154,36 +142,6 @@ describe('claude-code session-start.sh (thin wrapper)', () => {
 
   it('bounds a hanging CLI with the SIGKILL watchdog and still exits 0', async () => {
     const binDir = await makeHangingSyntaur();
-    const pluginRoot = await makePluginRoot('0.0.1');
-    try {
-      const start = Date.now();
-      const res = spawnSync('bash', [hookPath], {
-        input: STDIN,
-        encoding: 'utf-8',
-        // Hard cap so a regression fails fast instead of hanging the suite.
-        // Budget: ~1s drift watchdog + ~4s register watchdog + spawn overhead.
-        timeout: 12_000,
-        env: {
-          ...process.env,
-          HOME: sandbox,
-          CLAUDE_PLUGIN_ROOT: pluginRoot,
-          PATH: `${binDir}:${process.env.PATH}`,
-        },
-      });
-      const elapsed = Date.now() - start;
-      expect(res.status).toBe(0); // not killed by the spawnSync cap
-      expect(res.signal).toBeNull();
-      expect(elapsed).toBeLessThan(10_000); // bounded well under the 2×10s hangs
-      expect(res.stdout).not.toContain('differs'); // version unresolved → no false warning
-    } finally {
-      await rm(binDir, { recursive: true, force: true });
-      await rm(pluginRoot, { recursive: true, force: true });
-    }
-  }, 15_000);
-
-  it('bounds a SIGTERM-ignoring CLI via SIGKILL and still exits 0', async () => {
-    const binDir = await makeTermIgnoringSyntaur();
-    const pluginRoot = await makePluginRoot('0.0.1');
     try {
       const start = Date.now();
       const res = spawnSync('bash', [hookPath], {
@@ -193,7 +151,6 @@ describe('claude-code session-start.sh (thin wrapper)', () => {
         env: {
           ...process.env,
           HOME: sandbox,
-          CLAUDE_PLUGIN_ROOT: pluginRoot,
           PATH: `${binDir}:${process.env.PATH}`,
         },
       });
@@ -201,68 +158,31 @@ describe('claude-code session-start.sh (thin wrapper)', () => {
       expect(res.status).toBe(0);
       expect(res.signal).toBeNull();
       expect(elapsed).toBeLessThan(10_000);
-      expect(res.stdout).not.toContain('differs');
     } finally {
       await rm(binDir, { recursive: true, force: true });
-      await rm(pluginRoot, { recursive: true, force: true });
     }
   }, 15_000);
-});
 
-describe('SessionStart plugin drift warning', () => {
-  it('emits a non-blocking drift warning when the plugin marker differs from the CLI version', async () => {
-    const recordDir = await mkdtemp(join(tmpdir(), 'syntaur-record-'));
-    const binDir = await makeRecordingSyntaur(recordDir, '9.9.9');
-    const pluginRoot = await makePluginRoot('0.0.1');
+  it('bounds a SIGTERM-ignoring CLI via SIGKILL and still exits 0', async () => {
+    const binDir = await makeTermIgnoringSyntaur();
     try {
-      const res = runHook(STDIN, {
-        CLAUDE_PLUGIN_ROOT: pluginRoot,
-        PATH: `${binDir}:${process.env.PATH}`,
+      const start = Date.now();
+      const res = spawnSync('bash', [hookPath], {
+        input: STDIN,
+        encoding: 'utf-8',
+        timeout: 12_000,
+        env: {
+          ...process.env,
+          HOME: sandbox,
+          PATH: `${binDir}:${process.env.PATH}`,
+        },
       });
+      const elapsed = Date.now() - start;
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain('additionalContext');
-      expect(res.stdout).toContain('0.0.1');
-      expect(res.stdout).toContain('install-plugin --force');
+      expect(res.signal).toBeNull();
+      expect(elapsed).toBeLessThan(10_000);
     } finally {
       await rm(binDir, { recursive: true, force: true });
-      await rm(pluginRoot, { recursive: true, force: true });
-      await rm(recordDir, { recursive: true, force: true });
     }
-  });
-
-  it('does not warn when the plugin marker matches the CLI version', async () => {
-    const recordDir = await mkdtemp(join(tmpdir(), 'syntaur-record-'));
-    const binDir = await makeRecordingSyntaur(recordDir, '0.0.1');
-    const pluginRoot = await makePluginRoot('0.0.1');
-    try {
-      const res = runHook(STDIN, {
-        CLAUDE_PLUGIN_ROOT: pluginRoot,
-        PATH: `${binDir}:${process.env.PATH}`,
-      });
-      expect(res.status).toBe(0);
-      expect(res.stdout).not.toContain('differs');
-    } finally {
-      await rm(binDir, { recursive: true, force: true });
-      await rm(pluginRoot, { recursive: true, force: true });
-      await rm(recordDir, { recursive: true, force: true });
-    }
-  });
-
-  it('does not warn and still exits 0 when no install marker is present', async () => {
-    const recordDir = await mkdtemp(join(tmpdir(), 'syntaur-record-'));
-    const binDir = await makeRecordingSyntaur(recordDir, '9.9.9');
-    const pluginRoot = await makePluginRoot(null);
-    try {
-      const res = runHook(STDIN, {
-        CLAUDE_PLUGIN_ROOT: pluginRoot,
-        PATH: `${binDir}:${process.env.PATH}`,
-      });
-      expect(res.status).toBe(0);
-      expect(res.stdout).not.toContain('differs');
-    } finally {
-      await rm(binDir, { recursive: true, force: true });
-      await rm(pluginRoot, { recursive: true, force: true });
-      await rm(recordDir, { recursive: true, force: true });
-    }
-  });
+  }, 15_000);
 });

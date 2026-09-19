@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { readFileSync } from 'node:fs';
+import { HOOK_ENTRIES } from '../commands/hooks.js';
+import { appendSession } from '../dashboard/agent-sessions.js';
+import { getSessionDb } from '../dashboard/session-db.js';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,11 +20,6 @@ import { rowToBinding } from '../utils/engagement-binding.js';
 import type { EngagementRow } from '../db/engagement-db.js';
 
 const CLI_ENTRY = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'bin', 'syntaur.js');
-const hooksPath = resolve(
-  dirname(fileURLToPath(import.meta.url)),
-  '../../platforms/claude-code/hooks/hooks.json',
-);
-
 let home: string;
 let cwd: string;
 const SESSION_ID = 'sess-context-1';
@@ -510,21 +507,59 @@ describe('runSessionContext', () => {
   });
 });
 
-describe('hooks.json UserPromptSubmit entries', () => {
-  it('lists session-touch.sh and prompt-context.sh with 5s timeout', () => {
-    const hooks = JSON.parse(readFileSync(hooksPath, 'utf-8')) as {
-      hooks: {
-        UserPromptSubmit: Array<{ hooks: Array<{ command: string; timeout?: number }> }>;
-      };
-    };
-    const entries = hooks.hooks.UserPromptSubmit;
-    expect(entries).toHaveLength(2);
-    for (const entry of entries) {
-      expect(entry.hooks).toHaveLength(1);
-      expect(entry.hooks[0].timeout).toBe(5);
+describe('HOOK_ENTRIES', () => {
+  it('lists three events with one entry each, timeout 5, expected script names', () => {
+    expect(HOOK_ENTRIES).toHaveLength(3);
+    for (const entry of HOOK_ENTRIES) {
+      expect(entry.timeout).toBe(5);
+      expect(entry.script).toMatch(/\.sh$/);
     }
-    const commands = entries.flatMap((e) => e.hooks.map((h) => h.command));
-    expect(commands.some((c) => c.includes('session-touch.sh'))).toBe(true);
-    expect(commands.some((c) => c.includes('prompt-context.sh'))).toBe(true);
+    const scripts = HOOK_ENTRIES.map((e) => e.script);
+    expect(scripts).toContain('session-start.sh');
+    expect(scripts).toContain('session-touch.sh');
+    expect(scripts).toContain('prompt-context.sh');
+  });
+});
+
+describe('runSessionContext touch', () => {
+  it('advances updated_at for a registered session', async () => {
+    process.env.SYNTAUR_HOME = home;
+    initSessionDb();
+    const sessionId = 'sess-touch-context';
+    await appendSession('', {
+      sessionId,
+      agent: 'claude',
+      status: 'active',
+      path: cwd,
+      started: new Date().toISOString(),
+      projectSlug: null,
+      ticketSlug: null,
+      ticketId: null,
+    });
+    getSessionDb()
+      .prepare("UPDATE sessions SET updated_at = datetime('now', '-1 hour') WHERE session_id = ?")
+      .run(sessionId);
+    const before = getSessionDb()
+      .prepare('SELECT updated_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { updated_at: string };
+    await runSessionContext(JSON.stringify({ session_id: sessionId, cwd }), {
+      cwd,
+      fromHook: true,
+    });
+    const after = getSessionDb()
+      .prepare('SELECT updated_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { updated_at: string };
+    expect(after.updated_at).not.toBe(before.updated_at);
+  });
+
+  it('does not touch unsafe session ids', async () => {
+    process.env.SYNTAUR_HOME = home;
+    initSessionDb();
+    await runSessionContext(JSON.stringify({ session_id: '../evil', cwd }), {
+      cwd,
+      fromHook: true,
+    });
+    const count = getSessionDb().prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number };
+    expect(count.n).toBe(0);
   });
 });
