@@ -34,7 +34,7 @@ async function readJson(path: string): Promise<any> {
   return JSON.parse(await readFile(path, 'utf-8'));
 }
 
-describe('configure-statusline', () => {
+describe('statusline configure', () => {
   it('writes a default config via writeDefaultConfigIfMissing', async () => {
     await writeDefaultConfigIfMissing(installRoot);
     const cfg = await readJson(resolve(installRoot, 'statusline.config.json'));

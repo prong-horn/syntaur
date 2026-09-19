@@ -211,10 +211,13 @@ hooksCommand
   );
 program.addCommand(hooksCommand);
 
-program
-  .command('install-statusline')
+const statuslineCommand = new Command('statusline').description(
+  'Install, configure, or remove the syntaur statusLine for Claude Code',
+);
+statuslineCommand
+  .command('install')
   .description(
-    'Install the syntaur statusLine for Claude Code. Augments ~/.claude/settings.json; wraps any existing script by default.',
+    'Install the syntaur statusLine. Augments ~/.claude/settings.json; wraps any existing script by default.',
   )
   .option('--mode <mode>', 'replace | wrap | skip | ask (default: ask, wrap in non-TTY)', 'ask')
   .option('--link', 'Symlink the installed script to the package source (dev mode)')
@@ -233,9 +236,8 @@ program
       });
     }),
   );
-
-program
-  .command('uninstall-statusline')
+statuslineCommand
+  .command('uninstall')
   .description(
     'Remove the syntaur statusLine. Restores the previously configured command from backup if present.',
   )
@@ -245,9 +247,8 @@ program
       await uninstallStatuslineCommand({ keepScript: options.keepScript });
     }),
   );
-
-program
-  .command('configure-statusline')
+statuslineCommand
+  .command('configure')
   .description(
     'Configure which segments (git, ticket, session, model, ctx, cwd, wrap) appear in the syntaur statusLine and in what order.',
   )
@@ -267,6 +268,7 @@ program
       await configureStatuslineCommand(options);
     }),
   );
+program.addCommand(statuslineCommand);
 
 program
   .command('track-session')

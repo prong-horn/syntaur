@@ -31,7 +31,7 @@ async function readJson(path: string): Promise<any> {
   return JSON.parse(await readFile(path, 'utf-8'));
 }
 
-describe('install-statusline', () => {
+describe('statusline install', () => {
   it('creates settings.json with our statusLine when none exists (mode=replace)', async () => {
     await installStatuslineCommand({
       mode: 'replace',
