@@ -22,11 +22,11 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'templates', // ticket-templates/builtins.ts
   'runtime', // session-id.ts
   'v2-migrated', // migrate-v2.ts
-  'statusline.backup.json', // install-statusline.ts
-  'statusline.conf', // install-statusline.ts
-  'statusline.config.json', // configure-statusline.ts
-  'statusline.sh', // install-statusline.ts
-  'statusline-wrapped.sh', // install-statusline.ts
+  'statusline.backup.json', // statusline install
+  'statusline.conf', // statusline install
+  'statusline.config.json', // statusline configure
+  'statusline.sh', // statusline install
+  'statusline-wrapped.sh', // statusline install
   'hooks', // hooks install
   'hooks.backup.json', // hooks install
   'syntaur.db', // events-db.ts

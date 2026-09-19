@@ -176,7 +176,7 @@ const RULE_B_ALLOWLIST: Record<string, string> = {
   'src/utils/install.ts': 'legacy install probe paths',
   'src/utils/doctor/checks/skills.ts': 'Claude/Codex skills dirs',
   'src/utils/doctor/checks/hooks.ts': 'Claude settings paths',
-  'src/commands/install-statusline.ts': 'statusline install',
+  'src/commands/statusline-install.ts': 'statusline install',
   'src/commands/hooks.ts': 'hooks install paths',
   'src/commands/update.ts': 'update paths',
   'src/usage/cwd-extractor.ts': 'cwd extraction',

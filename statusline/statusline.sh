@@ -33,7 +33,7 @@ fi
 
 CONFIG_FILE="$HOME/.syntaur/statusline.config.json"
 # Fall back to a simple one-line conf file for backward compat with earlier
-# install-statusline versions that only stored a wrap target.
+# Older statusline install versions that only stored a wrap target.
 LEGACY_CONF="$HOME/.syntaur/statusline.conf"
 
 # --- Load config ---

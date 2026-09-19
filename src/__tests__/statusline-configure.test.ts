@@ -8,8 +8,8 @@ import {
   configureStatuslineCommand,
   writeDefaultConfigIfMissing,
   PRESETS,
-} from '../commands/configure-statusline.js';
-import { installStatuslineCommand } from '../commands/install-statusline.js';
+} from '../commands/statusline-configure.js';
+import { installStatuslineCommand } from '../commands/statusline-install.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sourceScript = resolve(here, '../../statusline/statusline.sh');
@@ -18,7 +18,7 @@ let sandbox: string;
 let installRoot: string;
 
 beforeEach(async () => {
-  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-configure-statusline-'));
+  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-statusline-configure-'));
   // Mirror the real layout: installRoot = $HOME/.syntaur so end-to-end tests
   // that spawn the bash script with HOME=sandbox find the config at the same
   // path as in production.
@@ -162,7 +162,7 @@ describe('statusline configure', () => {
     expect(res.stdout).toBe('aaaaaaaaaaaaaaaaaaaa1234567890ab');
   });
 
-  it('install-statusline seeds a default config', async () => {
+  it('statusline install seeds a default config', async () => {
     const settingsPath = resolve(sandbox, 'claude', 'settings.json');
     await mkdir(dirname(settingsPath), { recursive: true });
     await installStatuslineCommand({

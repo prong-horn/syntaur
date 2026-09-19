@@ -252,17 +252,17 @@ export async function configureStatuslineCommand(
     if (out) {
       console.log('  ' + out);
     } else {
-      console.log('  (preview failed — run `syntaur install-statusline` if the script is missing)');
+      console.log('  (preview failed — run `syntaur statusline install` if the script is missing)');
     }
   } else {
     console.log('');
     console.log(
-      '(statusline script not yet installed — run `syntaur install-statusline` to wire it up)',
+      '(statusline script not yet installed — run `syntaur statusline install` to wire it up)',
     );
   }
 }
 
-// --- Exported for install-statusline integration ---
+// --- Exported for statusline install integration ---
 
 export async function writeDefaultConfigIfMissing(installRoot: string): Promise<void> {
   const path = getConfigPath(installRoot);

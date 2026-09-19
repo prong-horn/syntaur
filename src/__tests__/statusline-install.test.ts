@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import {
   installStatuslineCommand,
   uninstallStatuslineCommand,
-} from '../commands/install-statusline.js';
+} from '../commands/statusline-install.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sourceScript = resolve(here, '../../statusline/statusline.sh');
@@ -17,7 +17,7 @@ let settingsPath: string;
 let installRoot: string;
 
 beforeEach(async () => {
-  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-install-statusline-'));
+  sandbox = await mkdtemp(join(tmpdir(), 'syntaur-statusline-install-'));
   settingsPath = resolve(sandbox, 'claude', 'settings.json');
   installRoot = resolve(sandbox, 'syntaur');
   await mkdir(resolve(sandbox, 'claude'), { recursive: true });
