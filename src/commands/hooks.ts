@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { readFile, writeFile, copyFile, rm, chmod, readdir } from 'node:fs/promises';
 import { resolve, dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -31,8 +32,9 @@ type HooksSettings = Record<string, HookGroup[]>;
 
 function getPackageHooksDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  // Bundled CLI: `dist/index.js` → package root is one level up.
-  return resolve(here, '..', 'hooks');
+  const fromDist = resolve(here, '..', 'hooks');
+  if (existsSync(fromDist)) return fromDist;
+  return resolve(here, '..', '..', 'hooks');
 }
 
 async function readSettingsJson(settingsPath: string): Promise<Record<string, unknown>> {
