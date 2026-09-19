@@ -38,15 +38,3 @@ export type { IndexStubParams } from './index-stubs.js';
 
 export { renderPlaybook } from './playbook.js';
 export type { PlaybookParams } from './playbook.js';
-
-export { renderCursorProtocol, renderCursorTicket } from './cursor-rules.js';
-export type { CursorTicketParams } from './cursor-rules.js';
-
-export { renderCodexAgents } from './codex-agents.js';
-export type { CodexAgentsParams } from './codex-agents.js';
-
-export { renderOpenCodeConfig } from './opencode-config.js';
-export type { OpenCodeConfigParams } from './opencode-config.js';
-
-export { renderHermesSoul } from './hermes-soul.js';
-export type { HermesSoulParams } from './hermes-soul.js';

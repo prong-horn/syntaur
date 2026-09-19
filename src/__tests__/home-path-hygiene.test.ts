@@ -173,11 +173,7 @@ export function checkRuleA(file: string, source: string, rel: string): Violation
 const RULE_B_ALLOWLIST: Record<string, string> = {
   'src/utils/paths.ts': 'resolver',
   'src/utils/session-id.ts': 'Claude sessions home',
-  'src/targets/registry.ts': 'agent install targets',
-  'src/utils/install.ts': 'agent install paths',
-  'src/utils/install-skills.ts': 'skill install paths',
-  'src/utils/plugin-state.ts': 'plugin state paths',
-  'src/utils/doctor/checks/integrations.ts': 'integration paths',
+  'src/utils/install.ts': 'legacy install probe paths',
   'src/utils/doctor/checks/skills.ts': 'Claude/Codex skills dirs',
   'src/utils/doctor/checks/hooks.ts': 'Claude settings paths',
   'src/commands/install-statusline.ts': 'statusline install',
@@ -446,21 +442,6 @@ function scanAll(): Violation[] {
     const raw = readFileSync(file, 'utf-8');
     violations.push(...checkRuleA(file, raw, rel));
     violations.push(...checkRuleB(file, raw, rel));
-    violations.push(...checkRuleC(file, raw, rel));
-  }
-
-  const pyFiles = walkFiles(join(REPO_ROOT, 'platforms/hermes/plugins/syntaur'), ['.py']);
-  for (const file of pyFiles) {
-    const rel = relative(REPO_ROOT, file);
-    const raw = readFileSync(file, 'utf-8');
-    violations.push(...checkRuleA(file, stripPyComments(raw), rel));
-  }
-
-  const piFiles = walkFiles(join(REPO_ROOT, 'platforms/pi/extensions/syntaur'), ['.ts']);
-  for (const file of piFiles) {
-    const rel = relative(REPO_ROOT, file);
-    const raw = readFileSync(file, 'utf-8');
-    violations.push(...checkRuleA(file, raw, rel));
     violations.push(...checkRuleC(file, raw, rel));
   }
 

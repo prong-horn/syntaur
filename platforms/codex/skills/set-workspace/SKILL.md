@@ -1,0 +1,96 @@
+---
+name: set-workspace
+description: >-
+  Populate the four `workspace.*` fields (repository, worktree, branch,
+  parentBranch) in the active ticket's `ticket.md` frontmatter
+  before any implementation code is written. Use after creating a worktree,
+  picking a branch, or any time the user wants to "set the workspace",
+  "wire the ticket to a branch", or when the ready stage instructions require
+  workspace binding before implementation. Validates frontmatter via `syntaur doctor --ticket --json`
+  before writing — refuses to touch a malformed file.
+license: MIT
+metadata:
+  author: prong-horn
+  version: "1.0.0"
+---
+
+# Set Workspace
+
+Write the four canonical `workspace.*` fields in `ticket.md` frontmatter
+so that write boundaries are satisfied before implementation work (the Codex plugin enforces them with a PreToolUse hook; Claude Code and every other harness are on the honor system).
+Validates the file first via `syntaur doctor --ticket --json` and
+refuses to write on errors.
+
+This skill implements the **ready** stage instructions: never write
+implementation code until workspace fields are set.
+
+## When NOT to use this skill
+
+- The workspace fields are already set correctly. Read the ticket.md
+  first; if all four fields match the intended values, do nothing.
+- You want to create the worktree itself — use `/syntaur-worktree`, which
+  composes worktree creation AND workspace field updates in one move.
+- The ticket is in a terminal stage (`done` or `dropped`). Reopen it first if
+  you really need to change workspace.
+
+## Step 1: Resolve the ticket file
+
+The active ticket is resolved from the session's open engagement — `syntaur
+workspace set` (Step 3) targets it automatically. `.syntaur/context.json` is
+only a workspace marker; do not read the ticket from it.
+
+If there is no open engagement (no active ticket), the CLI aborts with "No
+active ticket for this session — grab one first." Run `grab-ticket`
+first, or pass `--ticket <id> [--project <slug>]` to target one
+explicitly.
+
+## Step 2: Gather inputs
+
+At minimum specify enough to fill the four fields:
+
+- `--repository <path>` — repo root (typically `git rev-parse --show-toplevel`).
+- `--worktree-path <path>` — usually `<repository>/.worktrees/<branch>`
+  per the repo-local convention.
+- `--branch <name>` — current branch (`git rev-parse --abbrev-ref HEAD`).
+- `--parent-branch <name>` — typically `main`.
+
+Defaults to auto-detect when not supplied:
+
+- `repository` ← `git -C $(pwd) rev-parse --show-toplevel`.
+- `branch` ← `git -C $(pwd) rev-parse --abbrev-ref HEAD`.
+- `worktree` ← `$(pwd)` (when invoked from the worktree itself).
+- `parentBranch` ← prompt the user; do not invent.
+
+## Step 3: Write via the CLI
+
+```bash
+syntaur workspace set \
+  --repository <repo> \
+  --worktree-path <repo>/.worktrees/<branch> \
+  --branch <branch> \
+  --parent-branch <parent>
+```
+
+Targets the active ticket from the session's open engagement by default;
+pass `--ticket <id> [--project <slug>]` to target one explicitly. The command
+does the whole safe write in one atomic step:
+
+- **Pre-write validation** — runs the same checks as `syntaur doctor
+  --ticket --json`; if the file is malformed it refuses to write and prints
+  the errors. (Implements the "never touch a malformed file" guard.)
+- Writes the four `workspace.*` fields in place via the frontmatter mutator
+  (other same-named keys elsewhere are untouched) and bumps the top-level
+  `updated` timestamp.
+- **Post-write re-validation** — if the result is somehow invalid, it restores
+  the original file and exits non-zero, so the file is never left half-written.
+
+If the command exits non-zero, report its `Error:` output verbatim and fix the
+underlying frontmatter before retrying.
+
+## Step 4: Report to User
+
+Summarize:
+
+- Path of the modified ticket.md (the command prints it).
+- The four field values that were written.
+- Reminder: workspace fields are set; implementation work can proceed under the protocol write boundaries (Codex enforces via PreToolUse hook; other harnesses are on the honor system).

@@ -201,21 +201,10 @@ describe('updateCommand — fresh-bin + target pinning', () => {
     await run({}, deps);
     expect(calls[1]).toMatchObject({
       cmd: process.execPath,
-      args: ['/g/node_modules/syntaur/bin/syntaur.js', 'install-plugin', '--force'],
+      args: ['/g/node_modules/syntaur/bin/syntaur.js', 'hooks', 'install'],
     });
   });
 
-  it('always pins SYNTAUR_PLUGIN_TARGET even when no managed dir exists', async () => {
-    const { deps, calls } = makeDeps({
-      kind: 'global',
-      old: '0.1.0',
-      latest: '9.9.9',
-      env: { npm_config_user_agent: 'npm/10' },
-      getManagedDir: async () => null,
-    });
-    await run({}, deps);
-    expect(calls[1].env?.SYNTAUR_PLUGIN_TARGET).toMatch(/[\\/]\.claude[\\/]plugins[\\/]syntaur$/);
-  });
 });
 
 describe('updateCommand — durable-global PMs (classified unknown)', () => {
@@ -238,7 +227,7 @@ describe('updateCommand — dry-run', () => {
     expect(calls).toHaveLength(0);
     const out = logs.join('\n');
     expect(out).toMatch(/Would run: npm install -g syntaur@9\.9\.9/);
-    expect(out).toMatch(/Would refresh via: syntaur install-plugin --force/);
+    expect(out).toMatch(/Would refresh via: syntaur hooks install/);
   });
 
   it('says "no changes" when already up to date (truthful dry-run)', async () => {
@@ -250,28 +239,21 @@ describe('updateCommand — dry-run', () => {
 });
 
 describe('updateCommand — refresh wiring', () => {
-  it('after update, spawns fresh `syntaur install-plugin --force` with SYNTAUR_PLUGIN_TARGET', async () => {
+  it('after update, spawns fresh `syntaur hooks install`', async () => {
     const { deps, calls } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' } });
     await run({}, deps);
     expect(calls).toHaveLength(3);
     expect(calls[0].cmd).toBe('npm');
-    expect(calls[1]).toMatchObject({ cmd: 'syntaur', args: ['install-plugin', '--force'] });
-    expect(calls[1].env?.SYNTAUR_PLUGIN_TARGET).toBe('/home/u/.claude/plugins/syntaur');
+    expect(calls[1]).toMatchObject({ cmd: 'syntaur', args: ['hooks', 'install'] });
     expect(calls[2]).toMatchObject({ cmd: 'syntaur', args: ['template', 'reset', '--missing'] });
   });
 
-  it('forwards --force-skills and --enable to the refresh', async () => {
-    const { deps, calls } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' } });
-    await run({ forceSkills: true, enable: true }, deps);
-    expect(calls[1].args).toEqual(['install-plugin', '--force', '--force-skills', '--enable']);
-  });
-
-  it('--skip-refresh updates the package but does NOT spawn install-plugin', async () => {
+  it('--skip-refresh updates the package but does NOT spawn hooks install', async () => {
     const { deps, calls, logs } = makeDeps({ kind: 'global', old: '0.1.0', latest: '9.9.9', env: { npm_config_user_agent: 'npm/10' } });
     await run({ skipRefresh: true }, deps);
     expect(calls).toHaveLength(1);
     expect(calls[0].cmd).toBe('npm');
-    expect(logs.join('\n')).toMatch(/Skipped plugin\/skills refresh/);
+    expect(logs.join('\n')).toMatch(/Skipped hooks refresh/);
   });
 });
 
@@ -305,7 +287,7 @@ describe('updateCommand — errors', () => {
     const logs: string[] = [];
     deps.log = (m) => logs.push(m);
     await run({}, deps); // resolves (no throw)
-    expect(logs.join('\n')).toMatch(/skills refresh failed/);
+    expect(logs.join('\n')).toMatch(/hooks refresh failed/);
     expect(logs.join('\n')).toMatch(/Updated syntaur: 0\.1\.0 → 9\.9\.9/);
   });
 });

@@ -267,7 +267,18 @@ export async function migrateLegacyConfig(
 
   result.resolvedProjectsDir = resolvedProjectsDir;
 
-  if (result.renamedField || result.renamedDir) {
+  const { stripTopLevelBlock } = await import('./config.js');
+  let strippedInstall = false;
+  if (/^\s*integrations:\s*$/m.test(newFmBlock)) {
+    newFmBlock = stripTopLevelBlock(newFmBlock, 'integrations');
+    strippedInstall = true;
+  }
+  if (/^\s*onboarding:\s*$/m.test(newFmBlock)) {
+    newFmBlock = stripTopLevelBlock(newFmBlock, 'onboarding');
+    strippedInstall = true;
+  }
+
+  if (result.renamedField || result.renamedDir || strippedInstall) {
     const newContent = `---\n${newFmBlock.replace(/\n+$/, '')}\n---\n${afterFm.startsWith('\n') ? afterFm.slice(1) : afterFm}`;
     try {
       await writeFile(configPath, newContent, 'utf-8');

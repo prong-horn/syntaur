@@ -6,8 +6,6 @@ export function renderConfig(params: ConfigParams): string {
   return `---
 version: "1.0"
 defaultProjectDir: ${params.defaultProjectDir}
-onboarding:
-  completed: false
 agentDefaults:
   trustLevel: medium
   autoApprove: false

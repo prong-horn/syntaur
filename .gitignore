@@ -9,11 +9,6 @@ dashboard/node_modules/
 .claude/
 .playwright-mcp/
 
-# Build artifact: skills are mirrored into each platform's plugin dir at
-# build time so plugin.json's `./skills/<name>` paths resolve. The
-# canonical source is <repo>/skills/.
-platforms/*/skills/
-
 # Build artifact: the Agent Skills v0.2.0 discovery index + artifacts are
 # generated from <repo>/skills/ by scripts/build-skills-index.mjs and deployed
 # to GitHub Pages by publish.yml. Regenerated on every release; never committed.

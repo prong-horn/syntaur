@@ -61,6 +61,10 @@ export async function initCommand(options: InitOptions): Promise<void> {
   }
 
   console.log('\nSyntaur initialized successfully.');
+  console.log('Next: npx skills add prong-horn/syntaur -g -a claude-code');
+  console.log('Next: syntaur hooks install');
+  console.log('Next: syntaur dashboard');
+  console.log('Optional: syntaur statusline install');
 }
 
 async function seedDefaultPlaybooks(playbooksDir: string): Promise<number> {

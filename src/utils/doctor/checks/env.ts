@@ -135,87 +135,9 @@ const configValid: Check = {
       } satisfies CheckResult;
     }
 
-    const nestedMismatch = detectNestedParseMismatch(fmBlock, ctx.config);
-    if (nestedMismatch) {
-      return {
-        id: this.id,
-        category: this.category,
-        title: this.title,
-        status: 'error',
-        detail: `config.md has ${nestedMismatch.field} in raw frontmatter but readConfig() did not load it (parser silently dropped the nested section)`,
-        affected: [configPath],
-        remediation: {
-          kind: 'manual',
-          suggestion: `Check indentation under the parent key for ${nestedMismatch.parent}:`,
-          command: null,
-        },
-        autoFixable: false,
-      } satisfies CheckResult;
-    }
-
     return pass(this);
   },
 };
-
-interface NestedMismatch {
-  field: string;
-  parent: string;
-}
-
-function detectNestedParseMismatch(
-  fmBlock: string,
-  config: {
-    integrations: { claudePluginDir: string | null; codexPluginDir: string | null; codexMarketplacePath: string | null };
-  },
-): NestedMismatch | null {
-  const integrationChecks: Array<[string, string | null]> = [
-    ['integrations.claudePluginDir', config.integrations.claudePluginDir],
-    ['integrations.codexPluginDir', config.integrations.codexPluginDir],
-    ['integrations.codexMarketplacePath', config.integrations.codexMarketplacePath],
-  ];
-  for (const [dotted, parsedValue] of integrationChecks) {
-    const raw = readNestedField(fmBlock, dotted);
-    if (raw !== null && raw !== 'null' && raw !== '' && parsedValue === null) {
-      return { field: dotted, parent: 'integrations' };
-    }
-  }
-
-  return null;
-}
-
-function readNestedField(fmBlock: string, dotted: string): string | null {
-  const [parent, key] = dotted.split('.', 2);
-  if (!parent || !key) return null;
-  const lines = fmBlock.split('\n');
-  const parentPrefix = `${parent}:`;
-  let inParent = false;
-  for (const line of lines) {
-    if (!inParent) {
-      if (line.startsWith(parentPrefix)) {
-        inParent = true;
-      }
-      continue;
-    }
-    const trimmed = line.trimStart();
-    const indent = line.length - trimmed.length;
-    if (trimmed === '') continue;
-    if (indent === 0) {
-      // Next top-level key — parent block ended
-      return null;
-    }
-    const stripped = trimmed.startsWith('- ') ? trimmed.slice(2).trimStart() : trimmed;
-    const colonIdx = stripped.indexOf(':');
-    if (colonIdx < 0) continue;
-    const lineKey = stripped.slice(0, colonIdx).trim();
-    if (lineKey !== key) continue;
-    const raw = stripped.slice(colonIdx + 1).trim();
-    if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
-      return raw.slice(1, -1);
-    }
-    return raw;
-  }
-  return null;
-}
 
 const nodeVersion: Check = {
   id: 'env.node-version',

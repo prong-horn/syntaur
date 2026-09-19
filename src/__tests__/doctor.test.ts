@@ -327,20 +327,6 @@ describe('syntaur doctor', () => {
     expect(configCheck?.detail).toMatch(/absolute|fell back/i);
   });
 
-  it('detects malformed nested integrations frontmatter (broken indentation)', async () => {
-    await mkdir(syntaurDir, { recursive: true });
-    // Nested field present at wrong indent level — readNestedField still finds it via regex
-    // but parseFrontmatter in config.ts drops it because it's preceded by a non-empty parent value.
-    await writeFile(
-      resolve(syntaurDir, 'config.md'),
-      `---\nversion: "1.0"\ndefaultProjectDir: ${projectsDir}\nintegrations: brokenvalue\n  claudePluginDir: /some/path\n---\n`,
-    );
-    const report = await runChecks();
-    const configCheck = byId(report, 'env.config-valid')[0];
-    expect(configCheck?.status).toBe('error');
-    expect(configCheck?.detail).toMatch(/integrations/i);
-  });
-
   it('accepts a standalone-session context.json', async () => {
     await initBaseline();
     const cwd = await mkdtemp(join(tmpdir(), 'syntaur-doctor-cwd-'));

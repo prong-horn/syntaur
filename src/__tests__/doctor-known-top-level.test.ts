@@ -123,10 +123,7 @@ describe('doctor KNOWN_TOP_LEVEL', () => {
       expect(discovered.has(name), `scanner must discover ${name}`).toBe(true);
     }
 
-    const interimUntilTargetsRemoved = new Set(['targets']);
-    const missing = [...discovered]
-      .filter((n) => !KNOWN_TOP_LEVEL.has(n) && !interimUntilTargetsRemoved.has(n))
-      .sort();
+    const missing = [...discovered].filter((n) => !KNOWN_TOP_LEVEL.has(n)).sort();
     expect(missing).toEqual([]);
   });
 });

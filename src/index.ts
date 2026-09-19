@@ -11,16 +11,10 @@ import { restoreCommand } from './commands/restore.js';
 import { v2MigrateCommand } from './commands/migrate-v2.js';
 import { journalMigrateCommand } from './commands/migrate-journal.js';
 import { registerVerbCommands } from './commands/verbs.js';
-import { installPluginCommand } from './commands/install-plugin.js';
 import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/install-statusline.js';
 import { installHooksCommand, uninstallHooksCommand } from './commands/hooks.js';
 import { configureStatuslineCommand, PRESETS as STATUSLINE_PRESETS } from './commands/configure-statusline.js';
-import { installCodexPluginCommand } from './commands/install-codex-plugin.js';
-import { uninstallSkillsCommand } from './commands/uninstall-skills.js';
-import { setupCommand } from './commands/setup.js';
-import { uninstallCommand } from './commands/uninstall.js';
-import { setupAdapterCommand } from './commands/setup-adapter.js';
 import { trackSessionCommand } from './commands/track-session.js';
 import { doctorCommand } from './commands/doctor.js';
 import { usageCommand } from './commands/usage.js';
@@ -53,14 +47,11 @@ import { runCommand } from './errors.js';
 // before SYNTAUR_HOME is pointed at the copy (codex plan-review round-3 major).
 {
   const sub = process.argv[2];
-  const isDryRunSetup =
-    sub === 'setup' && process.argv.slice(3).includes('--dry-run');
   if (
     sub !== 'update' &&
     sub !== 'upgrade' &&
     sub !== 'migrate-workflows' &&
-    sub !== 'migrate' &&
-    !isDryRunSetup
+    sub !== 'migrate'
   ) {
     await maybePromptInstall(import.meta.url);
     await maybeNudgeForNpxInstall(import.meta.url);
@@ -186,50 +177,13 @@ program
 registerVerbCommands(program);
 
 program
-  .command('setup')
-  .description('Initialize Syntaur and optionally install plugins or launch the dashboard')
-  .option('--yes', 'Skip interactive prompts and perform only the requested flags')
-  .option('--claude', 'Install the Claude Code plugin')
-  .option('--codex', 'Install the Codex plugin')
-  .option('--claude-dir <path>', 'Install the Claude Code plugin at a specific path')
-  .option('--codex-dir <path>', 'Install the Codex plugin at a specific path')
-  .option('--codex-marketplace-path <path>', 'Write the Codex marketplace entry to a specific file')
-  .option('--dashboard', 'Launch the dashboard after setup')
-  .option('--target <id>', 'Install Syntaur into a cross-agent target. Built-in ids: pi, hermes, openclaw, cursor, opencode (plus any user descriptors in ~/.syntaur/targets/). Comma-separated for several')
-  .option('--agent <id>', 'Alias for --target; cross-agent target id(s) to install into')
-  .option('--force', 'Overwrite existing cross-agent protocol files / skills')
-  .option('--dry-run', 'Print the cross-agent install actions without writing anything')
-  .action(
-    runCommand(async (options) => {
-      await setupCommand(options);
-    }),
-  );
-
-program
-  .command('install-plugin')
-  .description('Install the Syntaur Claude Code plugin')
-  .option('--force', 'Overwrite an existing Syntaur-managed install')
-  .option('--target-dir <path>', 'Install the plugin at a specific directory')
-  .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
-  .option('--force-skills', 'Overwrite user-edited skills in ~/.claude/skills')
-  .option('--skip-skills', 'Do not install protocol skills into ~/.claude/skills')
-  .option('--enable', 'Enable the plugin in ~/.claude/settings.json after install')
-  .action(
-    runCommand(async (options) => {
-      await installPluginCommand({ ...options, promptForTarget: true });
-    }),
-  );
-
-program
   .command('update')
   .alias('upgrade')
-  .description('Self-update the global syntaur package and refresh the plugin/skills')
+  .description('Self-update the global syntaur package and refresh session hooks')
   .option('--version <v>', 'Update to a specific version instead of latest')
   .option('--check', 'Report whether an update is available; apply nothing')
   .option('--dry-run', 'Print what would happen without changing anything')
-  .option('--skip-refresh', 'Update the package only; do not refresh the plugin/skills')
-  .option('--force-skills', 'Overwrite user-edited skills during the refresh')
-  .option('--enable', 'Enable the plugin in settings.json during the refresh')
+  .option('--skip-refresh', 'Update the package only; do not refresh session hooks')
   .option('--pm <name>', 'Override package-manager detection (npm|pnpm|yarn|bun)')
   .option('--yes', 'Assume yes for any confirmation (non-interactive)')
   .action(
@@ -315,61 +269,6 @@ program
   );
 
 program
-  .command('uninstall-skills')
-  .description('Remove Syntaur protocol skills from ~/.claude/skills and/or ~/.codex/skills')
-  .option('--claude', 'Remove from ~/.claude/skills')
-  .option('--codex', 'Remove from ~/.codex/skills')
-  .option('--all', 'Remove from both')
-  .action(
-    runCommand(async (options: { claude?: boolean; codex?: boolean; all?: boolean }) => {
-      await uninstallSkillsCommand(options);
-    }),
-  );
-
-program
-  .command('install-codex-plugin')
-  .description('Install the Syntaur Codex plugin and marketplace entry')
-  .option('--force', 'Overwrite an existing Syntaur-managed install')
-  .option('--target-dir <path>', 'Install the plugin at a specific directory')
-  .option('--marketplace-path <path>', 'Write the marketplace entry to a specific file')
-  .option('--link', 'Use a symlink instead of copying files (repo-local dev only)')
-  .option('--force-skills', 'Overwrite user-edited skills in ~/.codex/skills')
-  .option('--skip-skills', 'Do not install protocol skills into ~/.codex/skills')
-  .action(
-    runCommand(async (options) => {
-      await installCodexPluginCommand({ ...options, promptForTarget: true });
-    }),
-  );
-
-program
-  .command('uninstall')
-  .description('Remove Syntaur integrations and optionally local data')
-  .option('--claude', 'Remove only the Claude Code plugin')
-  .option('--codex', 'Remove only the Codex plugin and marketplace entry')
-  .option('--data', 'Remove ~/.syntaur data')
-  .option('--all', 'Remove plugins and ~/.syntaur data')
-  .option('--yes', 'Skip confirmation prompts')
-  .action(
-    runCommand(async (options) => {
-      await uninstallCommand(options);
-    }),
-  );
-
-program
-  .command('setup-adapter')
-  .description('Generate adapter instruction files for a framework in the current directory')
-  .argument('<framework>', 'Target framework: built-in ids cursor, codex, opencode, pi, openclaw, hermes (plus any user descriptor with an instructions adapter in ~/.syntaur/targets/)')
-  .option('--project <slug>', 'Target project slug (required)')
-  .option('--ticket <id>', 'Target ticket id (required)')
-  .option('--force', 'Overwrite existing adapter files')
-  .option('--dir <path>', 'Override default project directory')
-  .action(
-    runCommand(async (framework, options) => {
-      await setupAdapterCommand(framework, options);
-    }),
-  );
-
-program
   .command('track-session')
   .description('Register an agent session (optionally linked to a project/ticket)')
   .option('--project <slug>', 'Target project slug')
@@ -419,7 +318,7 @@ program.addHelpText(
   'after',
   `
 Common workflow:
-  $ syntaur setup                                  Initialize Syntaur (plugins, dashboard)
+  $ syntaur init                                   Initialize ~/.syntaur/
   $ syntaur project new "My App"                   Start a new project
   $ syntaur new --project my-app "Add login"   Add a ticket to a project
   $ syntaur dashboard                              Open the local web dashboard

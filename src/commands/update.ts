@@ -4,7 +4,6 @@ import { realpathSync } from 'node:fs';
 import { detectInstallKind, type InstallKind } from '../utils/install-detection.js';
 import { compareSemver } from '../utils/npx-prompt.js';
 import { readPackageVersion } from '../utils/version.js';
-import { getConfiguredOrLegacyManagedPluginDir, getDefaultPluginTargetDir } from '../utils/install.js';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -20,7 +19,7 @@ export interface UpdateRunResult {
 }
 
 // Single runner for the package-manager update spawn, the global-dir query, and
-// the fresh `install-plugin` refresh spawn. Injectable so tests never spawn.
+// the fresh `hooks install` refresh spawn. Injectable so tests never spawn.
 // `captureStdout` pipes+returns stdout quietly (for `npm root -g` style queries);
 // otherwise stdout is inherited so the user sees PM/install progress.
 export type UpdateRunner = (
@@ -41,8 +40,6 @@ export interface UpdateOptions {
   check?: boolean;
   dryRun?: boolean;
   skipRefresh?: boolean;
-  forceSkills?: boolean;
-  enable?: boolean;
   pm?: string;
   yes?: boolean;
 }
@@ -52,7 +49,6 @@ export interface UpdateDeps {
   detectKind?: (scriptUrl: string) => InstallKind;
   detectKindDeps?: { realpath?: (p: string) => string; readFile?: (p: string) => string; envUserAgent?: string };
   fetchLatest?: (pkg: string, timeoutMs: number) => Promise<string | null>;
-  getManagedDir?: (kind: 'claude' | 'codex') => Promise<string | null>;
   readOldVersion?: (scriptUrl: string) => Promise<string | null>;
   resolveFreshBin?: (pm: PackageManager, runner: UpdateRunner, env: NodeJS.ProcessEnv) => Promise<FreshBin | null>;
   env?: NodeJS.ProcessEnv;
@@ -61,7 +57,7 @@ export interface UpdateDeps {
 
 const LOCAL_MSG =
   "Running from a dev/linked checkout — `syntaur update` won't touch a linked install. " +
-  'Pull + rebuild in your repo, then `syntaur install-plugin --force` to refresh skills.';
+  'Pull + rebuild in your repo, then `syntaur hooks install` to refresh session hooks.';
 const NPX_MSG =
   "Running via npx — there's no durable global install to update. Install durably first: `npm i -g syntaur`.";
 
@@ -224,7 +220,6 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
   const realpath = deps.detectKindDeps?.realpath ?? realpathSync.native;
   const detectKind = deps.detectKind ?? ((u: string) => detectInstallKind(u, deps.detectKindDeps));
   const fetchLatest = deps.fetchLatest ?? fetchLatestNpmVersion;
-  const getManagedDir = deps.getManagedDir ?? getConfiguredOrLegacyManagedPluginDir;
   const readOld = deps.readOldVersion ?? readPackageVersion;
   const resolveFreshBin = deps.resolveFreshBin ?? defaultResolveFreshBin;
 
@@ -295,8 +290,7 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
     const { cmd, args } = pmUpdateCommand(pm, target);
     log(`Would run: ${cmd} ${args.join(' ')}`);
     if (!options.skipRefresh) {
-      const dir = await getManagedDir('claude');
-      log(`Would refresh via: syntaur install-plugin --force${dir ? ` (SYNTAUR_PLUGIN_TARGET=${dir})` : ''}`);
+      log('Would refresh via: syntaur hooks install');
     }
     return;
   }
@@ -315,18 +309,18 @@ export async function updateCommand(options: UpdateOptions, deps: UpdateDeps = {
     throw classifyUpdateFailure(pm, cmd, args, res);
   }
 
-  // --- Refresh plugin/skills in a FRESH process (new package root) ---
+  // --- Refresh hooks in a FRESH process (new package root) ---
   let refreshNote = '';
   if (options.skipRefresh) {
-    refreshNote = 'Skipped plugin/skills refresh (--skip-refresh).';
+    refreshNote = 'Skipped hooks refresh (--skip-refresh).';
   } else {
-    refreshNote = await refreshPluginSkills(options, pm, runner, getManagedDir, resolveFreshBin, env, log);
+    refreshNote = await refreshHooks(pm, runner, resolveFreshBin, env, log);
   }
 
   // --- Report ---
   log(`Updated syntaur: ${old} → ${target}`);
   if (refreshNote) log(refreshNote);
-  log('Restart your agent (Claude Code / Codex) to pick up new skills.');
+  log('Restart Claude Code to pick up hook changes.');
 }
 
 function resolvePm(
@@ -346,46 +340,30 @@ function resolvePm(
   return detected === null ? { pm: 'npm', ambiguous: true } : { pm: detected, ambiguous: false };
 }
 
-// Spawn the FRESHLY-installed `syntaur install-plugin` so it copies the NEW
-// package root's skills (an in-process call would copy the old, still-loaded root).
-// SYNTAUR_PLUGIN_TARGET pins the dir → disables the target prompt AND the
-// migration confirm in install-plugin.
-async function refreshPluginSkills(
-  options: UpdateOptions,
+async function refreshHooks(
   pm: PackageManager,
   runner: UpdateRunner,
-  getManagedDir: (kind: 'claude' | 'codex') => Promise<string | null>,
   resolveFreshBin: (pm: PackageManager, runner: UpdateRunner, env: NodeJS.ProcessEnv) => Promise<FreshBin | null>,
   env: NodeJS.ProcessEnv,
   log: (m: string) => void,
 ): Promise<string> {
-  const args = ['install-plugin', '--force'];
-  if (options.forceSkills) args.push('--force-skills');
-  if (options.enable) args.push('--enable');
+  const args = ['hooks', 'install'];
 
-  // Always pin SYNTAUR_PLUGIN_TARGET (existing managed dir, else the default) so
-  // the spawned install-plugin never prompts (target prompt + migration confirm).
-  const target = (await getManagedDir('claude')) ?? getDefaultPluginTargetDir('claude');
-  const childEnv: NodeJS.ProcessEnv = { ...env, SYNTAUR_PLUGIN_TARGET: target };
-
-  // Run the JUST-INSTALLED CLI (resolved from the PM's global dir) so the refresh
-  // copies NEW skills; fall back to PATH `syntaur` only if resolution fails.
   const fresh = await resolveFreshBin(pm, runner, env);
   const cmd = fresh ? fresh.cmd : 'syntaur';
   const fullArgs = fresh ? [...fresh.baseArgs, ...args] : args;
 
-  log(`Refreshing plugin + skills: syntaur ${args.join(' ')}`);
-  const res = await runner(cmd, fullArgs, { env: childEnv });
+  log('Refreshing session hooks: syntaur hooks install');
+  const res = await runner(cmd, fullArgs, { env });
   if (res.code !== 0 || res.error) {
-    return 'Warning: skills refresh failed — run `syntaur install-plugin --force` manually.';
+    return 'Warning: hooks refresh failed — run `syntaur hooks install` manually.';
   }
 
-  // Seed any missing built-in templates via the fresh binary (best-effort).
   const templateArgs = fresh ? [...fresh.baseArgs, 'template', 'reset', '--missing'] : ['template', 'reset', '--missing'];
   log('Seeding missing built-in templates: syntaur template reset --missing');
-  const templateRes = await runner(cmd, templateArgs, { env: childEnv });
+  const templateRes = await runner(cmd, templateArgs, { env });
   if (templateRes.code !== 0 || templateRes.error) {
-    return 'Refreshed plugin + skills. Warning: template seed failed — run `syntaur template reset --missing` manually.';
+    return 'Refreshed hooks. Warning: template seed failed — run `syntaur template reset --missing` manually.';
   }
-  return 'Refreshed plugin + skills and seeded missing templates.';
+  return 'Refreshed hooks and seeded missing templates.';
 }

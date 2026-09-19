@@ -163,21 +163,6 @@ export interface WorkflowDefinition extends StatusConfig {
   label: string;
 }
 
-export interface IntegrationConfig {
-  claudePluginDir: string | null;
-  codexPluginDir: string | null;
-  codexMarketplacePath: string | null;
-  // Per-agent cross-agent install records (pi, hermes, openclaw, ...). Optional
-  // so existing `IntegrationConfig` literals (and the default config) need no
-  // change. Serialized as flat `installedAgents.<id>: <scope>` keys inside the
-  // `integrations:` block (the frontmatter parser only flattens two levels).
-  installedAgents?: Record<string, { scope: 'project' | 'global' }>;
-}
-
-export interface OnboardingConfig {
-  completed: boolean;
-}
-
 export type AutoCreateWorktree = 'skip' | 'ask' | 'always';
 
 export interface PlaybooksConfig {
@@ -222,7 +207,6 @@ export type SessionAutoSummarize = 'on' | 'off';
 export interface SyntaurConfig {
   version: string;
   defaultProjectDir: string;
-  onboarding: OnboardingConfig;
   agentDefaults: {
     trustLevel: 'low' | 'medium' | 'high';
     autoApprove: boolean;
@@ -236,7 +220,6 @@ export interface SyntaurConfig {
      *  Agent-View keep-alive expires and the row is swept `stopped`. */
     idleSweepHours: number;
   };
-  integrations: IntegrationConfig;
   statuses: StatusConfig | null;
   /** Global library of named lifecycle workflows, referenced by id. Absent →
    * the legacy single `statuses:` lifecycle is the built-in `default` workflow.
@@ -264,9 +247,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
   get defaultProjectDir() {
     return defaultProjectDir();
   },
-  onboarding: {
-    completed: false,
-  },
   agentDefaults: {
     trustLevel: 'medium',
     autoApprove: false,
@@ -277,11 +257,6 @@ const DEFAULT_CONFIG: SyntaurConfig = {
     summarizeBackend: 'claude',
     autoSummarize: 'on',
     idleSweepHours: 6,
-  },
-  integrations: {
-    claudePluginDir: null,
-    codexPluginDir: null,
-    codexMarketplacePath: null,
   },
   statuses: null,
   workflows: null,
@@ -314,10 +289,8 @@ const SESSION_AUTO_SUMMARIZE_VALUES: readonly SessionAutoSummarize[] = ['on', 'o
 function cloneDefaultConfig(): SyntaurConfig {
   return {
     ...DEFAULT_CONFIG,
-    onboarding: { ...DEFAULT_CONFIG.onboarding },
     agentDefaults: { ...DEFAULT_CONFIG.agentDefaults },
     session: { ...DEFAULT_CONFIG.session },
-    integrations: { ...DEFAULT_CONFIG.integrations },
     statuses: null,
     workflows: null,
     playbooks: {
@@ -358,27 +331,6 @@ function parseFrontmatter(content: string): Record<string, string> {
   return result;
 }
 
-/**
- * Reconstruct the optional per-agent install records from the flattened
- * frontmatter. Keys look like `integrations.installedAgents.<id>` → `<scope>`.
- * Returns `{}` (no key) when none are present so the field stays absent.
- */
-function parseInstalledAgents(
-  fm: Record<string, string>,
-): Pick<IntegrationConfig, 'installedAgents'> {
-  const prefix = 'integrations.installedAgents.';
-  const installedAgents: Record<string, { scope: 'project' | 'global' }> = {};
-  for (const [key, value] of Object.entries(fm)) {
-    if (!key.startsWith(prefix)) continue;
-    const id = key.slice(prefix.length);
-    if (!id) continue;
-    const scope = value === 'project' ? 'project' : 'global';
-    installedAgents[id] = { scope };
-  }
-  return Object.keys(installedAgents).length > 0 ? { installedAgents } : {};
-}
-
-
 export function parseStatusConfig(_content: string): StatusConfig | null {
   return null;
 }
@@ -397,35 +349,6 @@ export function serializeWorkflowsConfig(
   _workflows: Record<string, WorkflowDefinition>,
 ): string {
   throw new Error(REMOVED_IN_V2);
-}
-
-function serializeIntegrationConfig(integrations: IntegrationConfig): string | null {
-  const lines: string[] = [];
-
-  if (integrations.claudePluginDir) {
-    lines.push(`  claudePluginDir: ${integrations.claudePluginDir}`);
-  }
-  if (integrations.codexPluginDir) {
-    lines.push(`  codexPluginDir: ${integrations.codexPluginDir}`);
-  }
-  if (integrations.codexMarketplacePath) {
-    lines.push(`  codexMarketplacePath: ${integrations.codexMarketplacePath}`);
-  }
-  if (integrations.installedAgents) {
-    for (const [id, rec] of Object.entries(integrations.installedAgents)) {
-      lines.push(`  installedAgents.${id}: ${rec.scope}`);
-    }
-  }
-
-  if (lines.length === 0) {
-    return null;
-  }
-
-  return ['integrations:', ...lines].join('\n');
-}
-
-function serializeOnboardingConfig(onboarding: OnboardingConfig): string {
-  return ['onboarding:', `  completed: ${onboarding.completed ? 'true' : 'false'}`].join('\n');
 }
 
 function serializePlaybooksConfig(playbooks: PlaybooksConfig): string | null {
@@ -713,7 +636,7 @@ export async function deleteHotkeyBindingsConfig(): Promise<void> {
   await writeFileForce(configPath, newContent);
 }
 
-function stripTopLevelBlock(fmBlock: string, key: string): string {
+export function stripTopLevelBlock(fmBlock: string, key: string): string {
   const blockStart = fmBlock.match(new RegExp(`^${key}:\\s*$`, 'm'));
   if (!blockStart) {
     return fmBlock.replace(/\n+$/, '');
@@ -1071,68 +994,6 @@ export function getSearchConfig(config: SyntaurConfig): SearchConfig {
   return config.searchConfig ?? DEFAULT_SEARCH_CONFIG;
 }
 
-export async function updateIntegrationConfig(
-  integrations: Partial<IntegrationConfig>,
-): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const nextIntegrations: IntegrationConfig = {
-    ...(await readConfig()).integrations,
-    ...integrations,
-  };
-
-  const integrationBlock = serializeIntegrationConfig(nextIntegrations);
-  const existing = await fileExists(configPath)
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${integrationBlock ?? ''}\n---\n${existing}`;
-    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'integrations');
-  const newFm = integrationBlock
-    ? `${cleanedFm}\n${integrationBlock}`.replace(/^\n+/, '')
-    : cleanedFm;
-  const normalizedFm = newFm.replace(/\n+$/, '');
-  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
-
-export async function updateOnboardingConfig(
-  onboarding: Partial<OnboardingConfig>,
-): Promise<void> {
-  const configPath = resolve(syntaurRoot(), 'config.md');
-  const nextOnboarding: OnboardingConfig = {
-    ...(await readConfig()).onboarding,
-    ...onboarding,
-  };
-
-  const onboardingBlock = serializeOnboardingConfig(nextOnboarding);
-  const existing = await fileExists(configPath)
-    ? await readFile(configPath, 'utf-8')
-    : renderConfig({ defaultProjectDir: defaultProjectDir() });
-
-  const fmMatch = existing.match(/^(---\n)([\s\S]*?)\n(---)/);
-  if (!fmMatch) {
-    const content = `---\nversion: "2.0"\ndefaultProjectDir: ${defaultProjectDir()}\n${onboardingBlock}\n---\n${existing}`;
-    await writeFileForce(configPath, content.replace(/\n\n---/, '\n---'));
-    return;
-  }
-
-  const fmBlock = fmMatch[2];
-  const afterFrontmatter = existing.slice(fmMatch[0].length);
-  const cleanedFm = stripTopLevelBlock(fmBlock, 'onboarding');
-  const newFm = `${cleanedFm}\n${onboardingBlock}`.replace(/^\n+/, '');
-  const normalizedFm = newFm.replace(/\n+$/, '');
-  const newContent = `---\n${normalizedFm}\n---${afterFrontmatter}`;
-  await writeFileForce(configPath, newContent);
-}
-
 // Guard so the legacy-config migration runs at most once per config path per
 // process lifetime. Keyed by absolute path so tests with multiple sandbox
 // HOMEs still get the migration applied to each.
@@ -1172,9 +1033,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
   return {
     version: fm['version'] || DEFAULT_CONFIG.version,
     defaultProjectDir: projectDir,
-    onboarding: {
-      completed: fm['onboarding.completed'] === 'true',
-    },
     agentDefaults: {
       trustLevel:
         (fm['agentDefaults.trustLevel'] as SyntaurConfig['agentDefaults']['trustLevel']) ||
@@ -1208,21 +1066,6 @@ export async function readConfig(): Promise<SyntaurConfig> {
       // the VALUE (finite and positive), not the key: a zero/negative/NaN
       // threshold would sweep every active row on the next scan.
       idleSweepHours: parseIdleSweepHours(fm['session.idleSweepHours']),
-    },
-    integrations: {
-      claudePluginDir: parseOptionalAbsolutePath(
-        fm['integrations.claudePluginDir'],
-        'integrations.claudePluginDir',
-      ),
-      codexPluginDir: parseOptionalAbsolutePath(
-        fm['integrations.codexPluginDir'],
-        'integrations.codexPluginDir',
-      ),
-      codexMarketplacePath: parseOptionalAbsolutePath(
-        fm['integrations.codexMarketplacePath'],
-        'integrations.codexMarketplacePath',
-      ),
-      ...parseInstalledAgents(fm),
     },
     statuses: null,
     workflows: null,
