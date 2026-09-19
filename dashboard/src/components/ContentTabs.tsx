@@ -51,18 +51,18 @@ export function ContentTabs({
   }, [updateScroll, items.length]);
 
   return (
-    <Tabs.Root value={value} onValueChange={onValueChange} className={className}>
-      <div className="relative">
+    <Tabs.Root value={value} onValueChange={onValueChange} className={cn('min-w-0 w-full', className)}>
+      <div className="relative min-w-0 w-full max-w-full overflow-hidden">
         <Tabs.List
           ref={listRef}
-          className="flex gap-2 overflow-x-auto rounded-md border border-border/70 bg-card/80 p-1"
+          className="flex w-full max-w-full gap-2 overflow-x-auto rounded-md border border-border/70 bg-card/80 p-1"
         >
           {items.map((item) => (
             <Tabs.Trigger
               key={item.value}
               value={item.value}
               className={cn(
-                'inline-flex items-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium text-muted-foreground transition',
+                'inline-flex shrink-0 items-center gap-2 rounded-sm px-3 py-1.5 text-sm font-medium text-muted-foreground transition',
                 'data-[state=active]:bg-foreground data-[state=active]:text-background',
               )}
             >

@@ -40,7 +40,6 @@ import {
   parseProgress,
   extractMermaidGraph,
 } from './parser.js';
-import { getDashboardHelp } from './help.js';
 import type {
   ArchiveResponse,
   ArchivedTicketItem,
@@ -51,22 +50,12 @@ import type {
   TicketSummary,
   TicketsBoardResponse,
   TicketTransitionAction,
-  AttentionItem,
   EditableDocumentResponse,
   EnrichedLink,
-  HelpResponse,
   ProjectDetail,
   ProjectSummary,
-  OverviewResponse,
-  OverviewSegmentId,
-  OverviewSegments,
-  OverviewHeroRecommendation,
-  OverviewHeroKind,
-  OverviewSegmentPayload,
-  OverviewStaleSegmentPayload,
   ProgressCounts,
   NeedsAttention,
-  RecentActivityItem,
   PlaybookSummary,
   PlaybookDetail,
   EngagementInfo,
@@ -74,10 +63,9 @@ import type {
   TicketTemplateFileDetail,
   TicketLogEntryDetail,
 } from './types.js';
-import { listAllSessions, getSessionById } from './agent-sessions.js';
+import { getSessionById } from './agent-sessions.js';
 import { getEngagementsByTicketId } from '../db/engagement-db.js';
 import { isSessionDbInitialized } from './session-db.js';
-import { SEGMENT_REASON } from './overviewCopy.js';
 import {
   classifyNeedsAttention,
   resolveStaleThresholds,
@@ -93,13 +81,6 @@ import {
   type StatusHistoryVirtuals,
 } from '../lifecycle/history-from-events.js';
 
-const RECENT_PROJECTS_LIMIT = 6;
-const RECENT_ACTIVITY_LIMIT = 12;
-const RECENT_SESSIONS_LIMIT = 10;
-const NEWEST_CREATED_LIMIT = 5;
-const SEGMENT_DISPLAY_CAP = 5;
-const STALE_LIMIT_DEFAULT = 50;
-const STALE_LIMIT_MAX = 200;
 
 // --- Archive hiding helpers (cascade) ---
 // "Hidden from normal views" is enforced in the aggregating/consuming functions,
@@ -115,76 +96,6 @@ function isProjectArchived(p: { archived?: boolean }): boolean {
 function activeTickets<T>(items: T[]): T[] {
   return items;
 }
-
-// ---------------------------------------------------------------------------
-// Overview perf instrumentation (opt-in via SYNTAUR_PERF_TRACE=1).
-// Used by getOverview() and helpers it calls. Inactive when traces is undefined.
-// ---------------------------------------------------------------------------
-
-interface TraceEntry {
-  label: string;
-  ms: number;
-}
-
-interface OverviewTraces {
-  entries: TraceEntry[];
-  subPhases: Map<string, number>;
-}
-
-function createTraces(): OverviewTraces {
-  return { entries: [], subPhases: new Map() };
-}
-
-async function timed<T>(
-  traces: OverviewTraces | undefined,
-  label: string,
-  fn: () => Promise<T>,
-): Promise<T> {
-  if (!traces) return fn();
-  const start = performance.now();
-  try {
-    return await fn();
-  } finally {
-    traces.entries.push({ label, ms: performance.now() - start });
-  }
-}
-
-function accumulatePhase(
-  traces: OverviewTraces | undefined,
-  label: string,
-  ms: number,
-): void {
-  if (!traces) return;
-  traces.subPhases.set(label, (traces.subPhases.get(label) ?? 0) + ms);
-}
-
-function emitTrace(traces: OverviewTraces, meta: Record<string, unknown>): void {
-  if (process.env.SYNTAUR_PERF_TRACE !== '1') return;
-  const totalMs = traces.entries.reduce((sum, entry) => sum + entry.ms, 0);
-  const subPhases = Object.fromEntries(traces.subPhases);
-  // eslint-disable-next-line no-console
-  console.log(
-    JSON.stringify({ kind: 'overview-trace', totalMs, phases: traces.entries, subPhases, ...meta }),
-  );
-}
-
-const STATUS_TO_SEGMENT: Readonly<Record<string, OverviewSegmentId>> = {
-  review: 'readyForReview',
-  ready: 'readyToImplement',
-  planning: 'readyForPlanning',
-  in_progress: 'inProgress',
-  backlog: 'drafts',
-};
-
-const HERO_PRIORITY: ReadonlyArray<[OverviewSegmentId, OverviewHeroKind]> = [
-  ['readyForReview', 'review'],
-  ['readyToImplement', 'ready'],
-  ['readyForPlanning', 'planning'],
-  ['inProgress', 'in_progress'],
-  ['drafts', 'backlog'],
-  ['blocked', 'blocked'],
-  ['stale', 'stale'],
-];
 
 const TERMINAL_STAGES = new Set(['done', 'dropped']);
 
@@ -243,7 +154,7 @@ interface ProjectRecord {
 // Shared records cache (coarse, clear-all).
 //
 // Parsed project records and standalone records are read on every hot read
-// path — /api/overview, /api/projects, /api/tickets, /api/workspaces, plus
+// path — /api/projects, /api/tickets, /api/workspaces, plus
 // the server scanner's workspace lookup. The underlying work is a file fan-out
 // (readdir + readFile + parse for every project, ticket, and comments
 // file), which dominates request latency and is badly amplified by corporate
@@ -394,91 +305,6 @@ export async function listWorkspaceRecords(projectsDir: string,
 }
 
 /**
- * Get overview data used by the app landing page.
- * GET /api/overview?staleLimit=&staleOffset=
- */
-export async function getOverview(projectsDir: string,
-  options: { staleLimit?: number; staleOffset?: number } = {},
-): Promise<OverviewResponse> {
-  const traceEnabled = process.env.SYNTAUR_PERF_TRACE === '1';
-  const traces: OverviewTraces | undefined = traceEnabled ? createTraces() : undefined;
-  const overallStart = traceEnabled ? performance.now() : 0;
-
-  const projectRecords = await timed(traces, 'list-project-records', () =>
-    listProjectRecords(projectsDir, traces),
-  );
-  const activeProjectRecords = projectRecords.filter((record) => !isProjectArchived(record.summary));
-  const recentActivity = buildRecentActivity(activeProjectRecords);
-
-  const staleLimit = clamp(
-    Number.isFinite(options.staleLimit) ? Number(options.staleLimit) : STALE_LIMIT_DEFAULT,
-    1,
-    STALE_LIMIT_MAX,
-  );
-  const staleOffset = Math.max(0, Number.isFinite(options.staleOffset) ? Number(options.staleOffset) : 0);
-
-  const buckets = await timed(traces, 'build-segment-buckets', () =>
-    buildOverviewSegmentBuckets(projectsDir, projectRecords, traces),
-  );
-  const segments = toOverviewSegments(buckets, { staleLimit, staleOffset });
-  const hero = pickOverviewHero(buckets);
-
-  let recentSessions: OverviewResponse['recentSessions'] = [];
-  try {
-    const all = await timed(traces, 'list-recent-sessions', () => listAllSessions(projectsDir));
-    recentSessions = all.slice(0, RECENT_SESSIONS_LIMIT);
-  } catch {
-    // Sessions failure should not break overview.
-  }
-
-  if (traces) {
-    const wallMs = performance.now() - overallStart;
-    const totalTickets =
-      projectRecords.reduce((sum, r) => sum + r.tickets.length, 0);
-    emitTrace(traces, {
-      wallMs,
-      fixture: { projects: projectRecords.length, tickets: totalTickets },
-    });
-  }
-
-  return {
-    generatedAt: new Date().toISOString(),
-    firstRun: projectRecords.length === 0,
-    stats: {
-      activeProjects: activeProjectRecords.filter((record) => record.summary.status === 'active').length,
-      inProgressTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.progress['in_progress'] ?? 0),
-        0,
-      ),
-      blockedTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.needsAttention.blockedCount ?? 0),
-        0,
-      ),
-      reviewTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.progress['review'] ?? 0),
-        0,
-      ),
-      failedTickets: activeProjectRecords.reduce(
-        (total, record) => total + (record.summary.needsAttention.failedCount ?? 0),
-        0,
-      ),
-      // Derived from the SAME classifier verdict as the stale segment (via the
-      // pre-cap segment total) so the badge count can never diverge from the
-      // listed rows.
-      staleTickets: segments.stale.total,
-    },
-    hero,
-    segments,
-    recentSessions,
-    recentProjects: activeProjectRecords
-      .map((record) => record.summary)
-      .sort((left, right) => compareTimestamps(right.updated, left.updated))
-      .slice(0, RECENT_PROJECTS_LIMIT),
-    recentActivity: recentActivity.slice(0, RECENT_ACTIVITY_LIMIT),
-  };
-}
-
-/**
  * Get all tickets across all projects for the global kanban board.
  * GET /api/tickets
  */
@@ -553,14 +379,6 @@ export async function listArchived(projectsDir: string,
   return { projects, tickets: [] };
 }
 
-
-/**
- * Get the structured help model used by Help and onboarding surfaces.
- * GET /api/help
- */
-export async function getHelp(): Promise<HelpResponse> {
-  return getDashboardHelp();
-}
 
 /**
  * Get a raw editable document for dashboard editor pages.
@@ -1177,13 +995,10 @@ const migratedProjectsDirs = new Set<string>();
 
 async function listProjectRecords(
   projectsDir: string,
-  traces?: OverviewTraces,
 ): Promise<ProjectRecord[]> {
   const cached = projectRecordsCache.get(projectsDir);
   if (cached) return cached;
-  // `traces` only flows through on a cache miss; a hit legitimately does ~0
-  // fan-out, so the absence of per-phase traces on a hit is the correct signal.
-  const promise = computeProjectRecords(projectsDir, traces);
+  const promise = computeProjectRecords(projectsDir);
   projectRecordsCache.set(projectsDir, promise);
   promise.catch(() => projectRecordsCache.delete(projectsDir));
   return promise;
@@ -1191,7 +1006,6 @@ async function listProjectRecords(
 
 async function computeProjectRecords(
   projectsDir: string,
-  traces?: OverviewTraces,
 ): Promise<ProjectRecord[]> {
   if (!(await fileExists(projectsDir))) {
     return [];
@@ -1217,26 +1031,18 @@ async function computeProjectRecords(
         return null;
       }
 
-      const t0 = traces ? performance.now() : 0;
       const projectContent = await readFile(projectMdPath, 'utf-8');
       const project = parseProject(projectContent);
-      if (traces) accumulatePhase(traces, 'parse-project-md', performance.now() - t0);
 
-      const t1 = traces ? performance.now() : 0;
-      const tickets = await listTicketRecords(projectPath, traces);
-      if (traces) accumulatePhase(traces, 'list-tickets', performance.now() - t1);
+      const tickets = await listTicketRecords(projectPath);
 
-      const t2 = traces ? performance.now() : 0;
-      const rollup = await buildProjectRollup(projectPath, project, tickets, traces);
-      if (traces) accumulatePhase(traces, 'build-rollup', performance.now() - t2);
+      const rollup = await buildProjectRollup(projectPath, project, tickets);
 
       // Archived children are hidden, so archiving an old one must not bump the
       // project's activity timestamp (which drives list/recent-projects ordering).
       const updated = getProjectActivityTimestamp(project.updated, activeTickets(tickets));
 
-      const t3 = traces ? performance.now() : 0;
       const dependencyGraph = await loadDependencyGraph(projectPath, tickets);
-      if (traces) accumulatePhase(traces, 'load-dep-graph', performance.now() - t3);
 
       return {
         projectPath,
@@ -1269,7 +1075,6 @@ async function computeProjectRecords(
 
 async function listTicketRecords(
   projectPath: string,
-  traces?: OverviewTraces,
 ): Promise<TicketRecord[]> {
   const ticketsPath = resolve(projectPath, 'tickets');
   if (!(await fileExists(ticketsPath))) {
@@ -1285,10 +1090,8 @@ async function listTicketRecords(
       if (!(await fileExists(ticketMd))) {
         return null;
       }
-      const t0 = traces ? performance.now() : 0;
       const content = await readFile(ticketMd, 'utf-8');
       const parsed = parseTicketFull(content);
-      if (traces) accumulatePhase(traces, 'read-ticket-md', performance.now() - t0);
       return { ...parsed, dirName: entry.name };
     }),
   );
@@ -1335,7 +1138,6 @@ async function buildProjectRollup(
   projectPath: string,
   project: ReturnType<typeof parseProject>,
   tickets: TicketRecord[],
-  traces?: OverviewTraces,
 ): Promise<{
   progress: ProgressCounts;
   needsAttention: NeedsAttention;
@@ -1346,9 +1148,7 @@ async function buildProjectRollup(
 
   const perTicket = await Promise.all(
     active.map(async (ticket) => {
-      const t0 = traces ? performance.now() : 0;
       const openQuestions = await countOpenQuestions(projectPath, ticket.dirName);
-      if (traces) accumulatePhase(traces, 'count-open-questions', performance.now() - t0);
       return { ticket, openQuestions };
     }),
   );
@@ -1524,7 +1324,7 @@ async function getUnmetDependencies(
   const unmet: string[] = [];
 
   for (const dependency of depends_on) {
-    // Fast path: in-memory map (built once by the overview pass over already-parsed records).
+    // Fast path: in-memory map built from already-parsed records.
     if (dependencyStatusMap) {
       const mappedStatus = dependencyStatusMap.get(dependency);
       if (mappedStatus !== undefined) {
@@ -1553,56 +1353,6 @@ async function getUnmetDependencies(
   return unmet;
 }
 
-interface OverviewSegmentBuckets {
-  readyForReview: AttentionItem[];
-  readyToImplement: AttentionItem[];
-  readyForPlanning: AttentionItem[];
-  inProgress: AttentionItem[];
-  drafts: AttentionItem[];
-  blocked: AttentionItem[];
-  newestCreated: AttentionItem[];
-  stale: AttentionItem[];
-}
-
-function emptyBuckets(): OverviewSegmentBuckets {
-  return {
-    readyForReview: [],
-    readyToImplement: [],
-    readyForPlanning: [],
-    inProgress: [],
-    drafts: [],
-    blocked: [],
-    newestCreated: [],
-    stale: [],
-  };
-}
-
-function segmentSeverity(segment: OverviewSegmentId): AttentionItem['severity'] {
-  switch (segment) {
-    case 'blocked':
-      return 'high';
-    case 'readyForReview':
-      return 'medium';
-    case 'stale':
-      return 'low';
-    default:
-      return 'medium';
-  }
-}
-
-const STALE_SEVERITY_RANK: Record<StaleReason['severity'], number> = { high: 3, medium: 2, low: 1 };
-
-/** Highest-severity reason (drives the displayed stale reason line). */
-function topStaleReason(reasons: StaleReason[]): StaleReason | null {
-  if (reasons.length === 0) return null;
-  return reasons
-    .slice()
-    .sort((a, b) => STALE_SEVERITY_RANK[b.severity] - STALE_SEVERITY_RANK[a.severity])[0];
-}
-
-/** Activity age from the ticket log-role file mtime (the honest signal — NOT ticket
- * `updated`, which recompute bumps). `null` when there is no log file, so the
- * classifier's activity-based reason fails safe (never fires on unknown). */
 async function readLogRoleActivityMs(ticketDir: string, now: number): Promise<number | null> {
   const ticketMdPath = resolve(ticketDir, 'ticket.md');
   if (!(await fileExists(ticketMdPath))) return null;
@@ -1651,7 +1401,7 @@ function classifyTicketRecord(
 /**
  * Read-only scan of EVERY active ticket (project + standalone, unpaged) for
  * the staleness watchdog. Reuses the same classifier + resolved terminals +
- * config thresholds as the overview, keyed by ticket id (stable UUID). Never
+ * config thresholds, keyed by ticket id (stable UUID). Never
  * writes anything.
  */
 export async function collectStaleCandidates(projectsDir: string,
@@ -1698,229 +1448,6 @@ export async function collectStaleCandidates(projectsDir: string,
   }
 
   return out;
-}
-
-async function buildOverviewSegmentBuckets(
-  projectsDir: string,
-  projectRecords: ProjectRecord[],
-  traces?: OverviewTraces,
-): Promise<OverviewSegmentBuckets> {
-  const now = Date.now();
-  const buckets = emptyBuckets();
-  // Terminal statuses are resolved PER TICKET (its own workflow) inside the loops
-  // below — a custom terminal status must not be misread as active/stale.
-  // Staleness age-gates: config overrides merged over defaults (defaults-first).
-  const staleThresholds = resolveStaleThresholds((await readConfig()).staleness);
-  initEventsDb();
-  const historyMaps = loadTicketHistoryMaps(
-    projectRecords
-      .filter((record) => !isProjectArchived(record.summary))
-      .flatMap((record) => activeTickets(record.tickets).map((t) => t.id)),
-  );
-  // Pool of all non-terminal rows (across primary segments) used to seed
-  // `newestCreated`. Each entry remembers its `created` timestamp + the row
-  // we'd clone into the segment.
-  const newestPool: Array<{ created: string; clone: AttentionItem }> = [];
-
-  for (const record of projectRecords) {
-    // Cascade-hide: an archived project contributes none of its tickets to
-    // the overview segments.
-    if (isProjectArchived(record.summary)) continue;
-
-    // Build a dep-status map once per project so getUnmetDependencies can resolve
-    // dependency status from memory instead of re-reading each dep's ticket.md.
-    // (Built over ALL tickets so dependency resolution is unaffected by hiding.)
-    const depMap = new Map<string, string>();
-    for (const a of record.tickets) {
-      depMap.set(a.slug, a.status); // legacy slug key, overridden by an id below if they collide
-      depMap.set(a.id, a.status);
-    }
-
-    // Individually-archived tickets are hidden from the overview segments.
-    const visibleTickets = activeTickets(record.tickets);
-
-    // Resolve every per-ticket getAvailableTransitions call for this project
-    // in parallel, then run the synchronous classification logic below over the results.
-    const projectPath = resolve(projectsDir, record.summary.slug);
-    const resolvedTransitions = await Promise.all(
-      visibleTickets.map(async (ticket) => {
-        const ticketDir = resolve(projectPath, 'tickets', ticket.dirName);
-        const manifest = await loadTemplate(syntaurRoot(), resolveTemplateForTicket(ticket));
-        const t0 = traces ? performance.now() : 0;
-        const availableVerbs = (await getAvailableVerbs(
-          ticketDir,
-          ticketAsFrontmatter(ticket),
-          manifest,
-        )) as TicketTransitionAction[];
-        if (traces) accumulatePhase(traces, 'get-available-verbs', performance.now() - t0);
-        const depsSatisfied =
-          ticket.depends_on.length === 0
-            ? true
-            : (await getUnmetDependencies(projectPath, ticket.depends_on, TERMINAL_STAGES, depMap))
-                .length === 0;
-        const lastActivityMs = await readLogRoleActivityMs(ticketDir, now);
-        return { ticket, availableVerbs, depsSatisfied, lastActivityMs };
-      }),
-    );
-
-    for (const { ticket, availableVerbs, depsSatisfied, lastActivityMs } of resolvedTransitions) {
-      const segmentId =
-        ticket.blocked ? 'blocked' : STATUS_TO_SEGMENT[ticket.status];
-      const isTerminal = isTerminalStageId(ticket.status);
-      const staleReasons = classifyTicketRecord(
-        ticket,
-        depsSatisfied,
-        lastActivityMs,
-        staleThresholds,
-        historyMaps,
-      );
-      const stale = staleReasons.length > 0;
-      const agingMs = Math.max(0, now - parseTimestamp(ticket.updated));
-      const baseId = `${record.summary.slug}:${ticket.slug}`;
-
-      const shared = {
-        projectSlug: record.summary.slug,
-        projectTitle: record.summary.title,
-        ticketSlug: ticket.slug,
-        ticketTitle: ticket.title,
-        status: ticket.status,
-        updated: ticket.updated,
-        href: `/t/${ticket.id}`,
-        blocked: ticket.blocked ?? null,
-        stale,
-        agingMs,
-        assignee: ticket.assignee ?? null,
-        availableVerbs,
-      };
-
-      if (segmentId) {
-        const reason =
-          segmentId === 'blocked' && ticket.blocked
-            ? ticket.blocked
-            : SEGMENT_REASON[segmentId];
-        const primary: AttentionItem = {
-          ...shared,
-          id: `${baseId}:${segmentId}`,
-          severity: segmentSeverity(segmentId),
-          reason,
-          segment: segmentId,
-        };
-        buckets[segmentId].push(primary);
-      }
-
-      if (stale && !isTerminal) {
-        const top = topStaleReason(staleReasons);
-        const staleItem: AttentionItem = {
-          ...shared,
-          id: `${baseId}:stale`,
-          severity: 'low',
-          reason: top?.label ?? SEGMENT_REASON.stale,
-          segment: 'stale',
-        };
-        buckets.stale.push(staleItem);
-      }
-
-      if (!isTerminal) {
-        newestPool.push({
-          created: ticket.created,
-          clone: {
-            ...shared,
-            id: `${baseId}:newest`,
-            severity: 'low',
-            reason: SEGMENT_REASON.newestCreated,
-            segment: 'newestCreated',
-          },
-        });
-      }
-    }
-  }
-
-  return buckets;
-}
-
-function toOverviewSegments(
-  buckets: OverviewSegmentBuckets,
-  staleOpts: { staleLimit: number; staleOffset: number },
-): OverviewSegments {
-  const sliceCap = (items: AttentionItem[]): OverviewSegmentPayload => ({
-    items: items.slice(0, SEGMENT_DISPLAY_CAP),
-    total: items.length,
-  });
-
-  const stale = buckets.stale;
-  const staleSlice = stale.slice(staleOpts.staleOffset, staleOpts.staleOffset + staleOpts.staleLimit);
-  const staleSegment: OverviewStaleSegmentPayload = {
-    items: staleSlice,
-    total: stale.length,
-    limit: staleOpts.staleLimit,
-    offset: staleOpts.staleOffset,
-    hasMore: staleOpts.staleOffset + staleSlice.length < stale.length,
-  };
-
-  return {
-    readyForReview: sliceCap(buckets.readyForReview),
-    readyToImplement: sliceCap(buckets.readyToImplement),
-    readyForPlanning: sliceCap(buckets.readyForPlanning),
-    inProgress: sliceCap(buckets.inProgress),
-    drafts: sliceCap(buckets.drafts),
-    blocked: sliceCap(buckets.blocked),
-    newestCreated: { items: buckets.newestCreated, total: buckets.newestCreated.length },
-    stale: staleSegment,
-  };
-}
-
-function pickOverviewHero(buckets: OverviewSegmentBuckets): OverviewHeroRecommendation {
-  for (const [segmentId, kind] of HERO_PRIORITY) {
-    const bucket = buckets[segmentId];
-    if (bucket.length === 0) continue;
-    const top = bucket[0];
-    const total = bucket.length;
-    const copyKey = total === 1 ? `${kind}.singular` : kind;
-    return { kind, copyKey, itemId: top.id, total };
-  }
-  return { kind: 'clean', copyKey: 'clean', itemId: null, total: 0 };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) return min;
-  return Math.min(Math.max(value, min), max);
-}
-
-function buildRecentActivity(
-  projectRecords: ProjectRecord[],
-): RecentActivityItem[] {
-  const activity: RecentActivityItem[] = [];
-
-  for (const record of projectRecords) {
-    activity.push({
-      id: `project:${record.summary.slug}`,
-      type: 'project',
-      title: record.summary.title,
-      updated: record.summary.updated,
-      href: `/projects/${record.summary.slug}`,
-      projectSlug: record.summary.slug,
-      projectTitle: record.summary.title,
-      ticketSlug: null,
-      summary: `Project status is ${record.summary.status}.`,
-    });
-
-    for (const ticket of activeTickets(record.tickets)) {
-      activity.push({
-        id: `ticket:${record.summary.slug}:${ticket.slug}`,
-        type: 'ticket',
-        title: ticket.title,
-        updated: ticket.updated,
-        href: `/t/${ticket.id}`,
-        projectSlug: record.summary.slug,
-        projectTitle: record.summary.title,
-        ticketSlug: ticket.slug,
-        summary: `Ticket is ${ticket.status} with ${ticket.priority} priority.`,
-      });
-    }
-  }
-
-  activity.sort((left, right) => compareTimestamps(right.updated, left.updated));
-  return activity;
 }
 
 function compareTimestamps(left: string, right: string): number {

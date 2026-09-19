@@ -414,7 +414,7 @@ Each item in the `--json` array contains:
 }
 ```
 
-The `route` field is also used by the dashboard command palette: running a search from the palette deep-links directly to the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
+The `route` field is also used by the dashboard's visible Search dialog: selecting a result opens the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
 
 ### Examples
 

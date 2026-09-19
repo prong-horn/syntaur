@@ -1,15 +1,20 @@
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { RotateCcw, Check } from 'lucide-react';
 import { SectionCard } from '../components/SectionCard';
 import { PRESETS, type ThemeSlug } from '../themes';
 import { useTheme } from '../theme';
-import { HotkeyBindingsSection } from './HotkeyBindingsSection';
-import { ViewDefaultsSection } from './ViewDefaultsSection';
-import { SearchSection } from './SearchSection';
+import { SearchSection } from '../components/settings/SearchSection';
+import { ViewDefaultsSection } from '../components/settings/ViewDefaultsSection';
+import { KeyboardShortcutsSection } from '../components/settings/KeyboardShortcutsSection';
+import { ReadmeLinkSection } from '../components/settings/ReadmeLinkSection';
+
 export function SettingsPage() {
   const { preset, setPreset, resetPreset } = useTheme();
+  const [searchParams] = useSearchParams();
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeFeedback, setThemeFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const showReadme = searchParams.get('section') === 'readme';
 
   async function handleThemeSelect(slug: ThemeSlug) {
     if (slug === preset || themeSaving) return;
@@ -48,17 +53,16 @@ export function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Theme */}
+      {showReadme ? (
+        <ReadmeLinkSection />
+      ) : null}
+
       <SectionCard
         title="Theme"
         description="Pick a color theme for the dashboard. The default is the Syntaur brand."
         actions={
           preset !== 'default' ? (
-            <button
-              className="shell-action text-xs"
-              onClick={handleThemeReset}
-              disabled={themeSaving}
-            >
+            <button className="shell-action text-xs" onClick={handleThemeReset} disabled={themeSaving}>
               <RotateCcw className="h-3 w-3" />
               Reset
             </button>
@@ -66,11 +70,13 @@ export function SettingsPage() {
         }
       >
         {themeFeedback && (
-          <div className={`mb-3 rounded-md border px-3 py-1.5 text-xs ${
-            themeFeedback.type === 'success'
-              ? 'border-success-foreground/30 bg-success text-success-foreground'
-              : 'border-error-foreground/30 bg-error text-error-foreground'
-          }`}>
+          <div
+            className={`mb-3 rounded-md border px-3 py-1.5 text-xs ${
+              themeFeedback.type === 'success'
+                ? 'border-success-foreground/30 bg-success text-success-foreground'
+                : 'border-error-foreground/30 bg-error text-error-foreground'
+            }`}
+          >
             {themeFeedback.message}
           </div>
         )}
@@ -85,32 +91,15 @@ export function SettingsPage() {
                 disabled={themeSaving}
                 aria-pressed={selected}
                 className={`group relative flex flex-col gap-2 rounded-lg border bg-card/95 p-3 text-left transition disabled:opacity-60 ${
-                  selected
-                    ? 'border-primary ring-2 ring-primary/40'
-                    : 'border-border/60 hover:border-primary/40'
+                  selected ? 'border-primary ring-2 ring-primary/40' : 'border-border/60 hover:border-primary/40'
                 }`}
               >
                 <div className="flex items-center gap-1.5">
-                  <span
-                    className="h-5 w-5 rounded-full ring-1 ring-border/60"
-                    style={{ background: p.swatches.primary }}
-                  />
-                  <span
-                    className="h-5 w-5 rounded-full ring-1 ring-border/60"
-                    style={{ background: p.swatches.secondary }}
-                  />
-                  <span
-                    className="h-5 w-5 rounded-full ring-1 ring-border/60"
-                    style={{ background: p.swatches.coral }}
-                  />
-                  <span
-                    className="h-5 w-5 rounded-full ring-1 ring-border/60"
-                    style={{ background: p.swatches.teal }}
-                  />
-                  <span
-                    className="h-5 w-5 rounded-full ring-1 ring-border/60"
-                    style={{ background: p.swatches.amber }}
-                  />
+                  <span className="h-5 w-5 rounded-full ring-1 ring-border/60" style={{ background: p.swatches.primary }} />
+                  <span className="h-5 w-5 rounded-full ring-1 ring-border/60" style={{ background: p.swatches.secondary }} />
+                  <span className="h-5 w-5 rounded-full ring-1 ring-border/60" style={{ background: p.swatches.coral }} />
+                  <span className="h-5 w-5 rounded-full ring-1 ring-border/60" style={{ background: p.swatches.teal }} />
+                  <span className="h-5 w-5 rounded-full ring-1 ring-border/60" style={{ background: p.swatches.amber }} />
                   {selected && (
                     <span className="ml-auto inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
                       <Check className="h-3 w-3" />
@@ -127,13 +116,10 @@ export function SettingsPage() {
         </div>
       </SectionCard>
 
-      <HotkeyBindingsSection />
-
-
+      <KeyboardShortcutsSection />
       <SearchSection />
-
       <ViewDefaultsSection />
-
+      {!showReadme ? <ReadmeLinkSection /> : null}
     </div>
   );
 }

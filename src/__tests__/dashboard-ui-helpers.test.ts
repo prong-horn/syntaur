@@ -1,22 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { formatDuration } from '../../dashboard/src/lib/format';
 import { buildShellMeta, getSidebarSection, isSidebarItemActive } from '../../dashboard/src/lib/routes';
-import { STATIC_PAGES } from '../../dashboard/src/hotkeys/paletteIndex';
+import { SIDEBAR_SECTIONS } from '../../dashboard/src/lib/routes';
 
 describe('dashboard route helpers', () => {
-  it('maps agent sessions routes to the correct shell title and sidebar item', () => {
-    expect(buildShellMeta('/agent-sessions').title).toBe('Agent Sessions');
-    expect(getSidebarSection('/agent-sessions')).toBe('/agent-sessions');
-    expect(isSidebarItemActive('/agent-sessions', '/agent-sessions')).toBe(true);
-    expect(isSidebarItemActive('/agent-sessions', '/agents')).toBe(false);
+  it('maps sessions routes to the correct shell title and sidebar item', () => {
+    expect(buildShellMeta('/sessions').title).toBe('Sessions');
+    expect(getSidebarSection('/sessions')).toBe('/sessions');
+    expect(isSidebarItemActive('/sessions', '/sessions')).toBe(true);
+    expect(isSidebarItemActive('/sessions', '/library/playbooks')).toBe(false);
   });
 
-  it('exposes the agent sessions page in the command palette index', () => {
-    const entry = STATIC_PAGES.find((page) => page.basePath === '/agent-sessions');
-    expect(entry).toBeDefined();
-    expect(entry?.title).toBe('Agent Sessions');
-    // Agent Sessions should own the "sessions" keyword in the palette index.
-    expect(entry?.keywords).toContain('sessions');
+  it('exposes exactly the primary sidebar destinations', () => {
+    expect(SIDEBAR_SECTIONS).toEqual(['/inbox', '/board', '/sessions', '/library/playbooks', '/settings']);
   });
 });
 

@@ -10,9 +10,7 @@ import {
   listTicketsBoard,
   getProjectDetail,
   getTicketDetail,
-  getOverview,
   getEditableDocument,
-  getHelp,
   clearStageTableCache,
 } from '../dashboard/api.js';
 import { createAgentSessionsRouter } from '../dashboard/api-agent-sessions.js';
@@ -682,78 +680,26 @@ describe('externalIds on project summaries', () => {
   });
 });
 
-describe('overview', () => {
-  it('returns first-run onboarding state for an empty workspace', async () => {
-    const result = await getOverview(testDir);
-    expect(result.firstRun).toBe(true);
-    expect(result.stats.activeProjects).toBe(0);
-    // Every segment is empty on a fresh workspace.
-    expect(result.segments.readyForReview.items).toHaveLength(0);
-    expect(result.segments.blocked.items).toHaveLength(0);
-    expect(result.segments.stale.items).toHaveLength(0);
-    expect(result.segments.inProgress.items).toHaveLength(0);
-    expect(result.hero.kind).toBe('clean');
-    expect(result.hero.itemId).toBeNull();
-    expect(result.recentSessions).toEqual([]);
+describe('board reader', () => {
+  it('returns an empty active feed for an empty workspace', async () => {
+    const board = await listTicketsBoard(testDir);
+    expect(board.tickets).toEqual([]);
+    expect(await listProjects(testDir)).toEqual([]);
   });
 
-  it('builds overview stats, recent activity, and segmented attention from source files', async () => {
+  it('returns current tickets for the active project', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-ticket', ticketMd: TICKET_MD, planMd: PLAN_MD },
       { slug: 'blocked-ticket', ticketMd: BLOCKED_TICKET_MD },
     ]);
-
-    const overview = await getOverview(testDir);
-
-    expect(overview.firstRun).toBe(false);
-    expect(overview.stats.activeProjects).toBe(1);
-    expect(overview.stats.inProgressTickets).toBe(1);
-    expect(overview.stats.blockedTickets).toBe(1);
-    expect(overview.stats.staleTickets).toBe(1);
-    expect(overview.recentActivity[0].href).toContain('/projects/test-project');
-
-    // Segments
-    expect(overview.segments.inProgress.items.length).toBeGreaterThanOrEqual(1);
-    expect(overview.segments.blocked.items.length).toBeGreaterThanOrEqual(1);
-    expect(overview.segments.stale.items.length).toBeGreaterThanOrEqual(1);
-    expect(overview.segments.blocked.items[0].severity).toBe('high');
-    expect(overview.segments.blocked.items[0].segment).toBe('blocked');
-    expect(overview.segments.stale.items[0].agingMs).toBeGreaterThan(0);
-    expect(overview.segments.blocked.total).toBe(overview.segments.blocked.items.length);
-
-    // Stale paging metadata
-    expect(overview.segments.stale.limit).toBeGreaterThan(0);
-    expect(overview.segments.stale.offset).toBe(0);
-    expect(typeof overview.segments.stale.hasMore).toBe('boolean');
-
-    // Hero rule: blocked beats stale (no review/ready/planning/in_progress
-    // would normally beat blocked, but in_progress is also present — `in_progress` is higher
-    // priority than `blocked`). Confirm hero picks one of the two and references a real id.
-    expect(['in_progress', 'blocked']).toContain(overview.hero.kind);
-    expect(overview.hero.itemId).toBeTruthy();
-    expect(overview.hero.total).toBeGreaterThan(0);
-
-    // Row contract: availableVerbs populated, assignee field present.
-    const blocked = overview.segments.blocked.items[0];
-    expect(Array.isArray(blocked.availableVerbs)).toBe(true);
-    expect('assignee' in blocked).toBe(true);
-  });
-
-  it('honors staleLimit / staleOffset paging options', async () => {
-    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
-      { slug: 'test-ticket', ticketMd: TICKET_MD, planMd: PLAN_MD },
-      { slug: 'blocked-ticket', ticketMd: BLOCKED_TICKET_MD },
-    ]);
-
-    const overview = await getOverview(testDir, { staleLimit: 1, staleOffset: 0 });
-    expect(overview.segments.stale.limit).toBe(1);
-    expect(overview.segments.stale.offset).toBe(0);
-    expect(overview.segments.stale.items.length).toBeLessThanOrEqual(1);
+    const board = await listTicketsBoard(testDir);
+    expect(board.tickets.map((ticket) => ticket.slug).sort()).toEqual(['blocked-ticket', 'test-ticket']);
+    expect(board.tickets.every((ticket) => ticket.projectSlug === 'test-project')).toBe(true);
   });
 });
 
 describe('overview performance', () => {
-  // Regression test for the slow /api/overview fix. The original implementation
+  // Regression test for the staying board/project readers. The original implementation
   // walked every project + every ticket sequentially via `for…await`, which
   // scaled linearly with FS round-trip latency. After parallelization
   // (`listProjectRecords` + `listTicketRecords` + `buildProjectRollup` +
@@ -782,7 +728,7 @@ describe('overview performance', () => {
   // ~250ms post-fix baseline ample CI hardware headroom. See scratchpad.md
   // in the originating ticket for the full table.
   // Raised after event-backed statusAge (batched history maps per overview scan).
-  const OVERVIEW_PERF_CEILING_MS = 15_000;
+  const BOARD_PERF_CEILING_MS = 15_000;
   const PERF_FIXTURE_PROJECTS = 60;
   const PERF_FIXTURE_TICKETS_PER_PROJECT = 30;
 
@@ -834,7 +780,7 @@ tags: []
 # ${slug}`;
   }
 
-  it(`returns under ${OVERVIEW_PERF_CEILING_MS}ms warm against a ${PERF_FIXTURE_PROJECTS}-project x ${PERF_FIXTURE_TICKETS_PER_PROJECT}-ticket workspace`, async () => {
+  it(`returns under ${BOARD_PERF_CEILING_MS}ms warm against a ${PERF_FIXTURE_PROJECTS}-project x ${PERF_FIXTURE_TICKETS_PER_PROJECT}-ticket workspace`, async () => {
     const statuses = [
       'in_progress',
       'in_progress',
@@ -881,56 +827,24 @@ tags: []
     );
 
     // Warm the FS cache and migration guard with one untimed call.
-    await getOverview(testDir);
+    await Promise.all([listProjects(testDir), listTicketsBoard(testDir)]);
 
     // Measured call: take the worst of three warm runs to dampen jitter.
     const samples: number[] = [];
     for (let i = 0; i < 3; i++) {
       const start = performance.now();
-      const overview = await getOverview(testDir);
+      const [projects, board] = await Promise.all([listProjects(testDir), listTicketsBoard(testDir)]);
       samples.push(performance.now() - start);
       // Sanity check that the fixture actually parsed.
-      expect(overview.firstRun).toBe(false);
-      expect(overview.recentProjects.length).toBeGreaterThan(0);
+      expect(projects).toHaveLength(PERF_FIXTURE_PROJECTS);
+      expect(board.tickets).toHaveLength(PERF_FIXTURE_PROJECTS * PERF_FIXTURE_TICKETS_PER_PROJECT);
     }
     const observed = Math.max(...samples);
-    expect(observed).toBeLessThan(OVERVIEW_PERF_CEILING_MS);
+    expect(observed).toBeLessThan(BOARD_PERF_CEILING_MS);
   }, 60_000);
 });
 
-describe('overview copy module', () => {
-  it('emits segment-specific reason strings (not the generic "Ready for review.")', async () => {
-    await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
-      { slug: 'test-ticket', ticketMd: TICKET_MD, planMd: PLAN_MD },
-      { slug: 'blocked-ticket', ticketMd: BLOCKED_TICKET_MD },
-    ]);
-    const overview = await getOverview(testDir);
-
-    // Inspect every row across every segment.
-    const allReasons = new Set<string>();
-    for (const key of Object.keys(overview.segments) as Array<keyof typeof overview.segments>) {
-      for (const row of overview.segments[key].items) {
-        allReasons.add(row.reason);
-      }
-    }
-
-    // The legacy generic reason should NOT appear outside its segment.
-    // The new readyForReview reason copy is segment-specific, not "Ready for review."
-    expect(Array.from(allReasons)).not.toContain('Ready for review.');
-  });
-});
-
-describe('help and editable documents', () => {
-  it('returns the structured help model with only implemented commands', async () => {
-    const help = await getHelp();
-    const commandNames = help.commands.map((command) => command.command);
-
-    expect(commandNames).toContain('syntaur dashboard');
-    expect(commandNames).toContain('syntaur project new');
-    expect(commandNames).not.toContain('syntaur rebuild');
-    expect(help.coreConcepts.some((concept) => concept.term === 'Project')).toBe(true);
-  });
-
+describe('editable documents', () => {
   it('returns editable document payloads for project and ticket files', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-ticket', ticketMd: TICKET_MD },
@@ -1288,11 +1202,10 @@ describe('archive hiding + cascade + listArchived + migration', () => {
     expect(detail!.progress.total).toBe(2);
   });
 
-  it('getOverview excludes archived projects from stats', async () => {
+  it('board feed excludes archived projects', async () => {
     await seed();
-    const overview = await getOverview(testDir);
-    expect(overview.recentProjects.map((p) => p.slug)).toEqual(['proj-a']);
-    expect(overview.stats.inProgressTickets).toBe(2);
+    const board = await listTicketsBoard(testDir);
+    expect(board.tickets.every((ticket) => ticket.projectSlug === 'proj-a')).toBe(true);
   });
 
   it('migrates legacy statusOverride:archived projects to the real flag on read', async () => {

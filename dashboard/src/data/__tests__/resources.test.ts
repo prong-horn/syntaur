@@ -66,7 +66,6 @@ describe('websocket invalidation matrix', () => {
       'archived:*',
       'inbox:*',
       'search:*',
-      'overview:*',
     ]);
   });
 
@@ -101,7 +100,6 @@ describe('websocket invalidation matrix', () => {
       'sessions:*',
       'usage:*',
       'metrics:*',
-      'overview:*',
     ]);
     expect(targetsFor({ type: 'agents-updated', timestamp: 't' })).toEqual(['agents:*', 'ticket-detail:*']);
     expect(targetsFor({ type: 'templates-updated', timestamp: 't' })).toEqual(['templates:*', 'board:*', 'ticket-detail:*']);

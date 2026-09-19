@@ -5,7 +5,7 @@ import {
   buildJournalAppendPayload,
   mergeJournalEntriesAfterAppend,
   validateJournalAppend,
-} from '../JournalTab';
+} from '../ticket/JournalTab';
 import type { TicketLogEntryDetail, TicketTemplateFileDetail } from '../../hooks/useProjects';
 
 const file: TicketTemplateFileDetail = {

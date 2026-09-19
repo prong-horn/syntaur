@@ -12,8 +12,6 @@ import {
   getProjectDetail,
   getTicketDetail,
   getTicketDetailById,
-  getOverview,
-  getHelp,
   invalidateRecordsCache,
 } from './api.js';
 import { resolveTicketById } from '../utils/ticket-resolver.js';
@@ -23,19 +21,10 @@ import { fileExists } from '../utils/fs.js';
 import {
   writeThemeConfig,
   deleteThemeConfig,
-  writeHotkeyBindingsConfig,
-  deleteHotkeyBindingsConfig,
   readConfig,
 } from '../utils/config.js';
 import { listTemplates, templatesDir } from '../ticket-templates/registry.js';
 import { agentsDir } from '../chat/agents.js';
-import {
-  BINDABLE_ACTION_KINDS,
-  canonicalizeCombo,
-  isBindableActionKind,
-  isReservedCombo,
-  type BindableActionKind,
-} from '../utils/hotkeysCatalog.js';
 import {
   isViewMode,
   isSortField,
@@ -174,34 +163,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
   app.use(express.json());
 
   // --- API Routes ---
-  app.get('/api/overview', async (req, res) => {
-    try {
-      const staleLimitRaw = req.query.staleLimit;
-      const staleOffsetRaw = req.query.staleOffset;
-      const staleLimit = typeof staleLimitRaw === 'string' ? Number(staleLimitRaw) : undefined;
-      const staleOffset = typeof staleOffsetRaw === 'string' ? Number(staleOffsetRaw) : undefined;
-      const overview = await getOverview(projectsDir, {
-        staleLimit,
-        staleOffset,
-      });
-      res.json(overview);
-    } catch (error) {
-      console.error('Error getting overview:', error);
-      res.status(500).json({ error: 'Failed to get overview' });
-    }
-  });
-
-  app.get('/api/help', async (_req, res) => {
-    try {
-      const help = await getHelp();
-      res.json(help);
-    } catch (error) {
-      console.error('Error getting help content:', error);
-      res.status(500).json({ error: 'Failed to get help content' });
-    }
-  });
-
-
   app.get('/api/ticket-templates', async (_req, res) => {
     try {
       const root = syntaurRoot();
@@ -267,85 +228,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   app.use('/api/config/search', createSearchConfigRouter());
   app.use('/api/search', createContentSearchRouter(projectsDir));
-  app.get('/api/config/hotkeys', async (_req, res) => {
-    try {
-      const config = await readConfig();
-      const bindings = config.hotkeys?.bindings ?? {};
-      res.json({ bindings, custom: config.hotkeys !== null });
-    } catch (error) {
-      console.error('Error getting hotkeys config:', error);
-      res.status(500).json({ error: 'Failed to get hotkeys config' });
-    }
-  });
-
-  app.put('/api/config/hotkeys', async (req, res) => {
-    try {
-      const raw = (req.body && typeof req.body === 'object' ? req.body : {}) as {
-        bindings?: unknown;
-      };
-      const incoming = raw.bindings;
-      if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) {
-        res.status(400).json({ error: 'bindings must be an object keyed by action kind' });
-        return;
-      }
-      const cleaned: Partial<Record<BindableActionKind, string>> = {};
-      for (const [rawKind, rawValue] of Object.entries(incoming as Record<string, unknown>)) {
-        if (!isBindableActionKind(rawKind)) {
-          res.status(400).json({
-            error: `unknown action kind "${rawKind}" — expected one of: ${BINDABLE_ACTION_KINDS.join(', ')}`,
-          });
-          return;
-        }
-        if (typeof rawValue !== 'string' || rawValue.trim() === '') {
-          res.status(400).json({ error: `binding for "${rawKind}" must be a non-empty string` });
-          return;
-        }
-        const canonical = canonicalizeCombo(rawValue);
-        if (!canonical) {
-          res.status(400).json({ error: `binding for "${rawKind}" is not a valid combo` });
-          return;
-        }
-        if (isReservedCombo(canonical)) {
-          res.status(400).json({
-            error: `combo "${canonical}" is reserved by a built-in shortcut`,
-            kind: rawKind,
-            combo: canonical,
-          });
-          return;
-        }
-        cleaned[rawKind] = canonical;
-      }
-      // Detect duplicate combos across kinds.
-      const seenCombos = new Map<string, BindableActionKind>();
-      for (const [kind, combo] of Object.entries(cleaned) as Array<[BindableActionKind, string]>) {
-        if (seenCombos.has(combo)) {
-          res.status(400).json({
-            error: `combo "${combo}" is bound to multiple actions`,
-            kinds: [seenCombos.get(combo), kind],
-          });
-          return;
-        }
-        seenCombos.set(combo, kind);
-      }
-
-      await writeHotkeyBindingsConfig({ bindings: cleaned });
-      res.json({ bindings: cleaned, custom: Object.keys(cleaned).length > 0 });
-    } catch (error) {
-      console.error('Error saving hotkeys config:', error);
-      res.status(500).json({ error: 'Failed to save hotkeys config' });
-    }
-  });
-
-  app.delete('/api/config/hotkeys', async (_req, res) => {
-    try {
-      await deleteHotkeyBindingsConfig();
-      res.json({ bindings: {}, custom: false });
-    } catch (error) {
-      console.error('Error resetting hotkeys config:', error);
-      res.status(500).json({ error: 'Failed to reset hotkeys config' });
-    }
-  });
-
   const VIEW_PREFS_LOCK = 'vp:global';
 
   const FILTER_KEYS = new Set(['status', 'type', 'priority', 'assignee', 'project', 'tags', 'activity']);

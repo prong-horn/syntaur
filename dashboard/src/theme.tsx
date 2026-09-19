@@ -11,9 +11,9 @@ import {
   type ThemeSlug,
 } from './themes';
 import {
-  fetchThemeConfig,
-  saveThemeConfig,
   resetThemeConfig,
+  saveThemeConfig,
+  useThemeConfig,
 } from './hooks/useThemeConfig';
 
 type ThemePreference = 'light' | 'dark';
@@ -51,9 +51,7 @@ function getStoredPreset(): ThemeSlug {
 }
 
 function getSystemTheme(): ThemePreference {
-  if (typeof window === 'undefined' || !window.matchMedia) {
-    return 'light';
-  }
+  if (typeof window === 'undefined' || !window.matchMedia) return 'light';
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
@@ -66,14 +64,13 @@ function applyPreset(slug: ThemeSlug): void {
 }
 
 export function initTheme(): void {
-  if (typeof document === 'undefined') {
-    return;
-  }
+  if (typeof document === 'undefined') return;
   applyScheme(getStoredScheme() ?? getSystemTheme());
   applyPreset(getStoredPreset());
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
+  const serverConfig = useThemeConfig();
   const [explicitTheme, setExplicitTheme] = useState<ThemePreference | null>(() => getStoredScheme());
   const [resolvedTheme, setResolvedTheme] = useState<ThemePreference>(() => getStoredScheme() ?? getSystemTheme());
   const [preset, setPresetState] = useState<ThemeSlug>(() => getStoredPreset());
@@ -86,31 +83,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyPreset(preset);
   }, [preset]);
 
-  // Reconcile preset with server on mount; server wins if it differs.
+  // Live-update when config.md theme changes on disk (WS invalidation).
   useEffect(() => {
-    let cancelled = false;
-    fetchThemeConfig().then((config) => {
-      if (cancelled) return;
-      if (config.preset !== preset) {
-        setPresetState(config.preset);
-        try {
-          window.localStorage.setItem(PRESET_STORAGE_KEY, config.preset);
-        } catch {
-          // ignore
-        }
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-    // intentionally only on mount — server reconciliation is a one-shot bootstrap
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (serverConfig.preset === preset) return;
+    setPresetState(serverConfig.preset);
+    try {
+      window.localStorage.setItem(PRESET_STORAGE_KEY, serverConfig.preset);
+    } catch {
+      // ignore
+    }
+  }, [serverConfig.preset, preset]);
 
   useEffect(() => {
-    if (!window.matchMedia) {
-      return;
-    }
+    if (!window.matchMedia) return;
 
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const updateTheme = () => {
@@ -121,9 +106,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
     updateTheme();
     mediaQuery.addEventListener('change', updateTheme);
-    return () => {
-      mediaQuery.removeEventListener('change', updateTheme);
-    };
+    return () => mediaQuery.removeEventListener('change', updateTheme);
   }, [explicitTheme]);
 
   async function setPreset(slug: ThemeSlug): Promise<void> {

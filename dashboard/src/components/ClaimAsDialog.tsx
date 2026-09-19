@@ -7,7 +7,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from './ui/dialog';
-import { DIALOG_COPY } from '../lib/overviewCopy';
+const DIALOG_COPY = {
+  claimAsTitle: 'Claim tickets as',
+  claimAsHint: 'Used when you claim a ticket from this dashboard. You can change it later in settings.',
+  claimAsSubmit: 'Save',
+};
 import { readClaimAs, writeClaimAs } from '../lib/tickets';
 
 interface ClaimAsDialogProps {

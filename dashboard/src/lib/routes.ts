@@ -6,14 +6,14 @@ export function ticketPageHref(id: string, tab?: string): string {
   return tab ? `${base}?tab=${tab}` : base;
 }
 
-/** SPA path for a ticket editor or append page under `/t/:id/...`. */
+/** SPA path for a ticket editor query state under `/t/:id`. */
 export function ticketEditHref(
   id: string,
   section?: 'plan' | 'scratchpad',
 ): string {
   const base = `/t/${encodeURIComponent(id)}`;
-  if (!section) return `${base}/edit`;
-  return `${base}/${section}/edit`;
+  if (!section) return `${base}?edit=ticket`;
+  return `${base}?edit=${section}`;
 }
 
 export interface Breadcrumb {
@@ -27,80 +27,37 @@ export interface ShellMeta {
   projectSlug: string | null;
 }
 
-const SIDEBAR_SECTIONS = [
-  '/',
+/** Primary sidebar destinations (ticket detail is context-only, not a nav item). */
+export const SIDEBAR_SECTIONS = [
   '/inbox',
-  '/projects',
-  '/archive',
-  '/tickets',
-  '/agents',
-  '/usage',
-  '/agent-sessions',
-  '/playbooks',
-  '/help',
+  '/board',
+  '/sessions',
+  '/library/playbooks',
   '/settings',
 ] as const;
 
 export type SidebarSection = (typeof SIDEBAR_SECTIONS)[number];
 
 function normalizePathname(pathname: string): string {
-  if (!pathname || pathname === '/') {
-    return '/';
-  }
-
+  if (!pathname || pathname === '/') return '/';
   return pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
 }
 
 export function getSidebarSection(pathname: string): SidebarSection | null {
   const normalized = normalizePathname(pathname);
 
-  if (normalized === '/') {
-    return '/';
+  if (normalized.startsWith('/inbox')) return '/inbox';
+  if (normalized.startsWith('/board') || normalized.startsWith('/tickets') || normalized.startsWith('/projects') || normalized.startsWith('/archive')) {
+    return '/board';
   }
-
-  if (normalized.startsWith('/archive')) {
-    return '/archive';
+  if (normalized.startsWith('/sessions') || normalized.startsWith('/usage') || normalized.startsWith('/agent-sessions')) {
+    return '/sessions';
   }
-
-  if (normalized.startsWith('/projects')) {
-    return '/projects';
+  if (normalized.startsWith('/library') || normalized.startsWith('/playbooks') || normalized.startsWith('/agents')) {
+    return '/library/playbooks';
   }
-
-  if (normalized.startsWith('/t/')) {
-    return '/tickets';
-  }
-
-  if (normalized.startsWith('/tickets')) {
-    return '/tickets';
-  }
-
-  if (normalized.startsWith('/agents')) {
-    return '/agents';
-  }
-
-  if (normalized.startsWith('/usage')) {
-    return '/usage';
-  }
-
-  if (normalized.startsWith('/agent-sessions')) {
-    return '/agent-sessions';
-  }
-
-  if (normalized.startsWith('/playbooks')) {
-    return '/playbooks';
-  }
-
-  if (normalized.startsWith('/help')) {
-    return '/help';
-  }
-
-  if (normalized.startsWith('/settings')) {
-    return '/settings';
-  }
-
-  if (normalized.startsWith('/inbox')) {
-    return '/inbox';
-  }
+  if (normalized.startsWith('/settings') || normalized.startsWith('/help')) return '/settings';
+  if (normalized.startsWith('/t/')) return null;
 
   return null;
 }
@@ -113,83 +70,65 @@ export function buildShellMeta(pathname: string): ShellMeta {
   const normalized = normalizePathname(pathname);
   const parts = normalized.split('/').filter(Boolean);
   const breadcrumbs: Breadcrumb[] = [];
-  let title = 'Overview';
+  let title = 'Needs me';
   let projectSlug: string | null = null;
 
   if (parts.length === 0) {
-    return { title, breadcrumbs, projectSlug };
+    return { title: 'Needs me', breadcrumbs: [{ label: 'Needs me', path: '/inbox' }], projectSlug };
   }
 
-  if (parts[0] === 'projects') {
-    breadcrumbs.push({ label: 'Projects', path: '/projects' });
-    title = 'Projects';
+  const [head, ...rest] = parts;
 
-    if (parts[1]) {
-      projectSlug = parts[1];
-      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/projects/${parts[1]}` });
-      title = toTitleCase(parts[1]);
+  if (head === 'inbox') {
+    title = 'Needs me';
+    breadcrumbs.push({ label: 'Needs me', path: '/inbox' });
+  } else if (head === 'board') {
+    title = 'Board';
+    breadcrumbs.push({ label: 'Board', path: '/board' });
+  } else if (head === 'sessions') {
+    title = 'Sessions';
+    breadcrumbs.push({ label: 'Sessions', path: '/sessions' });
+  } else if (head === 'library') {
+    breadcrumbs.push({ label: 'Library', path: '/library/playbooks' });
+    title = 'Library';
+    if (rest[0] === 'playbooks') {
+      if (rest[1] === 'create') title = 'Create Playbook';
+      else if (rest[2] === 'edit') title = 'Edit Playbook';
+      else if (rest[1]) {
+        breadcrumbs.push({ label: toTitleCase(rest[1]), path: `/library/playbooks/${rest[1]}` });
+        title = toTitleCase(rest[1]);
+      } else title = 'Playbooks';
+    } else if (rest[0] === 'agents') {
+      title = 'Agents';
+      if (rest[1] === 'new') title = 'New agent';
+      else if (rest[2] === 'edit') title = 'Edit agent';
+    } else if (rest[0] === 'templates') {
+      title = rest[1] ? 'Template' : 'Templates';
     }
-
-    if (parts[2] === 'edit') {
-      title = 'Edit Project';
-    } else if (parts[2] === 'new') {
-      title = 'Create Ticket';
-    }
-  } else if (parts[0] === 't' && parts[1]) {
-    breadcrumbs.push({ label: 'Tickets', path: '/tickets' });
-    breadcrumbs.push({ label: parts[1], path: `/t/${parts[1]}` });
-    title = parts[1];
-
-    if (parts[2] === 'edit') {
-      title = 'Edit Ticket';
-    } else if (parts[2] === 'plan' && parts[3] === 'edit') {
-      title = 'Edit Plan';
-    } else if (parts[2] === 'scratchpad' && parts[3] === 'edit') {
-      title = 'Edit Scratchpad';
-    }
-  } else if (parts[0] === 'agents') {
-    breadcrumbs.push({ label: 'Agents', path: '/agents' });
-    title = 'Agents';
-    if (parts[1] === 'new') {
-      title = 'New agent';
-    } else if (parts[1] && parts[2] === 'edit') {
-      breadcrumbs.push({ label: parts[1], path: `/agents/${parts[1]}/edit` });
-      title = 'Edit agent';
-    }
-  } else if (parts[0] === 'usage') {
-    title = 'Usage';
-    breadcrumbs.push({ label: 'Usage', path: '/usage' });
-  } else if (parts[0] === 'agent-sessions') {
-    title = 'Agent Sessions';
-    breadcrumbs.push({ label: 'Agent Sessions', path: '/agent-sessions' });
-  } else if (parts[0] === 'tickets') {
-    title = 'Tickets';
-    breadcrumbs.push({ label: 'Tickets', path: '/tickets' });
-  } else if (parts[0] === 'archive') {
-    title = 'Archive';
-    breadcrumbs.push({ label: 'Archive', path: '/archive' });
-  } else if (parts[0] === 'playbooks') {
-    breadcrumbs.push({ label: 'Playbooks', path: '/playbooks' });
-    title = 'Playbooks';
-
-    if (parts[1] === 'create') {
-      title = 'Create Playbook';
-    } else if (parts[1] && parts[2] === 'edit') {
-      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/playbooks/${parts[1]}` });
-      title = 'Edit Playbook';
-    } else if (parts[1]) {
-      breadcrumbs.push({ label: toTitleCase(parts[1]), path: `/playbooks/${parts[1]}` });
-      title = toTitleCase(parts[1]);
-    }
-  } else if (parts[0] === 'help') {
-    title = 'Help';
-    breadcrumbs.push({ label: 'Help', path: '/help' });
-  } else if (parts[0] === 'settings') {
+  } else if (head === 'settings') {
     title = 'Settings';
     breadcrumbs.push({ label: 'Settings', path: '/settings' });
-  } else if (parts[0] === 'create' && parts[1] === 'project') {
-    title = 'Create Project';
-    breadcrumbs.push({ label: 'Create Project', path: '/create/project' });
+  } else if (head === 't' && rest[0]) {
+    breadcrumbs.push({ label: 'Board', path: '/board' });
+    breadcrumbs.push({ label: rest[0], path: `/t/${rest[0]}` });
+    title = rest[0];
+  } else if (head === 'tickets' || head === 'projects' || head === 'archive') {
+    title = 'Board';
+    breadcrumbs.push({ label: 'Board', path: '/board' });
+    if (head === 'projects' && rest[0]) {
+      projectSlug = rest[0];
+      breadcrumbs.push({ label: toTitleCase(rest[0]), path: `/board?project=${encodeURIComponent(rest[0])}` });
+      title = toTitleCase(rest[0]);
+    }
+  } else if (head === 'usage' || head === 'agent-sessions') {
+    title = 'Sessions';
+    breadcrumbs.push({ label: 'Sessions', path: '/sessions' });
+  } else if (head === 'playbooks' || head === 'agents') {
+    breadcrumbs.push({ label: 'Library', path: '/library/playbooks' });
+    title = head === 'playbooks' ? 'Playbooks' : 'Agents';
+  } else if (head === 'help') {
+    title = 'Settings';
+    breadcrumbs.push({ label: 'Settings', path: '/settings' });
   }
 
   return { title, breadcrumbs, projectSlug };

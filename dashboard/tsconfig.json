@@ -19,7 +19,6 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      "@shared/hotkeys-catalog": ["../src/utils/hotkeysCatalog.ts"],
       "@shared/view-prefs-schema": ["../src/utils/view-prefs-schema.ts"],
       "@shared/usage-filters": ["../src/utils/usage-filters.ts"],
       "@shared/session-select": ["../src/utils/session-select.ts"],
@@ -37,7 +36,6 @@
   },
   "include": [
     "src",
-    "../src/utils/hotkeysCatalog.ts",
     "../src/utils/view-prefs-schema.ts",
     "../src/utils/usage-filters.ts",
     "../src/utils/session-select.ts",

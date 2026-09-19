@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useEditableDocument, type EditableDocumentType } from '../hooks/useProjects';
+import { mutate } from '../data/mutate';
+import { projectWriteTargets, ticketWriteTargets } from '../data/resources';
 import { LoadingState } from './LoadingState';
 import { ErrorState } from './ErrorState';
 import { MarkdownEditor } from './MarkdownEditor';
@@ -14,6 +16,18 @@ interface DocumentEditorPageProps {
   documentType: EditableDocumentType;
   helpTitle: string;
   helpBody: string;
+  /** When set, called after a successful save instead of navigating to redirectTo. */
+  onSaved?: () => void;
+  /** When set, called instead of navigating on cancel. */
+  onCancel?: () => void;
+}
+
+function invalidationForSaveUrl(saveUrl: string, loadUrl: string): ReturnType<typeof ticketWriteTargets> {
+  const projectMatch = saveUrl.match(/^\/api\/projects\/([^/]+)$/);
+  if (projectMatch) return projectWriteTargets(projectMatch[1]);
+  const ticketMatch = loadUrl.match(/^\/api\/tickets\/([^/]+)/);
+  if (ticketMatch) return ticketWriteTargets(ticketMatch[1]);
+  return [];
 }
 
 export function DocumentEditorPage({
@@ -25,6 +39,8 @@ export function DocumentEditorPage({
   documentType,
   helpTitle,
   helpBody,
+  onSaved,
+  onCancel,
 }: DocumentEditorPageProps) {
   const navigate = useNavigate();
   const { data, loading, error } = useEditableDocument(loadUrl);
@@ -36,20 +52,11 @@ export function DocumentEditorPage({
     setSaveError(null);
 
     try {
-      const response = await fetch(saveUrl, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+      await mutate('PATCH', saveUrl, { content }, {
+        invalidates: invalidationForSaveUrl(saveUrl, loadUrl),
       });
-
-      const payload = await response.json();
-      if (!response.ok) {
-        setSaveError(payload.error || `HTTP ${response.status}`);
-        setSaving(false);
-        return;
-      }
-
-      navigate(redirectTo);
+      if (onSaved) onSaved();
+      else navigate(redirectTo);
     } catch (mutationError) {
       setSaveError((mutationError as Error).message);
       setSaving(false);
@@ -76,7 +83,10 @@ export function DocumentEditorPage({
       error={saveError}
       title={title}
       description={description}
-      onCancel={() => navigate(redirectTo)}
+      onCancel={() => {
+        if (onCancel) onCancel();
+        else navigate(redirectTo);
+      }}
       helpTitle={helpTitle}
       helpBody={helpBody}
     />

@@ -15,8 +15,6 @@ import type {
   AgentSessionsResponse,
   ArchiveResponse,
   EditableDocumentResponse,
-  HelpResponse,
-  OverviewResponse,
   PlaybookDetail,
   PlaybooksResponse,
   ProjectDetail,
@@ -57,20 +55,12 @@ export function useProjects(enabled = true): FetchState<ProjectSummary[]> {
   return useLegacyResource(enabled ? resources.projects() : null);
 }
 
-export function useOverview(options: { staleLimit?: number; staleOffset?: number } = {}): FetchState<OverviewResponse> {
-  return useLegacyResource(resources.overview(options));
-}
-
 export function useTicketsBoard(enabled = true): FetchState<TicketsBoardResponse> {
   return useLegacyResource(enabled ? resources.tickets() : null);
 }
 
 export function useArchived(enabled = true): FetchState<ArchiveResponse> {
   return useLegacyResource(enabled ? resources.archived() : null);
-}
-
-export function useHelp(): FetchState<HelpResponse> {
-  return useLegacyResource(resources.help());
 }
 
 export function useProject(slug: string | undefined): FetchState<ProjectDetail> {

@@ -1,77 +1,57 @@
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { Layout } from './components/Layout';
-import { Overview } from './pages/Overview';
-import { InboxPage } from './pages/InboxPage';
-import { HelpPage } from './pages/Help';
-import { NotFoundPage } from './pages/NotFound';
-import { ProjectList } from './pages/ProjectList';
-import { Archive } from './pages/Archive';
-import { ProjectDetail } from './pages/ProjectDetail';
-import { TicketDetail } from './pages/TicketDetail';
-import { TicketsPage } from './pages/TicketsPage';
-import { CreateProject } from './pages/CreateProject';
-import { CreateTicket } from './pages/CreateTicket';
-import { EditProject } from './pages/EditProject';
-import { EditTicket } from './pages/EditTicket';
-import { EditTicketPlan } from './pages/EditTicketPlan';
-import { EditTicketScratchpad } from './pages/EditTicketScratchpad';
-import { AgentsPage } from './pages/AgentsPage';
-import { AgentEditorPage } from './pages/AgentEditorPage';
-import { UsagePage } from './pages/UsagePage';
-import { AgentSessionsPage } from './pages/AgentSessionsPage';
-import { AgentSessionDetail } from './pages/AgentSessionDetail';
-import { PlaybooksPage } from './pages/PlaybooksPage';
-import { PlaybookDetail } from './pages/PlaybookDetail';
-import { CreatePlaybook } from './pages/CreatePlaybook';
-import { EditPlaybook } from './pages/EditPlaybook';
+import { LegacyRedirect, WorkspacePrefixRedirect } from './components/LegacyRedirect';
+import { NotFoundPage } from './components/NotFound';
+import { NavigationHotkeys } from './components/navigation/NavigationHotkeys';
+import { NeedsMePage } from './pages/NeedsMePage';
+import { BoardPage } from './pages/BoardPage';
+import { TicketPage } from './pages/TicketPage';
+import { SessionsPage } from './pages/SessionsPage';
+import { LibraryPage } from './pages/LibraryPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { HotkeyProvider } from './hotkeys';
-
-function WorkspacePrefixRedirect() {
-  const location = useLocation();
-  const stripped = location.pathname.replace(/^\/w\/[^/]+/, '') || '/';
-  const target = `${stripped}${location.search}${location.hash}`;
-  return <Navigate to={target} replace />;
-}
 
 export function App() {
   return (
     <BrowserRouter>
-      <HotkeyProvider>
-        <Routes>
-          <Route path="/w/:workspace/*" element={<WorkspacePrefixRedirect />} />
-          <Route element={<Layout />}>
-            <Route path="/" element={<Overview />} />
-            <Route path="/inbox" element={<InboxPage />} />
-            <Route path="/projects" element={<ProjectList />} />
-            <Route path="/archive" element={<Archive />} />
-            <Route path="/tickets" element={<TicketsPage />} />
-            <Route path="/t/:id" element={<TicketDetail />} />
-            <Route path="/t/:id/edit" element={<EditTicket />} />
-            <Route path="/t/:id/plan/edit" element={<EditTicketPlan />} />
-            <Route path="/t/:id/scratchpad/edit" element={<EditTicketScratchpad />} />
-            <Route path="/agents" element={<AgentsPage />} />
-            <Route path="/agents/new" element={<AgentEditorPage />} />
-            <Route path="/agents/:id/edit" element={<AgentEditorPage />} />
-            <Route path="/usage" element={<UsagePage />} />
-            <Route path="/agent-sessions" element={<AgentSessionsPage />} />
-            <Route path="/agent-sessions/:id" element={<AgentSessionDetail />} />
-            <Route path="/playbooks" element={<PlaybooksPage />} />
-            <Route path="/playbooks/create" element={<CreatePlaybook />} />
-            <Route path="/playbooks/:slug" element={<PlaybookDetail />} />
-            <Route path="/playbooks/:slug/edit" element={<EditPlaybook />} />
-            <Route path="/help" element={<HelpPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/create/project" element={<CreateProject />} />
-            <Route path="/projects/:slug" element={<ProjectDetail />} />
-            <Route path="/projects/:slug/edit" element={<EditProject />} />
-            <Route path="/projects/:slug/new" element={<CreateTicket />} />
+      <NavigationHotkeys />
+      <Routes>
+        <Route path="/w/:workspace/*" element={<WorkspacePrefixRedirect />} />
+        <Route element={<Layout />}>
+          <Route path="/" element={<LegacyRedirect />} />
+          <Route path="/inbox" element={<NeedsMePage />} />
+          <Route path="/board" element={<BoardPage />} />
+          <Route path="/t/:id" element={<TicketPage />} />
+          <Route path="/sessions" element={<SessionsPage />} />
+          <Route path="/library" element={<LibraryPage />} />
+          <Route path="/library/*" element={<LibraryPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
 
-            {/* Anything unmatched — a stale link or a retired page — says so instead of rendering nothing. */}
-            <Route path="*" element={<NotFoundPage />} />
-          </Route>
-        </Routes>
-      </HotkeyProvider>
+          {/* Legacy routes — redirect via table-driven resolver */}
+          <Route path="/tickets" element={<LegacyRedirect />} />
+          <Route path="/projects" element={<LegacyRedirect />} />
+          <Route path="/projects/:slug" element={<LegacyRedirect />} />
+          <Route path="/projects/:slug/edit" element={<LegacyRedirect />} />
+          <Route path="/projects/:slug/new" element={<LegacyRedirect />} />
+          <Route path="/create/project" element={<LegacyRedirect />} />
+          <Route path="/archive" element={<LegacyRedirect />} />
+          <Route path="/t/:id/edit" element={<LegacyRedirect />} />
+          <Route path="/t/:id/plan/edit" element={<LegacyRedirect />} />
+          <Route path="/t/:id/scratchpad/edit" element={<LegacyRedirect />} />
+          <Route path="/agents" element={<LegacyRedirect />} />
+          <Route path="/agents/new" element={<LegacyRedirect />} />
+          <Route path="/agents/:id/edit" element={<LegacyRedirect />} />
+          <Route path="/usage" element={<LegacyRedirect />} />
+          <Route path="/agent-sessions" element={<LegacyRedirect />} />
+          <Route path="/agent-sessions/:id" element={<LegacyRedirect />} />
+          <Route path="/playbooks" element={<LegacyRedirect />} />
+          <Route path="/playbooks/create" element={<LegacyRedirect />} />
+          <Route path="/playbooks/:slug" element={<LegacyRedirect />} />
+          <Route path="/playbooks/:slug/edit" element={<LegacyRedirect />} />
+          <Route path="/help" element={<LegacyRedirect />} />
+
+          <Route path="*" element={<NotFoundPage />} />
+        </Route>
+      </Routes>
     </BrowserRouter>
   );
 }

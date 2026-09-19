@@ -22,8 +22,6 @@ import type {
   ArchiveResponse,
   ContentHit,
   EditableDocumentResponse,
-  HelpResponse,
-  OverviewResponse,
   PlaybookDetail,
   PlaybooksResponse,
   ProjectDetail,
@@ -49,8 +47,6 @@ export type ResourceTag =
   | 'projects'
   | 'project'
   | 'archived'
-  | 'overview'
-  | 'help'
   | 'inbox'
   | 'search'
   | 'sessions'
@@ -65,7 +61,7 @@ export type ResourceTag =
   | 'templates'
   | 'document';
 
-export type ConfigKind = 'theme' | 'search' | 'hotkeys';
+export type ConfigKind = 'theme' | 'search';
 
 export interface ResourceMeta {
   /** Primary family, for diagnostics and inventories. */
@@ -187,11 +183,6 @@ export interface SessionsQuery {
   archived?: ArchivedFilter;
 }
 
-export interface OverviewQuery {
-  staleLimit?: number;
-  staleOffset?: number;
-}
-
 export interface SearchResponse {
   hits: ContentHit[];
 }
@@ -210,10 +201,6 @@ export interface TicketTemplateSummaryResponse {
     stageIds?: string[];
     filePaths?: string[];
   }>;
-}
-
-function finite(n: number | null | undefined): number | undefined {
-  return typeof n === 'number' && Number.isFinite(n) ? n : undefined;
 }
 
 /**
@@ -254,15 +241,6 @@ export const resources = {
 
   project: (slug: string): Resource<ProjectDetail> =>
     resource(apiUrl(['projects', slug]), ['project'], { kind: 'project', projectSlug: slug }),
-
-  overview: (query: OverviewQuery = {}): Resource<OverviewResponse> =>
-    resource(
-      apiUrl(['overview'], { staleLimit: finite(query.staleLimit), staleOffset: finite(query.staleOffset) }),
-      ['overview'],
-      { kind: 'overview' },
-    ),
-
-  help: (): Resource<HelpResponse> => resource(apiUrl(['help']), ['help'], { kind: 'help' }),
 
   inbox: (query: InboxQuery = {}): Resource<import('../lib/inbox').InboxResult> =>
     resource(
@@ -359,7 +337,6 @@ export function ticketWriteTargets(ticketId?: string, projectSlug?: string | nul
     { tag: 'archived' },
     { tag: 'inbox' },
     { tag: 'search' },
-    { tag: 'overview' },
   ];
 }
 
@@ -373,7 +350,6 @@ export function projectWriteTargets(projectSlug?: string | null): InvalidationTa
     { tag: 'board' },
     { tag: 'inbox' },
     { tag: 'search' },
-    { tag: 'overview' },
   ];
 }
 
@@ -383,7 +359,6 @@ export const sessionWriteTargets: readonly InvalidationTarget[] = [
   { tag: 'sessions' },
   { tag: 'usage' },
   { tag: 'metrics' },
-  { tag: 'overview' },
 ];
 
 function payloadTicketId(message: WsMessage): string | undefined {
@@ -410,7 +385,6 @@ export function invalidationsForMessage(message: WsMessage): InvalidationTarget[
         { tag: 'archived' },
         { tag: 'inbox' },
         { tag: 'search' },
-        { tag: 'overview' },
       ];
     }
     case 'project-updated':

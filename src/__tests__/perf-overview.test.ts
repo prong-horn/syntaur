@@ -1,23 +1,18 @@
 /**
- * Overview performance bench. Gated by SYNTAUR_PERF_BENCH=1 so it does not
- * run in normal CI. Combine with SYNTAUR_PERF_TRACE=1 to see per-phase
- * JSON traces emitted by getOverview itself.
+ * Staying board/project reader performance bench. Gated by
+ * SYNTAUR_PERF_BENCH=1 so it does not run in normal CI.
  *
- *   SYNTAUR_PERF_BENCH=1 SYNTAUR_PERF_TRACE=1 \
+ *   SYNTAUR_PERF_BENCH=1 \
  *     npx vitest run src/__tests__/perf-overview.test.ts --reporter=verbose
  *
- * Add SYNTAUR_PERF_BENCH_REAL=1 to also bench against the live ~/.syntaur
- * workspace, including the full overview path and the concurrent startup
- * request set.
+ * Uses synthetic projects only.
  */
 import { describe, it, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { homedir } from 'node:os';
 
 import {
-  getOverview,
   listProjects,
   listTicketsBoard,
 } from '../dashboard/api.js';
@@ -126,46 +121,17 @@ async function seedSyntheticWorkspace(
 
 async function runOnce(label: string, projectsDir: string): Promise<number> {
   const start = performance.now();
-  const overview = await getOverview(projectsDir);
+  const [projects, board] = await Promise.all([listProjects(projectsDir), listTicketsBoard(projectsDir)]);
   const ms = performance.now() - start;
   // eslint-disable-next-line no-console
   console.log(
-    `[perf-bench:${label}] total=${ms.toFixed(1)}ms projects=${overview.recentProjects.length} firstRun=${overview.firstRun}`,
+    `[perf-bench:${label}] total=${ms.toFixed(1)}ms projects=${projects.length} tickets=${board.tickets.length}`,
   );
   return ms;
 }
 
-async function runFullOverview(
-  label: string,
-  projectsDir: string,
-  ): Promise<number> {
-  const start = performance.now();
-  const overview = await getOverview(projectsDir);
-  const ms = performance.now() - start;
-  // eslint-disable-next-line no-console
-  console.log(
-    `[perf-bench:${label}] total=${ms.toFixed(1)}ms projects=${overview.recentProjects.length}`,
-  );
-  return ms;
-}
 
-async function runStartupSet(
-  label: string,
-  projectsDir: string,
-  ): Promise<number> {
-  const start = performance.now();
-  await Promise.all([
-    getOverview(projectsDir),
-    listProjects(projectsDir),
-    listTicketsBoard(projectsDir),
-  ]);
-  const ms = performance.now() - start;
-  // eslint-disable-next-line no-console
-  console.log(`[perf-bench:${label}] total=${ms.toFixed(1)}ms`);
-  return ms;
-}
-
-describe.skipIf(!ENABLED)('perf-overview synthetic 30x20', () => {
+describe.skipIf(!ENABLED)('board/project reader synthetic 60x30', () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -184,33 +150,6 @@ describe.skipIf(!ENABLED)('perf-overview synthetic 30x20', () => {
     // eslint-disable-next-line no-console
     console.log(
       `[perf-bench:synthetic-summary] cold=${cold.toFixed(1)}ms warm1=${warm1.toFixed(1)}ms warm2=${warm2.toFixed(1)}ms`,
-    );
-  }, 120_000);
-});
-
-describe.skipIf(!ENABLED || !process.env.SYNTAUR_PERF_BENCH_REAL)('perf-overview real workspace', () => {
-  it('cold + warm against ~/.syntaur/projects', async () => {
-    const real = resolve(homedir(), '.syntaur', 'projects');
-    const cold = await runOnce('real-cold', real);
-    const warm = await runOnce('real-warm', real);
-    // eslint-disable-next-line no-console
-    console.log(`[perf-bench:real-summary] cold=${cold.toFixed(1)}ms warm=${warm.toFixed(1)}ms`);
-  }, 120_000);
-
-  it('full startup path against ~/.syntaur', async () => {
-    const projectsDir = resolve(homedir(), '.syntaur', 'projects');
-    const ticketsPath = getTicketsDir();
-
-    const overviewCold = await runFullOverview('real-full-overview-cold', projectsDir);
-    const overviewWarm = await runFullOverview('real-full-overview-warm', projectsDir);
-
-    const startupCold = await runStartupSet('real-startup-set-cold', projectsDir);
-    const startupWarm = await runStartupSet('real-startup-set-warm', projectsDir);
-
-    // eslint-disable-next-line no-console
-    console.log(
-      `[perf-bench:real-full-summary] overview cold=${overviewCold.toFixed(1)}ms warm=${overviewWarm.toFixed(1)}ms | ` +
-        `startup-set cold=${startupCold.toFixed(1)}ms warm=${startupWarm.toFixed(1)}ms`,
     );
   }, 120_000);
 });

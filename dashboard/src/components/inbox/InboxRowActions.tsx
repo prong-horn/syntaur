@@ -12,8 +12,9 @@ import {
   permissionButtonTone,
   preferredAllowOption,
 } from '../../lib/chat-format';
+import { mutateInboxRow } from '../../data/ticketResources';
+import type { MutationMethod } from '../../data/mutate';
 import {
-  ticketHref,
   chatItemHref,
   chatReplyText,
   logEndpoint,
@@ -23,6 +24,7 @@ import {
   rowKind,
   snoozeEndpoint,
   transitionEndpoint,
+  ticketHref,
   type EndpointDescriptor,
   type InboxItem,
 } from '../../lib/inbox';
@@ -40,19 +42,17 @@ export async function runMutation(
   body: Record<string, unknown> | undefined,
   props: Pick<InboxRowActionProps, 'onMutated' | 'onError' | 'onSuccess'>,
   successMessage: string,
+  ticketId: string,
+  projectSlug: string | null,
 ): Promise<boolean> {
   try {
-    const response = await fetch(endpoint.url, {
-      method: endpoint.method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body ?? {}),
-    });
-    if (!response.ok) {
-      const payload = await response.json().catch(() => null);
-      throw new Error(
-        (payload as { error?: string } | null)?.error || `HTTP ${response.status}`,
-      );
-    }
+    await mutateInboxRow(
+      endpoint.method as MutationMethod,
+      endpoint.url,
+      body,
+      ticketId,
+      projectSlug,
+    );
     props.onSuccess(successMessage);
     props.onMutated();
     return true;
@@ -89,7 +89,7 @@ function SnoozeMenu({
   const props = { onMutated, onError, onSuccess };
 
   async function snooze(body: Record<string, unknown>) {
-    await runMutation(snoozeEndpoint(key), body, props, 'Snoozed');
+    await runMutation(snoozeEndpoint(key), body, props, 'Snoozed', item.ticketId, item.project);
   }
 
   return (
@@ -376,6 +376,8 @@ function PlainQuestionActions({ item, onMutated, onError, onSuccess }: InboxRowA
       },
       { onMutated, onError, onSuccess },
       `Answered — ${item.title}`,
+      item.ticketId,
+      item.project,
     );
     setBusy(false);
     if (ok) setReply('');
@@ -417,6 +419,8 @@ function ReviewActions({ item, onMutated, onError, onSuccess }: InboxRowActionPr
       undefined,
       { onMutated, onError, onSuccess },
       `${verb} — ${item.title}`,
+      item.ticketId,
+      item.project,
     );
     setBusy(null);
   }
@@ -449,6 +453,8 @@ function PlanActions({ item, onMutated, onError, onSuccess }: InboxRowActionProp
       undefined,
       { onMutated, onError, onSuccess },
       `Plan approved — ${item.title}`,
+      item.ticketId,
+      item.project,
     );
     setBusy(false);
   }

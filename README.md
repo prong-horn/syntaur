@@ -239,7 +239,11 @@ syntaur search "authentication flow" --json --limit 5
 
 Key flags: `--project <slug>`, `--template <list>`, `--status <list>`, `--in <fileKinds>` (singular or plural names accepted), `--all`, `--limit <n>` (default 20), `--semantic`, `--json`.
 
-The dashboard command palette runs the same search and deep-links results to the matching ticket's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag activates the semantic provider when available; v1 falls back to full-text search via fuse.js.
+The dashboard's visible Search button runs the same search and deep-links results to the matching ticket's `?tab=<kind>` pane and `#section` anchor. The `--semantic` flag activates the semantic provider when available; v1 falls back to full-text search via fuse.js.
+
+The dashboard has six destinations: **Needs me** (`/inbox`), **Board** (`/board`), **Ticket** (`/t/:id`), **Sessions** (`/sessions`), **Library** (`/library`), and **Settings** (`/settings`). Board history defaults to active tickets and tickets completed or dropped in the last 30 days; its History controls can show all tickets or older terminal tickets without changing ticket files. Archived projects live in the Board's project panel and can be restored there. Their tickets are shown read-only in the panel and are excluded from the active board feed. Ticket and board metrics show lifetime recorded cost and distinct session count; an unknown or incomplete cost is labelled rather than displayed as zero. Usage details are on Sessions, and playbooks, agents, and read-only template summaries are in Library. Settings links to this README.
+
+Fixed keyboard shortcuts are `g n` Needs me, `g b` Board, `g s` Sessions, `g l` Library, `g ,` Settings, and `n` new ticket. Shortcuts pause while typing or using a dialog; navigation chords time out after one second.
 
 See [`docs/cli.md`](docs/cli.md) for the full reference.
 

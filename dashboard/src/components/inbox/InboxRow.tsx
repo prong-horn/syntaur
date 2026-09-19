@@ -107,6 +107,8 @@ export function InboxRow({ item, agents, highlighted, snoozed = false, ...action
                   undefined,
                   actionProps,
                   'Unsnoozed',
+                  item.ticketId,
+                  item.project,
                 )
               }
             >

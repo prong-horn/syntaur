@@ -43,14 +43,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Install dashboard dependencies
+        run: npm ci --prefix dashboard
+
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Typecheck scoped backend tests
+        run: npx tsc -p tsconfig.tests.json --noEmit
 
       - name: Build CLI (required for subprocess CLI tests)
         run: npm run build
 
+      - name: Lint dashboard architecture
+        run: npm run lint:dashboard
+
       - name: Run test suite
         run: npm test
+
+      - name: Run dashboard tests
+        run: npm run test:dashboard
+
+      - name: Build dashboard
+        run: npm run build --prefix dashboard
 
       - name: Verify adapter templates
         run: npx vitest run src/__tests__/adapter-templates.test.ts

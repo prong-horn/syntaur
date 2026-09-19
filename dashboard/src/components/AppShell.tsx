@@ -1,15 +1,12 @@
-import { useState, type ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Activity, Archive, BookOpen, Bot, Coins, Compass, FolderKanban, Inbox, LifeBuoy, ListTodo, Settings, X } from 'lucide-react';
-import { SidebarNav, SidebarNavGroup, type SidebarNavItem } from './SidebarNav';
+import { useEffect, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
+import { BookOpen, Inbox, KanbanSquare, Library, Settings, X } from 'lucide-react';
+import { SidebarNav, type SidebarNavItem } from './SidebarNav';
 import { TopBar } from './TopBar';
 import { useInbox } from '../hooks/useInbox';
 import { useInboxWindow } from '../hooks/useInboxWindow';
 import { useChatAgents } from '../hooks/useChatAgents';
 import { useInboxNotifications } from '../hooks/useInboxNotifications';
-import { useSidebarCollapse } from '../hooks/useSidebarCollapse';
-import { getSidebarSection } from '../lib/routes';
-import { useHotkey } from '../hotkeys';
 
 interface Breadcrumb {
   label: string;
@@ -23,53 +20,11 @@ interface AppShellProps {
   children: ReactNode;
 }
 
-const PINNED_NAV_ITEMS: SidebarNavItem[] = [
-  { to: '/', label: 'Overview', icon: Compass },
+const NAV_ITEMS: SidebarNavItem[] = [
   { to: '/inbox', label: 'Needs me', icon: Inbox },
-];
-
-interface SidebarNavGroupDef {
-  id: string;
-  label: string;
-  items: SidebarNavItem[];
-}
-
-const GLOBAL_NAV_GROUPS: SidebarNavGroupDef[] = [
-  {
-    id: 'work',
-    label: 'Work',
-    items: [
-      { to: '/projects', label: 'Projects', icon: FolderKanban },
-      { to: '/tickets', label: 'Tickets', icon: ListTodo },
-    ],
-  },
-  {
-    id: 'library',
-    label: 'Library',
-    items: [
-      { to: '/playbooks', label: 'Playbooks', icon: BookOpen },
-    ],
-  },
-  {
-    id: 'board',
-    label: 'Board',
-    items: [
-      { to: '/archive', label: 'Archive', icon: Archive },
-    ],
-  },
-  {
-    id: 'operations',
-    label: 'Operations',
-    items: [
-      { to: '/usage', label: 'Usage', icon: Coins },
-      { to: '/agent-sessions', label: 'Agent Sessions', icon: Activity },
-      { to: '/agents', label: 'Agents', icon: Bot },
-    ],
-  },
-];
-
-const UTILITY_NAV_ITEMS: SidebarNavItem[] = [
-  { to: '/help', label: 'Help', icon: LifeBuoy },
+  { to: '/board', label: 'Board', icon: KanbanSquare },
+  { to: '/sessions', label: 'Sessions', icon: BookOpen },
+  { to: '/library/playbooks', label: 'Library', icon: Library },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
@@ -95,26 +50,31 @@ export function AppShell({
     agents: chatAgents?.agents ?? [],
   });
 
-  useHotkey({
-    keys: 'Escape',
-    scope: 'global',
-    description: 'Close mobile navigation',
-    enabled: mobileNavOpen,
-    handler: () => setMobileNavOpen(false),
-  });
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    function onKeydown(event: KeyboardEvent) {
+      if (event.key === 'Escape') setMobileNavOpen(false);
+    }
+    window.addEventListener('keydown', onKeydown);
+    return () => window.removeEventListener('keydown', onKeydown);
+  }, [mobileNavOpen]);
+
+  const navItems = NAV_ITEMS.map((item) =>
+    item.to === '/inbox' ? { ...item, badge: inboxTotal } : item,
+  );
 
   return (
     <div className="min-h-screen bg-background">
       <div className="relative grid min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="hidden max-h-screen sticky top-0 overflow-y-auto border-r border-border/70 bg-sidebar px-4 py-4 lg:flex lg:flex-col">
-          <ShellSidebar inboxTotal={inboxTotal} />
+          <ShellSidebar items={navItems} />
         </aside>
 
         {mobileNavOpen ? (
-          <div className="fixed inset-0 z-40 bg-overlay/40 lg:hidden">
+          <div role="dialog" aria-modal="true" aria-label="Navigation" data-state="open" className="fixed inset-0 z-40 bg-overlay/40 lg:hidden">
             <div className="flex h-full max-w-xs flex-col border-r border-border/70 bg-sidebar p-4 shadow-2xl">
               <div className="mb-4 flex shrink-0 items-center justify-between">
-                <Link to="/" className="text-lg font-semibold text-foreground" onClick={() => setMobileNavOpen(false)}>
+                <Link to="/inbox" className="text-lg font-semibold text-foreground" onClick={() => setMobileNavOpen(false)}>
                   Syntaur
                 </Link>
                 <button
@@ -127,10 +87,7 @@ export function AppShell({
                 </button>
               </div>
               <div className="min-h-0 flex-1">
-                <ShellSidebar
-                  inboxTotal={inboxTotal}
-                  onNavigate={() => setMobileNavOpen(false)}
-                />
+                <ShellSidebar items={navItems} onNavigate={() => setMobileNavOpen(false)} />
               </div>
             </div>
           </div>
@@ -153,23 +110,16 @@ export function AppShell({
 }
 
 function ShellSidebar({
-  inboxTotal,
+  items,
   onNavigate,
 }: {
-  inboxTotal: number;
+  items: SidebarNavItem[];
   onNavigate?: () => void;
 }) {
-  const pinnedNavItems = PINNED_NAV_ITEMS.map((item) =>
-    item.to === '/inbox' ? { ...item, badge: inboxTotal } : item,
-  );
-  const location = useLocation();
-  const { isCollapsed: isSidebarCollapsed, toggle: toggleSidebar } = useSidebarCollapse();
-  const activeSection = getSidebarSection(location.pathname);
-
   return (
     <div className="flex h-full flex-col gap-3">
-      <div className="shrink-0 space-y-3">
-        <Link to="/" className="inline-flex items-center gap-3" onClick={onNavigate}>
+      <div className="shrink-0">
+        <Link to="/inbox" className="inline-flex items-center gap-3" onClick={onNavigate}>
           <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border/60">
             <svg viewBox="0 0 43 51" aria-label="Syntaur" role="img" className="h-4 w-auto" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
               <path d="M13 2C13 0.89543 13.8954 0 15 0H41C42.1046 0 43 0.895431 43 2V12C43 13.1046 42.1046 14 41 14H13V2Z" />
@@ -185,27 +135,8 @@ function ShellSidebar({
         </Link>
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
-        <div className="space-y-1">
-          <SidebarNav items={pinnedNavItems} onNavigate={onNavigate} />
-          {GLOBAL_NAV_GROUPS.map((group) => (
-            <SidebarNavGroup
-              key={group.id}
-              label={group.label}
-              items={group.items}
-              collapsed={isSidebarCollapsed(group.id)}
-              onToggle={() => toggleSidebar(group.id)}
-              containsActive={group.items.some((item) => item.to === activeSection)}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="shrink-0 border-t border-border/40" />
-
-      <div className="shrink-0">
-        <SidebarNav items={UTILITY_NAV_ITEMS} onNavigate={onNavigate} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <SidebarNav items={items} onNavigate={onNavigate} />
       </div>
     </div>
   );

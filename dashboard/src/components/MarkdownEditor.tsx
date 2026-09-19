@@ -28,6 +28,8 @@ interface MarkdownEditorProps {
   helpTitle?: string;
   helpBody?: string;
   allowSlugEdit?: boolean;
+  /** Fired when the editor body changes (create flows that preserve draft across dialogs). */
+  onContentChange?: (content: string) => void;
 }
 
 type MobilePane = 'edit' | 'preview';
@@ -45,13 +47,21 @@ export function MarkdownEditor({
   helpTitle: _helpTitle,
   helpBody: _helpBody,
   allowSlugEdit = false,
+  onContentChange,
 }: MarkdownEditorProps) {
   const [content, setContent] = useState(initialContent);
+  const onContentChangeRef = useRef(onContentChange);
+  onContentChangeRef.current = onContentChange;
+  const updateContent = (next: string) => {
+    setContent(next);
+    onContentChangeRef.current?.(next);
+  };
   const [rawMode, setRawMode] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>('edit');
 
   useEffect(() => {
     setContent(initialContent);
+    onContentChangeRef.current?.(initialContent);
   }, [initialContent]);
 
   const validationErrors = getValidationErrors(documentType, content);
@@ -192,7 +202,7 @@ export function MarkdownEditor({
             {rawMode ? (
               <textarea
                 value={content}
-                onChange={(event) => setContent(event.target.value)}
+                onChange={(event) => updateContent(event.target.value)}
                 className="min-h-[720px] w-full rounded-md border border-border/70 bg-background/90 p-4 font-mono text-sm text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-ring/30"
                 spellCheck={false}
               />
@@ -200,7 +210,7 @@ export function MarkdownEditor({
               <StructuredEditor
                 documentType={documentType}
                 content={content}
-                onChange={setContent}
+                onChange={updateContent}
                 allowSlugEdit={allowSlugEdit}
               />
             )}

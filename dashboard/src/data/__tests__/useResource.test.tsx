@@ -198,7 +198,7 @@ describe('useResource mounted under a real provider', () => {
     await act(async () => {
       renderer = TestRenderer.create(
         <ResourceProvider store={store}>
-          <Show resource={resources.overview()} />
+          <Show resource={resources.templates()} />
         </ResourceProvider>,
       );
     });

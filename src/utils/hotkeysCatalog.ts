@@ -20,45 +20,16 @@ export function isBindableActionKind(value: unknown): value is BindableActionKin
   );
 }
 
-// Reserved combos that user-bound hotkeys may NOT shadow. Hand-maintained;
-// scripts/check-hotkey-catalog.ts greps `useHotkey({` across the dashboard and
-// fails if it sees a `keys` value that is not represented here.
-//
-// Combos are stored in canonical form (see canonicalizeCombo). The list
-// includes:
-//   - global UI combos (Mod+k, Mod+Shift+k, ?, Escape, Enter, Shift+t)
-//   - g <suffix> chord prefixes (the lone "g" is reserved as a chord starter)
-//   - list-scope letters
-//   - page-scoped shortcuts that exist when those pages are mounted
+// Reserved combos for SV-12 Option A navigation hotkeys. The dashboard no longer
+// registers palette/custom bindings; historical config blocks remain on disk.
 export const BUILTIN_RESERVED_COMBOS: readonly string[] = [
-  'mod+k',
-  'mod+shift+k',
-  '?',
-  'escape',
-  'enter',
-  'shift+t',
-  // g-chord starter + suffixes
   'g',
-  'g o',
-  'g m',
-  'g t',
-  'g !',
+  'g n',
+  'g b',
+  'g s',
+  'g l',
   'g ,',
-  // list-scope navigation
-  'j',
-  'k',
-  'o',
-  // ProjectDetail page
-  'a',
-  'e',
-  // TicketsPage board
-  '/',
-  'r',
-  // TicketDetail page
-  'p',
-  's',
-  '[',
-  ']',
+  'n',
 ];
 
 const MODIFIER_ORDER: readonly string[] = ['mod', 'ctrl', 'alt', 'shift'];
@@ -134,15 +105,8 @@ export function isReservedCombo(combo: string): boolean {
 }
 
 /**
- * Default hotkey bindings shipped with the dashboard. The triple-modifier
- * `Mod+Shift+Alt+<letter>` namespace is intentionally chosen to avoid common
- * browser shortcuts (Cmd+Shift+T reopens closed tab, Cmd+Shift+P opens
- * private mode, Cmd+Shift+W closes window, etc.) while keeping the action
- * mnemonic. Users can override any of these from Settings → Hotkey Bindings.
- *
- * These are EFFECTIVE only when the user has not bound a custom combo for
- * that action — `effectiveBindings()` overlays the user's custom bindings on
- * top, so a custom binding always wins.
+ * Legacy default bindings retained for config backward compatibility only.
+ * The dashboard no longer registers these combos after SV-12 Option A.
  */
 export const DEFAULT_BINDABLE_HOTKEYS: Readonly<Record<BindableActionKind, string>> = {
   'new-project': canonicalizeCombo('Mod+Shift+Alt+p'),

@@ -104,7 +104,7 @@ export function AgentPickerPanel({
             Attach the agents that can be messaged here and pick the one that answers a message with
             no <code className="font-mono">@mention</code>. Harness, model, mode and reply policy come
             from each agent&rsquo;s definition —{' '}
-            <Link to="/agents" className="text-primary underline">
+            <Link to="/library/agents" className="text-primary underline">
               edit them on the Agents page
             </Link>
             .
@@ -150,7 +150,7 @@ export function AgentPickerPanel({
                   </label>
                   <span className="font-mono text-[11px] text-muted-foreground">@{agent.id}</span>
                   <Link
-                    to={`/agents/${agent.id}/edit`}
+                    to={`/library/agents/${encodeURIComponent(agent.id)}/edit`}
                     className="text-[11px] text-primary underline"
                   >
                     edit

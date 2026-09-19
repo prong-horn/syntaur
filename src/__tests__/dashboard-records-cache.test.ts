@@ -4,7 +4,7 @@ import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { join, join as joinPath, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
-  getOverview,
+  listTicketsBoard,
   listProjects,
   listWorkspaceRecords,
   invalidateRecordsCache,
@@ -126,24 +126,24 @@ describe('records cache', () => {
     const ticketPath = resolve(testDir, 'test-project', 'tickets', `${TEST_TICKET_ID}-test-ticket`, 'ticket.md');
 
     // Warm the cache.
-    const first = await getOverview(testDir);
-    expect(first.stats.inProgressTickets).toBe(0);
+    const first = await listTicketsBoard(testDir);
+    expect(first.tickets[0]?.status).toBe('backlog');
 
     // Mutate the file directly on disk, bypassing every router (so nothing
     // invalidates). A live (non-cached) read would see in_progress.
     await writeFile(ticketPath, ticketMd(`${TEST_TICKET_ID}-test-ticket`, 'in_progress'), 'utf-8');
 
     // Cache is still serving the warm snapshot — proves it is not re-fanning out.
-    const cached = await getOverview(testDir);
-    expect(cached.stats.inProgressTickets).toBe(0);
+    const cached = await listTicketsBoard(testDir);
+    expect(cached.tickets[0]?.status).toBe('backlog');
 
     // After invalidation the next read rebuilds and reflects the on-disk change.
     invalidateRecordsCache();
-    const fresh = await getOverview(testDir);
-    expect(fresh.stats.inProgressTickets).toBe(1);
+    const fresh = await listTicketsBoard(testDir);
+    expect(fresh.tickets[0]?.status).toBe('in_progress');
   });
 
-  it('shares one snapshot across listProjects and getOverview', async () => {
+  it('shares one snapshot across listProjects and listTicketsBoard', async () => {
     await seedProjectWithTicket('backlog');
     const projectMdPath = resolve(testDir, 'test-project', 'project.md');
 
@@ -154,9 +154,9 @@ describe('records cache', () => {
     // Rename the title on disk without invalidating.
     await writeFile(projectMdPath, projectMd('test-project', 'Renamed Project'), 'utf-8');
 
-    // getOverview reuses the same cached records — still the old title.
-    const overview = await getOverview(testDir);
-    expect(overview.recentProjects[0]?.title).toBe('Test Project');
+    // The board reuses the cached project record and title.
+    const board = await listTicketsBoard(testDir);
+    expect(board.tickets[0]?.projectTitle).toBe('Test Project');
 
     invalidateRecordsCache();
     const afterInvalidate = await listProjects(testDir);
@@ -168,8 +168,8 @@ describe('records cache', () => {
     const router = createWriteRouter(testDir);
 
     // Warm the cache with the ready state.
-    const before = await getOverview(testDir);
-    expect(before.stats.inProgressTickets).toBe(0);
+    const before = await listTicketsBoard(testDir);
+    expect(before.tickets[0]?.status).toBe('ready');
 
     // Mutate through the real write router; its invalidation wrapper must clear
     // the cache synchronously before this returns — no watcher debounce window.
@@ -183,8 +183,8 @@ describe('records cache', () => {
     expect(status).toBe(200);
 
     // The very next read reflects the write with no manual invalidation.
-    const after = await getOverview(testDir);
-    expect(after.stats.inProgressTickets).toBe(1);
+    const after = await listTicketsBoard(testDir);
+    expect(after.tickets[0]?.status).toBe('in_progress');
   });
 
   it('derives workspace records from the cache without a second fan-out', async () => {

@@ -57,7 +57,7 @@ describe('hotkeys block in config.md', () => {
     await writeHotkeyBindingsConfig({
       bindings: {
         // Reserved — must be dropped silently.
-        'new-project': 'Mod+K',
+        'new-project': 'g n',
         // Valid — must persist.
         'new-ticket': 'Shift+Alt+t',
       },

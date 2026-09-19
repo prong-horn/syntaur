@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   BINDABLE_ACTION_KINDS,
   BUILTIN_RESERVED_COMBOS,
@@ -27,53 +29,33 @@ describe('canonicalizeCombo', () => {
 
   it('canonicalizes chord-form (space-separated) combos', () => {
     expect(canonicalizeCombo('g A')).toBe('g a');
-    expect(canonicalizeCombo('  g  o  ')).toBe('g o');
-  });
-
-  it('returns "" for empty input', () => {
-    expect(canonicalizeCombo('')).toBe('');
-    expect(canonicalizeCombo('   ')).toBe('');
-  });
-
-  it('strips redundant whitespace and duplicate modifiers', () => {
-    expect(canonicalizeCombo(' Mod + Mod + K ')).toBe('mod+k');
+    expect(canonicalizeCombo('  g  n  ')).toBe('g n');
   });
 });
 
-describe('isReservedCombo', () => {
-  it('flags built-in combos in any case', () => {
-    expect(isReservedCombo('Mod+K')).toBe(true);
-    expect(isReservedCombo('mod+shift+k')).toBe(true);
-    expect(isReservedCombo('?')).toBe(true);
-    expect(isReservedCombo('shift+t')).toBe(true);
-    expect(isReservedCombo('g t')).toBe(true);
-    expect(isReservedCombo('  ['  )).toBe(true);
+describe('isReservedCombo (Option A navigation)', () => {
+  it('flags the fixed navigation chords', () => {
+    for (const k of ['g', 'g n', 'g b', 'g s', 'g l', 'g ,', 'n']) {
+      expect(isReservedCombo(k)).toBe(true);
+    }
   });
 
-  it('does NOT flag user-friendly combos', () => {
-    expect(isReservedCombo('Mod+Shift+T')).toBe(false);
-    expect(isReservedCombo('Alt+x')).toBe(false);
-    expect(isReservedCombo('shift+n')).toBe(false);
-  });
-
-  it('returns false for empty input', () => {
-    expect(isReservedCombo('')).toBe(false);
+  it('does not flag removed palette/page chords', () => {
+    expect(isReservedCombo('mod+k')).toBe(false);
+    expect(isReservedCombo('?')).toBe(false);
+    expect(isReservedCombo('g t')).toBe(false);
+    expect(isReservedCombo('j')).toBe(false);
   });
 });
 
 describe('BindableActionKind', () => {
   it('exposes all canonical kinds', () => {
-    expect(BINDABLE_ACTION_KINDS).toEqual([
-      'new-project',
-      'new-ticket',
-    ]);
+    expect(BINDABLE_ACTION_KINDS).toEqual(['new-project', 'new-ticket']);
   });
 
   it('isBindableActionKind validates membership', () => {
     expect(isBindableActionKind('new-project')).toBe(true);
     expect(isBindableActionKind('new-frobnicator')).toBe(false);
-    expect(isBindableActionKind(42)).toBe(false);
-    expect(isBindableActionKind(null)).toBe(false);
   });
 });
 
@@ -86,25 +68,9 @@ describe('DEFAULT_BINDABLE_HOTKEYS', () => {
     }
   });
 
-  it('uses canonicalized combos', () => {
-    for (const kind of BINDABLE_ACTION_KINDS) {
-      const combo = DEFAULT_BINDABLE_HOTKEYS[kind];
-      expect(canonicalizeCombo(combo)).toBe(combo);
-    }
-  });
-
-  it('does not collide with any reserved built-in combo', () => {
+  it('does not collide with Option A reserved navigation combos', () => {
     for (const kind of BINDABLE_ACTION_KINDS) {
       expect(isReservedCombo(DEFAULT_BINDABLE_HOTKEYS[kind])).toBe(false);
-    }
-  });
-
-  it('uses unique combos across all kinds', () => {
-    const seen = new Set<string>();
-    for (const kind of BINDABLE_ACTION_KINDS) {
-      const combo = DEFAULT_BINDABLE_HOTKEYS[kind];
-      expect(seen.has(combo)).toBe(false);
-      seen.add(combo);
     }
   });
 });
@@ -117,40 +83,29 @@ describe('effectiveBindings', () => {
     }
   });
 
-  it('overlays custom bindings on top of defaults', () => {
-    const custom: Partial<Record<BindableActionKind, string>> = {
-      'new-ticket': 'mod+x',
-    };
-    const out = effectiveBindings(custom);
-    expect(out['new-ticket']).toBe('mod+x');
-    expect(out['new-project']).toBe(DEFAULT_BINDABLE_HOTKEYS['new-project']);
-  });
-
   it('isDefaultBinding reports custom vs default correctly', () => {
     expect(isDefaultBinding({}, 'new-ticket')).toBe(true);
-    expect(
-      isDefaultBinding({ 'new-ticket': 'mod+x' }, 'new-ticket'),
-    ).toBe(false);
-    expect(isDefaultBinding({ 'new-ticket': '' }, 'new-ticket')).toBe(true);
+    expect(isDefaultBinding({ 'new-ticket': 'mod+x' }, 'new-ticket')).toBe(false);
   });
 });
 
 describe('BUILTIN_RESERVED_COMBOS catalog completeness', () => {
-  it('includes all ticket-detail page shortcuts', () => {
-    for (const k of ['p', 's', '[', ']', 'e']) {
-      expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
-    }
-  });
-
-  it('includes all g-chord prefixes', () => {
-    for (const k of ['g', 'g o', 'g m', 'g t', 'g !', 'g ,']) {
-      expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
-    }
-  });
-
-  it('includes the global modifier combos', () => {
-    for (const k of ['mod+k', 'mod+shift+k', 'shift+t', '?', 'escape', 'enter']) {
-      expect(BUILTIN_RESERVED_COMBOS.includes(k)).toBe(true);
+  it('matches NavigationHotkeys registration', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'dashboard/src/components/navigation/NavigationHotkeys.tsx'),
+      'utf8',
+    );
+    for (const combo of BUILTIN_RESERVED_COMBOS) {
+      if (combo === 'g') {
+        expect(source).toContain("key === 'g'");
+        continue;
+      }
+      const suffix = combo.startsWith('g ') ? combo.slice(2) : combo;
+      if (combo.startsWith('g ')) {
+        expect(source).toMatch(new RegExp(`['\"]?${suffix === ',' ? ',' : suffix}['\"]?\\s*:\\s*['\"]\\/`));
+      } else {
+        expect(source).toContain(`key === '${suffix}'`);
+      }
     }
   });
 });

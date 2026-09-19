@@ -315,14 +315,14 @@ describe('ResourceStore', () => {
   it('expires inactive entries after five minutes', async () => {
     const { fake, store } = setup();
     vi.useFakeTimers({ toFake: [...STORE_TIMERS] });
-    const off = store.subscribe(resources.help(), () => {});
-    fake.last().respond({ sections: [] });
+    const off = store.subscribe(resources.templates(), () => {});
+    fake.last().respond({ templates: [] });
     await flush();
     off();
     vi.advanceTimersByTime(5 * 60 * 1000 - 1);
-    expect(store.hasEntry('/api/help')).toBe(true);
+    expect(store.hasEntry('/api/ticket-templates')).toBe(true);
     vi.advanceTimersByTime(1);
-    expect(store.hasEntry('/api/help')).toBe(false);
+    expect(store.hasEntry('/api/ticket-templates')).toBe(false);
   });
 
   it('never reuses a non-retained (editor document) entry across mounts', async () => {
