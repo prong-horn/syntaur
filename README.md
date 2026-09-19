@@ -337,7 +337,7 @@ Common issues:
 - **"Error: no such column: project_slug"** — pre-v0.2.0 database; upgrade `syntaur` and run migrations on next start.
 - **Skills missing** — `npx skills add prong-horn/syntaur -g -a claude-code`; then `syntaur doctor --only skills.installed`.
 - **Hooks missing or stale** — `syntaur hooks install` (re-run after upgrade). If the old marketplace plugin is still enabled, doctor warns about duplicate hooks — remove the plugin per [v0.80 cutover](./docs/releases/v0.80.md).
-- **Session stays `active` after closing the terminal** — without SessionEnd, the dashboard maintenance loop sweeps idle rows (default 6 h) or use `syntaur session stop` manually.
+- **Session stays `active` after closing the terminal** — without SessionEnd, pipe the session id to stop: `printf '{"session_id":"<id>"}' | syntaur session stop --from-hook`. Otherwise the dashboard maintenance loop closes rows idle past `session.idleSweepHours` (default 6 h) on its first tick after start and every 45 s, and a ticket reaching `done` closes the sessions engaged on it.
 - **`npx syntaur` keeps asking to install globally** — choose "3) Never", or `export SYNTAUR_SKIP_INSTALL_PROMPT=1`.
 
 ## Development

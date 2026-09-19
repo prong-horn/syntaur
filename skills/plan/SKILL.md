@@ -15,7 +15,7 @@ Run `syntaur show <ID>` and follow **Stage**, **Next**, and **Commands**. All wr
 
 ## Create or version
 
-From backlog / planning stage:
+From backlog (the verb also moves the ticket to planning):
 
 ```bash
 syntaur plan create <ID> --project <slug>

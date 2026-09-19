@@ -549,7 +549,7 @@ The dashboard **Needs me** view is the GUI reply queue — live cards first, the
 | `session-touch.sh` → `syntaur session touch --from-hook` | `PostToolUse` | Rate-limited heartbeat (`updated_at`) on tool use |
 | `prompt-context.sh` → `syntaur session context --from-hook` | `UserPromptSubmit` | Inject stage block JSON **and** bump `updated_at` (touch runs inside `session context`) |
 
-There is **no SessionEnd hook**. Closing a terminal does not mark the session stopped. An `active` row is swept when the dashboard maintenance loop runs (first tick on dashboard start, then every 45 s): sessions idle longer than `session.idleSweepHours` (default 6) are marked stopped with `ended` backdated to the last touch. With the dashboard never started, rows can stay `active` indefinitely. Use `syntaur session stop --from-hook` only from a custom hook, or reconcile via ticket status changes. For a manual close from the CLI, use the dashboard or maintenance semantics above.
+There is **no SessionEnd hook**. Closing a terminal does not mark the session stopped. To close a session by hand, pipe its id to the stop verb: `printf '{"session_id":"<id>"}' | syntaur session stop --from-hook`. Otherwise the dashboard's maintenance loop closes rows idle past `session.idleSweepHours` (default 6 h) on its first tick after start and every 45 s, and a ticket reaching `done` closes the sessions engaged on it.
 
 Text mode (`syntaur session context --session-id <id>`) prints the same block for measurement and debugging.
 
