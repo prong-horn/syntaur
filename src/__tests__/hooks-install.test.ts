@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm, writeFile, readFile, stat, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join, dirname } from 'node:path';
@@ -82,22 +83,96 @@ describe('hooks install', () => {
     expect(second).toBe(first);
   });
 
-  it('replaces only our entries when the install path changes', async () => {
+  it('replaces stale hook commands under the current install root', async () => {
     await installHooksCommand({ settingsPath, installRoot });
-    const otherRoot = resolve(sandbox, 'other-syntaur');
-    await installHooksCommand({ settingsPath, installRoot: otherRoot });
     const settings = await readJson(settingsPath);
     const hooks = settings.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>;
-    const commands = HOOK_ENTRIES.flatMap((e) => hooks[e.event].flatMap((g) => g.hooks.map((h) => h.command)));
-    expect(commands.every((c) => c.includes(`${otherRoot}/hooks/`))).toBe(true);
-    expect(commands.some((c) => c.includes(`${installRoot}/hooks/`))).toBe(false);
+    const legacyCmd = `bash ${resolve(installRoot, 'hooks', 'legacy', 'session-start.sh')}`;
+    hooks.SessionStart[0].hooks[0].command = legacyCmd;
+    await writeFile(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+
+    await installHooksCommand({ settingsPath, installRoot });
+    const after = await readJson(settingsPath);
+    const afterHooks = after.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    const sessionStartCmd = afterHooks.SessionStart[0].hooks[0].command;
+    expect(sessionStartCmd).toBe(`bash ${resolve(installRoot, 'hooks', 'session-start.sh')}`);
   });
 
-  it('throws on unparseable settings without mutating settings.json', async () => {
+  it('replaces hook commands under ~/.syntaur/hooks when install root moves', async () => {
+    const legacyDir = resolve(installRoot, '.syntaur', 'hooks');
+    const legacyCmd = `bash ${resolve(legacyDir, 'session-start.sh')}`;
+    await writeFile(
+      settingsPath,
+      JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [{ hooks: [{ type: 'command', command: legacyCmd, timeout: 5 }] }],
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf-8',
+    );
+    await installHooksCommand({ settingsPath, installRoot });
+    const settings = await readJson(settingsPath);
+    const hooks = settings.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    const cmd = hooks.SessionStart[0].hooks[0].command;
+    expect(cmd).toBe(`bash ${resolve(installRoot, 'hooks', 'session-start.sh')}`);
+    expect(cmd).not.toBe(legacyCmd);
+  });
+
+  it('throws on unparseable settings without mutating settings.json or creating hooks dir', async () => {
     const bad = '{ not json';
     await writeFile(settingsPath, bad, 'utf-8');
     await expect(installHooksCommand({ settingsPath, installRoot })).rejects.toThrow(/Unable to parse/);
     expect(await readFile(settingsPath, 'utf-8')).toBe(bad);
+    expect(existsSync(resolve(installRoot, 'hooks'))).toBe(false);
+  });
+
+  it('throws on unparseable settings without overwriting an existing hooks dir', async () => {
+    const hooksDir = resolve(installRoot, 'hooks');
+    await mkdir(hooksDir, { recursive: true });
+    const marker = resolve(hooksDir, 'marker.txt');
+    await writeFile(marker, 'keep-me', 'utf-8');
+    const bad = '{ not json';
+    await writeFile(settingsPath, bad, 'utf-8');
+    await expect(installHooksCommand({ settingsPath, installRoot })).rejects.toThrow(/Unable to parse/);
+    expect(await readFile(marker, 'utf-8')).toBe('keep-me');
+  });
+
+  it('preserves foreign SessionStart hooks that share script basenames', async () => {
+    const foreignCmd = 'bash /opt/tool/hooks/session-start.sh';
+    await writeFile(
+      settingsPath,
+      JSON.stringify(
+        {
+          hooks: {
+            SessionStart: [{ hooks: [{ type: 'command', command: foreignCmd }] }],
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf-8',
+    );
+    await installHooksCommand({ settingsPath, installRoot });
+    const settings = await readJson(settingsPath);
+    const groups = settings.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    const sessionStart = groups.SessionStart;
+    expect(sessionStart).toHaveLength(2);
+    expect(sessionStart.some((g) => g.hooks.some((h) => h.command === foreignCmd))).toBe(true);
+    expect(
+      sessionStart.some((g) =>
+        g.hooks.some((h) => h.command === `bash ${resolve(installRoot, 'hooks', 'session-start.sh')}`),
+      ),
+    ).toBe(true);
+
+    await uninstallHooksCommand({ settingsPath, installRoot });
+    const after = await readJson(settingsPath);
+    const afterGroups = after.hooks as Record<string, Array<{ hooks: Array<{ command: string }> }>>;
+    expect(afterGroups.SessionStart).toHaveLength(1);
+    expect(afterGroups.SessionStart[0].hooks[0].command).toBe(foreignCmd);
   });
 
   it('writes hooks.backup.json with previous hooks value', async () => {

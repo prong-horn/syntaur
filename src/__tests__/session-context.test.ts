@@ -562,4 +562,44 @@ describe('runSessionContext touch', () => {
     const count = getSessionDb().prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number };
     expect(count.n).toBe(0);
   });
+
+  it('advances updated_at when session id comes from context.json', async () => {
+    process.env.SYNTAUR_HOME = home;
+    initSessionDb();
+    const sessionId = 'sess-context-file';
+    await appendSession('', {
+      sessionId,
+      agent: 'claude',
+      status: 'active',
+      path: cwd,
+      started: new Date().toISOString(),
+      projectSlug: null,
+      ticketSlug: null,
+      ticketId: null,
+    });
+    await mkdir(resolve(cwd, '.syntaur'), { recursive: true });
+    await writeFile(
+      resolve(cwd, '.syntaur', 'context.json'),
+      JSON.stringify({ sessionId }),
+      'utf-8',
+    );
+    getSessionDb()
+      .prepare("UPDATE sessions SET updated_at = datetime('now', '-1 hour') WHERE session_id = ?")
+      .run(sessionId);
+    const before = getSessionDb()
+      .prepare('SELECT updated_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { updated_at: string };
+
+    const result = await runSessionContext(
+      JSON.stringify({ cwd, hook_event_name: 'UserPromptSubmit', prompt: 'hi' }),
+      { cwd, fromHook: true },
+    );
+    expect(result).not.toBeNull();
+    expect(result!.text).toContain('## Playbooks');
+
+    const after = getSessionDb()
+      .prepare('SELECT updated_at FROM sessions WHERE session_id = ?')
+      .get(sessionId) as { updated_at: string };
+    expect(after.updated_at).not.toBe(before.updated_at);
+  });
 });

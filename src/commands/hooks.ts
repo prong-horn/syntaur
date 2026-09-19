@@ -64,7 +64,7 @@ export function isOurHookCommand(command: string, installedHooksDir: string): bo
   const normalized = installedHooksDir.replace(/\\/g, '/');
   if (command.includes(`${normalized}/`)) return true;
   if (command.includes('/.syntaur/hooks/')) return true;
-  return HOOK_ENTRIES.some((entry) => command.includes(`/hooks/${entry.script}`));
+  return false;
 }
 
 function commandForScript(installedHooksDir: string, script: string): string {
@@ -217,8 +217,6 @@ export async function installHooksCommand(options: HooksCommandOptions = {}): Pr
   const installedHooksDir = hooksDirForInstallRoot(installRoot);
   const backupPath = resolve(installRoot, 'hooks.backup.json');
 
-  await copyHookScripts(sourceDir, installedHooksDir);
-
   const settings = await readSettingsJson(settingsPath);
   const previousHooks = settings.hooks;
 
@@ -230,6 +228,8 @@ export async function installHooksCommand(options: HooksCommandOptions = {}): Pr
     }
     return;
   }
+
+  await copyHookScripts(sourceDir, installedHooksDir);
 
   await backupHooksSettings(settingsPath, installRoot, previousHooks);
 
