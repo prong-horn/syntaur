@@ -251,7 +251,7 @@ function reopenEngagementIfMissing(
  * `completed` always sticks.
  *
  * Makes registration idempotent across SessionStart hooks, `/track-session`,
- * and grab-ticket all touching the same real session ID.
+ * and grab all touching the same real session ID.
  */
 export async function appendSession(
   _projectDir: string,

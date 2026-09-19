@@ -266,7 +266,7 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 
 > **Note:** This section describes the v1 sidecar layout preserved by the `legacy` template. Modern templates (e.g. `feature`) declare plan files in `template.md` with the same role semantics; use `syntaur show` for the authoritative file list on a given ticket.
 
-Zero or more implementation plan files per ticket. Plans are **not scaffolded** — they are created on demand by `/plan-ticket`.
+Zero or more implementation plan files per ticket. Plans are **not scaffolded** — they are created on demand by `/plan`.
 
 **Filename versioning:** The first plan for a ticket is `plan.md`. Subsequent plans use `plan-v2.md`, `plan-v3.md`, etc. — the smallest unused `plan-v<N>.md` where `N >= 2`. When requirements shift, create a new versioned plan file instead of rewriting the old one.
 
@@ -475,7 +475,7 @@ Refresh token: opaque string, stored as SHA-256 hash in DB.
 
 > **Note:** Merged into `journal.md` as `handoff` log entries by `syntaur migrate journal`. Modern templates use `syntaur log -t handoff` on `journal.md` instead.
 
-The **ticket-level cross-ticket outbound** doc. Written at completion (via the `complete-ticket` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
+The **ticket-level cross-ticket outbound** doc. Written at completion (via the `done` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. The `handoffCount` in frontmatter enables quick indexing without parsing the body. Created as an empty template by scaffolding, optional until first use.
 
 ### Frontmatter Schema
 
@@ -897,13 +897,13 @@ Sources of truth by agent:
 | Agent | Where to read the real session id |
 |-------|-----------------------------------|
 | Claude Code | SessionStart hook stdin payload (`session_id`), or fallback: the most-recently-modified `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)`. |
-| Codex | `payload.id` from the first line (`type: "session_meta"`) of the most-recently-modified `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` whose `payload.cwd` matches `$(pwd)`. Helper: `platforms/codex/scripts/resolve-session.sh`. |
+| Codex | `payload.id` from the first line (`type: "session_meta"`) of the most-recently-modified `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` whose `payload.cwd` matches `$(pwd)`. |
 
 `transcript_path` is the absolute path to the agent's rollout/transcript file. Optional — nullable column — but strongly preferred so handoffs and the dashboard can link back to the raw conversation.
 
 ### Upsert Semantics
 
-`appendSession` (and the POST endpoint it backs) upserts on `session_id`. Re-registering the same real id is a no-op for identity fields and a COALESCE for other fields, so SessionStart can pre-register a minimal row that grab-ticket or `/track-session` later enrich with project/ticket/description. Sessions already in a terminal status (`completed` / `stopped`) are not revived by re-registration.
+`appendSession` (and the POST endpoint it backs) upserts on `session_id`. Re-registering the same real id is a no-op for identity fields and a COALESCE for other fields, so SessionStart can pre-register a minimal row that `grab` or `syntaur track-session` later enrich with project/ticket/description. Sessions already in a terminal status (`completed` / `stopped`) are not revived by re-registration.
 
 ### Status Values
 
@@ -1354,15 +1354,11 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 |-------|------|-------------|----------|---------|-------------|
 | `version` | string | `"2.0"` | required | — | Config schema version. |
 | `defaultProjectDir` | string | absolute path | optional | `~/.syntaur/projects` (expanded) | Default directory for projects. **Must be absolute path; never use `~`.** |
-| `onboarding.completed` | boolean | `true`, `false` | optional | `false` | Whether the first-run onboarding flow has completed. |
 | `agentDefaults.trustLevel` | string (enum) | `low`, `medium`, `high` | optional | `medium` | Default trust level for agents. |
 | `agentDefaults.autoApprove` | boolean | `true`, `false` | optional | `false` | Whether to auto-approve agent actions. |
 | `agentDefaults.autoCreateWorktree` | string (enum) | `skip`, `ask`, `always` | optional | `ask` | Behavior when a flow that needs a worktree meets a ticket with no `workspace.worktree`/`branch` set. `skip`: fall back without prompting. `ask`: interactively offer to create a worktree. `always`: create one with inferred defaults, no prompt. |
 | `terminal` | string (enum) or null | `terminal-app`, `iterm`, `ghostty`, `alacritty`, `warp`, `kitty`, `cmux` | optional | `null` (platform default) | Which terminal `syntaur open` opens at a worktree. |
 | `session.idleSweepHours` | number | > 0 | optional | `6` | How long an `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
-| `integrations.claudePluginDir` | string or null | absolute path | optional | `null` | Override location of the Claude Code plugin directory. |
-| `integrations.codexPluginDir` | string or null | absolute path | optional | `null` | Override location of the Codex plugin directory. |
-| `integrations.codexMarketplacePath` | string or null | absolute path | optional | `null` | Override path to a Codex marketplace manifest. |
 The v1 `types` config block was removed in the templates protocol. Ticket manifests live under `~/.syntaur/templates/<id>/template.md`; per-project defaults use `defaultTemplate` in `project.md`.
 
 The `agents:` and `agentDiscovery:` blocks were REMOVED in v0.80 along with the
@@ -1384,7 +1380,6 @@ The body is optional and contains human notes about the configuration. No requir
 ---
 version: "2.0"
 defaultProjectDir: /Users/brennen/.syntaur/projects
-onboarding.completed: true
 agentDefaults:
   trustLevel: medium
   autoApprove: false
@@ -1410,7 +1405,7 @@ Playbooks are global — they apply across all projects and tickets. Fresh homes
 
 **Injection:** Cross-template playbooks (enabled slugs not claimed by any template manifest) are injected on each Claude Code prompt by the `UserPromptSubmit` hook via `syntaur session context`. Agents should run `syntaur show <id>` and follow **Stage** and **Next** for template workflow; user playbooks from the hook apply on top when present. The derived manifest is rebuilt for the dashboard Library and is not read by the hook.
 
-The **feature** template expresses the e2e development cycle as its defaults (stages, agents, gates); session mechanics such as worktree creation, `track-session`, and compaction hooks are separate skills and hooks, not stage text.
+The **feature** template expresses the e2e development cycle as its defaults (stages, agents, gates); session mechanics such as worktree creation, `track-session`, and session hooks are separate skills and hooks, not stage text.
 
 ### Frontmatter Schema
 

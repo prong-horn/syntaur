@@ -2,7 +2,7 @@
 name: plan
 description: >-
   Create or version a Syntaur implementation plan via the CLI. Use when planning
-  a ticket, writing plan.md, replanning after implementation, or running /plan.
+  a ticket, writing plan.md, versioning the plan after implementation, or running /plan.
 license: MIT
 metadata:
   author: prong-horn
@@ -21,7 +21,7 @@ From backlog / planning stage:
 syntaur plan create <ID> --project <slug>
 ```
 
-After an implemented plan needs a new revision (replan):
+After an implemented plan needs a new revision:
 
 ```bash
 syntaur plan version <ID> --project <slug>

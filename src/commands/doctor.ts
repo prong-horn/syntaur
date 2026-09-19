@@ -102,7 +102,7 @@ export const doctorCommand = new Command('doctor')
   .option('--verbose', 'Include passing checks in human output')
   .option(
     '--ticket <path>',
-    'Validate a single ticket.md frontmatter and exit (used by set-workspace skill pre-write)',
+    'Validate a single ticket.md frontmatter and exit (used before workspace set)',
   )
   .action(async (options: DoctorOptions) => {
     if (options.ticket) {

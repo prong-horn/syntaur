@@ -1,28 +1,23 @@
 # Syntaur Repo
 
-This repo contains the Syntaur CLI, dashboard, protocol skills, and platform-specific plugin/adapter sources.
+This repo contains the Syntaur CLI, dashboard, protocol skills, and Claude Code hook scripts.
 
 ## Important Paths
 
-- `skills/<name>/SKILL.md` - canonical source of all Syntaur protocol skills (single source of truth)
-- `.claude-plugin/plugin.json` - top-level plugin manifest declaring the syntaur skills (used by skills.sh discovery)
-- `platforms/claude-code/` - Claude Code plugin source (commands, hooks, agents, references)
-- `platforms/codex/` - Codex plugin source
-- `platforms/cursor/` - Cursor integration reference and adapter templates
-- `platforms/opencode/` - OpenCode integration reference and adapter templates
-- `platforms/<kind>/skills/` - **build artifact** (gitignored) populated by `npm run mirror-skills` from `<repo>/skills/`. The plugin manifests' `./skills/<name>` paths resolve to these.
-- `src/templates/` - generated adapter content
-- `.syntaur/context.json` - a WORKSPACE MARKER (repository/branch/worktree) identifying a Syntaur workspace directory. It is NOT the active-ticket source of truth — the active ticket resolves from the session's open engagement, not from context.json.
+- `skills/<name>/SKILL.md` — canonical source of all Syntaur protocol skills (single source of truth; six skills)
+- `hooks/` — session hook shell scripts installed by `syntaur hooks install`
+- `src/templates/` — config and ticket template renderers
+- `.syntaur/context.json` — a WORKSPACE MARKER (repository/branch/worktree) identifying a Syntaur workspace directory. It is NOT the active-ticket source of truth — the active ticket resolves from the session's open engagement, not from context.json.
 
 ## Skill distribution
 
-Three install paths, one source (`<repo>/skills/`):
+One install path, one source (`<repo>/skills/`):
 
-1. `npx skills add prong-horn/syntaur` — primary, cross-agent (skills.sh).
-2. Claude Code plugin via `/plugin` — manifests declare skills inline.
-3. `syntaur install-plugin` — CLI path; mirrors `<repo>/skills/` into the plugin target dir at install time.
+1. `npx skills add prong-horn/syntaur -g -a claude-code` — primary (skills.sh). Optional `-a codex` / `-a cursor` for other harnesses.
 
-When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Run `npm run mirror-skills` to re-mirror into `platforms/<kind>/skills/` for local link-mode plugin testing. The `prepack` script does it automatically before `npm pack`/`npm publish`.
+When editing a skill, edit it ONLY at `<repo>/skills/<name>/SKILL.md`. Upgrade installed copies with `npx skills update`.
+
+Session hooks ship in `hooks/` and are copied to `~/.syntaur/hooks/` by `syntaur hooks install`.
 
 ## Ticket files
 
@@ -30,16 +25,14 @@ Do not hardcode ticket sidecar filenames (`progress.md`, `journal.md`, `plan.md`
 
 ## Codex + Syntaur
 
-- When the task is about Syntaur missions, tickets, or files under `~/.syntaur/`, use the Syntaur Codex workflows first: `syntaur-protocol`, `create-project`, `create-ticket`, `grab-ticket`, `plan-ticket`, `complete-ticket`, `track-session`.
-- For broad Syntaur protocol work in Codex, prefer the dedicated `syntaur-operator` agent from `platforms/codex/agents/syntaur-operator.md`.
-- Keep the Codex plugin text in `platforms/codex/`, the Claude plugin text in `platforms/claude-code/`, the canonical skill text in `<repo>/skills/`, and the generated Codex adapter in `src/templates/codex-agents.ts` aligned when protocol behavior changes.
-- `agent.md` is universal per-mission guidance and stays human-authored and read-only. `claude.md` may still hold mission-specific context worth reading, but Codex-only behavior should live in the Codex plugin or `AGENTS.md`.
-- Respect the workspace boundary marked by `.syntaur/context.json` whenever that file exists (it marks the repository/branch/worktree of a Syntaur workspace). The active ticket itself is resolved from the session's open engagement, not from context.json.
+- When the task is about Syntaur missions, tickets, or files under `~/.syntaur/`, use the six skills: `syntaur-protocol`, `grab`, `plan`, `done`, `log`, `worktree` (install via `npx skills add` above).
+- `agent.md` is universal per-mission guidance and stays human-authored and read-only. `claude.md` may still hold mission-specific context worth reading.
+- Respect the workspace boundary marked by `.syntaur/context.json` whenever that file exists. The active ticket itself is resolved from the session's open engagement, not from context.json.
 
 ## Validation
 
 - Run `npm run typecheck` for TypeScript changes.
-- Run `npx vitest run src/__tests__/adapter-templates.test.ts` for Codex adapter text changes.
-- Run `npx vitest run src/__tests__/install-plugin-marketplace.test.ts` for plugin install / marketplace integration changes.
-- Run `npx vitest run src/__tests__/install-skills.test.ts` for skill install behavior changes.
+- Run `npx vitest run src/__tests__/skills-pack.test.ts` for skill pack / CLI reference guard changes.
+- Run `npx vitest run src/__tests__/hooks-install.test.ts` for hooks install behavior.
+- Run `npx vitest run src/__tests__/package-files.test.ts` for npm pack contents.
 - Run `bash -n` on any shell hook scripts you touch.

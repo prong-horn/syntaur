@@ -11,8 +11,7 @@ import type { ChatCommand, ChatCommandsSource } from '../../../lib/chat-types';
 
 const agents = ['planner', 'codex'];
 const commands: ChatCommand[] = [
-  { name: 'plan-ticket', description: 'Plan the ticket', inputHint: null, action: { kind: 'prompt' } },
-  { name: 'plan', description: 'Turn plan mode on', inputHint: null, action: { kind: 'set-config', configId: 'collaboration_mode', value: 'plan' } },
+  { name: 'plan', description: 'Plan the ticket', inputHint: null, action: { kind: 'prompt' } },
 ];
 
 function commandsByAgent(
@@ -27,13 +26,13 @@ describe('ChatComposer command picker logic', () => {
   });
 
   it('filters commands by partial', () => {
-    const active = detectActiveCommand('/plan-t', 7, agents)!;
-    expect(rankCommands(active.partial, commands).map((c) => c.name)).toEqual(['plan-ticket']);
+    const active = detectActiveCommand('/pla', 4, agents)!;
+    expect(rankCommands(active.partial, commands).map((c) => c.name)).toEqual(['plan']);
   });
 
-  it('applies /plan-ticket with a trailing space', () => {
-    const active = detectActiveCommand('/plan-t', 7, agents)!;
-    expect(applyCommand('/plan-t', active, 'plan-ticket').text).toBe('/plan-ticket ');
+  it('applies /plan with a trailing space', () => {
+    const active = detectActiveCommand('/pla', 4, agents)!;
+    expect(applyCommand('/pla', active, 'plan').text).toBe('/plan ');
   });
 
   it('scopes commands to @codex when the draft starts with that mention', () => {
@@ -64,9 +63,9 @@ describe('isExactCommand', () => {
     expect(isExactCommand(active, 4, commands)).toBe(false);
   });
 
-  it('is false when only plan-ticket is listed as a partial match', () => {
+  it('is false when only plan is listed as a partial match', () => {
     const active = detectActiveCommand('/plan', 5, agents)!;
-    const onlyLong = commands.filter((c) => c.name === 'plan-ticket');
+    const onlyLong = commands.filter((c) => c.name === 'plan');
     expect(isExactCommand(active, 5, onlyLong)).toBe(false);
   });
 

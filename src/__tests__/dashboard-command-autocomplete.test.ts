@@ -36,22 +36,21 @@ describe('addressedAgentId', () => {
 
 describe('rankCommands', () => {
   const commands: ChatCommand[] = [
-    { name: 'plan-ticket', description: 'Plan work', inputHint: null, action: { kind: 'prompt' } },
-    { name: 'plan', description: 'Turn plan mode on', inputHint: null, action: { kind: 'set-config', configId: 'collaboration_mode', value: 'plan' } },
+    { name: 'plan', description: 'Plan work', inputHint: null, action: { kind: 'prompt' } },
     { name: 'status', description: 'Show plan status', inputHint: null, action: { kind: 'prompt' } },
   ];
 
   it('ranks prefix matches first and caps at eight', () => {
-    expect(rankCommands('plan', commands).map((c) => c.name)).toEqual(['plan', 'plan-ticket', 'status']);
+    expect(rankCommands('plan', commands).map((c) => c.name)).toEqual(['plan', 'status']);
   });
 });
 
 describe('applyCommand', () => {
   it('inserts /name with a trailing space', () => {
     const active = detectActiveCommand('/pla', 4, attached)!;
-    expect(applyCommand('/pla', active, 'plan-ticket')).toEqual({
-      text: '/plan-ticket ',
-      caret: 13,
+    expect(applyCommand('/pla', active, 'plan')).toEqual({
+      text: '/plan ',
+      caret: 6,
     });
   });
 });

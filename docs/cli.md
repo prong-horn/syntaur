@@ -302,6 +302,21 @@ Manage plan files for a ticket.
 - `syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`. Moves to `planning` when the template declares that stage.
 - `syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
 
+## `syntaur hooks`
+
+Install or remove Syntaur session hooks in Claude Code's `~/.claude/settings.json`.
+
+- `syntaur hooks install` — copy scripts to `~/.syntaur/hooks/` (mode `0755`) and register three hook events: `SessionStart` → `session-start.sh`, `PostToolUse` → `session-touch.sh`, `UserPromptSubmit` → `prompt-context.sh`. Backs up the previous `hooks` object to `~/.syntaur/hooks.backup.json` before the first mutation. Idempotent on re-run. Foreign hooks (for example your own `PreToolUse` entry) are preserved.
+- `syntaur hooks uninstall` — remove Syntaur hook entries whose commands point at `~/.syntaur/hooks/`, delete that directory, leave the backup file.
+
+## `syntaur statusline`
+
+Install, configure, or remove the syntaur `statusLine` entry in Claude Code settings.
+
+- `syntaur statusline install [--mode replace|wrap|skip|ask] [--link]` — install `~/.syntaur/statusline.sh` and wire settings (wraps an existing status line by default in non-TTY).
+- `syntaur statusline configure [--preset <name>] [--segments <list>] [--separator <string>] [--wrap <path>] [--preview]` — segment order and composition.
+- `syntaur statusline uninstall [--keep-script]` — remove the settings entry; restores from `~/.syntaur/statusline.backup.json` when present.
+
 ## `syntaur timeline <ticket>`
 
 Show the chronological audit event log for one ticket — who changed what, when, and what the value moved from→to — newest first.
@@ -526,14 +541,15 @@ The dashboard **Needs me** view is the GUI reply queue — live cards first, the
 
 ## Hooks
 
-The Claude Code plugin registers session hooks that call `syntaur session` subcommands with the hook JSON payload on stdin. All hook paths exit 0 even on failure.
+`syntaur hooks install` writes three entries into `~/.claude/settings.json`. Each runs a bash script under `~/.syntaur/hooks/` with the hook JSON payload on stdin. Hook paths exit 0 even on failure.
 
-| Subcommand | Hook event | Purpose |
-|------------|------------|---------|
-| `session register --from-hook` | `SessionStart` | Register the session row; merge session fields into an existing `.syntaur/context.json` when present |
-| `session touch --from-hook` | `PostToolUse`, `UserPromptSubmit` | Bump `updated_at` so the stale sweep does not stop an active session |
-| `session stop --from-hook` | `SessionEnd` | Mark the session stopped and close its open engagement |
-| `session context --from-hook` | `UserPromptSubmit` (separate entry) | Print `hookSpecificOutput` JSON with ticket id, stage, stage instructions, Next, and cross-template playbooks |
+| Script | Hook event | Purpose |
+|--------|------------|---------|
+| `session-start.sh` → `syntaur session register --from-hook` | `SessionStart` | Register the session row; merge session fields into `.syntaur/context.json` when present |
+| `session-touch.sh` → `syntaur session touch --from-hook` | `PostToolUse` | Rate-limited heartbeat (`updated_at`) on tool use |
+| `prompt-context.sh` → `syntaur session context --from-hook` | `UserPromptSubmit` | Inject stage block JSON **and** bump `updated_at` (touch runs inside `session context`) |
+
+There is **no SessionEnd hook**. Closing a terminal does not mark the session stopped. An `active` row is swept when the dashboard maintenance loop runs (first tick on dashboard start, then every 45 s): sessions idle longer than `session.idleSweepHours` (default 6) are marked stopped with `ended` backdated to the last touch. With the dashboard never started, rows can stay `active` indefinitely. Use `syntaur session stop --from-hook` only from a custom hook, or reconcile via ticket status changes. For a manual close from the CLI, use the dashboard or maintenance semantics above.
 
 Text mode (`syntaur session context --session-id <id>`) prints the same block for measurement and debugging.
 
@@ -589,3 +605,13 @@ Also removed: `syntaur status *` (custom status workflow in `config.md`),
 `manage-statuses` skill. Lifecycle moves use the verbs in
 [Lifecycle verbs](#lifecycle-verbs) above (`plan`, `approve`, `start`,
 `review`, `done`, `drop`, `reopen`, `block`, `unblock`, `park`, `unpark`).
+
+Plugin and adapter install commands removed in this release: `setup`,
+`install-plugin`, `install-codex-plugin`, `setup-adapter`, `uninstall`,
+`uninstall-skills`. Statusline commands renamed: `install-statusline` →
+`syntaur statusline install`, `configure-statusline` → `statusline configure`,
+`uninstall-statusline` → `statusline uninstall`. Retired skills (use the six-pack
+names instead): `clear-ticket`, `create-ticket`, `doctor-syntaur`, `list-tickets`,
+`project-new`, `replan`, `resume-session`, `run-playbook`, `set-workspace`,
+`track-session`, and the renamed predecessors `grab-ticket`, `plan-ticket`,
+`complete-ticket`, `log-progress`, `syntaur-worktree`.
