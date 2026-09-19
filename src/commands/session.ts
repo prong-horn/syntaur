@@ -466,7 +466,7 @@ export interface SessionStopResult {
 }
 
 /**
- * Deterministic SessionEnd handling: resolve the ENDING session's id (stdin
+ * `session stop --from-hook`: resolve the ending session id (stdin
  * `.session_id` first; the shared context.json scalar only as a last-resort
  * fallback — a co-tenant can clobber it) and mark the row stopped with a
  * direct DB write. Never throws.
@@ -704,9 +704,9 @@ sessionCommand
 sessionCommand
   .command('stop')
   .description(
-    'Mark the calling agent session stopped in the sessions DB (SessionEnd hook entry point). Reads the hook JSON payload from stdin; always exits 0.',
+    'Mark the calling agent session stopped in the sessions DB. With --from-hook, reads a JSON payload from stdin; always exits 0.',
   )
-  .option('--from-hook', 'Read the SessionEnd JSON payload from stdin')
+  .option('--from-hook', 'Read the session-stop JSON payload from stdin')
   .action(async (options: { fromHook?: boolean }) => {
     if (!options.fromHook) {
       console.error('session stop currently requires --from-hook (stdin JSON payload).');

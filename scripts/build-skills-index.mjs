@@ -13,7 +13,7 @@
 //
 // Single-file skills → `type: "skill-md"` (url → the copied SKILL.md, digest =
 // sha256 of its bytes). Multi-file skills (only `syntaur-protocol` today, which
-// bundles `references/`) → `type: "archive"`: a **deterministic** POSIX ustar
+// bundles extra reference docs) → `type: "archive"`: a **deterministic** POSIX ustar
 // tar.gz with a root SKILL.md (digest = sha256 of the archive bytes).
 //
 // Dependency-free + deterministic on any platform (Node >= 20): no `tar`, no

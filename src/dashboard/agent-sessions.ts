@@ -148,8 +148,8 @@ function rowToSession(row: SessionRow): AgentSession {
  * mtime and the session's terminal profile (for the resume/fork capability
  * flags). None of those exist any more:
  * chat sessions are owned by the broker, which writes `active` / `stopped`
- * itself, and hook-registered terminal sessions are stopped by the SessionEnd
- * hook or by the stale sweep. So `active` IS the liveness fact (Decision 4).
+ * itself, and terminal sessions are stopped via `session stop` or the stale
+ * sweep. So `active` IS the liveness fact (Decision 4).
  */
 export function withLiveness(sessions: AgentSession[]): AgentSessionWithLiveness[] {
   return sessions.map((session) => ({ ...session, isLive: session.status === 'active' }));
@@ -273,7 +273,7 @@ export async function appendSession(
   }
 
   // The upsert, the persisted-status read, and the engagement-open run in ONE
-  // IMMEDIATE transaction so no concurrent writer (a SessionEnd hook / scanner
+  // IMMEDIATE transaction so no concurrent writer (`session stop` / stale sweep
   // marking the row terminal + closing its engagement) can interleave between
   // the status read and the open — which would otherwise leak an open engagement
   // onto a now-terminal session (codex round-2 TOCTOU).

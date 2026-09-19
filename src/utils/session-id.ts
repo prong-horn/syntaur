@@ -14,7 +14,7 @@
  *   4. ancestor-pid → runtime marker (`~/.claude/sessions/<pid>.json`,
  *      then `~/.syntaur/runtime/sessions/<pid>.json`), pid-reuse-guarded
  *   5. cwd/mtime transcript scan (last automatic resort; ambiguous under
- *      co-tenancy — same caveat as platforms/codex/scripts/resolve-session.sh)
+ *      co-tenancy when multiple agents share a workspace)
  *   6. legacy hint (`opts.legacyHint`, i.e. the context.json scalar)
  *
  * Callers that must stay *exact* (the Codex/Claude cleanup paths and the

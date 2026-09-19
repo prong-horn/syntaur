@@ -68,7 +68,7 @@ describe('syntaur doctor --ticket --json', () => {
     await mkdir(resolve(syntaurHome, 'projects'), { recursive: true });
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\n---\n`,
     );
     scratch = await mkdtemp(join(tmpdir(), 'syntaur-da-scratch-'));
   });

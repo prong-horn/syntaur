@@ -106,7 +106,7 @@ describe('syntaur plan version', () => {
     await mkdir(projectsDir, { recursive: true });
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${projectsDir}\n---\n`,
     );
     ticketDir = resolve(projectsDir, 'p', 'tickets', 'PD-1-demo');
     await mkdir(ticketDir, { recursive: true });

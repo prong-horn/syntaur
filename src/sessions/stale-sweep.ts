@@ -92,7 +92,7 @@ export async function sweepStaleSessions(
   for (const row of stale) {
     const endedAt = normalizeIso(row.updated_at);
     const changed = stop.run({ sessionId: row.session_id, endedAt }).changes;
-    if (changed === 0) continue; // raced with the broker or the SessionEnd hook
+    if (changed === 0) continue; // raced with the broker or a concurrent session stop
     result.swept.push(row.session_id);
     const open = getOpenEngagement(row.session_id);
     if (

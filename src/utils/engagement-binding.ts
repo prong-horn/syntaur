@@ -88,8 +88,8 @@ export async function resolveLatestBinding(
 
 /**
  * The MRU engagement binding (open-else-latest) for an EXPLICITLY-supplied
- * session id — no own-session resolution. The SessionEnd cleanup path uses this:
- * by the time `recompute` runs, the hook's `session stop` has already CLOSED the
+ * session id — no own-session resolution. Manual `session stop` uses this path:
+ * by the time `recompute` runs, `session stop` has already CLOSED the
  * ending session's engagement, so we deliberately fall back to the latest closed
  * interval (`getLatestEngagement`, open-else-latest) to recover its binding.
  * Returns null when the session has no engagement row at all.

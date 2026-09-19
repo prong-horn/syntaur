@@ -35,7 +35,7 @@ describe('syntaur doctor --fix honesty (U7)', () => {
     await mkdir(resolve(syntaurHome, 'projects'), { recursive: true });
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\n---\n`,
     );
   });
 

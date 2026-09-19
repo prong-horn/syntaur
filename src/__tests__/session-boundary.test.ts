@@ -89,7 +89,7 @@ describe('syntaur session boundary', () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-boundary-'));
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\n---\n`,
     );
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-boundary-wkspc-'));
     ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'TP-1-demo');

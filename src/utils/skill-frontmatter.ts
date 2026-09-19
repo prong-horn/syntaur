@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
 // Doctor-scoped SKILL.md frontmatter reader. Intentionally LIGHTER than the
-// generator's parser (scripts/build-skills-index.mjs): the cross-agent doctor
-// check only needs the `name` and whether a non-empty `description` exists — it
+// generator's parser (scripts/build-skills-index.mjs): the skills doctor check
+// only needs the `name` and whether a non-empty `description` exists — it
 // never needs the folded description text. Kept separate from the generator so
 // there is no `.mjs`↔`.ts` import across the build/runtime boundary (see the
 // Phase-2 decision record, Decision 5).

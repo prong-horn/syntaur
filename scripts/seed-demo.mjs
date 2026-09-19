@@ -55,12 +55,6 @@ sync:
   enabled: false
   endpoint: null
   interval: 300
-integrations:
-  claudePluginDir: null
-  codexPluginDir: null
-  codexMarketplacePath: null
-onboarding:
-  completed: true
 ---
 
 # Syntaur Configuration (Demo)
@@ -359,14 +353,14 @@ const projects = [
   },
   {
     id: randomUUID(),
-    slug: 'customer-onboarding-revamp',
+    slug: 'customer-activation-revamp',
     title: 'Customer Onboarding Revamp',
     created: iso(daysAgo(21)),
     updated: iso(hoursAgo(7)),
     tags: ['growth', 'frontend', 'activation'],
     externalIds: ['GROW-88'],
-    overview: `Rebuild the post-signup onboarding flow to improve D1 activation. Current flow loses ~34% of signups between account-create and first-workspace. Target: lift activation by 10 percentage points.`,
-    notes: `Design brief and wireframes in Figma: https://figma.com/file/demo-onboarding. Research synthesis lives in the "Activation Q2" Notion page.`,
+    overview: `Rebuild the post-signup activation flow to improve D1 activation. Current flow loses ~34% of signups between account-create and first-workspace. Target: lift activation by 10 percentage points.`,
+    notes: `Design brief and wireframes in Figma: https://figma.com/file/demo-activation. Research synthesis lives in the "Activation Q2" Notion page.`,
   },
   {
     id: randomUUID(),
@@ -540,7 +534,7 @@ const ticketsByMission = {
     }),
   ],
 
-  'customer-onboarding-revamp': [
+  'customer-activation-revamp': [
     mk(projects[1], {
       slug: 'funnel-instrumentation',
       title: 'Funnel Instrumentation',
@@ -578,16 +572,16 @@ const ticketsByMission = {
       workspace: {
         repository: '/Users/brennen/demo-webapp',
         worktreePath: '/Users/brennen/demo-webapp/.worktrees/empty-state',
-        branch: 'onboarding/empty-state',
+        branch: 'activation/empty-state',
         parentBranch: 'main',
       },
       objective: `Replace the current empty-workspace screen (a sad inline SVG with "No data yet") with the new illustration set and first-run copy from design.`,
       criteria: [
-        { text: 'Imports Lottie animation from `assets/onboarding/empty.lottie`.', done: true },
+        { text: 'Imports Lottie animation from `assets/activation/empty.lottie`.', done: true },
         { text: 'Copy pulled from localization strings, not hardcoded.', done: true },
         { text: 'Animation pauses when `prefers-reduced-motion: reduce` is set.', done: true },
         { text: 'Visual diff approved by @sophie.', done: true },
-        { text: 'Ships behind the `onboarding.v2` flag, default on for internal team.', done: false },
+        { text: 'Ships behind the `activation.v2` flag, default on for internal team.', done: false },
       ],
       progressNotes: [
         { date: '2026-04-18', heading: 'Ready for review', body: 'All five criteria addressed. Awaiting @sophie to walk the visual diff in staging.' },
@@ -606,15 +600,15 @@ const ticketsByMission = {
       workspace: {
         repository: '/Users/brennen/demo-webapp',
         worktreePath: '/Users/brennen/demo-webapp/.worktrees/invite-step',
-        branch: 'onboarding/invite-step',
+        branch: 'activation/invite-step',
         parentBranch: 'main',
       },
       objective: `Introduce an "Invite a teammate" step between workspace creation and the dashboard. Should be skippable and should not block the user, but should nudge with social proof ("Teams of 3+ are 2x more likely to succeed").`,
       criteria: [
-        { text: 'New `/onboarding/invite` route and page.', done: true },
-        { text: 'Skipping fires `onboarding.invite.skipped` event.', done: true },
-        { text: 'Sending invites fires `onboarding.invite.sent{count}`.', done: false },
-        { text: 'A/B test wired up via GrowthBook (`onboarding-invite-step`).', done: false },
+        { text: 'New `/activation/invite` route and page.', done: true },
+        { text: 'Skipping fires `activation.invite.skipped` event.', done: true },
+        { text: 'Sending invites fires `activation.invite.sent{count}`.', done: false },
+        { text: 'A/B test wired up via GrowthBook (`activation-invite-step`).', done: false },
         { text: 'Copy reviewed by @sophie and localized into ES and FR.', done: false },
       ],
     }),
@@ -627,11 +621,11 @@ const ticketsByMission = {
       assignee: null,
       created: iso(daysAgo(3)),
       updated: iso(daysAgo(3)),
-      objective: `Rewrite the welcome email to match the new onboarding voice. Include a single primary CTA back into the product.`,
+      objective: `Rewrite the welcome email to match the new activation voice. Include a single primary CTA back into the product.`,
       criteria: [
         { text: 'MJML template lands in `emails/welcome.mjml`.', done: false },
         { text: 'Preview renders in Litmus across top 10 clients.', done: false },
-        { text: 'Link tracking uses the new UTM convention `utm_source=welcome&utm_medium=email&utm_campaign=onboarding_v2`.', done: false },
+        { text: 'Link tracking uses the new UTM convention `utm_source=welcome&utm_medium=email&utm_campaign=activation_v2`.', done: false },
       ],
     }),
     mk(projects[1], {
@@ -644,11 +638,11 @@ const ticketsByMission = {
       created: iso(daysAgo(3)),
       updated: iso(daysAgo(3)),
       dependsOn: ['invite-teammate-step'],
-      objective: `Create a "Sample Project" in every new workspace so the first-run dashboard isn't empty. Lives behind the same \`onboarding.v2\` flag.`,
+      objective: `Create a "Sample Project" in every new workspace so the first-run dashboard isn't empty. Lives behind the same \`activation.v2\` flag.`,
       criteria: [
         { text: 'Seeding job runs in the post-signup handler, not on the hot signup path.', done: false },
         { text: 'Sample project is tagged and can be deleted like any other.', done: false },
-        { text: 'Metric: `onboarding.sample_project.created` emitted on success.', done: false },
+        { text: 'Metric: `activation.sample_project.created` emitted on success.', done: false },
       ],
     }),
   ],
@@ -1014,14 +1008,14 @@ function seedAgentSessions(dbPath, projectMap) {
     },
     {
       sessionId: 'claude-sess-02a7c3',
-      projectSlug: 'customer-onboarding-revamp',
+      projectSlug: 'customer-activation-revamp',
       ticketSlug: 'invite-teammate-step',
       agent: 'claude',
       started: iso(hoursAgo(14)),
       ended: null,
       status: 'active',
       path: '/Users/brennen/demo-webapp/.worktrees/invite-step',
-      description: 'Building the invite teammate onboarding step and wiring the GrowthBook flag.',
+      description: 'Building the invite teammate activation step and wiring the GrowthBook flag.',
     },
     {
       sessionId: 'codex-sess-033f11',
@@ -1036,7 +1030,7 @@ function seedAgentSessions(dbPath, projectMap) {
     },
     {
       sessionId: 'claude-sess-04d8e2',
-      projectSlug: 'customer-onboarding-revamp',
+      projectSlug: 'customer-activation-revamp',
       ticketSlug: 'empty-workspace-illustration',
       agent: 'claude',
       started: iso(hoursAgo(30)),

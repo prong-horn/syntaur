@@ -64,7 +64,7 @@ describe('syntaur worktree create', () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-wtc-home-'));
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\n---\n`,
     );
     ticketDir = resolve(syntaurHome, 'projects', 'p', 'tickets', 'PW-1-demo');
     await mkdir(ticketDir, { recursive: true });

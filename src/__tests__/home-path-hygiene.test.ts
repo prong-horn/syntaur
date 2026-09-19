@@ -62,7 +62,6 @@ function isSyntaurLiteralExempt(
   lines?: string[],
   index?: number,
 ): boolean {
-  const isPlatform = rel.startsWith('platforms/hermes/') || rel.startsWith('platforms/pi/');
   if (rel === 'src/utils/paths.ts') return true;
   if (lines !== undefined && index !== undefined && isCwdWorkspaceMarker(lines, index, text)) {
     return true;
@@ -75,15 +74,12 @@ function isSyntaurLiteralExempt(
   ) {
     return true;
   }
-  if (isPlatform && /SYNTAUR_HOME/.test(text)) return true;
   return false;
 }
 
 function isTildeSyntaurExempt(text: string, rel: string): boolean {
   if (rel === 'src/utils/paths.ts') return true;
   if (/~\/\.syntaur\/context\.json/.test(text)) return true;
-  const isPlatform = rel.startsWith('platforms/hermes/') || rel.startsWith('platforms/pi/');
-  if (isPlatform && /SYNTAUR_HOME/.test(text)) return true;
   return false;
 }
 

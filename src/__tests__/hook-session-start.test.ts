@@ -24,8 +24,7 @@ function runHook(stdinJson: string, env: Record<string, string> = {}) {
   return spawnSync('bash', [hookPath], {
     input: stdinJson,
     encoding: 'utf-8',
-    // Point HOME at a sandbox with no plugin marker so the drift warning
-    // doesn't fire unless a test explicitly sets CLAUDE_PLUGIN_ROOT.
+    // Point HOME at an isolated sandbox so hook tests do not read the real home.
     env: {
       ...process.env,
       HOME: sandbox,

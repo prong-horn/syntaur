@@ -66,7 +66,7 @@ describe('syntaur session resume (last handoff)', () => {
     syntaurHome = await mkdtemp(join(tmpdir(), 'syntaur-resume-handoff-'));
     await writeFile(
       resolve(syntaurHome, 'config.md'),
-      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\nonboarding:\n  completed: true\n---\n`,
+      `---\nversion: "2.0"\ndefaultProjectDir: ${resolve(syntaurHome, 'projects')}\n---\n`,
     );
     await seedMissingBuiltins(syntaurHome);
     workspaceRoot = await mkdtemp(join(tmpdir(), 'syntaur-resume-handoff-wkspc-'));
