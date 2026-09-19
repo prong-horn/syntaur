@@ -31,7 +31,8 @@ type HooksSettings = Record<string, HookGroup[]>;
 
 function getPackageHooksDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
-  return resolve(here, '..', '..', 'hooks');
+  // Bundled CLI: `dist/index.js` → package root is one level up.
+  return resolve(here, '..', 'hooks');
 }
 
 async function readSettingsJson(settingsPath: string): Promise<Record<string, unknown>> {
