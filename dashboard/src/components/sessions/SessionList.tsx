@@ -105,7 +105,7 @@ export function SessionList({
     return (
       <EmptyState
         title="No agent sessions"
-        description="No agent sessions have been registered yet. Use /grab-ticket or syntaur track-session to register one."
+        description="No agent sessions have been registered yet. Use /grab or syntaur track-session to register one."
       />
     );
   }

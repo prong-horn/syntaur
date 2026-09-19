@@ -37,7 +37,7 @@ export function AgentSessionsSection({
       <SectionCard title="Agent Sessions">
         <EmptyState
           title="No agent sessions yet"
-          description="Sessions appear here when an agent registers one via /grab-ticket or syntaur track-session."
+          description="Sessions appear here when an agent registers one via /grab or syntaur track-session."
         />
       </SectionCard>
     );

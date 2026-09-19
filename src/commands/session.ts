@@ -153,7 +153,7 @@ async function buildResumeOutput(cwd: string): Promise<ResumeOutput> {
       ticket: null,
       lastHandoff: null,
       warnings: [
-        'No active ticket for this session. Run /grab-ticket to bind one, then resume.',
+        'No active ticket for this session. Run /grab to bind one, then resume.',
       ],
     };
   }

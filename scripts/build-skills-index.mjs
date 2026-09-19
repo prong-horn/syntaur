@@ -11,10 +11,9 @@
 // indexUrl)` (base = the index URL), so a leading-slash url would re-root to the
 // origin and 404 under a subpath.
 //
-// Single-file skills → `type: "skill-md"` (url → the copied SKILL.md, digest =
-// sha256 of its bytes). Multi-file skills (only `syntaur-protocol` today, which
-// bundles extra reference docs) → `type: "archive"`: a **deterministic** POSIX ustar
-// tar.gz with a root SKILL.md (digest = sha256 of the archive bytes).
+// All pack skills are single-file → `type: "skill-md"` (url → the copied SKILL.md,
+// digest = sha256 of its bytes). Multi-file / archive entries are supported if a
+// skill dir grows beyond SKILL.md alone.
 //
 // Dependency-free + deterministic on any platform (Node >= 20): no `tar`, no
 // YAML lib. Frontmatter is parsed inline (handles folded `>-` / literal `|`

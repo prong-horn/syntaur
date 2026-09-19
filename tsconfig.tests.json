@@ -105,5 +105,6 @@
     "src/__tests__/cli-default-command.test.ts",
     "src/__tests__/update.test.ts",
     "src/__tests__/config.test.ts",
+    "src/__tests__/skills-pack.test.ts",
   ]
 }

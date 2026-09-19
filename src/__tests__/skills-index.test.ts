@@ -81,10 +81,11 @@ describe('build-skills-index generator', () => {
     expect(new Set(names).size).toBe(names.length); // no dupes
   });
 
-  it('classifies syntaur-protocol as skill-md after references removal', async () => {
+  it('indexes exactly six skills including grab and log', async () => {
+    expect(index.skills).toHaveLength(6);
     const protocol = index.skills.find((s) => s.name === 'syntaur-protocol');
     expect(protocol?.type).toBe('skill-md');
-    for (const name of ['log-progress', 'grab-ticket']) {
+    for (const name of ['grab', 'log']) {
       expect(index.skills.find((s) => s.name === name)?.type).toBe('skill-md');
     }
   });
