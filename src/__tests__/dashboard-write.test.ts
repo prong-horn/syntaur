@@ -1951,7 +1951,7 @@ describe('POST verbs/approve route', () => {
       await seedMissingBuiltins(process.env.SYNTAUR_HOME);
     }
     const projectDir = resolve(testDir, 'plan-project');
-    const ticketDir = resolve(projectDir, 'tickets', 'PP-1-plan-only');
+    const ticketDir = resolve(projectDir, 'tickets', 'PP-1-plan-ticket');
     await mkdir(ticketDir, { recursive: true });
     await writeFile(
       resolve(projectDir, 'project.md'),
@@ -1972,7 +1972,7 @@ updated: "2026-03-20T10:00:00Z"
       resolve(ticketDir, 'ticket.md'),
       `---
 id: PP-1
-slug: plan-only
+slug: plan-ticket
 title: Plan Ticket
 status: planning
 priority: medium
@@ -2014,7 +2014,7 @@ tags: []
     expect(ticket.status).toBe('ready');
 
     const content = await readFile(
-      resolve(testDir, 'plan-project', 'tickets', 'PP-1-plan-only', 'ticket.md'),
+      resolve(testDir, 'plan-project', 'tickets', 'PP-1-plan-ticket', 'ticket.md'),
       'utf-8',
     );
     const fm = parseTicketFrontmatter(content);
