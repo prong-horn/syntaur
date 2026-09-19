@@ -161,9 +161,14 @@ function parseFrontmatterDescription(md: string): string {
 }
 
 function resolveCommand(rest: string): string | null {
-  for (const cmd of ALLOWED_SORTED) {
-    if (rest === cmd || rest.startsWith(`${cmd} `) || rest.startsWith(`${cmd}\t`)) {
-      return cmd;
+  const tryRests = [rest];
+  const tick = rest.indexOf('`');
+  if (tick >= 0) tryRests.push(rest.slice(0, tick));
+  for (const candidate of tryRests) {
+    for (const cmd of ALLOWED_SORTED) {
+      if (candidate === cmd || candidate.startsWith(`${cmd} `) || candidate.startsWith(`${cmd}\t`)) {
+        return cmd;
+      }
     }
   }
   return null;
@@ -180,20 +185,30 @@ function extractFlagsAfterCommand(line: string, cmd: string): string[] {
   return flags;
 }
 
-function findSyntaurInvocations(body: string): { cmd: string; line: string }[] {
-  const out: { cmd: string; line: string }[] = [];
-  for (const line of body.split('\n')) {
+/** Every `syntaur …` reference in the skill body (1-based line numbers). */
+function findAllSyntaurRefs(
+  body: string,
+): { lineNo: number; line: string; rest: string; cmd: string | null }[] {
+  const out: { lineNo: number; line: string; rest: string; cmd: string | null }[] = [];
+  const lines = body.split('\n');
+  for (let lineNo = 1; lineNo <= lines.length; lineNo++) {
+    const line = lines[lineNo - 1];
     let pos = 0;
     while (true) {
       const i = line.indexOf('syntaur ', pos);
       if (i < 0) break;
       const rest = line.slice(i + 'syntaur '.length);
-      const cmd = resolveCommand(rest);
-      if (cmd) out.push({ cmd, line });
+      out.push({ lineNo, line, rest, cmd: resolveCommand(rest) });
       pos = i + 8;
     }
   }
   return out;
+}
+
+function findSyntaurInvocations(body: string): { cmd: string; line: string }[] {
+  return findAllSyntaurRefs(body)
+    .filter((r) => r.cmd !== null)
+    .map((r) => ({ cmd: r.cmd!, line: r.line }));
 }
 
 describe('skills pack', () => {
@@ -220,6 +235,12 @@ describe('skills pack', () => {
     for (const name of EXPECTED_SKILLS) {
       const md = await readFile(join(SKILLS_DIR, name, 'SKILL.md'), 'utf-8');
       const body = skillBody(md);
+      for (const ref of findAllSyntaurRefs(body)) {
+        expect(
+          ref.cmd,
+          `${name}:${ref.lineNo}: unregistered syntaur verb in \`${ref.line.trim()}\``,
+        ).not.toBeNull();
+      }
       for (const { cmd, line } of findSyntaurInvocations(body)) {
         expect(ALLOWED_COMMANDS as readonly string[]).toContain(cmd);
         const allowedFlags = new Set(COMMAND_FLAGS[cmd] ?? []);
