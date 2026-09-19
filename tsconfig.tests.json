@@ -99,5 +99,11 @@
     "src/__tests__/engagement-cost.test.ts",
     "src/__tests__/dashboard-architecture.test.ts",
     "src/__tests__/dashboard-readme-contract.test.ts",
+    "src/__tests__/package-files.test.ts",
+    "src/__tests__/statusline-install.test.ts",
+    "src/__tests__/statusline-configure.test.ts",
+    "src/__tests__/cli-default-command.test.ts",
+    "src/__tests__/update.test.ts",
+    "src/__tests__/config.test.ts",
   ]
 }

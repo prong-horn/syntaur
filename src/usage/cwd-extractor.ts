@@ -14,9 +14,7 @@
  * - Codex: `<sessions-root>/YYYY/MM/DD/rollout-*.jsonl` (or flat at the
  *   sessions-root for older Codex versions). Line 1 is a `session_meta`
  *   envelope with `{type, timestamp, payload:{id, cwd, ...}}` — `timestamp`
- *   is at the TOP LEVEL (verified against
- *   `src/__tests__/codex-resolve-session.test.ts:30-34`), NOT inside
- *   `payload`. Sessions root resolves via:
+ *   is at the TOP LEVEL of the line, NOT inside `payload`. Sessions root resolves via:
  *     CODEX_SESSIONS_DIR
  *     ?? path.join(CODEX_HOME, 'sessions')
  *     ?? ~/.codex/sessions

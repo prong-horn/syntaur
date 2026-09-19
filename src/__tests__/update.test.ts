@@ -42,7 +42,6 @@ function makeDeps(
     detectKind: () => over.kind ?? 'global',
     readOldVersion: over.readOldVersion ?? (async () => over.old ?? '0.1.0'),
     fetchLatest: async () => (over.latest === undefined ? '9.9.9' : over.latest),
-    getManagedDir: async () => over.getManagedDir ? (await over.getManagedDir('claude')) : '/home/u/.claude/plugins/syntaur',
     // Default: fail to resolve a fresh bin → refresh falls back to PATH `syntaur`
     // (keeps refresh call-counts clean). Override per-test to assert resolution.
     resolveFreshBin: over.resolveFreshBin ?? (async () => null),
