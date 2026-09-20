@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, mkdir, readFile, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile, stat, cp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -9,7 +9,7 @@ import {
   stripRecordFrontmatter,
   listDerivedProjectFiles,
 } from '../commands/migrate-v2.js';
-import { collectMigrateEntries } from '../commands/migrate-journal.js';
+import { collectMigrateEntries, renderJournalContent } from '../commands/migrate-journal.js';
 import { fileExists } from '../utils/fs.js';
 import { renderConfig } from '../templates/config.js';
 
@@ -25,6 +25,12 @@ async function seedLegacyTicket(): Promise<string> {
   );
   await writeFile(resolve(projectDir, 'manifest.md'), '# manifest\n');
   await writeFile(resolve(projectDir, '_status.md'), '# status\n');
+  await mkdir(resolve(projectDir, 'resources'), { recursive: true });
+  await mkdir(resolve(projectDir, 'memories'), { recursive: true });
+  await writeFile(resolve(projectDir, 'resources', '_index.md'), '# resources index\n');
+  await writeFile(resolve(projectDir, 'resources', 'note.md'), '# Resource note\n\nKeep this file.\n');
+  await writeFile(resolve(projectDir, 'memories', '_index.md'), '# memories index\n');
+  await writeFile(resolve(projectDir, 'memories', 'lesson.md'), '# Lesson\n\nRemember this.\n');
   await writeFile(
     resolve(ticketDir, 'ticket.md'),
     `---
@@ -182,6 +188,12 @@ describe('migrate v2 derived step', () => {
     expect(lines.some((l) => l.includes('derived:'))).toBe(true);
     const projectDir = resolve(home, 'projects', 'legacy');
     expect(await listDerivedProjectFiles(projectDir)).toEqual([]);
+    const noteBefore = await readFile(resolve(projectDir, 'resources', 'note.md'), 'utf-8');
+    const lessonBefore = await readFile(resolve(projectDir, 'memories', 'lesson.md'), 'utf-8');
+    expect(await readFile(resolve(projectDir, 'resources', 'note.md'), 'utf-8')).toBe(noteBefore);
+    expect(await readFile(resolve(projectDir, 'memories', 'lesson.md'), 'utf-8')).toBe(lessonBefore);
+    expect(await fileExists(resolve(projectDir, 'resources', '_index.md'))).toBe(false);
+    expect(await fileExists(resolve(projectDir, 'memories', '_index.md'))).toBe(false);
     const progress = await readFile(resolve(ticketDir, 'progress.md'), 'utf-8');
     expect(progress).not.toMatch(/^entryCount:/m);
     expect(progress).not.toMatch(/^updated:/m);
@@ -228,6 +240,30 @@ describe('migrate v2 derived step', () => {
     await migrateV2Command({ root: home, apply: true });
     const strippedEntries = await collectMigrateEntries(ticketDir);
     expect(strippedEntries.entries).toEqual(legacyEntries.entries);
+  });
+
+  it('rendered journal matches between unstripped twin home and after derived', async () => {
+    await seedLegacyTicket();
+    await writeFile(
+      resolve(home, V2_MIGRATED_MARKER),
+      `rename-ids 2026-01-01T00:00:00.000Z\ntemplates 2026-01-01T00:00:01.000Z\nstatuses 2026-01-01T00:00:02.000Z\n`,
+    );
+    const twinHome = `${home}-twin`;
+    await cp(home, twinHome, { recursive: true });
+    await migrateV2Command({ root: home, apply: true });
+    const ticketDirStripped = resolve(home, 'projects', 'legacy', 'tickets', 'LEG-1-old');
+    const ticketDirLegacy = resolve(twinHome, 'projects', 'legacy', 'tickets', 'LEG-1-old');
+    const purpose = 'SV-14 derived equivalence';
+    const strippedJournal = renderJournalContent(
+      (await collectMigrateEntries(ticketDirStripped)).entries,
+      purpose,
+    );
+    const legacyJournal = renderJournalContent(
+      (await collectMigrateEntries(ticketDirLegacy)).entries,
+      purpose,
+    );
+    expect(strippedJournal).toBe(legacyJournal);
+    await rm(twinHome, { recursive: true, force: true });
   });
 
   it('comments preamble uses generated after strip', async () => {
