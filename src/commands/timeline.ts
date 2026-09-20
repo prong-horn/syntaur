@@ -117,7 +117,7 @@ function pad(value: string, width: number): string {
   return value + ' '.repeat(width - value.length);
 }
 
-function renderTable(events: TimelineEvent[]): string {
+export function renderTimelineTable(events: TimelineEvent[]): string {
   if (events.length === 0) return 'No events.';
   const rows: string[][] = events.map((e) => [
     e.at,
@@ -161,7 +161,7 @@ export const timelineCommand = new Command('timeline')
       if (options.json) {
         console.log(JSON.stringify(events, null, 2));
       } else {
-        console.log(renderTable(events));
+        console.log(renderTimelineTable(events));
       }
     } catch (error) {
       console.error('Error:', error instanceof Error ? error.message : String(error));

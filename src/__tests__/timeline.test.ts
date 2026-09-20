@@ -8,7 +8,11 @@ import {
   resetEventsDb,
   recordEvent,
 } from '../db/events-db.js';
-import { runTimeline, summarizeTimelineEvent } from '../commands/timeline.js';
+import {
+  renderTimelineTable,
+  runTimeline,
+  summarizeTimelineEvent,
+} from '../commands/timeline.js';
 
 let home: string;
 let projectsDir: string;
@@ -202,6 +206,10 @@ describe('runTimeline', () => {
         event_id: 'e3',
       }),
     ).toBe('review (approve)');
+  });
+
+  it('renderTimelineTable formats an empty list', () => {
+    expect(renderTimelineTable([])).toBe('No events.');
   });
 
   it('resolves a ticket by id and returns its events', async () => {

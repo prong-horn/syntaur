@@ -113,5 +113,6 @@
     "src/__tests__/session-resume-handoff.test.ts",
     "src/__tests__/home-git.test.ts",
     "src/__tests__/doctor-git.test.ts",
+    "src/__tests__/history.test.ts",
   ]
 }

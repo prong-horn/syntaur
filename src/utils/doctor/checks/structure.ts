@@ -35,6 +35,8 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'view-prefs.json', // paths.ts
   'worktrees', // worktree-defaults.ts
   'home-commit.sh', // home-git.ts
+  '.git', // home-git.ts (dot entry; skipped by structure.known-files-recognized)
+  '.gitignore', // home-git.ts
 ]);
 
 const projectsDir: Check = {

@@ -320,6 +320,25 @@ Install, configure, or remove the syntaur `statusLine` entry in Claude Code sett
 - `syntaur statusline configure [--preset <name>] [--segments <list>] [--separator <string>] [--wrap <path>] [--preview]` — segment order and composition.
 - `syntaur statusline uninstall [--keep-script]` — remove the settings entry; restores from `~/.syntaur/statusline.backup.json` when present.
 
+## `syntaur history <ticket>`
+
+Show the git commit history for a ticket folder under the Syntaur home (the home must be a git repository from `syntaur init`). Commits are listed newest first with the UTC timestamp, short SHA, subject, and count of paths under that ticket directory touched in each commit.
+
+```
+syntaur history <ticket> [options]
+```
+
+`<ticket>` is a ticket id (`<PREFIX>-<n>`) or slug with `--project`.
+
+### Options
+
+- `--project <slug>` — Project the ticket belongs to (required when `<ticket>` is a slug).
+- `--limit <n>` — Maximum number of commits to show (default: 50).
+- `--json` — Emit a JSON array of `{ sha, at, subject, files }` objects.
+- `--events` — Show the SQLite events table for the ticket instead of git history (same output as `syntaur timeline`).
+
+Git history follows the ticket folder path only; renames start a new history (no `--follow` across folder renames).
+
 ## `syntaur timeline <ticket>`
 
 Show the chronological audit event log for one ticket — who changed what, when, and what the value moved from→to — newest first.
