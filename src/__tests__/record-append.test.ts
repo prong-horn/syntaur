@@ -53,6 +53,16 @@ describe('appendProgressLog', () => {
   });
 });
 
+function frontmatterBlock(markdown: string): string {
+  const match = markdown.match(/^---\n[\s\S]*?\n---\n/);
+  if (!match) throw new Error('expected YAML frontmatter');
+  return match[0];
+}
+
+function bodyAfterFrontmatter(markdown: string): string {
+  return markdown.slice(frontmatterBlock(markdown).length);
+}
+
 describe('appendTypedLogEntry', () => {
   it('writes typed headings on legacy progress.md without rewriting frontmatter', async () => {
     await writeFile(
@@ -62,6 +72,7 @@ describe('appendTypedLogEntry', () => {
     const beforeFm = `---
 ticket: T-1
 generated: "2026-06-01T00:00:00Z"
+customMeta: keep-me
 ---
 
 # Progress
@@ -69,6 +80,7 @@ generated: "2026-06-01T00:00:00Z"
 No progress yet.
 `;
     await writeFile(join(testDir, 'progress.md'), beforeFm);
+    const fmBefore = frontmatterBlock(beforeFm);
     await appendTypedLogEntry({
       ticketDir: testDir,
       ticketId: 'T-1',
@@ -77,8 +89,12 @@ No progress yet.
       author: 'human',
     });
     const content = await readFile(join(testDir, 'progress.md'), 'utf-8');
-    expect(content.startsWith('---\nticket: T-1\ngenerated: "2026-06-01T00:00:00Z"\n---\n')).toBe(true);
-    expect(content).toContain('· handoff · human');
+    expect(frontmatterBlock(content)).toBe(fmBefore);
+    const body = bodyAfterFrontmatter(content);
+    const firstHeading = body.indexOf('## ');
+    expect(firstHeading).toBeGreaterThanOrEqual(0);
+    expect(body.slice(firstHeading)).toContain('· handoff · human');
+    expect(body.slice(firstHeading)).toContain('Baton passed');
     expect(content).toContain('Baton passed');
     const entries = parseLogEntries(content);
     expect(entries[0].type).toBe('handoff');

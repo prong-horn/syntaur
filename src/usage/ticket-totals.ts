@@ -17,7 +17,7 @@
  * the ticket (open/closed, archived sessions included). It is null exactly when
  * the session db (engagement table) is unavailable, 0 for a queried-empty set.
  *
- * Read-only: nothing is persisted to tickets, frontmatter or derived indexes.
+ * Read-only: live rollup only; nothing is written back to tickets or frontmatter.
  */
 
 import type { TicketCostSource, TicketMetrics } from '../dashboard/types.js';
