@@ -2,14 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   extractFrontmatter,
   parseProject,
-  parseStatus,
   parseTicketSummary,
   parseTicketFull,
   parsePlan,
   parseScratchpad,
   parseHandoff,
   parseDecisionRecord,
-  extractMermaidGraph,
 } from '../dashboard/parser.js';
 
 describe('extractFrontmatter', () => {
@@ -139,44 +137,6 @@ tags: []`;
       );
       expect(project.repositories).toEqual([]);
     });
-  });
-});
-
-describe('parseStatus', () => {
-  const STATUS_MD = `---
-project: build-auth-system
-generated: "2026-03-18T14:30:00Z"
-status: active
-progress:
-  total: 3
-  completed: 1
-  in_progress: 1
-  blocked: 0
-  pending: 1
-  review: 0
-  failed: 0
-needsAttention:
-  blockedCount: 0
-  failedCount: 0
-  openQuestions: 1
----
-
-# Project Status`;
-
-  it('parses status and progress counts', () => {
-    const status = parseStatus(STATUS_MD);
-    expect(status.project).toBe('build-auth-system');
-    expect(status.status).toBe('active');
-    expect(status.progress.total).toBe(3);
-    expect(status.progress.completed).toBe(1);
-    expect(status.progress.in_progress).toBe(1);
-    expect(status.progress.pending).toBe(1);
-  });
-
-  it('parses needsAttention counts', () => {
-    const status = parseStatus(STATUS_MD);
-    expect(status.needsAttention.blockedCount).toBe(0);
-    expect(status.needsAttention.openQuestions).toBe(1);
   });
 });
 
@@ -345,18 +305,6 @@ Details.`;
     expect(d.ticket).toBe('design-auth-schema');
     expect(d.decisionCount).toBe(1);
     expect(d.body).toContain('Decision 1');
-  });
-});
-
-describe('extractMermaidGraph', () => {
-  it('extracts mermaid definition from markdown body', () => {
-    const body = '# Status\n\n```mermaid\ngraph TD\n    A --> B\n```\n\nFooter.';
-    const graph = extractMermaidGraph(body);
-    expect(graph).toBe('graph TD\n    A --> B');
-  });
-
-  it('returns null when no mermaid block', () => {
-    expect(extractMermaidGraph('No graph here.')).toBeNull();
   });
 });
 

@@ -226,49 +226,6 @@ export function parseProject(fileContent: string): ParsedProject {
   };
 }
 
-// --- Status Parser (for _status.md) ---
-
-export interface ParsedStatus {
-  project: string;
-  status: string;
-  progress: Record<string, number> & { total: number };
-  needsAttention: {
-    blockedCount: number;
-    failedCount: number;
-    openQuestions: number;
-  };
-  body: string;
-}
-
-export function parseStatus(fileContent: string): ParsedStatus {
-  const [fm, body] = extractFrontmatter(fileContent);
-
-  // Dynamically parse progress fields
-  const progress: Record<string, number> & { total: number } = { total: 0 };
-  const progressMatch = fm.match(/^progress:\s*\n((?:\s+.*\n?)*)/m);
-  if (progressMatch) {
-    const lines = progressMatch[1].split('\n');
-    for (const line of lines) {
-      const kv = line.match(/^\s+(\w+):\s*(\d+)/);
-      if (kv) {
-        progress[kv[1]] = parseInt(kv[2], 10);
-      }
-    }
-  }
-
-  return {
-    project: getField(fm, 'project') ?? '',
-    status: getField(fm, 'status') ?? 'pending',
-    progress,
-    needsAttention: {
-      blockedCount: parseInt(getNestedField(fm, 'needsAttention', 'blockedCount') ?? '0', 10),
-      failedCount: parseInt(getNestedField(fm, 'needsAttention', 'failedCount') ?? '0', 10),
-      openQuestions: parseInt(getNestedField(fm, 'needsAttention', 'openQuestions') ?? '0', 10),
-    },
-    body,
-  };
-}
-
 // --- Ticket Summary Parser ---
 
 export interface ParsedTicketSummary {
@@ -572,15 +529,3 @@ export function parsePlaybook(fileContent: string): ParsedPlaybook {
     body,
   };
 }
-
-// --- Mermaid Graph Extractor ---
-
-/**
- * Extract the mermaid code block from _status.md body content.
- * Returns null if no mermaid block is found.
- */
-export function extractMermaidGraph(body: string): string | null {
-  const match = body.match(/```mermaid\n([\s\S]*?)```/);
-  return match ? match[1].trim() : null;
-}
-

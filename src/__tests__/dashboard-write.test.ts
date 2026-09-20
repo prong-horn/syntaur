@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import type { RequestHandler, Router } from 'express';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join as joinPath } from 'node:path';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,6 +11,7 @@ import { planDigest } from '../ticket-templates/plan-facts.js';
 import { parseComments } from '../dashboard/parser.js';
 import { formatCommentEntry } from '../templates/comments.js';
 import { useHermeticSyntaurHome } from './hermetic-root.js';
+import { fileExists } from '../utils/fs.js';
 
 // Hermetic root: these tests pass fixture configs; without a sandboxed
 // SYNTAUR_HOME they read the developer’s real ~/.syntaur (ambient workflows
@@ -717,6 +718,30 @@ Keep this paragraph.`, 'utf-8');
         { title: 'whatever' },
       );
       expect(res.statusCode).toBe(404);
+    });
+  });
+
+  describe('POST /api/projects', () => {
+    it('creates only project.md and tickets/', async () => {
+      const router = createWriteRouter(testDir);
+      const body = `---
+id: new-proj-id
+slug: new-proj
+title: New Proj
+prefix: NP
+nextTicket: 1
+defaultTemplate: feature
+created: "2026-03-20T10:00:00Z"
+updated: "2026-03-20T10:00:00Z"
+---
+# New Proj
+`;
+      const res = await invokeRoute(router, 'post', '/api/projects', {}, { content: body });
+      expect(res.statusCode).toBe(201);
+      const projectDir = resolve(testDir, 'new-proj');
+      const entries = await readdir(projectDir);
+      expect(entries.sort()).toEqual(['project.md', 'tickets']);
+      expect(await fileExists(resolve(projectDir, 'manifest.md'))).toBe(false);
     });
   });
 

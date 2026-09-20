@@ -40,14 +40,14 @@ describe('createProjectCommand', () => {
     const projectDir = resolve(testDir, 'test-project');
     const files = await readdir(projectDir);
 
-    expect(files).toContain('manifest.md');
     expect(files).toContain('project.md');
     expect(files).not.toContain('agent.md');
     expect(files).not.toContain('claude.md');
-    expect(files).toContain('_index-tickets.md');
-    expect(files).toContain('_index-plans.md');
-    expect(files).toContain('_index-decisions.md');
-    expect(files).toContain('_status.md');
+    expect(files).not.toContain('manifest.md');
+    expect(files).not.toContain('_index-tickets.md');
+    expect(files).not.toContain('_index-plans.md');
+    expect(files).not.toContain('_index-decisions.md');
+    expect(files).not.toContain('_status.md');
     expect(files).toContain('tickets');
     expect(files).not.toContain('resources');
     expect(files).not.toContain('memories');

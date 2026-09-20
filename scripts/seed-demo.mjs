@@ -92,32 +92,6 @@ ${m.notes ?? '_No additional notes._'}
 `;
 }
 
-function renderManifest(slug, createdAt) {
-  return `---
-version: "1.0"
-project: ${slug}
-generated: "${createdAt}"
----
-
-# Project: ${slug}
-
-## Overview
-- [Project Overview](./project.md)
-
-## Indexes
-- [Tickets](./_index-tickets.md)
-- [Plans](./_index-plans.md)
-- [Decision Records](./_index-decisions.md)
-- [Status](./_status.md)
-- [Resources](./resources/_index.md)
-- [Memories](./memories/_index.md)
-
-## Config
-- [Agent Instructions](./agent.md)
-- [Claude Code Instructions](./claude.md)
-`;
-}
-
 function renderAgentMd(slug, title) {
   return `---
 project: ${slug}
@@ -170,34 +144,6 @@ needsAttention:
 
 **Status:** ${project.archived ? 'archived' : 'active'}
 **Progress:** ${completed}/${tickets.length} tickets complete
-`;
-}
-
-function renderTicketsIndex(project, tickets) {
-  const by = Object.create(null);
-  for (const a of tickets) by[a.status] = (by[a.status] ?? 0) + 1;
-  const rows = tickets.map((a) => {
-    const deps = a.dependsOn?.length ? a.dependsOn.join(', ') : '—';
-    return `| ${a.slug} | ${a.title} | ${a.status} | ${a.priority} | ${a.assignee ?? '—'} | ${deps} | ${a.updated} |`;
-  }).join('\n');
-  return `---
-project: ${project.slug}
-generated: "${iso(new Date())}"
-total: ${tickets.length}
-by_status:
-  pending: ${by.pending ?? 0}
-  in_progress: ${by.in_progress ?? 0}
-  blocked: ${by.blocked ?? 0}
-  review: ${by.review ?? 0}
-  completed: ${by.completed ?? 0}
-  failed: ${by.failed ?? 0}
----
-
-# Tickets
-
-| Slug | Title | Status | Priority | Assignee | Dependencies | Updated |
-|------|-------|--------|----------|----------|--------------|---------|
-${rows}
 `;
 }
 
@@ -1133,12 +1079,10 @@ async function main() {
     await ensureDir(resolve(projectDir, 'memories'));
 
     await writeText(resolve(projectDir, 'project.md'), renderProject(m));
-    await writeText(resolve(projectDir, 'manifest.md'), renderManifest(m.slug, m.created));
     await writeText(resolve(projectDir, 'agent.md'), renderAgentMd(m.slug, m.title));
     await writeText(resolve(projectDir, 'claude.md'), renderClaudeMd(m.slug, m.title));
 
     const projectTickets = ticketsByMission[m.slug] ?? [];
-    await writeText(resolve(projectDir, '_index-tickets.md'), renderTicketsIndex(m, projectTickets));
     await writeText(resolve(projectDir, '_index-plans.md'), renderIndexStub('Plans', m));
     await writeText(resolve(projectDir, '_index-decisions.md'), renderIndexStub('Decision Records', m));
     await writeText(resolve(projectDir, '_status.md'), renderStatus(m, projectTickets));

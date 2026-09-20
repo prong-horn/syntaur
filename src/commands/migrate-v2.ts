@@ -17,10 +17,7 @@ import { derivePrefix } from '../utils/ticket-ids.js';
 import { formatTicketFolderName, parseTicketFolderName } from '../utils/ticket-folder.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { escapeYamlString } from '../utils/yaml.js';
-import {
-  rebuildProjectTicketIndex,
-  writeProjectScaffold,
-} from '../utils/project-scaffold.js';
+import { writeProjectScaffold } from '../utils/project-scaffold.js';
 import { rebuildChatIndex } from '../chat/store.js';
 import {
   closeSessionDb,
@@ -2383,7 +2380,6 @@ async function applyFilesystemMigration(
       }
     }
 
-    await rebuildProjectTicketIndex(resolve(projectsDir, 'scratch'));
   }
 }
 

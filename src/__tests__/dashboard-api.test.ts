@@ -52,15 +52,10 @@ async function createProjectFiles(
     progressMd?: string;
     journalMd?: string;
   }> = [],
-  statusMd?: string,
 ): Promise<void> {
   const projectPath = resolve(projectsDir, projectSlug);
   await mkdir(projectPath, { recursive: true });
   await writeFile(resolve(projectPath, 'project.md'), projectMd, 'utf-8');
-
-  if (statusMd) {
-    await writeFile(resolve(projectPath, '_status.md'), statusMd, 'utf-8');
-  }
 
   for (const ticket of tickets) {
     const ticketDir = resolve(projectPath, 'tickets', ticket.slug);
@@ -222,40 +217,20 @@ describe('listProjects', () => {
     expect(result).toEqual([]);
   });
 
-  it('uses source-first ticket state even when _status.md disagrees', async () => {
-    const statusMd = `---
-project: test-project
-generated: "2026-03-20T10:00:00Z"
-status: completed
-progress:
-  total: 1
-  completed: 1
-  in_progress: 0
-  blocked: 0
-  pending: 0
-  review: 0
-  failed: 0
-needsAttention:
-  blockedCount: 0
-  failedCount: 0
-  openQuestions: 0
----
-
-# Status`;
-
+  it('dependency graph is computed from ticket frontmatter', async () => {
+    const ticketWithDep = TICKET_MD.replace(
+      'depends_on: []',
+      'depends_on:\n  - other-ticket',
+    );
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
-      {
-        slug: 'test-ticket',
-        ticketMd: TICKET_MD,
-        journalMd: JOURNAL_MD_ONE_OPEN_QUESTION,
-      },
-    ], statusMd);
+      { slug: 'other-ticket', ticketMd: TICKET_MD },
+      { slug: 'test-ticket', ticketMd: ticketWithDep },
+    ]);
 
-    const result = await listProjects(testDir);
-    expect(result).toHaveLength(1);
-    expect(result[0].status).toBe('active');
-    expect(result[0].progress.in_progress).toBe(1);
-    expect(result[0].needsAttention.openQuestions).toBe(1);
+    const result = await getProjectDetail(testDir, 'test-project');
+    expect(result).not.toBeNull();
+    expect(result!.dependencyGraph).toContain('test-ticket');
+    expect(result!.dependencyGraph).toContain('other-ticket');
   });
 });
 
@@ -265,7 +240,7 @@ describe('getProjectDetail', () => {
     expect(result).toBeNull();
   });
 
-  it('returns project detail with source-first tickets and derived graph fallback', async () => {
+  it('returns project detail with source-first tickets and computed dependency graph', async () => {
     await createProjectFiles(testDir, 'test-project', PROJECT_MD, [
       { slug: 'test-ticket', ticketMd: TICKET_MD },
     ]);

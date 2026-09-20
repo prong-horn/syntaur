@@ -66,7 +66,7 @@ import {
   migrateLegacyConfig,
   summarizeMigration,
 } from '../utils/fs-migration.js';
-import { initSessionDb, migrateFromMarkdown, closeSessionDb } from './session-db.js';
+import { initSessionDb, closeSessionDb } from './session-db.js';
 import { initUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { startMaintenanceLoop, stopMaintenanceLoop } from './maintenance-loop.js';
 import { startUsageCollector, stopUsageCollector } from './usage-collector.js';
@@ -136,9 +136,6 @@ export function createDashboardServer(options: DashboardServerOptions) {
 
   // --- Initialize session database ---
   initSessionDb();
-  migrateFromMarkdown(projectsDir).catch((err) => {
-    console.error('Session migration from markdown failed:', err);
-  });
 
   // --- Initialize usage database (shares syntaur.db) ---
   initUsageDb();

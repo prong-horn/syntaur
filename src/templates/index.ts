@@ -1,9 +1,6 @@
 export { renderConfig } from './config.js';
 export type { ConfigParams } from './config.js';
 
-export { renderManifest } from './manifest.js';
-export type { ManifestParams } from './manifest.js';
-
 export { renderProject } from './project.js';
 export type { ProjectParams } from './project.js';
 
@@ -27,14 +24,6 @@ export type { CommentsParams, Comment, CommentType } from './comments.js';
 
 export { renderDecisionRecord } from './decision-record.js';
 export type { DecisionRecordParams } from './decision-record.js';
-
-export {
-  renderIndexTickets,
-  renderIndexPlans,
-  renderIndexDecisions,
-  renderStatus,
-} from './index-stubs.js';
-export type { IndexStubParams } from './index-stubs.js';
 
 export { renderPlaybook } from './playbook.js';
 export type { PlaybookParams } from './playbook.js';

@@ -1,30 +1,33 @@
 import { resolve } from 'node:path';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir } from 'node:fs/promises';
 import { fileExists } from '../../fs.js';
 import { parseTicketFolderName } from '../../ticket-folder.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'project';
 
-const REQUIRED_PROJECT_FILES = [
-  'project.md',
+const REQUIRED_PROJECT_FILES = ['project.md'] as const;
+
+const DERIVED_PROJECT_FILE_NAMES = [
   'manifest.md',
-  '_status.md',
   '_index-tickets.md',
+  '_index-assignments.md',
+  '_index-sessions.md',
   '_index-plans.md',
   '_index-decisions.md',
+  '_status.md',
+  'resources/_index.md',
+  'memories/_index.md',
 ] as const;
 
 const KNOWN_PROJECT_TOP_LEVEL = new Set<string>([
   'project.md',
-  'manifest.md',
-  '_status.md',
   'tickets',
   'resources',
   'memories',
 ]);
 
-const PROJECT_MARKERS = ['project.md', 'manifest.md', 'tickets'] as const;
+const PROJECT_MARKERS = ['project.md', 'tickets'] as const;
 
 async function listProjects(ctx: { config: { defaultProjectDir: string } }): Promise<string[]> {
   const dir = ctx.config.defaultProjectDir;
@@ -83,35 +86,33 @@ const requiredFiles: Check = {
   },
 };
 
-const manifestStale: Check = {
-  id: 'project.manifest-stale',
+const derivedFilesPresent: Check = {
+  id: 'project.derived-files-present',
   category: CATEGORY,
-  title: 'manifest.md is not older than any ticket change',
+  title: 'No derived markdown index files remain under projects',
   async run(ctx) {
     const projects = await listProjects(ctx);
     const results: CheckResult[] = [];
     for (const projectDir of projects) {
-      const manifestPath = resolve(projectDir, 'manifest.md');
-      if (!(await fileExists(manifestPath))) continue;
-      const manifestMtime = (await stat(manifestPath)).mtimeMs;
-      const newestTicket = await newestTicketMtime(projectDir);
-      if (newestTicket === 0) continue;
-      if (newestTicket > manifestMtime) {
-        results.push({
-          id: this.id,
-          category: this.category,
-          title: this.title,
-          status: 'warn',
-          detail: `manifest.md in ${projectDir} is older than the newest ticket.md`,
-          affected: [manifestPath],
-          remediation: {
-            kind: 'manual',
-            suggestion: 'Rebuild the manifest (no CLI rebuild helper yet — edit manually or wait for v2)',
-            command: null,
-          },
-          autoFixable: false,
-        });
+      const present: string[] = [];
+      for (const rel of DERIVED_PROJECT_FILE_NAMES) {
+        if (await fileExists(resolve(projectDir, rel))) present.push(rel);
       }
+      if (present.length === 0) continue;
+      results.push({
+        id: this.id,
+        category: this.category,
+        title: this.title,
+        status: 'warn',
+        detail: `project at ${projectDir} still has derived files: ${present.join(', ')}`,
+        affected: present.map((p) => resolve(projectDir, p)),
+        remediation: {
+          kind: 'manual',
+          suggestion: 'Run migrate v2 to remove derived project markdown',
+          command: 'syntaur migrate v2 --apply',
+        },
+        autoFixable: false,
+      });
     }
     if (results.length === 0) return pass(this);
     return results;
@@ -131,7 +132,6 @@ const orphanFiles: Check = {
       for (const e of entries) {
         if (e.name.startsWith('.')) continue;
         if (KNOWN_PROJECT_TOP_LEVEL.has(e.name)) continue;
-        if (e.name.startsWith('_index-') && e.name.endsWith('.md')) continue;
         orphans.push(e.name);
       }
       if (orphans.length === 0) continue;
@@ -186,30 +186,12 @@ const ticketFolderLayout: Check = {
   },
 };
 
-export const projectChecks: Check[] = [requiredFiles, manifestStale, orphanFiles, ticketFolderLayout];
-
-async function newestTicketMtime(projectDir: string): Promise<number> {
-  const ticketsRoot = resolve(projectDir, 'tickets');
-  if (!(await fileExists(ticketsRoot))) return 0;
-  let newest = 0;
-  let entries;
-  try {
-    entries = await readdir(ticketsRoot, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    const ticketMd = resolve(ticketsRoot, e.name, 'ticket.md');
-    try {
-      const s = await stat(ticketMd);
-      if (s.mtimeMs > newest) newest = s.mtimeMs;
-    } catch {
-      // no ticket.md — skip (orphan check covers that)
-    }
-  }
-  return newest;
-}
+export const projectChecks: Check[] = [
+  requiredFiles,
+  derivedFilesPresent,
+  orphanFiles,
+  ticketFolderLayout,
+];
 
 function pass(check: { id: string; category: string; title: string }): CheckResult {
   return {

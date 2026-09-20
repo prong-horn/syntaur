@@ -63,11 +63,6 @@ import { resolveTicketById } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import {
   renderProject,
-  renderManifest,
-  renderIndexTickets,
-  renderIndexPlans,
-  renderIndexDecisions,
-  renderStatus,
   renderTicket,
   renderScratchpad,
   renderHandoff,
@@ -546,32 +541,17 @@ export function createWriteRouter(projectsDir: string, opts: WriteRouterOptions 
         return;
       }
 
-      const title = fields.title;
-      const timestamp = fields.created || nowTimestamp();
-
       await ensureDir(resolve(projectDir, 'tickets'));
 
-      await writeFileForce(resolve(projectDir, 'project.md'), content);
-
       try {
-        const companions: Array<[string, string]> = [
-          [resolve(projectDir, 'manifest.md'), renderManifest({ slug, timestamp })],
-          [resolve(projectDir, '_index-tickets.md'), renderIndexTickets({ slug, title, timestamp })],
-          [resolve(projectDir, '_index-plans.md'), renderIndexPlans({ slug, title, timestamp })],
-          [resolve(projectDir, '_index-decisions.md'), renderIndexDecisions({ slug, title, timestamp })],
-          [resolve(projectDir, '_status.md'), renderStatus({ slug, title, timestamp })],
-        ];
-
-        for (const [filePath, fileContent] of companions) {
-          await writeFileForce(filePath, fileContent);
-        }
-      } catch (companionError) {
+        await writeFileForce(resolve(projectDir, 'project.md'), content);
+      } catch (writeError) {
         try {
           await rm(projectDir, { recursive: true, force: true });
         } catch {
           // Best effort cleanup only.
         }
-        throw companionError;
+        throw writeError;
       }
 
       res.status(201).json({ slug });

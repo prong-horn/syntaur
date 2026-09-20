@@ -42,15 +42,8 @@ async function writeProjectScaffold(slug: string): Promise<string> {
   await mkdir(resolve(projectDir, 'memories'), { recursive: true });
   const files: Array<[string, string]> = [
     [resolve(projectDir, 'project.md'), `# ${slug}\n`],
-    [resolve(projectDir, 'manifest.md'), `# ${slug} manifest\n`],
     [resolve(projectDir, 'agent.md'), `# agent\n`],
     [resolve(projectDir, 'claude.md'), `# claude\n`],
-    [resolve(projectDir, '_status.md'), `# status\n`],
-    [resolve(projectDir, '_index-tickets.md'), `# index\n`],
-    [resolve(projectDir, '_index-plans.md'), `# index\n`],
-    [resolve(projectDir, '_index-decisions.md'), `# index\n`],
-    [resolve(projectDir, 'resources', '_index.md'), `# index\n`],
-    [resolve(projectDir, 'memories', '_index.md'), `# index\n`],
   ];
   for (const [p, c] of files) await writeFile(p, c);
   return projectDir;
@@ -263,15 +256,14 @@ describe('syntaur doctor', () => {
     expect(issues.length).toBe(1);
   });
 
-  it('detects an incomplete project scaffold', async () => {
+  it('a project with only project.md and tickets/ passes project.required-files-present', async () => {
     await initBaseline();
-    const projectDir = resolve(projectsDir, 'half-built');
+    const projectDir = resolve(projectsDir, 'minimal');
     await mkdir(resolve(projectDir, 'tickets'), { recursive: true });
     await writeFile(resolve(projectDir, 'project.md'), '# partial\n');
     const report = await runChecks();
     const issues = byId(report, 'project.required-files-present').filter((c) => c.status === 'error');
-    expect(issues.length).toBe(1);
-    expect(issues[0].detail).toMatch(/manifest\.md|agent\.md|claude\.md/);
+    expect(issues.length).toBe(0);
   });
 
   it('detects a project folder that has no project.md at all', async () => {
@@ -284,12 +276,19 @@ describe('syntaur doctor', () => {
     expect(issues[0].detail).toContain('project.md');
   });
 
-  it('does not falsely report manifest-stale for a fresh project', async () => {
+  it('warns when derived project markdown is still present', async () => {
     await initBaseline();
-    await writeProjectScaffold('fresh');
+    const projectDir = resolve(projectsDir, 'derived-leftovers');
+    await mkdir(resolve(projectDir, 'tickets'), { recursive: true });
+    await writeFile(resolve(projectDir, 'project.md'), '# p\n');
+    await writeFile(resolve(projectDir, 'manifest.md'), '# m\n');
+    await writeFile(resolve(projectDir, '_status.md'), '# s\n');
     const report = await runChecks();
-    const issues = byId(report, 'project.manifest-stale').filter((c) => c.status === 'warn');
-    expect(issues.length).toBe(0);
+    const issues = byId(report, 'project.derived-files-present').filter((c) => c.status === 'warn');
+    expect(issues.length).toBe(1);
+    expect(issues[0].detail).toMatch(/manifest\.md/);
+    expect(issues[0].detail).toMatch(/_status\.md/);
+    expect(issues[0].remediation?.command).toBe('syntaur migrate v2 --apply');
   });
 
   it('allows existing resources/ and memories/ folders without _index.md', async () => {
@@ -298,21 +297,16 @@ describe('syntaur doctor', () => {
     await mkdir(resolve(projectDir, 'tickets'), { recursive: true });
     await mkdir(resolve(projectDir, 'resources'), { recursive: true });
     await mkdir(resolve(projectDir, 'memories'), { recursive: true });
-    const files: Array<[string, string]> = [
-      [resolve(projectDir, 'project.md'), `# legacy\n`],
-      [resolve(projectDir, 'manifest.md'), `# manifest\n`],
-      [resolve(projectDir, '_status.md'), `# status\n`],
-      [resolve(projectDir, '_index-tickets.md'), `# index\n`],
-      [resolve(projectDir, '_index-plans.md'), `# index\n`],
-      [resolve(projectDir, '_index-decisions.md'), `# index\n`],
-    ];
-    for (const [p, c] of files) await writeFile(p, c);
+    await writeFile(resolve(projectDir, 'project.md'), `# legacy\n`);
 
     const report = await runChecks();
     expect(
       byId(report, 'project.required-files-present').filter((c) => c.status === 'error'),
     ).toHaveLength(0);
     expect(byId(report, 'project.orphan-files').filter((c) => c.status === 'warn')).toHaveLength(0);
+    expect(
+      byId(report, 'project.derived-files-present').filter((c) => c.status === 'warn'),
+    ).toHaveLength(0);
   });
 
   it('detects a silent fallback when defaultProjectDir is relative', async () => {

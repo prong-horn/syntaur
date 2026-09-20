@@ -30,15 +30,12 @@ import { invalidateIndex } from '../search/index.js';
 
 import {
   parseProject,
-  parseStatus,
   parseTicketFull,
   parsePlan,
   parseScratchpad,
   parseHandoff,
   parseDecisionRecord,
   parsePlaybook,
-  parseProgress,
-  extractMermaidGraph,
 } from './parser.js';
 import type {
   ArchiveResponse,
@@ -1118,19 +1115,9 @@ export async function resolveProjectPath(
 }
 
 async function loadDependencyGraph(
-  projectPath: string,
+  _projectPath: string,
   tickets: TicketRecord[],
 ): Promise<string | null> {
-  const statusPath = resolve(projectPath, '_status.md');
-  if (await fileExists(statusPath)) {
-    const statusContent = await readFile(statusPath, 'utf-8');
-    const parsed = parseStatus(statusContent);
-    const derivedGraph = extractMermaidGraph(parsed.body);
-    if (derivedGraph) {
-      return derivedGraph;
-    }
-  }
-
   return buildDependencyGraph(tickets);
 }
 

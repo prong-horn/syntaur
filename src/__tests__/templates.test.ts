@@ -1,38 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
-  renderManifest,
   renderProject,
   renderTicket,
   renderPlan,
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
-  renderIndexTickets,
-  renderStatus,
 } from '../templates/index.js';
 
 const TIMESTAMP = '2026-03-18T14:30:00Z';
-
-describe('renderManifest', () => {
-  it('produces valid frontmatter with version, project, generated', () => {
-    const out = renderManifest({ slug: 'test-project', timestamp: TIMESTAMP });
-    expect(out).toContain('version: "2.0"');
-    expect(out).toContain('project: test-project');
-    expect(out).toContain(`generated: "${TIMESTAMP}"`);
-    expect(out).toContain('# Project: test-project');
-  });
-
-  it('includes all index links', () => {
-    const out = renderManifest({ slug: 'test', timestamp: TIMESTAMP });
-    expect(out).toContain('(./_index-tickets.md)');
-    expect(out).toContain('(./_index-plans.md)');
-    expect(out).toContain('(./_index-decisions.md)');
-    expect(out).toContain('(./_status.md)');
-    expect(out).toContain('(./project.md)');
-    expect(out).not.toContain('(./agent.md)');
-    expect(out).not.toContain('(./claude.md)');
-  });
-});
 
 describe('renderProject', () => {
   it('produces correct frontmatter fields', () => {
@@ -313,37 +289,5 @@ describe('renderDecisionRecord', () => {
     expect(out).toContain('decisionCount: 0');
     expect(out).toContain('# Decision Record');
     expect(out).toContain('No decisions recorded yet.');
-  });
-});
-
-describe('renderIndexTickets', () => {
-  it('has all status counts at 0', () => {
-    const out = renderIndexTickets({
-      slug: 'test',
-      title: 'Test',
-      timestamp: TIMESTAMP,
-    });
-    expect(out).toContain('total: 0');
-    expect(out).toContain('pending: 0');
-    expect(out).toContain('in_progress: 0');
-    expect(out).toContain('completed: 0');
-    expect(out).toContain('# Tickets');
-  });
-});
-
-describe('renderStatus', () => {
-  it('has initial pending status with zero counts', () => {
-    const out = renderStatus({ slug: 'test', title: 'Test Project', timestamp: TIMESTAMP });
-    expect(out).toContain('status: pending');
-    expect(out).toContain('total: 0');
-    expect(out).toContain('blockedCount: 0');
-    expect(out).toContain('failedCount: 0');
-    expect(out).toContain('openQuestions: 0');
-  });
-
-  it('uses title in heading, not slug', () => {
-    const out = renderStatus({ slug: 'test-slug', title: 'My Title', timestamp: TIMESTAMP });
-    expect(out).toContain('# Project Status: My Title');
-    expect(out).not.toContain('# Project Status: test-slug');
   });
 });

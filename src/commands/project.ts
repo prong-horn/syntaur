@@ -96,12 +96,8 @@ export async function projectNewCommand(
     console.log(`  Slug: ${slug}`);
     console.log(`  Prefix: ${prefix}`);
     console.log(`  Files created:`);
-    console.log(`    manifest.md`);
     console.log(`    project.md`);
-    console.log(`    _index-tickets.md`);
-    console.log(`    _index-plans.md`);
-    console.log(`    _index-decisions.md`);
-    console.log(`    _status.md`);
+    console.log(`    tickets/`);
   }
 
   return slug;

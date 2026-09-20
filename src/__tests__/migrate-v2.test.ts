@@ -576,11 +576,8 @@ describe('migrateV2Command', () => {
     for (const file of REQUIRED_PROJECT_SCAFFOLD_FILES) {
       expect(await fileExists(resolve(scratchDir, file))).toBe(true);
     }
-    const scratchIndex = await readFile(resolve(scratchDir, '_index-tickets.md'), 'utf-8');
-    expect(scratchIndex).toContain('SCR-1-orphan');
-    expect(scratchIndex).toContain('total: 1');
-    const scratchManifest = await readFile(resolve(scratchDir, 'manifest.md'), 'utf-8');
-    expect(scratchManifest).toContain('_index-tickets.md');
+    expect(await fileExists(resolve(scratchDir, 'manifest.md'))).toBe(false);
+    expect(await fileExists(resolve(scratchDir, '_index-tickets.md'))).toBe(false);
     const doctorCtx = await buildCheckContext();
     const requiredCheck = projectChecks.find((c) => c.id === 'project.required-files-present')!;
     const requiredResult = await requiredCheck.run(doctorCtx);
