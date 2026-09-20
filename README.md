@@ -73,7 +73,7 @@ If you're already globally installed and later run a newer `npx syntaur@latest`,
 
 After installing the CLI (`npm install -g syntaur` or `npx syntaur@latest`), run these steps in order:
 
-1. **`syntaur init`** — creates `~/.syntaur/` (config, SQLite session registry, playbooks, built-in ticket templates).
+1. **`syntaur init`** — creates `~/.syntaur/` (config, SQLite session registry, playbooks, built-in ticket templates), initialises a git repository with `.gitignore`, and installs `home-commit.sh` plus a daily auto-commit scheduler (use `--no-auto-commit` to skip the scheduler).
 2. **`npx skills add prong-horn/syntaur -g -a claude-code`** — installs the six protocol skills into `~/.claude/skills/`. Optional: `-a codex` or `-a cursor` for other harnesses (ACP chat participants do not need skills).
 3. **`syntaur hooks install`** — copies hook scripts to `~/.syntaur/hooks/` and wires SessionStart, PostToolUse, and UserPromptSubmit in `~/.claude/settings.json` (backs up the previous `hooks` key to `~/.syntaur/hooks.backup.json`).
 4. **`syntaur statusline install`** *(optional)* — installs the syntaur status line in Claude Code settings.
@@ -88,6 +88,9 @@ After installing the CLI (`npm install -g syntaur` or `npx syntaur@latest`), run
 | Location | What lives there | Managed by |
 |---|---|---|
 | `~/.syntaur/` | Projects, tickets, `templates/`, `playbooks/`, `config.md`, `syntaur.db`. Scratch tickets live under `projects/scratch/` (`SCR` prefix). | You (via CLI) |
+| `~/.syntaur/.git` | Git history for the home (created by `syntaur init`) | `syntaur init` |
+| `~/.syntaur/home-commit.sh` | Daily auto-commit script | `syntaur init` |
+| `~/Library/LaunchAgents/com.syntaur.home-commit.plist` | macOS scheduler for `home-commit.sh` (when auto-commit is enabled) | `syntaur init` |
 | `~/.syntaur/hooks/` | Session hook shell scripts copied by `syntaur hooks install` | `syntaur hooks install` / `uninstall` |
 | `~/.claude/settings.json` | Three Syntaur hook entries and optional `statusLine` | `syntaur hooks` / `syntaur statusline` |
 | `~/.claude/skills/<name>/` | Six protocol skills (`syntaur-protocol`, `grab`, `plan`, `done`, `log`, `worktree`) | `npx skills add prong-horn/syntaur` |
@@ -168,6 +171,7 @@ Flag verbs: `syntaur block`, `unblock`, `park`, `unpark`. Reopen terminal ticket
 syntaur dashboard
 syntaur project new "My First Project"
 syntaur new "Implement feature" --project my-first-project
+syntaur history <id> --project <slug>
 syntaur doctor
 syntaur uninstall
 syntaur uninstall --all
@@ -270,7 +274,7 @@ Upgrade skills after a Syntaur release:
 npx skills update
 ```
 
-`syntaur doctor` checks `skills.installed` (all six under `~/.claude/skills/`) and `hooks.installed`.
+`syntaur doctor` checks `skills.installed` (all six under `~/.claude/skills/`), `hooks.installed`, `git.home-repo`, and `git.auto-commit`.
 
 ---
 
@@ -330,7 +334,7 @@ Projects, tickets, and `syntaur.db` under `~/.syntaur/` are unchanged unless you
 
 ## Troubleshooting
 
-Run `syntaur doctor` (or `syntaur doctor --json` for agents). Checks include `hooks.installed` and `skills.installed`.
+Run `syntaur doctor` (or `syntaur doctor --json` for agents). Checks include `hooks.installed`, `skills.installed`, `git.home-repo`, and `git.auto-commit`.
 
 Common issues:
 

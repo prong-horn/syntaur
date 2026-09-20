@@ -2,6 +2,27 @@
 
 Reference for `syntaur` subcommands. Run `syntaur --help` for a full list.
 
+## `syntaur init`
+
+Create or refresh the Syntaur home (`~/.syntaur/` or `SYNTAUR_HOME`).
+
+```
+syntaur init [--force] [--no-auto-commit]
+```
+
+- Creates `config.md`, `projects/`, `playbooks/`, and `templates/` (built-in ticket templates are seeded when missing).
+- When `git` is available and the home is not already a repository: runs `git init`, writes `.gitignore` (operational files such as `syntaur.db`, `runtime/`, and `worktrees/` are ignored), sets a local `user.name` / `user.email` if unset, and creates an initial commit.
+- Writes `home-commit.sh` (mode `0755`) and, unless `--no-auto-commit` is passed, installs a daily scheduler entry:
+  - **macOS:** `~/Library/LaunchAgents/com.syntaur.home-commit.plist` (`launchctl bootstrap gui/<uid> …` at 03:17 local time; logs to `~/.syntaur/runtime/home-commit.log`).
+  - **Linux:** appends a crontab line `17 3 * * * /bin/sh <home>/home-commit.sh # syntaur-home-commit` (idempotent on the marker comment).
+  - **Other platforms:** prints a message to run `home-commit.sh` from your own scheduler.
+
+`--no-auto-commit` still writes `home-commit.sh` but skips launchd/cron installation (useful for copies of the home or when LaunchAgents are not desired).
+
+If the home directory is already inside another git repository (for example a dotfiles repo), `git init` creates a nested repository — standard git behavior.
+
+Doctor checks: `git.home-repo`, `git.auto-commit`.
+
 ## Lifecycle verbs
 
 Status moves only by explicit verbs. Each verb evaluates template gates at call time; `--force` skips gates and records `forced: true` on the `moved` event.
@@ -58,7 +79,7 @@ syntaur project new <title> [--slug <slug>] [--prefix <PFX>] [--dir <path>]
 syntaur project list [--dir <path>]
 ```
 
-`project new` scaffolds `project.md` (with `prefix`, `nextTicket`, and `defaultTemplate`), derived indexes, and an empty `tickets/` folder. When `--prefix` is omitted, a unique 2–5 letter prefix is derived from the slug. Prefixes must be unique across projects.
+`project new` scaffolds `project.md` (with `prefix`, `nextTicket`, and `defaultTemplate`) and an empty `tickets/` folder. When `--prefix` is omitted, a unique 2–5 letter prefix is derived from the slug. Prefixes must be unique across projects.
 
 `project list` prints `slug`, `prefix`, and `title` (tab-separated).
 

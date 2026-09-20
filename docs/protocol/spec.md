@@ -42,9 +42,9 @@ Projects can optionally declare a `workspace` string in their frontmatter to gro
 
 The directory structure is intentionally flat. Projects contain tickets, and that is the deepest nesting goes. Cross-references between tickets use slugs, not deeply nested paths. Index files at the project level provide navigation without requiring directory traversal.
 
-### Derived Indexes
+### Derived state
 
-Computed files (index tables, status rollups, dependency graphs) are rebuilt from canonical sources by tooling. They are never manually edited. This separation means the canonical data (ticket frontmatter) is always authoritative, and the derived views are always reconstructable.
+Rollups, board summaries, and dependency graphs are computed at read time from ticket frontmatter and journal entries — not written back to markdown under `projects/`. Operational history lives in the SQLite `events` table and in the git log of the Syntaur home (`syntaur history`). Canonical ticket and project files stay authoritative; dashboards and the CLI query live data instead of maintaining derived index files.
 
 ---
 
@@ -54,15 +54,13 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 
 ```
 ~/.syntaur/
+  .git/                              # Git repository (created by `syntaur init`)
+  .gitignore                         # Ignores DB, runtime, and other operational files
+  home-commit.sh                     # Daily auto-commit script (installed by `syntaur init`)
   config.md                          # Global Syntaur configuration (optional)
   projects/
     <project-slug>/
-      manifest.md                    # Derived: root navigation file linking all indexes
-      project.md                     # Human-authored: project overview, goal, context, success criteria
-      _index-tickets.md          # Derived: ticket summary table with status counts
-      _index-plans.md                # Derived: plan status summary table
-      _index-decisions.md            # Derived: decision record summary table
-      _status.md                     # Derived: computed project status, ticket rollup, dependency graph
+      project.md                     # Human-authored: project overview, goal, context, success criteria (entry point)
       tickets/
         <ID>-<slug>/                 # Agent-writable ticket folder; ID is <PREFIX>-<n> from project.md
           ticket.md              # Agent-writable: the ticket record (source of truth for state)
@@ -81,7 +79,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
   playbooks/
     manifest.md                      # Derived: playbook listing with descriptions and when_to_use
     <slug>.md                        # User-authored: behavioral rules and workflows for agents
-  syntaur.db                         # SQLite: agent sessions
+  syntaur.db                         # SQLite: sessions, events, engagements (operational; gitignored)
 ```
 
 ### Key structural observations
@@ -89,8 +87,7 @@ The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree 
 - **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
 - **All tickets live under a project.** Ticket folders are at `projects/<project-slug>/tickets/<ID>-<slug>/`, where `ID` is `<PREFIX>-<n>` (e.g. `FIT-3-implement-jwt-middleware`). The `prefix` and `nextTicket` counter live in `project.md`; ids are allocated by `syntaur new` and never reused. The `slug` is the human-readable suffix and may be renamed with `syntaur rename`.
 - **Scratch project** (`projects/scratch/`, prefix `SCR`) holds tickets created without `--project`. `syntaur new` defaults here when `--project` is omitted. There is no standalone `~/.syntaur/tickets/` tree.
-- **Derived files use an underscore prefix** (`_index-*`, `_status.md`, `_index.md`). This sorts them to the top of directory listings and signals "do not edit manually."
-- **`manifest.md` is the entry point for a project.** An agent starting work on a project reads `manifest.md` first to discover all other files.
+- **`project.md` is the project entry point.** An agent starting work reads `project.md` for context, then discovers tickets under `tickets/`.
 - **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project.
 - **Templates live at the home level** (`~/.syntaur/templates/`). Five built-ins ship with the CLI (`feature`, `bug`, `spike`, `quick`, `legacy`); each is a directory with a `template.md` manifest. `syntaur init` seeds any missing built-ins. Custom templates are copies under the same tree.
 
@@ -141,17 +138,9 @@ Files in the `resources/` and `memories/` folders. Both humans and agents can cr
 
 The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing authorship provenance.
 
-### Derived
+### Derived state (not on disk)
 
-Files generated by the rebuild script. Never edited manually. Always reconstructable from canonical sources.
-
-| File | Purpose |
-|------|---------|
-| `manifest.md` | Root navigation file |
-| `_index-tickets.md` | Ticket summary table |
-| `_index-plans.md` | Plan status summary |
-| `_index-decisions.md` | Decision record summary |
-| `_status.md` | Computed project status, rollup, and dependency graph |
+Project rollups, ticket board summaries, and dependency graphs are computed at read time by the CLI and dashboard from ticket frontmatter and journal entries. Legacy derived markdown (`manifest.md`, `_index-*.md`, `_status.md`, resource/memory indexes) is removed by `syntaur migrate v2 --apply`; do not recreate it.
 
 ---
 
@@ -159,17 +148,9 @@ Files generated by the rebuild script. Never edited manually. Always reconstruct
 
 **Ticket frontmatter is the single source of truth for all ticket state.**
 
-This is the most important rule in the protocol. The `status`, `priority`, `assignee`, `depends_on`, `template`, `plan`, `workspace`, and all other structured fields in a ticket's YAML frontmatter are canonical. Every other representation of this data is a projection:
+This is the most important rule in the protocol. The `status`, `priority`, `assignee`, `depends_on`, `template`, `plan`, `workspace`, and all other structured fields in a ticket's YAML frontmatter are canonical. Dashboard and CLI views (board columns, rollups, dependency graphs, inbox predicates) are live computations from that data and from SQLite `events` — not separate markdown files.
 
-- The checkbox list in `_status.md` is a projection.
-- The summary table in `_index-tickets.md` is a projection.
-- The Mermaid dependency graph in `_status.md` is a projection.
-- The `by_status` counts in `_index-tickets.md` frontmatter are projections.
-- The project-level `status` in `_status.md` is a projection (computed from ticket states).
-
-**When there is divergence between ticket frontmatter and any derived file, ticket frontmatter wins.** The correct response to a divergence is to re-run the rebuild script, which will regenerate all derived files from the canonical ticket data.
-
-Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status, however, is not stored in `project.md` — it is computed from ticket states and written to `_status.md` by the rebuild script.
+Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status is not stored in `project.md` — it is computed from ticket stages and flags when the UI or CLI needs it.
 
 **Workspace naming note:** On `ticket.md`, `workspace` is an **object** containing code context fields (`repository`, `worktree`, `branch`, `parentBranch`) — the git worktree where the ticket's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
 
@@ -273,7 +254,7 @@ Structural waiting on dependencies is normal and resolves when dependencies comp
 
 ### Project Status Rollup
 
-Project status is not stored in `project.md`. It is computed from ticket stages and flags and written to `_status.md`. Rules are evaluated top-to-bottom; first match wins:
+Project status is not stored in `project.md`. It is computed from ticket stages and flags by the CLI and dashboard. Rules are evaluated top-to-bottom; first match wins:
 
 | Priority | Condition | Resulting Status |
 |----------|-----------|-----------------|
@@ -317,17 +298,6 @@ Lowercase, hyphen-separated. The slug is used as the ticket folder name and stor
 
 Examples: `design-auth-schema`, `implement-jwt-middleware`, `write-auth-tests`
 
-### Derived Files
-
-All derived files use an underscore prefix to distinguish them from human-authored and agent-writable files:
-
-- `_index-tickets.md`
-- `_index-plans.md`
-- `_index-decisions.md`
-- `_status.md`
-
-The underscore prefix serves two purposes: it sorts derived files to the top of directory listings, and it provides a clear visual signal that these files should not be edited manually.
-
 ### Resource and Memory Slugs
 
 Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike projects and tickets, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
@@ -366,18 +336,15 @@ workspace:
 
 ```markdown
 ## Links
-- [Ticket](./tickets/implement-jwt-middleware/ticket.md)
-- [Status](./_status.md)
+- [Ticket](./tickets/FIT-3-implement-jwt-middleware/ticket.md)
+- [Project overview](./project.md)
 ```
 
 ---
 
 ## 9. Versioning
 
-The protocol version is tracked in two places:
-
-- **`manifest.md` frontmatter** — the `version` field in each project's manifest indicates which protocol version the project was created with.
-- **`config.md` frontmatter** — the `version` field in the global config indicates the installed protocol version.
+The protocol version is tracked in **`config.md` frontmatter** — the `version` field in the global config indicates the installed protocol version.
 
 The current protocol version is **`"2.0"`**.
 
@@ -386,7 +353,9 @@ The current protocol version is **`"2.0"`**.
 - **`project` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone). Ticket classification moved to `template:` (see Templates section).
 - **Log role (`journal.md`)** replaces the old body sections and legacy sidecars (`progress.md`, `comments.md`, etc.) on modern templates. Append via `syntaur log -t <type>`. See [file-formats.md](./file-formats.md) §5.
 - **Standalone tickets** at `~/.syntaur/tickets/<uuid>/` — tickets that don't belong to any project. Folder is named by UUID.
-- **`_status.md` field rename** — `needsAttention.unansweredQuestions` → `needsAttention.openQuestions`, computed from open `question` log entries (legacy `comments.md` until `migrate journal`).
+- **Derived project markdown removed** — `manifest.md`, `_index-*.md`, `_status.md`, and per-folder resource/memory indexes are no longer generated; rollups and graphs are computed at read time. Remove leftovers with `syntaur migrate v2 --apply`.
+- **Record-file counters removed** — `entryCount`, `handoffCount`, `decisionCount`, and `updated` are stripped from legacy record frontmatter; undated blocks may gain a `**Recorded:**` line during migration.
+- **Git-backed home** — `syntaur init` runs `git init` in `~/.syntaur/`, writes `.gitignore` and `home-commit.sh`, and installs a daily auto-commit. Ticket folder history: `syntaur history <id>`; audit events: `syntaur timeline <id>` or `syntaur history <id> --events`.
 
 ### Forward Compatibility
 
