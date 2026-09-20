@@ -229,11 +229,12 @@ One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dr
 syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
 ```
 
-Three steps, recorded in the `v2-migrated` marker ledger:
+Four steps, recorded in the `v2-migrated` marker ledger:
 
-1. **`rename-ids`** — Renames `assignments/` → `tickets/` and `_index-assignments.md` → `_index-tickets.md` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
+1. **`rename-ids`** — Renames `assignments/` → `tickets/` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
 2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`.
 3. **`statuses`** — Maps v1 statuses to v2 stages (`draft→backlog`, legacy planning→`planning`, legacy ready→`ready`, `completed→done`, `failed→dropped`, etc.); folds the legacy blocked-reason scalar into the `blocked` flag; adds `parked: null`; re-renders each ticket to the 17-field v2 frontmatter shape; backfills missing audit rows from legacy frontmatter history then rewrites `status-change` / `plan-approval` events to `moved` / `plan-approved`.
+4. **`derived`** — Deletes derived project markdown (`manifest.md`, `_index-*.md`, `_status.md`, `resources/_index.md`, `memories/_index.md`); strips `entryCount`, `handoffCount`, `decisionCount`, and `updated` from legacy record files; injects `**Recorded:**` lines on undated decision and handoff blocks using the file’s former `updated` timestamp before the strip.
 
 Dry-run / apply transcript lines (representative):
 
@@ -251,9 +252,11 @@ Dry-run / apply transcript lines (representative):
 [dry-run] worktree: 0 renamed
 [dry-run] dropped fields: 48
 [dry-run] removed: derive-migrated, stages-migrated, workflows/
+[dry-run] derived: 85 files removed (manifest.md 15, _index-tickets.md 15, _index-plans.md 15, _index-decisions.md 15, _status.md 15, resources/_index.md 5, memories/_index.md 5)
+[dry-run] counters: 1284 record files stripped (entryCount 643, handoffCount 321, decisionCount 321, updated 1284); recorded lines injected: decisions 748, handoffs 12
 ```
 
-`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step.
+`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step. A home whose ledger already has the first three steps runs only `derived`.
 
 ### Examples
 

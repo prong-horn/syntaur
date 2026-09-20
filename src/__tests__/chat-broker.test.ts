@@ -35,7 +35,6 @@ import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
-import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
 
 /**

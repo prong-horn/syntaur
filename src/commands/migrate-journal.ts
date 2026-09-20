@@ -262,7 +262,10 @@ function parseCommentsForMigrate(fileContent: string): {
   parsed: ParsedCommentLike[];
 } {
   const { fm, body } = extractFrontmatterBody(fileContent);
-  const fileUpdated = frontmatterScalar(fm, 'updated') || '1970-01-01T00:00:00Z';
+  const fileUpdated =
+    frontmatterScalar(fm, 'updated') ||
+    frontmatterScalar(fm, 'generated') ||
+    '1970-01-01T00:00:00Z';
   const parsed: ParsedCommentLike[] = [];
   const headerRe =
     /^\s*\*\*Recorded:\*\*\s*(.*)\n\*\*Author:\*\*\s*(.*)\n\*\*Type:\*\*\s*(question|note|feedback)(?:\n\*\*Reply to:\*\*\s*(.*))?(?:\n\*\*Resolved:\*\*\s*(true|false))?\n+([\s\S]*)$/;

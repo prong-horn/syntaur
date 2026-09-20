@@ -7,7 +7,7 @@
  */
 
 import { Command } from 'commander';
-import { cp, readFile, readdir, rename, rm } from 'node:fs/promises';
+import { cp, readFile, readdir, rename, rm, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 import Database from 'better-sqlite3';
@@ -62,7 +62,7 @@ import { latestPlanRevision } from '../ticket-templates/roles.js';
 
 export const V2_MIGRATED_MARKER = 'v2-migrated';
 
-const MIGRATION_STEPS = ['rename-ids', 'templates', 'statuses'] as const;
+const MIGRATION_STEPS = ['rename-ids', 'templates', 'statuses', 'derived'] as const;
 export type MigrationStep = (typeof MIGRATION_STEPS)[number];
 
 const ISO_TIMESTAMP_LINE_RE =
@@ -305,7 +305,7 @@ export async function readMarkerSteps(markerPath: string): Promise<Map<Migration
   if (!(await fileExists(markerPath))) return completed;
   const raw = await readFile(markerPath, 'utf-8');
   for (const line of raw.split('\n').map((l) => l.trim()).filter(Boolean)) {
-    const ledger = line.match(/^(rename-ids|templates|statuses)\s+(.+)$/);
+    const ledger = line.match(/^(rename-ids|templates|statuses|derived)\s+(.+)$/);
     if (ledger) {
       completed.set(ledger[1] as MigrationStep, ledger[2]);
       continue;
@@ -2299,12 +2299,6 @@ async function applyFilesystemMigration(
       }
     }
 
-    const indexAssignments = resolve(plan.projectDir, '_index-assignments.md');
-    const indexTickets = resolve(plan.projectDir, '_index-tickets.md');
-    if (await fileExists(indexAssignments) && !(await fileExists(indexTickets))) {
-      await rename(indexAssignments, indexTickets);
-    }
-
     let projectMd = await readFile(resolve(plan.projectDir, 'project.md'), 'utf-8');
     projectMd = updateProjectMd(projectMd, plan.prefix, plan.nextTicket);
     await writeFileForce(resolve(plan.projectDir, 'project.md'), projectMd);
@@ -2630,6 +2624,209 @@ async function runRenameIdsStep(
   logLine(lines, mode, `totals: ${projectCount} projects, ${allTickets.length} tickets`);
 }
 
+const DERIVED_PROJECT_REL_PATHS = [
+  'manifest.md',
+  '_index-tickets.md',
+  '_index-assignments.md',
+  '_index-sessions.md',
+  '_index-plans.md',
+  '_index-decisions.md',
+  '_status.md',
+  'resources/_index.md',
+  'memories/_index.md',
+] as const;
+
+const RECORD_COUNTER_KEYS = ['entryCount', 'handoffCount', 'decisionCount', 'updated'] as const;
+
+const RECORD_FILES = ['progress.md', 'comments.md', 'handoff.md', 'decision-record.md'] as const;
+
+export async function listDerivedProjectFiles(projectDir: string): Promise<string[]> {
+  const present: string[] = [];
+  for (const rel of DERIVED_PROJECT_REL_PATHS) {
+    if (await fileExists(resolve(projectDir, rel))) present.push(rel);
+  }
+  return present;
+}
+
+export function injectRecordedLines(
+  kind: 'decision-record' | 'handoff',
+  content: string,
+  updated: string,
+): { content: string; decisions: number; handoffs: number } {
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---\n?)([\s\S]*)$/);
+  if (!fmMatch) {
+    return { content, decisions: 0, handoffs: 0 };
+  }
+  const [, open, fmBody, close, body] = fmMatch;
+  let decisions = 0;
+  let handoffs = 0;
+  let nextBody = body;
+
+  if (kind === 'decision-record') {
+    const parts = body.split(/(?=^## )/m);
+    const head = parts[0] ?? '';
+    const blocks = parts.slice(1).map((block) => {
+      if (block.includes('**Recorded:**')) return block;
+      const lines = block.split('\n');
+      const title = lines[0];
+      const rest = lines.slice(1);
+      const bodyStart = rest.findIndex((l) => l.trim().length > 0);
+      if (bodyStart === -1) return block;
+      decisions += 1;
+      return [title, ...rest.slice(0, bodyStart), `**Recorded:** ${updated}`, ...rest.slice(bodyStart)].join(
+        '\n',
+      );
+    });
+    nextBody = head + blocks.join('');
+  } else {
+    const parts = body.split(/(?=^## Handoff )/m);
+    const head = parts[0] ?? '';
+    const blocks = parts.slice(1).map((block) => {
+      const lines = block.split('\n');
+      const heading = lines[0] ?? '';
+      const rest = lines.slice(1);
+      const hasTs = /\d{4}-\d{2}-\d{2}T/.test(heading);
+      if (hasTs || block.includes('**Recorded:**')) {
+        return block;
+      }
+      const bodyStart = rest.findIndex((l) => l.trim().length > 0);
+      if (bodyStart === -1) return block;
+      handoffs += 1;
+      return [
+        heading,
+        ...rest.slice(0, bodyStart),
+        `**Recorded:** ${updated}`,
+        ...rest.slice(bodyStart),
+      ].join('\n');
+    });
+    nextBody = head + blocks.join('');
+  }
+
+  return {
+    content: `${open}${fmBody}${close.startsWith('\n') ? close : `\n${close}`}${nextBody}`,
+    decisions,
+    handoffs,
+  };
+}
+
+export function stripRecordFrontmatter(content: string): {
+  content: string;
+  stripped: Record<(typeof RECORD_COUNTER_KEYS)[number], number>;
+} {
+  const stripped: Record<(typeof RECORD_COUNTER_KEYS)[number], number> = {
+    entryCount: 0,
+    handoffCount: 0,
+    decisionCount: 0,
+    updated: 0,
+  };
+  let next = content;
+  for (const key of RECORD_COUNTER_KEYS) {
+    if (new RegExp(`^${key}:`, 'm').test(next)) {
+      stripped[key] += 1;
+      next = dropFrontmatterScalar(next, key);
+    }
+  }
+  return { content: next, stripped };
+}
+
+function recordFileUpdated(fm: string): string {
+  return (
+    parseScalarV1(fm, 'updated') ||
+    parseScalarV1(fm, 'generated') ||
+    '1970-01-01T00:00:00Z'
+  );
+}
+
+async function runDerivedStep(
+  home: string,
+  apply: boolean,
+  lines: string[],
+  mode: string,
+): Promise<void> {
+  const derivedRemoved: Record<string, number> = Object.fromEntries(
+    DERIVED_PROJECT_REL_PATHS.map((n) => [n, 0]),
+  );
+  let derivedTotal = 0;
+
+  const stripTotals = {
+    entryCount: 0,
+    handoffCount: 0,
+    decisionCount: 0,
+    updated: 0,
+  };
+  let recordFilesTouched = 0;
+  let decisionsInjected = 0;
+  let handoffsInjected = 0;
+
+  const projectsDir = resolve(home, 'projects');
+  if (await fileExists(projectsDir)) {
+    const projects = await readdir(projectsDir, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      const projectDir = resolve(projectsDir, project.name);
+      if (!(await fileExists(resolve(projectDir, 'project.md')))) continue;
+      const derived = await listDerivedProjectFiles(projectDir);
+      for (const rel of derived) {
+        derivedRemoved[rel] = (derivedRemoved[rel] ?? 0) + 1;
+        derivedTotal += 1;
+        if (apply) {
+          await unlink(resolve(projectDir, rel));
+        }
+      }
+    }
+  }
+
+  const ticketPaths = await collectTicketMdPaths(home);
+  for (const ticketMdPath of ticketPaths) {
+    const ticketDir = resolve(ticketMdPath, '..');
+    for (const file of RECORD_FILES) {
+      const filePath = resolve(ticketDir, file);
+      if (!(await fileExists(filePath))) continue;
+      const original = await readFile(filePath, 'utf-8');
+      const fmMatch = original.match(/^---\n([\s\S]*?)\n---/);
+      const updated = recordFileUpdated(fmMatch?.[1] ?? '');
+      let next = original;
+
+      if (file === 'decision-record.md') {
+        const injected = injectRecordedLines('decision-record', next, updated);
+        next = injected.content;
+        decisionsInjected += injected.decisions;
+      } else if (file === 'handoff.md') {
+        const injected = injectRecordedLines('handoff', next, updated);
+        next = injected.content;
+        handoffsInjected += injected.handoffs;
+      }
+
+      const { content: stripped, stripped: counts } = stripRecordFrontmatter(next);
+      if (RECORD_COUNTER_KEYS.some((k) => counts[k] > 0)) {
+        recordFilesTouched += 1;
+      }
+      for (const key of RECORD_COUNTER_KEYS) {
+        stripTotals[key] += counts[key];
+      }
+
+      if (apply && stripped !== original) {
+        await writeFileForce(filePath, stripped);
+      }
+    }
+  }
+
+  const derivedParts = DERIVED_PROJECT_REL_PATHS
+    .filter((name) => (derivedRemoved[name] ?? 0) > 0)
+    .map((name) => `${name} ${derivedRemoved[name]}`)
+    .join(', ');
+  logLine(
+    lines,
+    mode,
+    `derived: ${derivedTotal} files removed (${derivedParts || 'none'})`,
+  );
+  logLine(
+    lines,
+    mode,
+    `counters: ${recordFilesTouched} record files stripped (entryCount ${stripTotals.entryCount}, handoffCount ${stripTotals.handoffCount}, decisionCount ${stripTotals.decisionCount}, updated ${stripTotals.updated}); recorded lines injected: decisions ${decisionsInjected}, handoffs ${handoffsInjected}`,
+  );
+}
+
 export async function migrateV2Command(
   options: MigrateV2Options,
 ): Promise<MigrateV2Transcript> {
@@ -2691,6 +2888,11 @@ export async function migrateV2Command(
         await runStatusesStep(home, options.apply ?? false, lines, mode);
         if (options.apply) {
           await appendMarkerStep(markerPath, 'statuses');
+        }
+      } else if (step === 'derived') {
+        await runDerivedStep(home, options.apply ?? false, lines, mode);
+        if (options.apply) {
+          await appendMarkerStep(markerPath, 'derived');
         }
       }
     }

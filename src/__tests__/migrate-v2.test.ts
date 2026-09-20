@@ -748,12 +748,12 @@ describe('migrateV2Command', () => {
     expect(await fileExists(resolve(home, 'templates', 'feature', 'template.md'))).toBe(true);
   });
 
-  it('bare-timestamp marker leaves templates and statuses pending; one apply runs both', async () => {
+  it('bare-timestamp marker leaves templates, statuses, and derived pending; one apply runs all three', async () => {
     await migrateV2Command({ root: home, apply: true });
     const bareTs = '2026-09-12T12:46:05.342Z';
     await writeFile(resolve(home, V2_MIGRATED_MARKER), `${bareTs}\n`);
     expect(pendingMigrationSteps(await readMarkerSteps(resolve(home, V2_MIGRATED_MARKER)))).toEqual(
-      ['templates', 'statuses'],
+      ['templates', 'statuses', 'derived'],
     );
 
     const hashBefore = await hashTree(home);
@@ -761,11 +761,13 @@ describe('migrateV2Command', () => {
     expect(await hashTree(home)).not.toBe(hashBefore);
     expect(lines.some((l) => l.startsWith('[apply] templates:'))).toBe(true);
     expect(lines.some((l) => l.startsWith('[apply] statuses:'))).toBe(true);
+    expect(lines.some((l) => l.includes('derived:'))).toBe(true);
     expect(lines.some((l) => l.includes('project p1: prefix'))).toBe(false);
     const marker = await readFile(resolve(home, V2_MIGRATED_MARKER), 'utf-8');
     expect(marker).toContain(bareTs);
     expect(marker).toContain('templates ');
     expect(marker).toContain('statuses ');
+    expect(marker).toContain('derived ');
 
     await expect(migrateV2Command({ root: home, apply: true })).rejects.toThrow(
       /already completed/,
