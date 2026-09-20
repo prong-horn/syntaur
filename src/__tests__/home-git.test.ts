@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   ensureHomeRepo,
+  HOME_COMMIT_LAUNCH_LABEL,
   HOME_GITIGNORE_CONTENT,
   installAutoCommit,
   renderCronLine,
@@ -74,8 +75,12 @@ afterEach(async () => {
 
 describe('home-git render helpers', () => {
   it('renderHomeCommitScript passes bash -n', async () => {
+    const script = renderHomeCommitScript('/tmp/syntaur-home');
+    expect(script).toContain(
+      'PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:${PATH:-}"; export PATH',
+    );
     const scriptPath = join(home, 'check-script.sh');
-    await writeFile(scriptPath, renderHomeCommitScript('/tmp/syntaur-home'), 'utf-8');
+    await writeFile(scriptPath, script, 'utf-8');
     const r = spawnSync('bash', ['-n', scriptPath], { encoding: 'utf-8' });
     expect(r.status).toBe(0);
   });
@@ -209,11 +214,14 @@ describe('installAutoCommit', () => {
       uid: 42,
     };
     await installAutoCommit(home, deps);
-    const plist = await readFile(join(agents, 'com.syntaur.home-commit.plist'), 'utf-8');
-    expect(plist).toContain('com.syntaur.home-commit');
+    const scriptPath = join(home, 'home-commit.sh');
+    const logPath = join(home, 'runtime', 'home-commit.log');
+    const plistPath = join(agents, 'com.syntaur.home-commit.plist');
+    const plist = await readFile(plistPath, 'utf-8');
+    expect(plist).toBe(renderLaunchAgentPlist(HOME_COMMIT_LAUNCH_LABEL, scriptPath, logPath));
     expect(record.calls.filter((c) => c.command === 'launchctl').map((c) => c.args)).toEqual([
       ['bootout', 'gui/42/com.syntaur.home-commit'],
-      ['bootstrap', 'gui/42', join(agents, 'com.syntaur.home-commit.plist')],
+      ['bootstrap', 'gui/42', plistPath],
     ]);
   });
 

@@ -61,6 +61,7 @@ export function renderHomeCommitScript(home: string): string {
   return `#!/bin/sh
 # Written by \`syntaur init\`. Commits the Syntaur home once a day.
 set -u
+PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:\${PATH:-}"; export PATH
 cd "${home}" || exit 0
 [ -d .git ] || exit 0
 git add -A >/dev/null 2>&1 || exit 0
