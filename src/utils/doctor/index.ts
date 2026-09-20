@@ -3,15 +3,17 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { buildCheckContext, closeCheckContext } from './context.js';
 import { allChecks } from './registry.js';
+import type { HomeGitDeps } from '../../commands/home-git.js';
 import type { Check, CheckContext, CheckResult, DoctorReport } from './types.js';
 
 export interface RunOptions {
   only?: string;
   cwd?: string;
+  homeGitDeps?: HomeGitDeps;
 }
 
 export async function runChecks(options: RunOptions = {}): Promise<DoctorReport> {
-  const ctx = await buildCheckContext(options.cwd);
+  const ctx = await buildCheckContext(options.cwd, options.homeGitDeps);
   try {
     return await runWithContext(ctx, options);
   } finally {

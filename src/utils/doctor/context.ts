@@ -3,9 +3,30 @@ import { resolve } from 'node:path';
 import { readConfig } from '../config.js';
 import { syntaurRoot } from '../paths.js';
 import { fileExists } from '../fs.js';
+import type { HomeGitDeps } from '../../commands/home-git.js';
 import type { CheckContext } from './types.js';
 
-export async function buildCheckContext(cwd: string = process.cwd()): Promise<CheckContext> {
+/** Git doctor deps that never touch the host scheduler or real LaunchAgents/crontab. */
+export function isolatedHomeGitDeps(syntaurRootPath: string): HomeGitDeps {
+  return {
+    platform: process.platform,
+    runner: () => ({
+      status: 1,
+      stdout: '',
+      stderr: '',
+      pid: 0,
+      output: [null, '', ''],
+      signal: null,
+    }),
+    launchAgentsDir: resolve(syntaurRootPath, 'runtime', 'launch-agents-unused'),
+    uid: 0,
+  };
+}
+
+export async function buildCheckContext(
+  cwd: string = process.cwd(),
+  homeGitDeps?: HomeGitDeps,
+): Promise<CheckContext> {
   const config = await readConfig();
   const root = syntaurRoot();
   const dbPath = resolve(root, 'syntaur.db');
@@ -31,6 +52,7 @@ export async function buildCheckContext(cwd: string = process.cwd()): Promise<Ch
     dbError,
     cwd,
     now: new Date(),
+    homeGitDeps: homeGitDeps ?? isolatedHomeGitDeps(root),
   };
 }
 

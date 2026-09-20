@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { readConfig } from '../utils/config.js';
+import { buildCheckContext, closeCheckContext } from '../utils/doctor/context.js';
 import { gitChecks } from '../utils/doctor/checks/git.js';
 import {
   HOME_COMMIT_CRON_MARKER,
@@ -192,6 +193,36 @@ describe('git.auto-commit', () => {
     expect(result).toMatchObject({ status: 'pass' });
   });
 
+  it('uses distinct remediation when the scheduler is missing but the repo exists', async () => {
+    await initHomeLayout();
+    const deps: HomeGitDeps = {
+      platform: 'darwin',
+      runner: realGitRunner(),
+      launchAgentsDir: join(home, 'LaunchAgents'),
+      uid: 501,
+    };
+    spawnSync('git', ['-C', syntaurDir, 'init', '-q'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'config', 'user.name', 'Syntaur'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'config', 'user.email', 'syntaur@localhost'], {
+      env: gitEnv(),
+    });
+    spawnSync('git', ['-C', syntaurDir, 'add', '-A'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'commit', '-q', '-m', 'test'], { env: gitEnv() });
+    const ctx = await baseContext(deps);
+    const noRepo = await checkById('git.auto-commit').run({
+      ...ctx,
+      syntaurRoot: join(home, 'empty-syntaur'),
+    });
+    const noScheduler = await checkById('git.auto-commit').run(ctx);
+    const repoRemediation = (noRepo as { remediation?: { suggestion: string } }).remediation
+      ?.suggestion;
+    const schedRemediation = (noScheduler as { remediation?: { suggestion: string } }).remediation
+      ?.suggestion;
+    expect(repoRemediation).toContain('git repository');
+    expect(schedRemediation).toContain('--no-auto-commit');
+    expect(schedRemediation).not.toBe(repoRemediation);
+  });
+
   it('warns when the newest commit is older than 48h', async () => {
     await initHomeLayout();
     const deps: HomeGitDeps = {
@@ -216,5 +247,33 @@ describe('git.auto-commit', () => {
     const result = await checkById('git.auto-commit').run(ctx);
     expect(result).toMatchObject({ status: 'warn' });
     expect((result as { detail?: string }).detail).toMatch(/48h/);
+  });
+});
+
+describe('buildCheckContext git isolation', () => {
+  it('defaults homeGitDeps under the syntaur root and never calls crontab or launchctl', async () => {
+    await initHomeLayout();
+    spawnSync('git', ['-C', syntaurDir, 'init', '-q'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'config', 'user.name', 'Syntaur'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'config', 'user.email', 'syntaur@localhost'], {
+      env: gitEnv(),
+    });
+    spawnSync('git', ['-C', syntaurDir, 'add', '-A'], { env: gitEnv() });
+    spawnSync('git', ['-C', syntaurDir, 'commit', '-q', '-m', 'test'], { env: gitEnv() });
+
+    const ctx = await buildCheckContext(syntaurDir);
+    expect(ctx.homeGitDeps?.launchAgentsDir).toBe(
+      resolve(syntaurDir, 'runtime', 'launch-agents-unused'),
+    );
+    const calls: string[] = [];
+    const prior = ctx.homeGitDeps!.runner;
+    ctx.homeGitDeps!.runner = (command, args, options) => {
+      calls.push(command);
+      return prior(command, args, options);
+    };
+    await checkById('git.auto-commit').run(ctx);
+    expect(calls).not.toContain('crontab');
+    expect(calls).not.toContain('launchctl');
+    closeCheckContext(ctx);
   });
 });

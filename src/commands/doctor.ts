@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, resolve } from 'node:path';
+import { defaultHomeGitDeps } from './home-git.js';
 import { runChecks } from '../utils/doctor/index.js';
 import { renderHuman } from '../utils/doctor/output-human.js';
 import { renderJson } from '../utils/doctor/output-json.js';
@@ -140,7 +141,10 @@ export const doctorCommand = new Command('doctor')
     }
 
     try {
-      const report = await runChecks({ only: options.only });
+      const report = await runChecks({
+        only: options.only,
+        homeGitDeps: defaultHomeGitDeps(),
+      });
 
       // --fix is currently a no-op (reserved for future auto-fixable checks).
       // Surface that honestly: in JSON via an explicit `fix` field, and on

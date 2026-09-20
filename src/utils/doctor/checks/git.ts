@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { fileExists } from '../../fs.js';
 import {
-  defaultHomeGitDeps,
   HOME_COMMIT_CRON_MARKER,
   launchAgentPlistPath,
   readLatestCommitAt,
@@ -34,7 +33,19 @@ function initRemediation(): CheckResult['remediation'] {
 }
 
 function resolveDeps(ctx: CheckContext): HomeGitDeps {
-  return ctx.homeGitDeps ?? defaultHomeGitDeps();
+  if (!ctx.homeGitDeps) {
+    throw new Error('CheckContext.homeGitDeps is required for git checks');
+  }
+  return ctx.homeGitDeps;
+}
+
+function schedulerRemediation(): CheckResult['remediation'] {
+  return {
+    kind: 'manual',
+    suggestion:
+      'Re-run `syntaur init` (without `--no-auto-commit`) to install the daily auto-commit, or run `~/.syntaur/home-commit.sh` from your own scheduler',
+    command: 'syntaur init',
+  };
 }
 
 function gitAvailable(deps: HomeGitDeps): boolean {
@@ -160,7 +171,7 @@ const autoCommitCheck: Check = {
         title: this.title,
         status: 'warn',
         detail: `${lastDetail}; scheduler not installed`,
-        remediation: initRemediation(),
+        remediation: schedulerRemediation(),
         autoFixable: false,
       };
     }
