@@ -1147,13 +1147,33 @@ async function buildDuplicateSlugFixture(root: string): Promise<void> {
   db.close();
 }
 
+function fixtureWorkspaceBlock(root: string): string {
+  const repo = resolve(root, 'fixture-ws', 'repo');
+  const wt = resolve(root, 'fixture-ws', 'wt');
+  return `workspace:
+  repository: ${repo}
+  branch: main
+  worktree: ${wt}
+  parentBranch: main`;
+}
+
 function v2StatusTicketMd(opts: {
   id: string;
   slug: string;
   project: string;
   status: string;
   extra?: string;
+  workspace?: 'minimal' | 'none';
+  workspaceRoot?: string;
 }): string {
+  const workspaceYaml =
+    opts.workspace === 'minimal' && opts.workspaceRoot
+      ? fixtureWorkspaceBlock(opts.workspaceRoot)
+      : `workspace:
+  repository: null
+  branch: null
+  worktree: null
+  parentBranch: null`;
   return `---
 id: ${opts.id}
 slug: ${opts.slug}
@@ -1169,11 +1189,7 @@ links: []
 tags: []
 blocked: null
 parked: null
-workspace:
-  repository: null
-  branch: null
-  worktree: null
-  parentBranch: null
+${workspaceYaml}
 plan:
   file: null
   approvedDigest: null
@@ -1250,6 +1266,8 @@ async function buildStatusesFixture(root: string): Promise<void> {
         project: 'demo',
         status: 'blocked',
         extra: 'blockedReason: "waiting on API"\n',
+        workspace: 'minimal',
+        workspaceRoot: root,
       }),
     },
     {
@@ -1297,11 +1315,7 @@ links: []
 tags: []
 blocked: null
 parked: true
-workspace:
-  repository: null
-  branch: null
-  worktree: null
-  parentBranch: null
+${fixtureWorkspaceBlock(root)}
 plan:
   file: null
   approvedDigest: null
@@ -1572,12 +1586,7 @@ describe('migrate v2 statuses step', () => {
       const result = await check.run(ctx);
       const results = Array.isArray(result) ? result : [result];
       for (const r of results) {
-        const touchesDem2 =
-          r.affected?.some((p) => p.startsWith(dem2Dir)) ||
-          (r.detail?.includes('DEM-2') ?? false);
-        if (touchesDem2) {
-          expect(r.status).not.toBe('error');
-        }
+        expect(r.status).not.toBe('error');
       }
     }
     await closeCheckContext(ctx);
