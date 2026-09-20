@@ -47,9 +47,7 @@ workspace:
 
 const PROGRESS = `---
 ticket: slug
-entryCount: 0
 generated: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
 ---
 
 # Progress
@@ -99,7 +97,7 @@ describe('CLI --ticket by id', () => {
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).toContain('By ticket id');
-    expect(content).toContain('entryCount: 1');
+    expect(content).not.toContain('entryCount');
   });
 
   it('workspace set resolves --ticket TP-1 without --project', async () => {

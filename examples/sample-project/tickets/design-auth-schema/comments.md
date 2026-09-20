@@ -1,8 +1,6 @@
 ---
 ticket: design-auth-schema
-entryCount: 2
 generated: "2026-03-17T10:00:00Z"
-updated: "2026-03-16T10:05:00Z"
 ---
 
 # Comments

@@ -1,7 +1,6 @@
 ---
 ticket: write-auth-tests
-updated: "2026-03-15T09:30:00Z"
-decisionCount: 0
+generated: "2026-03-15T09:30:00Z"
 ---
 
 # Decision Record

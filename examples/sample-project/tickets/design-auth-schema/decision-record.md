@@ -1,13 +1,13 @@
 ---
 ticket: design-auth-schema
-updated: "2026-03-16T11:00:00Z"
-decisionCount: 1
+generated: "2026-03-16T11:00:00Z"
 ---
 
 # Decision Record
 
 ## Decision 1: Use PostgreSQL for user store
 
+**Recorded:** 2026-03-16T11:00:00Z
 **Date:** 2026-03-16T11:00:00Z
 **Status:** accepted
 **Context:** The auth system needs a persistent store for users, sessions, and refresh tokens. Options considered were PostgreSQL, MySQL, and MongoDB. The rest of the platform already uses PostgreSQL for other services.

@@ -121,7 +121,7 @@ Shipped the API layer.
     seedOpenEngagement(syntaurHome, SID);
     await writeFile(
       resolve(ticketDir, 'handoff.md'),
-      `---\nticket: demo\nhandoffCount: 1\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nLegacy baton content.\n`,
+      `---\nticket: demo\ngenerated: "2026-05-08T12:00:00Z"\n---\n\n## Handoff 1: 2026-05-08T12:00:00Z\n\nLegacy baton content.\n`,
     );
 
     const human = await runCli(['session', 'resume'], workspaceRoot, syntaurHome, {
@@ -129,6 +129,20 @@ Shipped the API layer.
     });
     expect(human.code, human.stderr).toBe(0);
     expect(human.stdout).toContain('Last handoff: Legacy baton content.');
+  });
+
+  it('skips injected Recorded line when previewing an undated legacy handoff', async () => {
+    seedOpenEngagement(syntaurHome, SID);
+    await writeFile(
+      resolve(ticketDir, 'handoff.md'),
+      `---\nticket: demo\ngenerated: "2026-05-08T12:00:00Z"\n---\n\n## Handoff 1\n\n**Recorded:** 2026-05-08T12:00:00Z\n\nFirst prose line for preview.\n`,
+    );
+
+    const json = await runCli(['session', 'resume', '--json'], workspaceRoot, syntaurHome, {
+      CLAUDE_CODE_SESSION_ID: SID,
+    });
+    const data = JSON.parse(json.stdout);
+    expect(data.lastHandoff?.firstLine).toBe('First prose line for preview.');
   });
 
   it('reads journal handoff on feature tickets', async () => {

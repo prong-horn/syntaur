@@ -55,7 +55,7 @@ import {
   byQuestionTimestamp,
 } from '../lifecycle/question-predicates.js';
 import type { LogEntry } from '../ticket-templates/log-reader.js';
-import { appendProgressLog, ticketHasLogRole } from '../lifecycle/progress-append.js';
+import { appendProgressLog, ticketHasLogRole } from '../lifecycle/log-append.js';
 import {
   detectOpenQuestion,
   formatChatQuestionMarker,

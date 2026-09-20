@@ -6,6 +6,8 @@ import {
   renderScratchpad,
   renderHandoff,
   renderDecisionRecord,
+  renderComments,
+  renderProgress,
 } from '../templates/index.js';
 
 const TIMESTAMP = '2026-03-18T14:30:00Z';
@@ -255,6 +257,24 @@ describe('renderPlan', () => {
   });
 });
 
+describe('renderComments', () => {
+  it('has ticket and generated without counters', () => {
+    const out = renderComments({ ticket: 'test', timestamp: TIMESTAMP });
+    expect(out).toContain('ticket: test');
+    expect(out).toContain(`generated: "${TIMESTAMP}"`);
+    expect(out).not.toContain('entryCount');
+    expect(out).not.toContain('updated:');
+  });
+});
+
+describe('renderProgress template counters', () => {
+  it('omits entryCount and updated', () => {
+    const out = renderProgress({ ticket: 't', timestamp: TIMESTAMP });
+    expect(out).not.toContain('entryCount');
+    expect(out).not.toContain('updated:');
+  });
+});
+
 describe('renderScratchpad', () => {
   it('has correct structure', () => {
     const out = renderScratchpad({
@@ -269,24 +289,30 @@ describe('renderScratchpad', () => {
 });
 
 describe('renderHandoff', () => {
-  it('has handoffCount 0', () => {
+  it('has ticket and generated without counters', () => {
     const out = renderHandoff({
       ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
-    expect(out).toContain('handoffCount: 0');
+    expect(out).toContain('ticket: test');
+    expect(out).toContain(`generated: "${TIMESTAMP}"`);
+    expect(out).not.toContain('handoffCount');
+    expect(out).not.toContain('updated:');
     expect(out).toContain('# Handoff Log');
     expect(out).toContain('No handoffs recorded yet.');
   });
 });
 
 describe('renderDecisionRecord', () => {
-  it('has decisionCount 0', () => {
+  it('has ticket and generated without counters', () => {
     const out = renderDecisionRecord({
       ticketSlug: 'test',
       timestamp: TIMESTAMP,
     });
-    expect(out).toContain('decisionCount: 0');
+    expect(out).toContain('ticket: test');
+    expect(out).toContain(`generated: "${TIMESTAMP}"`);
+    expect(out).not.toContain('decisionCount');
+    expect(out).not.toContain('updated:');
     expect(out).toContain('# Decision Record');
     expect(out).toContain('No decisions recorded yet.');
   });

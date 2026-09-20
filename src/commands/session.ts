@@ -93,7 +93,10 @@ async function findLastHandoff(ticketDir: string): Promise<LastHandoffLine | nul
     body
       .split('\n')
       .map((l) => l.trim())
-      .find((l) => l.length > 0 && !l.startsWith('##')) ?? '(handoff)';
+      .find(
+        (l) =>
+          l.length > 0 && !l.startsWith('##') && !l.startsWith('**Recorded:**'),
+      ) ?? '(handoff)';
   return { timestamp: '', firstLine };
 }
 

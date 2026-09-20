@@ -23,4 +23,4 @@ export {
   withSuppressedEvents,
   setSuppressEvents,
 } from './event-emit.js';
-export { appendProgressLog } from './progress-append.js';
+export { appendProgressLog } from './log-append.js';

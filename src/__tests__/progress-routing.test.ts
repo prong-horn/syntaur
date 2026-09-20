@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { appendProgressLog } from '../lifecycle/progress-append.js';
+import { appendProgressLog } from '../lifecycle/log-append.js';
 import { runLog } from '../commands/log.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { fileExists } from '../utils/fs.js';

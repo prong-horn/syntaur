@@ -1,13 +1,13 @@
 ---
 ticket: implement-jwt-middleware
-updated: "2026-03-17T11:00:00Z"
-decisionCount: 1
+generated: "2026-03-17T11:00:00Z"
 ---
 
 # Decision Record
 
 ## Decision 1: Use RS256 for JWT signing
 
+**Recorded:** 2026-03-17T11:00:00Z
 **Date:** 2026-03-17T11:00:00Z
 **Status:** accepted
 **Context:** Need to choose a JWT signing algorithm. Options: HS256 (symmetric, shared secret) or RS256 (asymmetric, public/private key pair). Future services may need to verify tokens without being able to create them.

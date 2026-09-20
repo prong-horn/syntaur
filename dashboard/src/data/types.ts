@@ -294,17 +294,6 @@ export interface TicketReference {
   mentions: number;
 }
 
-export interface TicketProgressEntry {
-  timestamp: string;
-  body: string;
-}
-
-export interface TicketProgress {
-  updated: string;
-  entryCount: number;
-  entries: TicketProgressEntry[];
-}
-
 export interface TicketsBoardResponse {
   generatedAt: string;
   tickets: TicketBoardItem[];

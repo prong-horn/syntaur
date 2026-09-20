@@ -7,8 +7,7 @@ export function renderHandoff(params: HandoffParams): string {
   const slug = params.ticketSlug ?? '';
   return `---
 ticket: ${slug}
-updated: "${params.timestamp}"
-handoffCount: 0
+generated: "${params.timestamp}"
 ---
 
 # Handoff Log

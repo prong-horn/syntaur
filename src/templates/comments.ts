@@ -18,9 +18,7 @@ export interface Comment {
 export function renderComments(params: CommentsParams): string {
   return `---
 ticket: ${params.ticket ?? ''}
-entryCount: 0
 generated: "${params.timestamp}"
-updated: "${params.timestamp}"
 ---
 
 # Comments

@@ -1,7 +1,6 @@
 ---
 ticket: design-auth-schema
-updated: "2026-03-17T10:00:00Z"
-handoffCount: 1
+generated: "2026-03-17T10:00:00Z"
 ---
 
 # Handoff Log

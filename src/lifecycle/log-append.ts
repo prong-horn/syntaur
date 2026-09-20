@@ -96,26 +96,12 @@ export async function ticketHasLogRole(ticketDir: string): Promise<boolean> {
   }
 }
 
-function insertLegacyLogEntry(content: string, entryBlock: string, now: string): string {
+function insertLegacyLogEntry(content: string, entryBlock: string): string {
   const fmMatch = content.match(/^(---\n)([\s\S]*?)(\n---\n?)([\s\S]*)$/);
   if (!fmMatch) {
     throw new Error('progress.md has no YAML frontmatter.');
   }
   const [, open, fmBody, close, body] = fmMatch;
-
-  const countMatch = fmBody.match(/^entryCount:\s*(\d+)\s*$/m);
-  const nextCount = countMatch ? parseInt(countMatch[1], 10) + 1 : 1;
-  let newFm = fmBody;
-  if (countMatch) {
-    newFm = newFm.replace(/^entryCount:\s*\d+\s*$/m, `entryCount: ${nextCount}`);
-  } else {
-    newFm = `${newFm}\nentryCount: ${nextCount}`;
-  }
-  if (/^updated:\s*.*$/m.test(newFm)) {
-    newFm = newFm.replace(/^updated:\s*.*$/m, `updated: "${now}"`);
-  } else {
-    newFm = `${newFm}\nupdated: "${now}"`;
-  }
 
   let newBody = body.replace(/\n?No progress yet\.\s*\n?/, '\n');
   const h1 = newBody.match(/^#\sProgress\s*$/m);
@@ -129,7 +115,7 @@ function insertLegacyLogEntry(content: string, entryBlock: string, now: string):
   }
   if (!newBody.endsWith('\n')) newBody += '\n';
 
-  return `${open}${newFm}${close.startsWith('\n') ? close : `\n${close}`}${newBody}`;
+  return `${open}${fmBody}${close.startsWith('\n') ? close : `\n${close}`}${newBody}`;
 }
 
 function appendJournalLogEntry(content: string, entryBlock: string): string {
@@ -181,7 +167,7 @@ export async function appendTypedLogEntry(
   }
 
   const next = legacyProgress
-    ? insertLegacyLogEntry(content, entryBlock, now)
+    ? insertLegacyLogEntry(content, entryBlock)
     : appendJournalLogEntry(content, entryBlock);
 
   await writeFileForce(path, next);

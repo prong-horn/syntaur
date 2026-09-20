@@ -6,9 +6,7 @@ export interface ProgressParams {
 export function renderProgress(params: ProgressParams): string {
   return `---
 ticket: ${params.ticket ?? ''}
-entryCount: 0
 generated: "${params.timestamp}"
-updated: "${params.timestamp}"
 ---
 
 # Progress

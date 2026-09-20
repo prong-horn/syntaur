@@ -43,8 +43,6 @@ import {
 } from './repository-candidates.js';
 import {
   parseTicketFull,
-  parseDecisionRecord,
-  parseHandoff,
   parseProject,
   parsePlan,
   parseScratchpad,

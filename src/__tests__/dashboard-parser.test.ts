@@ -280,10 +280,9 @@ handoffCount: 1
 ## Handoff 1
 Details.`;
 
-  it('parses handoff with count', () => {
+  it('parses handoff body', () => {
     const h = parseHandoff(HANDOFF_MD);
     expect(h.ticket).toBe('design-auth-schema');
-    expect(h.handoffCount).toBe(1);
     expect(h.body).toContain('Handoff 1');
   });
 });
@@ -300,10 +299,9 @@ decisionCount: 1
 ## Decision 1
 Details.`;
 
-  it('parses decision record with count', () => {
+  it('parses decision record body', () => {
     const d = parseDecisionRecord(DECISION_MD);
     expect(d.ticket).toBe('design-auth-schema');
-    expect(d.decisionCount).toBe(1);
     expect(d.body).toContain('Decision 1');
   });
 });

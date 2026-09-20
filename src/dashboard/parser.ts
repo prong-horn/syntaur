@@ -371,8 +371,6 @@ export function parseScratchpad(fileContent: string): ParsedScratchpad {
 
 export interface ParsedHandoff {
   ticket: string;
-  handoffCount: number;
-  updated: string;
   body: string;
 }
 
@@ -380,8 +378,6 @@ export function parseHandoff(fileContent: string): ParsedHandoff {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
     ticket: sidecarTicketSlug(fm),
-    handoffCount: parseInt(getField(fm, 'handoffCount') ?? '0', 10),
-    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }
@@ -390,8 +386,6 @@ export function parseHandoff(fileContent: string): ParsedHandoff {
 
 export interface ParsedDecisionRecord {
   ticket: string;
-  decisionCount: number;
-  updated: string;
   body: string;
 }
 
@@ -399,8 +393,6 @@ export function parseDecisionRecord(fileContent: string): ParsedDecisionRecord {
   const [fm, body] = extractFrontmatter(fileContent);
   return {
     ticket: sidecarTicketSlug(fm),
-    decisionCount: parseInt(getField(fm, 'decisionCount') ?? '0', 10),
-    updated: getField(fm, 'updated') ?? '',
     body,
   };
 }
@@ -419,8 +411,6 @@ export interface ParsedComment {
 
 export interface ParsedComments {
   ticket: string;
-  entryCount: number;
-  updated: string;
   entries: ParsedComment[];
   body: string;
 }
@@ -461,43 +451,6 @@ export function parseComments(fileContent: string): ParsedComments {
   }
   return {
     ticket: sidecarTicketSlug(fm),
-    entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
-    updated: getField(fm, 'updated') ?? '',
-    entries,
-    body,
-  };
-}
-
-// --- Progress Parser ---
-
-export interface ProgressEntry {
-  timestamp: string;
-  body: string;
-}
-
-export interface ParsedProgress {
-  ticket: string;
-  entryCount: number;
-  updated: string;
-  entries: ProgressEntry[];
-  body: string;
-}
-
-export function parseProgress(fileContent: string): ParsedProgress {
-  const [fm, body] = extractFrontmatter(fileContent);
-  const entries: ProgressEntry[] = [];
-  const sections = body.split(/^## /m).slice(1);
-  for (const section of sections) {
-    const newlineIdx = section.indexOf('\n');
-    if (newlineIdx === -1) continue;
-    const timestamp = section.slice(0, newlineIdx).trim();
-    const entryBody = section.slice(newlineIdx + 1).trim();
-    entries.push({ timestamp, body: entryBody });
-  }
-  return {
-    ticket: sidecarTicketSlug(fm),
-    entryCount: parseInt(getField(fm, 'entryCount') ?? '0', 10),
-    updated: getField(fm, 'updated') ?? '',
     entries,
     body,
   };

@@ -1,8 +1,6 @@
 ---
 ticket: implement-jwt-middleware
-entryCount: 1
 generated: "2026-03-18T11:00:00Z"
-updated: "2026-03-18T11:00:00Z"
 ---
 
 # Comments

@@ -35,7 +35,7 @@ import type { ChatEvent, ChatItem } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
-import { parseProgress } from '../dashboard/parser.js';
+import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
 
 /**
@@ -2287,7 +2287,8 @@ describe('cursor harness reattach and extensions', () => {
 
 describe('turn progress entries', () => {
   const progressPath = () => join(ticketDir, 'progress.md');
-  const progressCount = async () => parseProgress(await readFile(progressPath(), 'utf-8')).entryCount;
+  const progressCount = async () =>
+    parseLogEntries(await readFile(progressPath(), 'utf-8')).length;
 
   it('appends one entry when a turn edits a file', async () => {
     makeBroker({
@@ -2314,14 +2315,13 @@ describe('turn progress entries', () => {
     await waitUntil(async () => (await progressCount()) === 1, 'the progress entry');
 
     const content = await readFile(progressPath(), 'utf-8');
-    const parsed = parseProgress(content);
-    expect(parsed.entryCount).toBe(1);
+    expect(parseLogEntries(content)).toHaveLength(1);
     expect(content).toContain('**@claude**');
     expect(content).toContain('src/a.ts');
     expect(content).toContain('> Done.');
   });
 
-  it('leaves entryCount unchanged for a talk-only turn', async () => {
+  it('leaves progress entry count unchanged for a talk-only turn', async () => {
     makeBroker({
       turns: [{ steps: [{ kind: 'update', update: textChunk('Just chatting.') }] }],
     });
@@ -2331,7 +2331,7 @@ describe('turn progress entries', () => {
     expect(await progressCount()).toBe(before);
   });
 
-  it('leaves entryCount unchanged when a turn is cancelled', async () => {
+  it('leaves progress entry count unchanged when a turn is cancelled', async () => {
     makeBroker({ turns: [{ steps: [{ kind: 'awaitCancel' }] }] });
     const before = await progressCount();
     await broker.send({ ticket: ticket(), text: 'go' });
@@ -2383,15 +2383,15 @@ describe('turn progress entries', () => {
     await idle(2);
     await waitUntil(async () => {
       const text = await readFile(progressPath(), 'utf-8');
-      const parsed = parseProgress(text);
       return (
-        parsed.entryCount === 2 && text.includes('**@claude**') && text.includes('**@codex**')
+        parseLogEntries(text).length === 2 &&
+        text.includes('**@claude**') &&
+        text.includes('**@codex**')
       );
     }, 'two progress entries with both agents');
 
     const content = await readFile(progressPath(), 'utf-8');
-    const parsed = parseProgress(content);
-    expect(parsed.entryCount).toBe(2);
+    expect(parseLogEntries(content)).toHaveLength(2);
     expect(content).toContain('**@claude**');
     expect(content).toContain('**@codex**');
     const headings = content.match(/^## /gm) ?? [];

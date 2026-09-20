@@ -56,9 +56,7 @@ function seedOpenEngagement(home: string, sessionId: string): void {
 
 const PROGRESS = `---
 ticket: a
-entryCount: 0
 generated: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
 ---
 
 # Progress
@@ -97,23 +95,22 @@ describe('syntaur progress log', () => {
     await rm(home, { recursive: true, force: true });
   });
 
-  it('replaces the placeholder, increments entryCount, preserves ticket/generated', async () => {
+  it('replaces the placeholder and preserves ticket/generated frontmatter', async () => {
     const r = await runCli(['progress', 'log', 'First entry', '--ticket', 'PX-1', '--project', 'p'], home);
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).not.toContain('No progress yet.');
     expect(content).toContain('First entry');
-    expect(content).toContain('entryCount: 1');
+    expect(content).not.toContain('entryCount');
     expect(content).toContain('ticket: a'); // preserved
     expect(content).toContain('generated: "2026-01-01T00:00:00Z"'); // preserved
-    expect(content).not.toContain('updated: "2026-01-01T00:00:00Z"'); // bumped
   });
 
   it('keeps entries reverse-chronological (newest right after the H1)', async () => {
     await runCli(['progress', 'log', 'OLDER', '--ticket', 'PX-1', '--project', 'p'], home);
     await runCli(['progress', 'log', 'NEWER', '--ticket', 'PX-1', '--project', 'p'], home);
     const content = await readFile(progressPath, 'utf-8');
-    expect(content).toContain('entryCount: 2');
+    expect(content).not.toContain('entryCount');
     const h1 = content.indexOf('# Progress');
     expect(content.indexOf('NEWER')).toBeGreaterThan(h1);
     expect(content.indexOf('NEWER')).toBeLessThan(content.indexOf('OLDER'));
@@ -128,7 +125,7 @@ describe('syntaur progress log', () => {
     expect(r.code, r.stderr).toBe(0);
     const content = await readFile(progressPath, 'utf-8');
     expect(content).toContain('From engagement');
-    expect(content).toContain('entryCount: 1');
+    expect(content).not.toContain('entryCount');
   });
 
   it('errors with no explicit target and no open engagement', async () => {

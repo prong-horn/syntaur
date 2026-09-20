@@ -415,7 +415,7 @@ status: draft
     await rm(quickDir, { recursive: true, force: true });
   });
 
-  it('escapes progress headings so parseProgress sees one entry', async () => {
+  it('escapes progress headings so parseLogEntries sees one entry', async () => {
     await fileChatRecord({
       ticketDir: testDir,
       ticketRef: 'demo',

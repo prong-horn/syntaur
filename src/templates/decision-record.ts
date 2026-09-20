@@ -9,8 +9,7 @@ export function renderDecisionRecord(
   const slug = params.ticketSlug ?? '';
   return `---
 ticket: ${slug}
-updated: "${params.timestamp}"
-decisionCount: 0
+generated: "${params.timestamp}"
 ---
 
 # Decision Record

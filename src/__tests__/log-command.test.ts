@@ -56,9 +56,7 @@ async function runCli(args: string[], home: string): Promise<RunResult> {
 
 const PROGRESS = `---
 ticket: a
-entryCount: 0
 generated: "2026-01-01T00:00:00Z"
-updated: "2026-01-01T00:00:00Z"
 ---
 
 # Progress
@@ -105,7 +103,7 @@ describe('syntaur log', () => {
     expect(r.stdout).toMatch(/Logged progress to progress\.md/);
     const content = await readFile(resolve(ticketDir, 'progress.md'), 'utf-8');
     expect(content).toContain('· progress · human');
-    expect(content).toContain('entryCount: 1');
+    expect(content).not.toContain('entryCount');
     const h1 = content.indexOf('# Progress');
     expect(content.indexOf('Step one')).toBeGreaterThan(h1);
   });

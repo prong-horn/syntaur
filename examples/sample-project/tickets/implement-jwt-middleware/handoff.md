@@ -1,7 +1,6 @@
 ---
 ticket: implement-jwt-middleware
-updated: "2026-03-15T09:30:00Z"
-handoffCount: 0
+generated: "2026-03-15T09:30:00Z"
 ---
 
 # Handoff Log

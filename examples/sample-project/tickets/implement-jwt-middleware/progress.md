@@ -1,8 +1,6 @@
 ---
 ticket: implement-jwt-middleware
-entryCount: 3
 generated: "2026-03-17T10:30:00Z"
-updated: "2026-03-18T14:30:00Z"
 ---
 
 # Progress

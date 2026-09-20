@@ -2,10 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { appendProgressEntry } from '../lifecycle/progress-append.js';
 import { appendTypedLogEntry, appendProgressLog } from '../lifecycle/log-append.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
-import { parseProgress } from '../dashboard/parser.js';
 
 let testDir: string;
 
@@ -18,7 +16,7 @@ afterEach(async () => {
 });
 
 describe('appendProgressLog', () => {
-  it('scaffolds a missing progress.md and lands entryCount: 1', async () => {
+  it('scaffolds a missing progress.md with one log entry', async () => {
     const { path, timestamp } = await appendProgressLog({
       ticketDir: testDir,
       ticketRef: 'demo',
@@ -27,13 +25,12 @@ describe('appendProgressLog', () => {
     });
 
     const content = await readFile(path, 'utf-8');
-    const parsed = parseProgress(content);
-    expect(parsed.entryCount).toBe(1);
-    expect(parsed.body).toContain('First entry');
+    expect(parseLogEntries(content)).toHaveLength(1);
+    expect(content).toContain('First entry');
     expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('gives entryCount: 2 on a second call with the newest entry first', async () => {
+  it('appends a second entry with the newest entry first', async () => {
     await appendProgressLog({
       ticketDir: testDir,
       ticketRef: 'demo',
@@ -48,8 +45,7 @@ describe('appendProgressLog', () => {
     });
 
     const content = await readFile(join(testDir, 'progress.md'), 'utf-8');
-    const parsed = parseProgress(content);
-    expect(parsed.entryCount).toBe(2);
+    expect(parseLogEntries(content)).toHaveLength(2);
     const firstHeading = content.indexOf('## ');
     const secondHeading = content.indexOf('## ', firstHeading + 1);
     expect(content.slice(firstHeading, secondHeading)).toContain('Second entry');
@@ -57,20 +53,22 @@ describe('appendProgressLog', () => {
   });
 });
 
-describe('appendProgressEntry', () => {
-  it('throws on a frontmatter-less file', () => {
-    expect(() =>
-      appendProgressEntry('# Progress\n\nnothing yet\n', 'text', '2026-09-07T12:00:00Z'),
-    ).toThrow('progress.md has no YAML frontmatter.');
-  });
-});
-
 describe('appendTypedLogEntry', () => {
-  it('writes typed headings on legacy progress.md and bumps entryCount', async () => {
+  it('writes typed headings on legacy progress.md without rewriting frontmatter', async () => {
     await writeFile(
       join(testDir, 'ticket.md'),
       '---\nid: T-1\nslug: demo\ntemplate: legacy\nstatus: in_progress\n---\n',
     );
+    const beforeFm = `---
+ticket: T-1
+generated: "2026-06-01T00:00:00Z"
+---
+
+# Progress
+
+No progress yet.
+`;
+    await writeFile(join(testDir, 'progress.md'), beforeFm);
     await appendTypedLogEntry({
       ticketDir: testDir,
       ticketId: 'T-1',
@@ -79,8 +77,9 @@ describe('appendTypedLogEntry', () => {
       author: 'human',
     });
     const content = await readFile(join(testDir, 'progress.md'), 'utf-8');
+    expect(content.startsWith('---\nticket: T-1\ngenerated: "2026-06-01T00:00:00Z"\n---\n')).toBe(true);
     expect(content).toContain('· handoff · human');
-    expect(content).toContain('entryCount: 1');
+    expect(content).toContain('Baton passed');
     const entries = parseLogEntries(content);
     expect(entries[0].type).toBe('handoff');
   });
