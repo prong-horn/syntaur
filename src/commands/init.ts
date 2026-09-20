@@ -6,12 +6,22 @@ import { ensureDir, writeFileSafe, writeFileForce, fileExists } from '../utils/f
 import { renderConfig } from '../templates/config.js';
 import { rebuildPlaybookManifest } from '../utils/playbooks.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
+import {
+  defaultHomeGitDeps,
+  ensureHomeRepo,
+  installAutoCommit,
+  type HomeGitDeps,
+} from './home-git.js';
 
 export interface InitOptions {
   force?: boolean;
+  autoCommit?: boolean;
 }
 
-export async function initCommand(options: InitOptions): Promise<void> {
+export async function initCommand(
+  options: InitOptions,
+  gitDeps: HomeGitDeps = defaultHomeGitDeps(),
+): Promise<void> {
   const root = syntaurRoot();
   const projectsDir = defaultProjectDir();
   const configPath = resolve(root, 'config.md');
@@ -59,6 +69,11 @@ export async function initCommand(options: InitOptions): Promise<void> {
   if (seededTemplates.length > 0) {
     console.log(`Seeded ${seededTemplates.length} built-in template(s) in ${templatesDir}/`);
   }
+
+  await ensureHomeRepo(root, gitDeps);
+  await installAutoCommit(root, gitDeps, {
+    scheduler: options.autoCommit !== false,
+  });
 
   console.log('\nSyntaur initialized successfully.');
   console.log('Next: npx skills add prong-horn/syntaur -g -a claude-code');

@@ -177,6 +177,7 @@ const RULE_B_ALLOWLIST: Record<string, string> = {
   'src/commands/update.ts': 'update paths',
   'src/usage/cwd-extractor.ts': 'cwd extraction',
   'src/chat/chat-cwd.ts': 'chat cwd',
+  'src/commands/home-git.ts': 'home git init and auto-commit',
 };
 
 type HomeLookupContext = {

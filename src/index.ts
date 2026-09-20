@@ -70,6 +70,7 @@ program
   .command('init')
   .description('Initialize ~/.syntaur/ directory structure and config')
   .option('--force', 'Overwrite existing config file')
+  .option('--no-auto-commit', 'Write home-commit.sh but do not install the daily scheduler entry')
   .action(
     runCommand(async (options) => {
       await initCommand(options);

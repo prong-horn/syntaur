@@ -1,4 +1,5 @@
 import type { SyntaurConfig } from '../config.js';
+import type { HomeGitDeps } from '../../commands/home-git.js';
 import type Database from 'better-sqlite3';
 
 export type CheckStatus = 'pass' | 'warn' | 'error' | 'skipped';
@@ -29,6 +30,8 @@ export interface CheckContext {
   dbError: string | null;
   cwd: string;
   now: Date;
+  /** Injected in tests for git doctor checks. */
+  homeGitDeps?: HomeGitDeps;
 }
 
 export interface Check {

@@ -8,11 +8,13 @@ import { workspaceChecks } from './checks/workspace.js';
 import { skillsChecks } from './checks/skills.js';
 import { hooksChecks } from './checks/hooks.js';
 import { stalenessChecks } from './checks/staleness.js';
+import { gitChecks } from './checks/git.js';
 
 export function allChecks(): Check[] {
   return [
     ...envChecks,
     ...structureChecks,
+    ...gitChecks,
     ...projectChecks,
     ...ticketChecks,
     ...dashboardChecks,

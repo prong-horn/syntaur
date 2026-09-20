@@ -34,6 +34,7 @@ export const KNOWN_TOP_LEVEL = new Set<string>([
   'syntaur.db-wal', // sqlite WAL
   'view-prefs.json', // paths.ts
   'worktrees', // worktree-defaults.ts
+  'home-commit.sh', // home-git.ts
 ]);
 
 const projectsDir: Check = {
