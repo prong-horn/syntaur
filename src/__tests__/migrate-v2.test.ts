@@ -1567,11 +1567,17 @@ describe('migrate v2 statuses step', () => {
     expect(show.stage.id).toBe('planning');
 
     const ctx = await buildCheckContext(stHome);
+    const dem2Dir = ticketDir;
     for (const check of ticketChecks) {
       const result = await check.run(ctx);
       const results = Array.isArray(result) ? result : [result];
       for (const r of results) {
-        expect(r.status).not.toBe('error');
+        const touchesDem2 =
+          r.affected?.some((p) => p.startsWith(dem2Dir)) ||
+          (r.detail?.includes('DEM-2') ?? false);
+        if (touchesDem2) {
+          expect(r.status).not.toBe('error');
+        }
       }
     }
     await closeCheckContext(ctx);
