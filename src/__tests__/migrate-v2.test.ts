@@ -36,7 +36,6 @@ import { renderTicket } from '../templates/ticket.js';
 import { renderConfig } from '../templates/config.js';
 import { parseTicketFolderName } from '../utils/ticket-folder.js';
 import { REQUIRED_PROJECT_SCAFFOLD_FILES } from '../utils/project-scaffold.js';
-import { buildCheckContext, closeCheckContext } from '../utils/doctor/context.js';
 import { projectChecks } from '../utils/doctor/checks/project.js';
 
 const UUID_P1A = '11111111-1111-4111-8111-111111111111';
@@ -1570,7 +1569,10 @@ describe('migrate v2 statuses step', () => {
     const ctx = await buildCheckContext(stHome);
     for (const check of ticketChecks) {
       const result = await check.run(ctx);
-      expect(result.status).not.toBe('error');
+      const results = Array.isArray(result) ? result : [result];
+      for (const r of results) {
+        expect(r.status).not.toBe('error');
+      }
     }
     await closeCheckContext(ctx);
   });

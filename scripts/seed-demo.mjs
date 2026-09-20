@@ -116,50 +116,6 @@ Run \`/grab\` to claim pending work. Keep \`ticket.md\` records up to date as yo
 `;
 }
 
-function renderStatus(project, tickets) {
-  const by = Object.create(null);
-  for (const a of tickets) by[a.status] = (by[a.status] ?? 0) + 1;
-  const completed = by.completed ?? 0;
-  const blockedCount = by.blocked ?? 0;
-  const failedCount = by.failed ?? 0;
-  return `---
-project: ${project.slug}
-generated: "${iso(new Date())}"
-status: ${project.archived ? 'archived' : 'active'}
-progress:
-  total: ${tickets.length}
-  completed: ${completed}
-  in_progress: ${by.in_progress ?? 0}
-  blocked: ${blockedCount}
-  pending: ${by.pending ?? 0}
-  review: ${by.review ?? 0}
-  failed: ${failedCount}
-needsAttention:
-  blockedCount: ${blockedCount}
-  failedCount: ${failedCount}
-  openQuestions: 0
----
-
-# Project Status: ${project.title}
-
-**Status:** ${project.archived ? 'archived' : 'active'}
-**Progress:** ${completed}/${tickets.length} tickets complete
-`;
-}
-
-function renderIndexStub(kind, project) {
-  return `---
-project: ${project.slug}
-kind: ${kind}
-generated: "${iso(new Date())}"
----
-
-# ${kind}
-
-_None yet._
-`;
-}
-
 function renderTicket(a) {
   const dependsOn = a.dependsOn?.length
     ? `dependsOn:\n  - ${a.dependsOn.join('\n  - ')}`
@@ -1083,11 +1039,6 @@ async function main() {
     await writeText(resolve(projectDir, 'claude.md'), renderClaudeMd(m.slug, m.title));
 
     const projectTickets = ticketsByMission[m.slug] ?? [];
-    await writeText(resolve(projectDir, '_index-plans.md'), renderIndexStub('Plans', m));
-    await writeText(resolve(projectDir, '_index-decisions.md'), renderIndexStub('Decision Records', m));
-    await writeText(resolve(projectDir, '_status.md'), renderStatus(m, projectTickets));
-    await writeText(resolve(projectDir, 'resources', '_index.md'), renderIndexStub('Resources', m));
-    await writeText(resolve(projectDir, 'memories', '_index.md'), renderIndexStub('Memories', m));
 
     for (const a of projectTickets) {
       const aDir = resolve(projectDir, 'tickets', a.slug);
