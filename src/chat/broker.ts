@@ -609,6 +609,29 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     if (!predicate()) noteShutdownGraceExceeded();
   }
 
+  async function boundedSettle(promises: Promise<unknown>[], graceMs: number): Promise<void> {
+    if (promises.length === 0) return;
+    let settled = false;
+    await Promise.race([
+      Promise.allSettled(promises).then(() => {
+        settled = true;
+      }),
+      sleep(graceMs),
+    ]);
+    if (!settled) noteShutdownGraceExceeded();
+  }
+
+  async function boundedAwait(promise: Promise<unknown>, graceMs: number): Promise<void> {
+    let done = false;
+    await Promise.race([
+      promise.catch(() => {}).then(() => {
+        done = true;
+      }),
+      sleep(graceMs),
+    ]);
+    if (!done) noteShutdownGraceExceeded();
+  }
+
   function trackHandlerWork(session: Session, work: Promise<void>): void {
     session.handlerWork.add(work);
     void work.finally(() => {
@@ -4891,25 +4914,38 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
 
       for (let guard = 0; guard < 10; guard += 1) {
-        const chains = [...sessions.values()].map((s) => s.driving);
-        if (chains.length === 0) break;
+        const list = [...sessions.values()];
+        if (list.length === 0) break;
+        const snapshot = new Map(list.map((s) => [s.key, s.driving]));
+        const chains = list.map((s) => s.driving);
+        let settled = false;
         await Promise.race([
-          Promise.allSettled(chains),
+          Promise.allSettled(chains).then(() => {
+            settled = true;
+          }),
           sleep(timeouts.shutdownGraceMs),
         ]);
+        if (!settled) {
+          noteShutdownGraceExceeded();
+          break;
+        }
+        const rechained = list.some((s) => s.driving !== snapshot.get(s.key));
+        if (!rechained) break;
       }
 
-      await Promise.allSettled([...recordChains.values()]);
-      await agentWrites.catch(() => {});
+      await boundedSettle([...recordChains.values()], timeouts.shutdownGraceMs);
+      await boundedAwait(agentWrites, timeouts.shutdownGraceMs);
+      const drainTail: Promise<unknown>[] = [];
       for (const session of sessions.values()) {
         for (const pending of session.pendingPermissions.values()) {
-          await pending.recorded.catch(() => {});
+          drainTail.push(pending.recorded);
         }
         for (const pending of session.pendingQuestions.values()) {
-          await pending.recorded.catch(() => {});
+          drainTail.push(pending.recorded);
         }
-        await Promise.allSettled([...session.handlerWork]);
+        drainTail.push(...session.handlerWork);
       }
+      await boundedSettle(drainTail, timeouts.shutdownGraceMs);
 
       const logsToClose: ChatLog[] = [];
       for (const pending of logs.values()) {
@@ -4918,7 +4954,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       for (const pending of ticketScopes.values()) {
         logsToClose.push((await pending).log);
       }
-      await Promise.all(logsToClose.map((log) => log.close()));
+      await boundedSettle(logsToClose.map((log) => log.close()), timeouts.shutdownGraceMs);
       logs.clear();
       ticketScopes.clear();
       recordChains.clear();
