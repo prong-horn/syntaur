@@ -3,4 +3,6 @@ export function buildCiLikeEnv(options?: { lookupPath?: string }): {
   binDir: string;
   homeDir: string;
   jqPath: string;
+  npmPath: string;
+  npxPath: string;
 };
