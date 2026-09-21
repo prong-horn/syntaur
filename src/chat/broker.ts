@@ -489,6 +489,8 @@ interface Session {
   commandsSource: ChatCommandsSource | null;
   /** Serialises `drive` so two sends cannot both spawn an adapter. */
   driving: Promise<void>;
+  /** Fire-and-forget adapter callbacks (`onUpdate`, `onExit`) awaited at shutdown. */
+  handlerWork: Set<Promise<void>>;
   /** Bumped when the on-disk definition changes; live sessions re-read on next open. */
   definitionStale: boolean;
   /** Set when a stale apply should warn that the system prompt needs a new session. */
@@ -576,6 +578,8 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const recordChains = new Map<string, Promise<void>>();
   const clientFactory: ClientFactory = options.clientFactory ?? defaultClientFactory;
   let stopping = false;
+  let stopped = false;
+  let shutdownGraceWarned = false;
   const refreshing = new Map<Harness, Promise<ChatHarnessSummary>>();
   const testing = new Map<string, Promise<AgentTestResult>>();
   let definitionsRev = 0;
@@ -588,6 +592,29 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   const loadDefinitions = options.loadDefinitions ?? loadAgentDefinitions;
   const syntaurHome = () => options.syntaurHome ?? syntaurRoot();
   const loadDefs = (): Promise<LoadAgentDefinitionsResult> => loadDefinitions(syntaurHome());
+
+  function throwIfStopped(): void {
+    if (stopped) throw new ChatSendError('chat broker stopped', 503);
+  }
+
+  function noteShutdownGraceExceeded(): void {
+    if (!shutdownGraceWarned) {
+      shutdownGraceWarned = true;
+      console.warn('syntaur chat: stopAll shutdown grace exceeded; continuing');
+    }
+  }
+
+  async function boundedWaitFor(predicate: () => boolean, graceMs: number): Promise<void> {
+    await Promise.race([waitFor(predicate, graceMs), sleep(graceMs)]);
+    if (!predicate()) noteShutdownGraceExceeded();
+  }
+
+  function trackHandlerWork(session: Session, work: Promise<void>): void {
+    session.handlerWork.add(work);
+    void work.finally(() => {
+      session.handlerWork.delete(work);
+    });
+  }
 
   function withRecordLock<T>(ticketDir: string, fn: () => Promise<T>): Promise<T> {
     const prev = recordChains.get(ticketDir) ?? Promise.resolve();
@@ -603,6 +630,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     turn: InFlightTurn,
     durationMs: number,
   ): Promise<void> {
+    if (stopped) return;
     try {
       const items = listChatItemsByTurn(session.ticket.id, turn.turnId);
       const text = buildTurnProgressEntry({
@@ -642,6 +670,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     ref: ChatQuestionRef,
     text: string,
   ): Promise<string | null> {
+    if (stopped) return null;
     try {
       const { timestamp } = await withRecordLock(session.ticket.ticketDir, () =>
         appendTypedLogEntry({
@@ -1061,6 +1090,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     payload: unknown,
     opts: { agentId: string; turnId?: string | null },
   ): Promise<ChatEvent> {
+    if (stopped) {
+      return {
+        seq: -1,
+        ts: iso(),
+        ticketId: ticket.id,
+        agentId: opts.agentId,
+        sessionKey: ticketScopeKey(ticket.id),
+        turnId: opts.turnId ?? null,
+        kind,
+        payload,
+      };
+    }
     const scope = await ticketScope(ticket);
     const event = await scope.log.append({
       ticketId: ticket.id,
@@ -1119,6 +1160,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     state: import('./stage-dispatch-state.js').StageDispatchReceiptState,
     opts: { turnId?: string; error?: string } = {},
   ): Promise<void> {
+    if (stopped) return;
     await recordTicket(
       ticket,
       'stage.dispatch.state',
@@ -1330,6 +1372,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     payload: unknown,
     turnId: string | null = session.inFlight?.turnId ?? null,
   ): Promise<void> {
+    if (stopped) return;
     const event = await session.log.append({
       ticketId: session.ticket.id,
       agentId: session.agentId,
@@ -1621,6 +1664,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       commands: commandState.commands,
       commandsSource: commandState.commandsSource,
       driving: Promise.resolve(),
+      handlerWork: new Set(),
       definitionStale: definitionStaleFromRow,
       stalePromptChanged: false,
       builtAtRev,
@@ -2267,13 +2311,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         ...(session.cwdTier === 'home' ? { SYNTAUR_SKIP_CONTEXT_MERGE: '1' } : {}),
       },
       onUpdate: (notification) => {
-        void onUpdate(session, notification);
+        trackHandlerWork(session, onUpdate(session, notification));
       },
       onPermissionRequest: (request) => onPermissionRequest(session, request),
       onExtRequest: (method, params) => onExtRequest(session, method, params),
       onExtNotification: (method, params) => onExtNotification(session, method, params),
       onExit: (info) => {
-        void onExit(session, info);
+        trackHandlerWork(session, onExit(session, info));
       },
     });
   }
@@ -2745,6 +2789,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function refreshHarness(id: Harness): Promise<ChatHarnessSummary> {
+    throwIfStopped();
     const existing = refreshing.get(id);
     if (existing) return existing;
     const run = (async () => {
@@ -2764,6 +2809,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function testAgent(id: string): Promise<AgentTestResult> {
+    throwIfStopped();
     assertWritableAgentId(id);
     const existing = testing.get(id);
     if (existing) return existing;
@@ -2788,6 +2834,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function saveAgent(input: AgentDefinitionInput): Promise<AgentDefinition> {
+    throwIfStopped();
     assertWritableAgentId(input.id);
     const home = options.syntaurHome ?? syntaurRoot();
     const run = agentWrites.then(async () => {
@@ -2815,6 +2862,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function deleteAgent(id: string): Promise<{ restoredBuiltin: boolean }> {
+    throwIfStopped();
     assertWritableAgentId(id);
     const home = options.syntaurHome ?? syntaurRoot();
     pendingAgentDeletes.add(id);
@@ -3365,7 +3413,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   }
 
   async function driveOnce(session: Session): Promise<void> {
-    if (stopping) return;
+    if (stopping || stopped) return;
     if (session.inFlight) return; // Decision 6 — one prompt in flight, always
     const next = session.queue[0];
     if (!next) return;
@@ -3502,6 +3550,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
             deliveredSeqCandidate: null,
           };
           session.inFlight = newTurn;
+          if (stopping || stopped) {
+            session.inFlight = null;
+            closeEngagementById({
+              id: engagement.id,
+              startedAt: engagement.started_at,
+              closeReason: 'shutdown',
+              tokensAtClose: snapshotOf(session),
+              endedAt: iso(),
+            });
+            return { ok: false as const, state: 'failed' as const, error: 'broker stopping' };
+          }
           try {
             await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
           } catch (err) {
@@ -3559,6 +3618,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         deliveredSeqCandidate: null,
       };
       session.inFlight = turn;
+      if (stopping || stopped) return;
       await record(session, 'turn.start', { trigger: next.trigger, startedAt }, turnId);
     }
 
@@ -3566,6 +3626,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       clearTimeout(session.idleTimer);
       session.idleTimer = null;
     }
+    if (stopping || stopped) return;
     if (next.trigger.kind === 'human') {
       await recordTicket(
         session.ticket,
@@ -3743,6 +3804,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
     }
 
+    if (stopped) {
+      if (session.inFlight?.turnId === turn.turnId) session.inFlight = null;
+      closeEngagementById({
+        id: turn.engagementId,
+        startedAt: turn.engagementStartedAt,
+        closeReason: 'shutdown',
+        tokensAtClose: snapshotOf(session),
+        endedAt: iso(),
+      });
+      return;
+    }
+
     if (!failure && pendingStanding) {
       await markStandingDelivered(session, pendingStanding.fingerprint, pendingStanding.gen);
     } else if (!failure && stagePendingStanding) {
@@ -3781,6 +3854,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     response: acp.PromptResponse | null,
     failure: Error | null,
   ): Promise<void> {
+    if (stopped) return;
     if (turn.idleTimer) clearTimeout(turn.idleTimer);
     if (turn.maxTimer) clearTimeout(turn.maxTimer);
     session.inFlight = null;
@@ -3915,6 +3989,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
    * produced, folds and retractions included.
    */
   async function routeReply(session: Session, turn: InFlightTurn): Promise<{ hopped: boolean }> {
+    if (stopped) return { hopped: false };
     const { definitions, participants } = await routingContext(session.ticket);
     session.hopBudget = participants.hopBudget ?? DEFAULT_HOP_BUDGET;
 
@@ -4176,6 +4251,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
   // --- idle teardown -------------------------------------------------------
 
   function armSessionIdle(session: Session): void {
+    if (stopped) return;
     if (session.idleTimer) clearTimeout(session.idleTimer);
     if (!session.client) return;
     session.idleTimer = setTimeout(() => {
@@ -4205,6 +4281,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     itemId: string,
     record: FileChatRecordInput,
   ): Promise<FiledChatRecord> {
+    throwIfStopped();
     const item = getChatItem(itemId);
     if (!item || item.ticketId !== ticket.id) {
       throw new ChatSendError('No such message', 404);
@@ -4246,6 +4323,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
   return {
     async send({ ticket, agentId, text, attachments }) {
+      throwIfStopped();
       if (!ticket) throw new ChatSendError('No ticket target', 400);
       if (!text.trim() && !attachments?.length) throw new ChatSendError('Message is empty', 400);
       const { definitions, participants } = await routingContext(ticket);
@@ -4355,6 +4433,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async withdraw(ticket, messageId) {
+      throwIfStopped();
       // A fan-out message sits in EVERY target's queue, so all of them are
       // searched — and after a restart none of them are in memory until they
       // are materialised (round 1, finding 4).
@@ -4386,6 +4465,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async cancel(ticket, agentId) {
+      throwIfStopped();
       // With an id, cancel that agent; without one, cancel every agent that is
       // mid-turn — a fan-out or a hop chain can have several running at once.
       const running = (await ensureTicketSessions(ticket)).filter(
@@ -4397,6 +4477,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async answerPermission(ticket, requestId, optionId, opts) {
+      throwIfStopped();
       const session = (await ensureTicketSessions(ticket)).find((s) =>
         s.pendingPermissions.has(requestId),
       );
@@ -4434,6 +4515,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async answerQuestion(ticket, requestId, answer) {
+      throwIfStopped();
       const session = (await ensureTicketSessions(ticket)).find((s) =>
         s.pendingQuestions.has(requestId),
       );
@@ -4509,6 +4591,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async setParticipants(ticket, next) {
+      throwIfStopped();
       return withBrokerTicketLock(ticket.id, async () => {
         const { definitions } = await loadDefs();
         const before = await ensureTicketSessions(ticket);
@@ -4532,6 +4615,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     fileRecord,
 
     async reindex(ticket) {
+      throwIfStopped();
       // Imported here rather than at the top: the store imports the normalizer,
       // and the broker only needs the rebuild on this one path.
       const { rebuildChatIndex } = await import('./store.js');
@@ -4542,6 +4626,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     runtimeIdentity: options.runtimeIdentity ?? (() => null),
 
     async dispatchStage(input) {
+      throwIfStopped();
       assertRuntimeOwner();
       return withBrokerTicketLock(input.ticket.id, async () => {
         const events = await readEvents(join(input.ticket.ticketDir, 'chat', 'events.jsonl'));
@@ -4643,6 +4728,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async notifyStageEntry(ticket) {
+      throwIfStopped();
       await reconcileStaleStageRequests(ticket);
     },
 
@@ -4663,6 +4749,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
     },
 
     async cancelStageDispatch(ticket, requestId) {
+      throwIfStopped();
       await reconcileStaleStageRequests(ticket);
       let cancelTarget: { session: Session; turn: InFlightTurn } | null = null as {
         session: Session;
@@ -4712,7 +4799,13 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       return ok ?? false;
     },
 
+    /**
+     * Cooperative shutdown for tests and dashboard exit. Only called from test
+     * `afterEach` and server shutdown — never from `driveOnce`, `ensureAdapter`,
+     * or anything on the `driving` chain (awaiting `driving` here would deadlock).
+     */
     async stopAll() {
+      if (stopped) return;
       stopping = true;
       // Join every construction in flight first. A session still inside
       // `buildSession` would otherwise finish after this pass and publish itself
@@ -4724,17 +4817,29 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       }
       for (const session of sessions.values()) {
         if (session.flushTimer) clearTimeout(session.flushTimer);
+        session.flushTimer = null;
         if (session.idleTimer) clearTimeout(session.idleTimer);
+        session.idleTimer = null;
+
+        const openTurn = session.inFlight;
+        if (openTurn) {
+          if (openTurn.idleTimer) clearTimeout(openTurn.idleTimer);
+          if (openTurn.maxTimer) clearTimeout(openTurn.maxTimer);
+        }
+
+        for (const pending of session.pendingPermissions.values()) {
+          if (pending.graceTimer) clearTimeout(pending.graceTimer);
+          clearTimeout(pending.timer);
+        }
+        for (const pending of session.pendingQuestions.values()) {
+          if (pending.graceTimer) clearTimeout(pending.graceTimer);
+          clearTimeout(pending.timer);
+        }
 
         const turn = session.inFlight;
         if (turn && session.client && session.acpSessionId) {
           await cancelTurn(session).catch(() => false);
-          // Give the cancelled prompt a moment to resolve so its own turn.end
-          // wins; seal it ourselves if it does not.
-          await Promise.race([
-            waitFor(() => session.inFlight === null, timeouts.shutdownGraceMs),
-            sleep(timeouts.shutdownGraceMs),
-          ]);
+          await boundedWaitFor(() => session.inFlight === null, timeouts.shutdownGraceMs);
         }
         if (session.inFlight) {
           const open = session.inFlight;
@@ -4781,7 +4886,44 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
           const client = session.client;
           session.client = null;
           await client.close().catch(() => {});
+          await boundedWaitFor(() => session.handlerWork.size === 0, timeouts.shutdownGraceMs);
         }
+      }
+
+      for (let guard = 0; guard < 10; guard += 1) {
+        const chains = [...sessions.values()].map((s) => s.driving);
+        if (chains.length === 0) break;
+        await Promise.race([
+          Promise.allSettled(chains),
+          sleep(timeouts.shutdownGraceMs),
+        ]);
+      }
+
+      await Promise.allSettled([...recordChains.values()]);
+      await agentWrites.catch(() => {});
+      for (const session of sessions.values()) {
+        for (const pending of session.pendingPermissions.values()) {
+          await pending.recorded.catch(() => {});
+        }
+        for (const pending of session.pendingQuestions.values()) {
+          await pending.recorded.catch(() => {});
+        }
+        await Promise.allSettled([...session.handlerWork]);
+      }
+
+      const logsToClose: ChatLog[] = [];
+      for (const pending of logs.values()) {
+        logsToClose.push(await pending);
+      }
+      for (const pending of ticketScopes.values()) {
+        logsToClose.push((await pending).log);
+      }
+      await Promise.all(logsToClose.map((log) => log.close()));
+      logs.clear();
+      ticketScopes.clear();
+      recordChains.clear();
+
+      for (const session of sessions.values()) {
         session.state = 'stopped';
         persistSession(session);
         if (session.acpSessionId) {
@@ -4789,6 +4931,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
       }
       sessions.clear();
+      stopped = true;
     },
   };
 }

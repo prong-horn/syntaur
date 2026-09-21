@@ -190,6 +190,48 @@ describe('event log', () => {
     expect(await log.readAll()).toEqual([]);
     expect(log.nextSeq).toBe(0);
   });
+
+  it('close() resolves only after queued appends land', async () => {
+    const log = await openChatLog(ticketDir);
+    const appends = Array.from({ length: 3 }, (_, i) =>
+      log.append({
+        ticketId: TICKET_ID,
+        agentId: 'claude',
+        sessionKey: SESSION_KEY,
+        turnId: null,
+        kind: 'system',
+        payload: { level: 'info', text: `n${i}` },
+      }),
+    );
+    await log.close();
+    await Promise.all(appends);
+    const raw = await readFile(log.path, 'utf-8');
+    expect(raw.trim().split('\n')).toHaveLength(3);
+  });
+
+  it('append after close() resolves without writing', async () => {
+    const log = await openChatLog(ticketDir);
+    await log.append({
+      ticketId: TICKET_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'before' },
+    });
+    const rawBefore = await readFile(log.path, 'utf-8');
+    await log.close();
+    const after = await log.append({
+      ticketId: TICKET_ID,
+      agentId: 'claude',
+      sessionKey: SESSION_KEY,
+      turnId: null,
+      kind: 'system',
+      payload: { level: 'info', text: 'after' },
+    });
+    expect(after.seq).toBe(1);
+    expect(await readFile(log.path, 'utf-8')).toBe(rawBefore);
+  });
 });
 
 describe('chat_items index', () => {

@@ -45,6 +45,8 @@ export interface ChatLog {
   append(input: AppendEventInput): Promise<ChatEvent>;
   readAll(): Promise<ChatEvent[]>;
   readAfter(seq: number): Promise<ChatEvent[]>;
+  /** Awaits queued appends, then rejects further disk writes (shutdown only). */
+  close(): Promise<void>;
 }
 
 /**
@@ -65,6 +67,7 @@ export async function openChatLog(ticketDir: string): Promise<ChatLog> {
   const existing = await readEvents(path);
   let seq = existing.length > 0 ? existing[existing.length - 1].seq + 1 : 0;
   let tail: Promise<unknown> = Promise.resolve();
+  let closed = false;
 
   return {
     path,
@@ -82,11 +85,16 @@ export async function openChatLog(ticketDir: string): Promise<ChatLog> {
         kind: input.kind,
         payload: input.payload,
       };
+      if (closed) return Promise.resolve(event);
       const write = tail.then(() => appendFile(path, `${JSON.stringify(event)}\n`, 'utf-8'));
       // Keep the chain alive after a failed write so one ENOSPC does not wedge
       // every later append.
       tail = write.catch(() => {});
       return write.then(() => event);
+    },
+    async close(): Promise<void> {
+      await tail;
+      closed = true;
     },
     readAll: () => readEvents(path),
     readAfter: async (after: number) => (await readEvents(path)).filter((e) => e.seq > after),
