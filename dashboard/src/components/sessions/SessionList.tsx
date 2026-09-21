@@ -179,6 +179,7 @@ export function SessionList({
                 <th className="w-[110px] pb-2 pr-3">Agent</th>
                 <th className="w-[90px] pb-2 pr-3 text-right">Cost</th>
                 <th className="w-[100px] pb-2 pr-3 text-right">Tokens</th>
+                <th className="w-[110px] pb-2 pr-3 text-right">In / Out</th>
                 <th className="hidden w-[130px] pb-2 pr-3 lg:table-cell">Session ID</th>
                 <th className="w-[140px] pb-2 pr-3">Started</th>
                 <th className="hidden w-[200px] pb-2 pr-3 lg:table-cell">Path</th>

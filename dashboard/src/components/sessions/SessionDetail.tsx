@@ -62,9 +62,25 @@ export function SessionDetail({ sessionId, onClose, variant = 'drawer' }: Sessio
           <SectionCard title="Usage" description="Spend attributed to this session id.">
             {session.usage ? (
               <div className="space-y-2 text-sm">
-                <div className="flex gap-4">
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
                   <span>{formatCost(session.usage.totalCost)}</span>
-                  <span className="text-muted-foreground">{formatTokens(session.usage.totalTokens)} tokens</span>
+                  <span className="text-muted-foreground">{formatTokens(session.usage.totalTokens)} tokens total</span>
+                  {typeof session.usage.totalInputTokens === 'number'
+                  && typeof session.usage.totalOutputTokens === 'number' ? (
+                    <>
+                      <span className="text-muted-foreground">
+                        {formatTokens(session.usage.totalInputTokens)} in
+                      </span>
+                      <span className="text-muted-foreground">
+                        {formatTokens(session.usage.totalOutputTokens)} out
+                      </span>
+                      {typeof session.usage.totalCacheTokens === 'number' ? (
+                        <span className="text-muted-foreground">
+                          {formatTokens(session.usage.totalCacheTokens)} cache
+                        </span>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
                 <ul className="space-y-1 text-xs text-muted-foreground">
                   {session.usage.models.map((m) => (

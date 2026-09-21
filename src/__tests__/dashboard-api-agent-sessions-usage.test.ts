@@ -67,6 +67,8 @@ function seedUsage(
     cost: number;
     inputTokens?: number;
     outputTokens?: number;
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
     totalTokens?: number;
     cwd?: string | null;
     eventTs?: string;
@@ -79,8 +81,8 @@ function seedUsage(
     eventTs: opts.eventTs ?? '2026-07-01T11:00:00.000Z',
     inputTokens: opts.inputTokens ?? 0,
     outputTokens: opts.outputTokens ?? 0,
-    cacheCreationTokens: 0,
-    cacheReadTokens: 0,
+    cacheCreationTokens: opts.cacheCreationTokens ?? 0,
+    cacheReadTokens: opts.cacheReadTokens ?? 0,
     totalTokens: opts.totalTokens ?? (opts.inputTokens ?? 0) + (opts.outputTokens ?? 0),
     totalCost: opts.cost,
     // `??` would swallow an explicit null, which some cases need to assert.
@@ -110,6 +112,25 @@ describe('GET /api/agent-sessions usage enrichment', () => {
     expect(session.usage?.models).toEqual([
       { model: 'claude-opus-4-8', cost: 1.25, tokens: 5000 },
     ]);
+  });
+
+  it('reports input, output, and cache tokens alongside the total', async () => {
+    await seedSession('s-split');
+    seedUsage('s-split', {
+      model: 'claude-opus-4-8',
+      cost: 2,
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheCreationTokens: 1_000,
+      cacheReadTokens: 500_000,
+      totalTokens: 501_120,
+    });
+
+    const [session] = await getSessions();
+    expect(session.usage?.totalInputTokens).toBe(100);
+    expect(session.usage?.totalOutputTokens).toBe(20);
+    expect(session.usage?.totalCacheTokens).toBe(501_000);
+    expect(session.usage?.totalTokens).toBe(501_120);
   });
 
   it('applies the token×rate fallback to historical $0 rows at serve time', async () => {
@@ -173,6 +194,24 @@ describe('usage-only (orphan) rows', () => {
     expect(sessions.map((s) => s.sessionId)).toEqual(['s-tracked']);
   });
 
+  it('carry the input/output/cache split too — a separate construction site', async () => {
+    seedUsage('s-orphan-split', {
+      model: 'claude-opus-4-8',
+      cost: 3,
+      inputTokens: 7,
+      outputTokens: 11,
+      cacheCreationTokens: 100,
+      cacheReadTokens: 900,
+      totalTokens: 1_018,
+    });
+
+    const sessions = await getSessions('?includeUsageOnly=1');
+    const orphan = sessions.find((s) => s.sessionId === 's-orphan-split');
+    expect(orphan!.usage?.totalInputTokens).toBe(7);
+    expect(orphan!.usage?.totalOutputTokens).toBe(11);
+    expect(orphan!.usage?.totalCacheTokens).toBe(1_000);
+  });
+
   it('are appended with includeUsageOnly=1, in a contract-exact shape', async () => {
     await seedSession('s-tracked');
     seedUsage('s-tracked', { model: 'claude-opus-4-8', cost: 1, totalTokens: 10 });
@@ -225,6 +264,29 @@ describe('usage-only (orphan) rows', () => {
     expect(sessions.find((s) => s.sessionId === 's-orphan')!.usageOnly).toBe(true);
     const tracked = await getSessions();
     expect(tracked).toHaveLength(0);
+  });
+});
+
+describe('GET /api/agent-sessions paged usage enrichment', () => {
+  it('includes input, output, and cache on the wire for paged tracked rows', async () => {
+    await seedSession('s-paged-split');
+    seedUsage('s-paged-split', {
+      model: 'claude-opus-4-8',
+      cost: 1,
+      inputTokens: 50,
+      outputTokens: 10,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 1_000,
+      totalTokens: 1_060,
+    });
+
+    const res = await fetch(`${baseUrl}/api/agent-sessions?pageSize=10&page=0`);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { sessions: AgentSessionWithLiveness[] };
+    const session = body.sessions.find((s) => s.sessionId === 's-paged-split');
+    expect(session!.usage?.totalInputTokens).toBe(50);
+    expect(session!.usage?.totalOutputTokens).toBe(10);
+    expect(session!.usage?.totalCacheTokens).toBe(1_000);
   });
 });
 

@@ -4,10 +4,16 @@ import { Activity, ChevronDown, ChevronRight, CheckSquare, Square } from 'lucide
 import { CopyButton } from '../CopyButton';
 import { SessionActionButtons } from '../SessionActionButtons';
 import { cn } from '../../lib/utils';
-import { formatCost, formatDateTime, formatTokens, toTitleCase } from '../../lib/format';
+import {
+  formatCost,
+  formatDateTime,
+  formatTokens,
+  formatTokensCompact,
+  toTitleCase,
+} from '../../lib/format';
 import type { AgentSessionWithLiveness } from '../../types';
 
-export const SESSION_TABLE_COLUMN_COUNT = 12;
+export const SESSION_TABLE_COLUMN_COUNT = 13;
 
 export function isEffectivelyPinned(s: { pinnedAt?: string | null }): boolean {
   return Boolean(s.pinnedAt);
@@ -50,6 +56,30 @@ export function SessionRow({
     ? session.usage.models
         .map((m) => `${m.model}: ${formatCost(m.cost)} \u00b7 ${formatTokens(m.tokens)} tokens`)
         .join('\n')
+    : undefined;
+  const tokenSplit =
+    session.usage
+    && typeof session.usage.totalInputTokens === 'number'
+    && typeof session.usage.totalOutputTokens === 'number'
+      ? {
+          input: session.usage.totalInputTokens,
+          output: session.usage.totalOutputTokens,
+          cache: session.usage.totalCacheTokens ?? null,
+        }
+      : null;
+  const tokenBreakdown = session.usage
+    ? [
+        ...(tokenSplit
+          ? [
+              `Input ${formatTokens(tokenSplit.input)}`,
+              `Output ${formatTokens(tokenSplit.output)}`,
+              ...(tokenSplit.cache === null
+                ? []
+                : [`Cache (creation + read) ${formatTokens(tokenSplit.cache)}`]),
+            ]
+          : []),
+        `Total ${formatTokens(session.usage.totalTokens)}`,
+      ].join('\n')
     : undefined;
   const canExpand = Boolean(session.summary) || Boolean(session.usage?.models.length);
   const isAuto = session.descriptionSource === 'auto';
@@ -141,8 +171,19 @@ export function SessionRow({
         <td className="py-2 pr-3 text-right text-xs tabular-nums" title={modelBreakdown}>
           {session.usage ? formatCost(session.usage.totalCost) : <span className="text-muted-foreground">&mdash;</span>}
         </td>
-        <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={modelBreakdown}>
+        <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={tokenBreakdown}>
           {session.usage ? formatTokens(session.usage.totalTokens) : <span>&mdash;</span>}
+        </td>
+        <td className="py-2 pr-3 text-right text-xs tabular-nums text-muted-foreground" title={tokenBreakdown}>
+          {tokenSplit ? (
+            <>
+              {formatTokensCompact(tokenSplit.input)}
+              <span className="px-0.5 opacity-40">/</span>
+              {formatTokensCompact(tokenSplit.output)}
+            </>
+          ) : (
+            <span>&mdash;</span>
+          )}
         </td>
         <td className="hidden py-2 pr-3 lg:table-cell">
           <span className="flex min-w-0 items-center gap-1.5">
