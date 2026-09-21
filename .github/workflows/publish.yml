@@ -96,10 +96,20 @@ jobs:
         id: extract
         run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
-      - name: Publish to npm with OIDC
-        run: npm publish
+      - name: Publish to npm with OIDC (skipped when the version is already published)
+        env:
+          VERSION: ${{ steps.extract.outputs.version }}
+        run: |
+          if npm view "syntaur@${VERSION}" version >/dev/null 2>&1; then
+            echo "syntaur@${VERSION} is already on npm; skipping publish"
+          else
+            npm publish
+          fi
 
       - name: Notify syntaur-app
+        # Non-fatal: a missing or expired dispatch secret must not fail the release
+        # after npm publish has already succeeded (a failed job would also skip pages).
+        continue-on-error: true
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.SYNTAUR_APP_DISPATCH_PAT }}
