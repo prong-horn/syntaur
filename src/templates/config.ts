@@ -4,7 +4,7 @@ export interface ConfigParams {
 
 export function renderConfig(params: ConfigParams): string {
   return `---
-version: "1.0"
+version: "2.0"
 defaultProjectDir: ${params.defaultProjectDir}
 agentDefaults:
   trustLevel: medium

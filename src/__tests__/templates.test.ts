@@ -8,9 +8,18 @@ import {
   renderDecisionRecord,
   renderComments,
   renderProgress,
+  renderConfig,
 } from '../templates/index.js';
 
 const TIMESTAMP = '2026-03-18T14:30:00Z';
+
+describe('renderConfig', () => {
+  it('stamps protocol version 2.0', () => {
+    const out = renderConfig({ defaultProjectDir: '/tmp/projects' });
+    expect(out).toContain('version: "2.0"');
+    expect(out).toContain('defaultProjectDir: /tmp/projects');
+  });
+});
 
 describe('renderProject', () => {
   it('produces correct frontmatter fields', () => {
