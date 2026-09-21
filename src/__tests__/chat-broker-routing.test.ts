@@ -10,8 +10,7 @@ import { createFakeAgent, textChunk, toolCall, type FakeAgent, type FakeTurn } f
 import { ticketScopeKey, createChatBroker, type ChatBroker } from '../chat/broker.js';
 import type { ChatEvent, ChatItem, Participants } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
-import type { CommandResolution } from '../chat/harnesses.js';
-import type { HarnessSpec } from '../chat/types.js';
+import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
 
 /**
  * Task 3 — routing through the broker, with one scripted fake ACP agent per
@@ -20,9 +19,6 @@ import type { HarnessSpec } from '../chat/types.js';
  * agent-to-agent hop chain, the bare-acknowledgement stop, the hop budget,
  * cancel-all, per-target crash repair and a fan-out withdraw.
  */
-
-/** The fakes are in-process; the adapter binary need not be on PATH (CI runners have none). */
-const onPath = (spec: HarnessSpec): CommandResolution => ({ path: `/fake/bin/${spec.command}`, installHint: null });
 
 let sandbox: string;
 let ticketDir: string;
@@ -122,7 +118,7 @@ function makeBroker(
   fakes = new Map();
   clientsByAgent = new Map();
   broker = createChatBroker({
-    commandResolver: onPath,
+    commandResolver: fakeCommandResolver,
     projectsDir: join(sandbox, 'projects'),
     syntaurHome: sandbox,
     // Cloned: the broker broadcasts the live item object, which the normalizer

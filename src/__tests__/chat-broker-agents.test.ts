@@ -12,10 +12,12 @@ import { createChatBroker, ChatSendError, type ChatBroker, type ClientFactory, t
 import { HARNESSES } from '../chat/harnesses.js';
 import { writeAgentDefinition, AgentWriteError, loadAgentDefinitions } from '../chat/agents.js';
 import { participantsPath, writeParticipants } from '../chat/participants.js';
-import type { ChatItem, Harness, Participants } from '../chat/types.js';
+import type { ChatItem, Harness, HarnessSpec, Participants } from '../chat/types.js';
+import type { CommandResolution } from '../chat/harnesses.js';
 import type { ChatCommand } from '../chat/commands.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import type * as acp from '@agentclientprotocol/sdk';
+import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
 
 let sandbox: string;
 let broker: ChatBroker;
@@ -23,12 +25,12 @@ let fake: FakeAgent;
 let clients: AcpClient[];
 let prevHome: string | undefined;
 
-const alwaysInstalled = () => ({ path: '/usr/bin/fake-agent', installHint: null });
+const alwaysInstalled = fakeCommandResolver;
 const authOk = () => 'logged in';
 
 function makeBroker(
   agentOptions: Parameters<typeof createFakeAgent>[0] = {},
-  resolver: () => { path: string | null; installHint: string | null } = alwaysInstalled,
+  resolver: (spec: HarnessSpec) => CommandResolution = alwaysInstalled,
   timeoutOverrides: Partial<BrokerTimeouts> = {},
 ) {
   fake = createFakeAgent({
@@ -76,6 +78,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await broker?.stopAll().catch(() => {});
+  for (const client of clients) await client.close().catch(() => {});
   closeSessionDb();
   if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = prevHome;
@@ -471,7 +474,7 @@ function makeTicketBroker(
     },
     commandResolver: (spec) => {
       resolvedHarnesses.push(spec.id);
-      return alwaysInstalled();
+      return alwaysInstalled(spec);
     },
     authProber: authOk,
     timeouts: { flushMs: 1, sessionIdleMs: 60_000, shutdownGraceMs: 300 },

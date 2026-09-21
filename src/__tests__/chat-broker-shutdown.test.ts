@@ -25,13 +25,7 @@ import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { recordStageEntryLocked } from '../lifecycle/stage-entry.js';
 import type { ChatEvent } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
-import type { CommandResolution } from '../chat/harnesses.js';
-import type { HarnessSpec } from '../chat/types.js';
-
-const onPath = (spec: HarnessSpec): CommandResolution => ({
-  path: `/fake/bin/${spec.command}`,
-  installHint: null,
-});
+import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
 
 let sandbox: string;
 let ticketDir: string;
@@ -124,7 +118,7 @@ function makeBroker(
     return client;
   };
   broker = createChatBroker({
-    commandResolver: onPath,
+    commandResolver: fakeCommandResolver,
     projectsDir: join(sandbox, 'projects'),
     syntaurHome: sandbox,
     broadcast: () => {},

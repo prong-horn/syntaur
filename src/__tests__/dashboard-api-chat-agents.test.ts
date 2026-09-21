@@ -14,6 +14,7 @@ import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk } from '../chat/fake-agent.js';
 import { HARNESSES } from '../chat/harnesses.js';
 import type { WsMessage } from '../dashboard/types.js';
+import { fakeCommandResolver, missingCommandResolver } from './helpers/fake-command-resolver.js';
 
 let sandbox: string;
 let server: Server;
@@ -23,7 +24,6 @@ let clients: AcpClient[];
 let wsClients: Set<WebSocket>;
 let prevHome: string | undefined;
 
-const alwaysInstalled = () => ({ path: '/usr/bin/fake-agent', installHint: null });
 const authOk = () => 'logged in';
 
 const plannerInput = {
@@ -84,7 +84,7 @@ async function boot() {
       clients.push(client);
       return client;
     },
-    commandResolver: alwaysInstalled,
+    commandResolver: fakeCommandResolver,
     authProber: authOk,
     timeouts: { flushMs: 1 },
   });
@@ -304,7 +304,7 @@ describe('chat agents API', () => {
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: () => {},
-      commandResolver: () => ({ path: null, installHint: HARNESSES.claude.installHint }),
+      commandResolver: missingCommandResolver,
       authProber: authOk,
     });
     const app2 = express();
