@@ -82,6 +82,7 @@ Status moves only by explicit verbs. Each verb evaluates template gates at call 
 syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]
 syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]
 syntaur approve <id> [--project <slug>] [--by <name>] [--force]
+syntaur unapprove <id> [--project <slug>] [--by <name>]
 syntaur start <id> [--project <slug>] [--agent <id>] [--by <name>] [--force]
 syntaur review <id> [--project <slug>] [--by <name>] [--force]
 syntaur done <id> [--project <slug>] [--by <name>] [--force]
@@ -91,6 +92,7 @@ syntaur reopen <id> [--project <slug>] [--by <name>]
 
 - `plan create` / `plan version` — scaffold or version the plan file; `plan version` also moves to `planning` when the template declares that stage. Use `--by` for audit attribution on the stage move.
 - `approve` — approve the plan and move to `ready` when the template declares it.
+- `unapprove` — clear the plan approval (`plan.approvedDigest`/`approvedAt`/`approvedBy`) without changing stage; the next `approve` re-records it.
 - `start` — move to `in_progress`; runs template `gates.start` (on built-in `feature`: `plan-approved`, `workspace-set`; on `bug`: `workspace-set`; on `legacy`: none). On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
 - `review` — move to `review`.
 - `done` — move to `done`; runs template `gates.done`.
