@@ -4836,7 +4836,18 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
       // shuts itself down instead of publishing. Loop because a construction can
       // start one more time before the flag is observed.
       for (let guard = 0; guard < 10 && constructing.size > 0; guard += 1) {
-        await Promise.allSettled([...constructing.values()]);
+        const builds = [...constructing.values()];
+        let settled = false;
+        await Promise.race([
+          Promise.allSettled(builds).then(() => {
+            settled = true;
+          }),
+          sleep(timeouts.shutdownGraceMs),
+        ]);
+        if (!settled) {
+          noteShutdownGraceExceeded();
+          break;
+        }
       }
       for (const session of sessions.values()) {
         if (session.flushTimer) clearTimeout(session.flushTimer);
@@ -4861,7 +4872,7 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
 
         const turn = session.inFlight;
         if (turn && session.client && session.acpSessionId) {
-          await cancelTurn(session).catch(() => false);
+          await boundedAwait(cancelTurn(session).catch(() => false), timeouts.shutdownGraceMs);
           await boundedWaitFor(() => session.inFlight === null, timeouts.shutdownGraceMs);
         }
         if (session.inFlight) {
@@ -4931,6 +4942,17 @@ export function createChatBroker(options: CreateChatBrokerOptions): ChatBroker {
         }
         const rechained = list.some((s) => s.driving !== snapshot.get(s.key));
         if (!rechained) break;
+      }
+
+      for (const session of sessions.values()) {
+        const stillPending = await Promise.race([
+          session.driving.then(() => false),
+          sleep(0).then(() => true),
+        ]);
+        if (stillPending) {
+          noteShutdownGraceExceeded();
+          break;
+        }
       }
 
       await boundedSettle([...recordChains.values()], timeouts.shutdownGraceMs);
