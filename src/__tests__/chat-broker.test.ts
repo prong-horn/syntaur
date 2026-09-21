@@ -36,12 +36,17 @@ import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
+import type { CommandResolution } from '../chat/harnesses.js';
+import type { HarnessSpec } from '../chat/types.js';
 
 /**
  * Task 6 — the broker, driven against the in-process fake ACP agent
  * (Decision 7). No subprocess, no adapter cost; the only tests that touch a real
  * adapter are the manual runs in Task 10.
  */
+
+/** The fakes are in-process; the adapter binary need not be on PATH (CI runners have none). */
+const onPath = (spec: HarnessSpec): CommandResolution => ({ path: `/fake/bin/${spec.command}`, installHint: null });
 
 let sandbox: string;
 let ticketDir: string;
@@ -127,6 +132,7 @@ function makeBroker(
     return client;
   };
   broker = createChatBroker({
+    commandResolver: onPath,
     projectsDir: join(sandbox, 'projects'),
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -944,6 +950,7 @@ describe('adapter exit and resume (spike Decisions 7 and 8)', () => {
     // Rebuild the fake with a resume that rejects, keeping the persisted row.
     const failing = createFakeAgent({ resumeError: 'session not found', sessionIds: ['acp-session-2'] });
     const secondBroker = createChatBroker({
+      commandResolver: onPath,
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -1543,6 +1550,7 @@ describe('one event log per ticket (finding 4)', () => {
     // concurrent client connections. The assertion is about the shared LOG.
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
+      commandResolver: onPath,
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -2343,6 +2351,7 @@ describe('turn progress entries', () => {
   it('writes separate entries when two agents finish work turns back-to-back', async () => {
     const agents: FakeAgent[] = [];
     broker = createChatBroker({
+      commandResolver: onPath,
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -2545,6 +2554,7 @@ describe('inbox questions (needs-me)', () => {
       sessionIds: ['acp-claude-1'],
     });
     broker = createChatBroker({
+      commandResolver: onPath,
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -2579,6 +2589,7 @@ describe('inbox questions (needs-me)', () => {
       sessionIds: ['acp-claude-1'],
     });
     broker = createChatBroker({
+      commandResolver: onPath,
       projectsDir: join(sandbox, 'projects'),
       syntaurHome: sandbox,
       broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),

@@ -14,6 +14,8 @@ import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import type { WsMessage } from '../dashboard/types.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
+import type { CommandResolution } from '../chat/harnesses.js';
+import type { HarnessSpec } from '../chat/types.js';
 
 /**
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
@@ -21,6 +23,9 @@ import { parseLogEntries } from '../ticket-templates/log-reader.js';
  * real-`ws` test that `chat-item` frames reach a browser client carrying the
  * ticket id.
  */
+
+/** The fakes are in-process; the adapter binary need not be on PATH (CI runners have none). */
+const onPath = (spec: HarnessSpec): CommandResolution => ({ path: `/fake/bin/${spec.command}`, installHint: null });
 
 let sandbox: string;
 let projectsDir: string;
@@ -85,6 +90,7 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
   };
 
   broker = createChatBroker({
+    commandResolver: onPath,
     projectsDir,
         syntaurHome: sandbox,
     broadcast: (message) => broadcast(message as WsMessage),
