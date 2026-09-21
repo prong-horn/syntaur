@@ -14,6 +14,7 @@ This document defines the complete schema for every file type in the Syntaur pro
 - **Shared-writable** files can be created by both humans and agents.
 
 ---
+
 ## 1. project.md
 
 **Ownership:** Human-authored only
@@ -205,15 +206,14 @@ both access tokens (15min TTL) and refresh token rotation (7-day TTL).
 
 ## Context
 
-- Depends on [BAS-1 design-auth-schema](../BAS-1-design-auth-schema/ticket.md) for the
-  user table schema and key storage approach
-- See [auth-requirements](../../resources/auth-requirements.md) for product specs
+- Depends on ticket `BAS-1` for the user table schema and key storage approach
+- See project docs for product specs
 - JWT library: `jose` (chosen in Decision 1)
 ```
 
 ---
 
-## 3. plan\*.md (`plan.md`, `plan-v2.md`, ...) — legacy-template
+## 3. plan.md and plan-vN.md
 
 **Ownership:** Agent-writable
 
@@ -374,552 +374,7 @@ A `question` entry is open until an `answer` entry names it via `answers: <quest
 
 ---
 
-## 5. scratchpad.md — legacy-template
-
-**Ownership:** Agent-writable
-
-> **Note:** Preserved by the `legacy` template. Other templates may omit scratchpad or declare a different notes file in `template.md`.
-
-Unstructured working memory for the agent. The agent uses this as scratch space during work. No required body format -- this is the agent's private workspace within the ticket. Created as an empty template by scaffolding, optional until first use.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `ticket` | string | ticket slug | required | — | The parent ticket. |
-| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the scratchpad was last modified. |
-
-### Body Sections
-
-No required structure. The body is freeform working notes.
-
-### Example
-
-```markdown
----
-ticket: implement-jwt-middleware
-updated: "2026-03-18T14:30:00Z"
----
-
-# Scratchpad
-
-## Token format notes
-
-Access token payload:
-- sub: user UUID
-- iat: issued at
-- exp: 15 min from iat
-- iss: "myapp"
-
-Refresh token: opaque string, stored as SHA-256 hash in DB.
-
-## Things to remember
-
-- The jose library uses `importSPKI` / `importPKCS8` for PEM key import
-- Need to handle both expired and malformed token errors differently (401 vs 400)
-- Check if the DB migration from design-auth-schema included the refresh_tokens table
-```
-
----
-
-## 6. handoff.md — legacy (merged by `migrate journal`)
-
-**Ownership:** Agent-writable, append-only (legacy template only)
-
-> **Note:** Merged into `journal.md` as `handoff` log entries by `syntaur migrate journal`. Modern templates use `syntaur log -t handoff` on `journal.md` instead.
-
-The **ticket-level cross-ticket outbound** doc. Written at completion (via the `done` skill / flow) for the next ticket, agent, or human reviewer who picks up downstream work. Each handoff is a numbered entry so history is preserved. Created as an empty template by scaffolding, optional until first use. Legacy frontmatter counters (`handoffCount`, `updated`) are stripped by `syntaur migrate v2`; undated handoff blocks may gain a `**Recorded:** <iso>` line as the first body line when the migrator needs a timestamp fallback.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `ticket` | string | ticket slug | required | — | The parent ticket. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the file was first created. |
-
-### Body Sections
-
-Each handoff is a numbered entry (`## Handoff N`) separated by a horizontal rule. Entries are appended at the end of the file.
-
-| Sub-section | Purpose | Who Writes |
-|-------------|---------|------------|
-| From | Who is handing off (agent name or "human") | Agent |
-| To | Who is receiving (agent name or "human") | Agent |
-| Reason | Why the handoff is happening | Agent |
-| Summary | What was accomplished and what remains | Agent |
-| Current State | Where things stand -- what's working, what's not, what's partially done | Agent |
-| Next Steps | Bulleted list of recommended next actions | Agent |
-| Important Context | Anything the next agent/human needs that isn't in the ticket or plan | Agent |
-
-### Example
-
-```markdown
----
-ticket: design-auth-schema
-generated: "2026-03-17T10:00:00Z"
----
-
-# Handoff Log
-
-## Handoff 1: 2026-03-17T10:00:00Z
-
-**From:** claude-2
-**To:** human
-**Reason:** Ticket completed, handing off for review and downstream work.
-
-### Summary
-Designed the complete auth schema including users table, refresh_tokens table,
-and RSA key pair storage. All acceptance criteria met.
-
-### Current State
-- Users table migration is ready at `migrations/003_auth_schema.sql`
-- Refresh tokens table included with user_id FK, token_hash, expires_at, revoked_at
-- RSA key pair stored as environment variables (not in DB)
-- All tests passing
-
-### Next Steps
-- Review the migration before merging
-- Start implement-jwt-middleware (depends on this ticket)
-
-### Important Context
-Chose PostgreSQL over Redis for refresh token storage. See decision record for
-rationale. The connection pooling findings are documented in the project memory
-`postgres-connection-pooling`.
-```
-
----
-
-## 7. decision-record.md — legacy (merged by `migrate journal`)
-
-**Ownership:** Agent-writable, append-only (legacy template only)
-
-> **Note:** Merged into `journal.md` as `decision` log entries by `syntaur migrate journal`. Modern templates use `syntaur log -t decision` instead.
-
-A structured log of decisions made during the ticket. Each decision is a numbered entry with required fields. Created as an empty template by scaffolding, optional until first use. Legacy counters are stripped by `syntaur migrate v2`; decision blocks without a date may gain `**Recorded:** <iso>` from the file’s former `updated` timestamp during migration.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `ticket` | string | ticket slug | required | — | The parent ticket. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the file was first created. |
-
-### Body Sections
-
-Each decision is a numbered entry (`## Decision N: <title>`) separated by a horizontal rule. Entries are appended at the end of the file.
-
-| Field | Purpose | Who Writes |
-|-------|---------|------------|
-| Date | When the decision was made (RFC 3339) | Agent |
-| Status | Lifecycle of the decision | Agent |
-| Context | Why this decision was needed | Agent |
-| Decision | What was decided | Agent |
-| Consequences | What follows from this decision | Agent |
-
-**Status values:**
-
-| Value | Meaning |
-|-------|---------|
-| `proposed` | Decision is under consideration, not yet finalized. |
-| `accepted` | Decision has been accepted and is in effect. |
-| `rejected` | Decision was considered but not adopted. |
-| `superseded` | Decision was accepted previously but has been replaced by a later decision. |
-
-### Example
-
-```markdown
----
-ticket: implement-jwt-middleware
-generated: "2026-03-17T09:00:00Z"
----
-
-# Decision Record
-
-## Decision 1: Use RS256 for JWT signing
-
-**Date:** 2026-03-17T16:30:00Z
-**Status:** accepted
-**Context:** Need to choose a JWT signing algorithm. Options are HS256 (symmetric)
-or RS256 (asymmetric). The auth-requirements resource specifies that tokens may
-be verified by multiple services.
-**Decision:** Use RS256 (asymmetric) so that services only need the public key to
-verify tokens. The private key stays on the auth server.
-**Consequences:** Slightly larger tokens and slower signing than HS256, but
-verification can be distributed without sharing secrets. Key rotation is simpler
-since only the public key needs to be distributed.
-```
-
----
-
-## 8. progress.md — legacy (merged by `migrate journal`)
-
-**Ownership:** Agent-writable, append-only (`legacy` template log role)
-
-> **Note:** The `legacy` template still uses `progress.md` as its log role until migrated. `syntaur progress log` is an alias of `syntaur log -t progress`. After `migrate journal`, entries live in `journal.md`.
-
-A reverse-chronological log of work the agent has done on the ticket. This replaces the old `## Progress` body section that used to live inside `ticket.md`. The agent writes entries directly (no CLI mediation). Created as an empty template by scaffolding, optional until first use.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `ticket` | string | ticket slug | required | — | The parent ticket. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the template was scaffolded. |
-
-Legacy `entryCount` and `updated` frontmatter keys are removed by `syntaur migrate v2`.
-
-### Body Sections
-
-Each entry is a timestamped heading (`## <RFC 3339 timestamp>`) followed by the entry body. Entries are **prepended** — newest first. The empty template contains the heading `# Progress` and the sentinel `No progress yet.` which is replaced on first entry.
-
-### Example
-
-```markdown
----
-ticket: implement-jwt-middleware
-generated: "2026-03-17T18:00:00Z"
----
-
-# Progress
-
-## 2026-03-18T14:30:00Z
-
-Implemented Bearer token extraction and RS256 signature validation. Both passing
-tests. Moving on to token expiry checking next.
-
-## 2026-03-17T18:00:00Z
-
-Set up the middleware skeleton and installed the `jose` library. Created the
-worktree and branch. Reviewed the auth schema from the dependency ticket.
-```
-
----
-
-## 9. comments.md — legacy (merged by `migrate journal`)
-
-**Ownership:** Retired — was CLI-mediated on the `legacy` template only
-
-> **Note:** Merged into `journal.md` as `question`, `answer`, and `note` log entries by `syntaur migrate journal`. Use `syntaur log -t question|answer|note` on modern templates.
-
-Historical threaded Q&A file from the `legacy` template. Preserved here for migration reference only.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `ticket` | string | ticket slug | required | — | The parent ticket. |
-| `generated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the template was scaffolded. |
-
-Legacy `entryCount` and `updated` keys are stripped by `syntaur migrate v2`.
-
-### Body Sections
-
-Each comment is a heading with a stable id (`## <comment-id>`) followed by structured metadata lines and the body. Entries are appended at the end. The empty template contains the heading `# Comments` and the sentinel `No comments yet.` which is replaced on first entry.
-
-| Field | Purpose | Required | Notes |
-|-------|---------|----------|-------|
-| `**Recorded:**` | RFC 3339 timestamp | yes | When the comment was appended. |
-| `**Author:**` | Agent name or `"human"` | yes | Who wrote the comment. |
-| `**Type:**` | One of `question`, `note`, `feedback` | yes | Classification. |
-| `**Reply to:**` | A previous comment id | no | Present only when the comment replies to another. |
-| `**Resolved:**` | `true` or `false` | conditional | Present **only** when `Type: question`. Toggleable via `PATCH /api/.../comments/:id/resolved`. |
-| Body | Freeform markdown | yes | The comment content. |
-
-### Example
-
-```markdown
----
-ticket: implement-jwt-middleware
-generated: "2026-03-17T16:00:00Z"
----
-
-# Comments
-
-## c-1
-
-**Recorded:** 2026-03-17T16:30:00Z
-**Author:** claude-1
-**Type:** question
-**Resolved:** true
-
-Should refresh tokens be stored in the database or use a stateless approach?
-
-## c-2
-
-**Recorded:** 2026-03-17T17:05:00Z
-**Author:** human
-**Type:** note
-**Reply to:** c-1
-
-Store refresh tokens in the database so we can revoke them. Add a `refresh_tokens`
-table with user_id, token_hash, expires_at, revoked_at.
-
-## c-3
-
-**Recorded:** 2026-03-18T15:00:00Z
-**Author:** human
-**Type:** feedback
-
-Great progress on the middleware. Please add rate-limit tests before review.
-```
-
-### Open questions
-
-Open `question` log entries (and legacy `comments.md` until migrated) feed inbox and rollup UIs directly — there is no `_status.md` file.
-
----
-
-## 10. Agent Sessions (SQLite)
-
-**Storage:** `~/.syntaur/syntaur.db` — `sessions` table
-
-Agent sessions are stored in a SQLite database rather than markdown files. This provides proper querying, atomic updates, and scales well as session counts grow. Sessions are operational/node-local data — agents write them via the `syntaur track-session` CLI or the dashboard API, and humans consume them through the dashboard UI.
-
-### Schema
-
-```sql
-CREATE TABLE sessions (
-  session_id TEXT PRIMARY KEY,
-  project_slug TEXT,
-  assignment_slug TEXT,
-  agent TEXT NOT NULL,
-  started TEXT NOT NULL,
-  ended TEXT,
-  status TEXT NOT NULL DEFAULT 'active',
-  path TEXT,
-  description TEXT,
-  transcript_path TEXT,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-```
-
-Current schema version: `3`. The schema version is stored in a `meta` table and the DB migrates automatically on `initSessionDb()` — v1→v2 made project/ticket nullable and added `description`; v2→v3 added `transcript_path`.
-
-### Session ID Rule
-
-`session_id` must always be the **real, agent-generated session identifier**. Never synthesize a UUID. The CLI (`syntaur track-session`) and the POST endpoint (`/api/agent-sessions`) both reject requests that omit `session_id`.
-
-Sources of truth by agent:
-
-| Agent | Where to read the real session id |
-|-------|-----------------------------------|
-| Claude Code | SessionStart hook stdin payload (`session_id`), or fallback: the most-recently-modified `~/.claude/sessions/<pid>.json` whose `cwd` matches `$(pwd)`. |
-| Codex | `payload.id` from the first line (`type: "session_meta"`) of the most-recently-modified `~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl` whose `payload.cwd` matches `$(pwd)`. |
-
-`transcript_path` is the absolute path to the agent's rollout/transcript file. Optional — nullable column — but strongly preferred so handoffs and the dashboard can link back to the raw conversation.
-
-### Upsert Semantics
-
-`appendSession` (and the POST endpoint it backs) upserts on `session_id`. Re-registering the same real id is a no-op for identity fields and a COALESCE for other fields, so SessionStart can pre-register a minimal row that `grab` or `syntaur track-session` later enrich with project/ticket/description. Sessions already in a terminal status (`completed` / `stopped`) are not revived by re-registration.
-
-### Status Values
-
-| Status | Meaning |
-|--------|---------|
-| `active` | Session is currently running |
-| `completed` | Session finished successfully |
-| `stopped` | Session was terminated or failed |
-
-### API Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/agent-sessions` | List all sessions across all projects |
-| `GET` | `/api/agent-sessions/:projectSlug` | List sessions for a project (optional `?ticket=` filter) |
-| `POST` | `/api/agent-sessions` | Register a new session |
-| `PATCH` | `/api/agent-sessions/:sessionId/status` | Update session status |
-
-### CLI
-
-```bash
-syntaur track-session --agent <name> --session-id <real-id> [--transcript-path <path>] [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>]
-```
-
-`--session-id` is required; it must be the real id from the agent runtime. `--transcript-path` is optional but strongly preferred.
-
-### Events
-
-Lifecycle and audit events live in the same database (`events` table):
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `event_id` | TEXT PRIMARY KEY | Unique event id |
-| `ticket_id` | TEXT NOT NULL | Ticket id (`<PREFIX>-<n>`) |
-| `at` | TEXT NOT NULL | RFC 3339 timestamp |
-| `actor` | TEXT NOT NULL | Who triggered the event |
-| `type` | TEXT NOT NULL | Event type (see below) |
-| `details` | TEXT | JSON payload |
-| `source_key` | TEXT UNIQUE | Idempotency / provenance key |
-
-Indexes: `(ticket_id, at)` and `at`.
-
-**Tracked event types** (same as [cli.md](../cli.md#tracked-event-types)): `created`, `moved`, `flagged`, `unflagged`, `plan-approved`, `plan-versioned`, `logged`, `dispatched`, `retemplated`.
-
-Read with `syntaur timeline <id>` or `syntaur history <id> --events`. Ticket folder file history is separate: `syntaur history <id>` (git log scoped to the ticket directory).
-
----
-
-## 11. Resource Files
-
-**Ownership:** Shared-writable (humans and agents)
-
-Resource files live in the `resources/` folder and represent reference material agents need to consult: external docs, API specs, architecture notes, configuration references, etc.
-
-**Canonical identity:** The filename (slug) is the canonical identifier. Unlike projects and tickets, resources do not carry a separate `id`/`slug` in frontmatter. The `name` field is display-only.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `type` | string (literal) | `"resource"` | required | — | Always `"resource"`. Discriminator field. |
-| `name` | string | any | required | — | Display name for the resource. |
-| `source` | string | agent name or `"human"` | required | — | Who created this resource. Tracks provenance. |
-| `category` | string (enum) | `documentation`, `api`, `service`, `config`, `other` | required | — | Classification of the resource. |
-| `sourceUrl` | string or null | URL | optional | `null` | Link to the original external source, if any. |
-| `sourceTicket` | string or null | ticket slug | optional | `null` | The ticket that created this resource, if any. |
-| `relatedTickets` | array of strings | ticket ids | optional | `[]` | Tickets that reference or use this resource. |
-| `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the resource was created. |
-| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the resource was last modified. |
-
-### Body Sections
-
-No required structure. The body contains the resource content: descriptions, links, specs, notes, etc.
-
-### Example
-
-**Filename:** `resources/auth-requirements.md`
-
-```markdown
----
-type: resource
-name: Auth Requirements
-source: human
-category: documentation
-sourceUrl: https://docs.google.com/document/d/1abc123/edit
-sourceTicket: null
-relatedTickets:
-  - design-auth-schema
-  - implement-jwt-middleware
-created: "2026-03-15T09:00:00Z"
-updated: "2026-03-16T09:00:00Z"
----
-
-# Auth Requirements
-
-Product requirements for the authentication system, summarized from the PRD.
-
-## Token Specifications
-
-- **Access token:** JWT, RS256 signed, 15-minute TTL
-- **Refresh token:** opaque, stored in DB, 7-day TTL, rotation on use
-- Both tokens issued on login and refresh
-
-## Endpoints
-
-- `POST /auth/login` — issue token pair
-- `POST /auth/refresh` — rotate refresh token, issue new access token
-- `POST /auth/logout` — revoke refresh token
-- `GET /auth/me` — return current user (requires valid access token)
-
-## Security Requirements
-
-- Refresh tokens must be revocable
-- Rate limit on login: 5 attempts per minute per IP
-- Rate limit on refresh: 10 requests per minute per user
-```
-
----
-
-## 12. Memory Files
-
-**Ownership:** Shared-writable (humans and agents)
-
-Memory files live in the `memories/` folder and represent learnings, patterns, or context discovered during the project that may be useful for other tickets or future work.
-
-**Canonical identity:** The filename (slug) is the canonical identifier. No separate `id`/`slug` in frontmatter. The `name` field is display-only.
-
-### Frontmatter Schema
-
-| Field | Type | Valid Values | Required | Default | Description |
-|-------|------|-------------|----------|---------|-------------|
-| `type` | string (literal) | `"memory"` | required | — | Always `"memory"`. Discriminator field. |
-| `name` | string | any | required | — | Display name for the memory. |
-| `source` | string | agent name or `"human"` | required | — | Who created this memory. Tracks provenance. |
-| `sourceTicket` | string or null | ticket slug | optional | `null` | The ticket where this learning originated. |
-| `relatedTickets` | array of strings | ticket ids | optional | `[]` | Tickets that benefit from this memory. |
-| `scope` | string (enum) | `ticket`, `project`, `global` | required | — | How broadly this learning applies. |
-| `created` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was created. |
-| `updated` | string (RFC 3339) | RFC 3339 datetime | required | — | When the memory was last modified. |
-| `tags` | array of strings | any | optional | `[]` | Freeform tags for categorization and search. |
-
-**Scope values:**
-
-| Value | Meaning |
-|-------|---------|
-| `ticket` | Learning is specific to the source ticket. |
-| `project` | Learning is relevant to the entire project. |
-| `global` | Learning is potentially promotable to a global memory system (future versions). |
-
-### Body Sections
-
-No required structure. The body contains the learning content.
-
-### Example
-
-**Filename:** `memories/postgres-connection-pooling.md`
-
-```markdown
----
-type: memory
-name: PostgreSQL Connection Pooling Configuration
-source: claude-2
-sourceTicket: design-auth-schema
-relatedTickets:
-  - implement-jwt-middleware
-scope: project
-created: "2026-03-17T11:00:00Z"
-updated: "2026-03-17T11:00:00Z"
-tags:
-  - postgres
-  - performance
-  - infrastructure
----
-
-# PostgreSQL Connection Pooling Configuration
-
-During the auth schema design, discovered that the default PostgreSQL connection
-pool settings are insufficient for the expected token refresh load.
-
-## Findings
-
-- Default `max` connections in `pg` library is 10, which will bottleneck under
-  concurrent refresh token lookups
-- Recommended: set pool `max` to 20 for the auth service, with `idleTimeoutMillis`
-  of 30000
-- Connection pool should be shared across the auth middleware and refresh endpoint,
-  not created per-request
-
-## Configuration
-
-```javascript
-const pool = new Pool({
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
-```
-
-## Relevance
-
-This applies to any ticket that performs database queries in the request path,
-especially the JWT middleware refresh endpoint which will see high concurrency.
-```
-
----
-
-
-## 13. template.md
+## 5. template.md
 
 **Ownership:** Human-authored (built-ins seeded from the package; never overwritten on upgrade unless reset)
 
@@ -1055,7 +510,7 @@ gates:
 
 ---
 
-## 14. config.md
+## 6. config.md
 
 **Ownership:** Human-authored
 
@@ -1074,7 +529,7 @@ Global Syntaur configuration file at `~/.syntaur/config.md`. This file is **opti
 | `session.idleSweepHours` | number | > 0 | optional | `6` | How long an `active` non-chat session may sit without a heartbeat before the stale sweep marks it `stopped` and closes its engagement. |
 The v1 `types` config block was removed in the templates protocol. Ticket manifests live under `~/.syntaur/templates/<id>/template.md`; per-project defaults use `defaultTemplate` in `project.md`.
 
-The `agents:` and `agentDiscovery:` blocks were REMOVED in v0.80 along with the
+The `agents:` and `agentDiscovery:` blocks were removed in 1.0 along with the
 terminal-launch stack they configured — Syntaur no longer opens a terminal for
 you, so there are no launch recipes to configure. Chat agents are defined per
 file under `~/.syntaur/agents/<id>.md` instead (see
@@ -1109,7 +564,7 @@ Personal development machine. Projects stored in default location.
 
 ---
 
-## 15. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
+## 7. Playbooks (`~/.syntaur/playbooks/<slug>.md`)
 
 **Ownership:** Human-authored (agents edit via the dashboard Library; CLI playbook verbs were removed in v2)
 **Purpose:** Optional behavioral rules that apply on top of template stage instructions.
@@ -1166,3 +621,118 @@ Before transitioning a ticket to `review` or `completed`:
 
 Do NOT mark a ticket complete just because you wrote the code.
 ```
+
+## 8. Agent definitions (`~/.syntaur/agents/<id>.md`)
+
+**Ownership:** Human via dashboard **Library** (built-in ids `claude`, `codex`, `cursor` ship as defaults).
+
+Each file is YAML frontmatter plus a markdown body the harness reads when that agent participates in ticket chat. Field meanings (harness, model, permissions, roster lines) are documented in [ticket-chat.md](../ticket-chat.md).
+
+Agent ids appear in template `stages[].agent` / `reviewer`, `syntaur log --agent`, `assign --agent`, and chat `@mention` routing.
+
+## 9. SQLite (`syntaur.db`)
+
+Operational cache at `~/.syntaur/syntaur.db` (gitignored). Markdown under `projects/` remains authoritative for ticket state; the database holds sessions, engagements, audit events, usage rollups, and chat indexes. Each subsystem owns a `*_schema_version` row in `meta`.
+
+### `meta`
+
+| Column | Description |
+|--------|-------------|
+| `key` | TEXT PRIMARY KEY |
+| `value` | TEXT |
+
+### `sessions`
+
+| Column | Description |
+|--------|-------------|
+| `session_id` | TEXT PRIMARY KEY — real agent runtime id (never synthesized) |
+| `agent` | Harness name (`claude`, `codex`, `cursor`, …) |
+| `started`, `ended` | ISO timestamps |
+| `status` | `active`, `completed`, or `stopped` |
+| `path` | Cwd at registration |
+| `description`, `summary` | Human or auto summary text |
+| `transcript_path` | Absolute transcript path (preferred) |
+| `original_head_sha`, `hosted_by` | Legacy / attribution columns |
+| `summarized_at`, `description_source` | Auto-summary metadata |
+| `pinned_at`, `archived_at` | Session list curation |
+| `created_at`, `updated_at` | Row timestamps |
+
+Ticket binding is on `engagement`, not on `sessions`. Pre-v2 rows used `project_slug` / `assignment_slug` on `sessions`; migrator re-keys to `ticket_id` on `engagement` and related tables.
+
+### `engagement`
+
+| Column | Description |
+|--------|-------------|
+| `id` | INTEGER PRIMARY KEY |
+| `session_id` | TEXT NOT NULL |
+| `ticket_id` | TEXT — ticket id (`<PREFIX>-<n>`) |
+| `stage` | Stage at open |
+| `started_at`, `ended_at` | Interval |
+| `tokens_at_open`, `tokens_at_close` | JSON snapshots |
+| `close_reason` | Why the edge closed |
+
+At most one open engagement per session (partial unique index on `ended_at IS NULL`).
+
+### `events`
+
+| Column | Description |
+|--------|-------------|
+| `event_id` | TEXT PRIMARY KEY |
+| `ticket_id` | TEXT NOT NULL |
+| `at` | TEXT NOT NULL |
+| `actor` | TEXT NOT NULL |
+| `type` | TEXT NOT NULL |
+| `details` | JSON TEXT |
+| `source_key` | TEXT UNIQUE — idempotency |
+
+**Types:** `created`, `moved`, `flagged`, `unflagged`, `plan-approved`, `plan-versioned`, `logged`, `dispatched`, `retemplated`.
+
+### `usage_events` / `usage_daily`
+
+`usage_events` PK `(session_id, model)` — cumulative token/cost snapshot per session and model. Columns include `input_tokens`, `output_tokens`, `cache_creation_tokens`, `cache_read_tokens`, `total_tokens`, `total_cost`, `project_slug`, `ticket_id`, `event_ts`, `updated_at`.
+
+`usage_daily` PK `(day, tool, model, project_slug, ticket_id)` — rolled-up daily totals with `frozen` reserved for closed-day promotion.
+
+### `chat_sessions` / `chat_items` / `chat_harness_options`
+
+`chat_sessions.session_key` is `<ticket-id>~<harness>` (no colon). Columns include `ticket_id`, `agent_id`, `harness`, `acp_session_id`, `usage_snapshot_json`, `state`, `last_delivered_seq`, `standing_fingerprint`, `commands_json`.
+
+`chat_items` stores materialised chat rows keyed by `item_id` with `ticket_id`, `session_key`, `seq_first` / `seq_last`, and serialised JSON.
+
+`chat_harness_options` caches per-harness adapter config and auth state for the Agents editor.
+
+Canonical chat transcript: `<ticketDir>/chat/events.jsonl` (index is rebuildable).
+
+### Session id rule
+
+`session_id` must be the **real** id from the agent runtime when known. `syntaur track-session` and `syntaur session register` resolve it from env, process markers, or transcript scan when omitted. Never invent a substitute id for attribution.
+
+### CLI
+
+```bash
+syntaur track-session --agent <name> [--session-id <id>] [--transcript-path <path>] \
+  [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>]
+```
+
+Read audit rows: `syntaur timeline <id>` or `syntaur history <id> --events`. Ticket file history: `syntaur history <id>` (git log on the ticket folder).
+
+---
+
+## 10. Legacy files (pre-2.0, merged by `migrate journal`)
+
+The `legacy` template keeps v1 sidecars until `syntaur migrate journal` merges them into `journal.md` and switches the ticket to `feature` (or `--template`). **`syntaur migrate v2`** may inject `**Recorded:** <iso>` as the first body line on undated decision/handoff blocks when stripping `updated` from record frontmatter.
+
+| File | Role after merge |
+|------|------------------|
+| `progress.md` | `progress` / other log types (newest-first layout tolerated until merge) |
+| `decision-record.md` | `decision` entries |
+| `handoff.md` | `handoff` entries |
+| `comments.md` | `question` / `answer` / `note` entries |
+| `scratchpad.md` | `note` entries or remains as `notes` role on legacy only |
+
+Per-ticket backups live in `.migrate-journal.bak/` during merge. Full v1 layouts for these files were removed from this reference — use `syntaur show` on a `legacy` ticket or run a dry-run `migrate journal` to inspect sources.
+
+---
+
+
+---

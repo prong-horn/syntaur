@@ -1,397 +1,341 @@
 # Syntaur Protocol Specification
 
-**Version:** 2.0
+**Protocol version:** 2.0 · **Package:** 1.0.0 (as shipped)
+
+This document is the conceptual contract for Syntaur v2. Field-level schemas live in [file-formats.md](./file-formats.md). The CLI surface is in [cli.md](../cli.md). Where this text disagrees with running code, the code wins — callouts below note known deltas as **as shipped in 1.0**.
 
 ---
 
-## 1. Introduction
+## 1. Purpose and scope
 
-The Syntaur protocol is a markdown-based file structure and format that serves as the "API" for the Syntaur platform. It defines how projects (high-level objectives), tickets (units of work), and their associated metadata are organized on the filesystem.
+Syntaur is a markdown-on-disk workflow for coding agents: projects, tickets, templates, lifecycle verbs, a typed journal, chat, sessions, and a local dashboard. Agents discover work through `syntaur show`; humans steer through markdown they own and through the dashboard.
 
-Any agent framework that can read and write files can participate in the Syntaur protocol. There is no proprietary wire format, no database to connect to, and no SDK to install. The protocol is the file system layout itself: a set of markdown files with YAML frontmatter arranged in a specific directory structure under `~/.syntaur/`.
+**In scope:** the kernel (`ticket.md` + `chat/`), fixed stage vocabulary, four file roles, template manifests, verbs and gates, rendered `show`, ticket ids, Needs me and the board, the six skills and three hooks, and the CLI commands that exist in `syntaur --help`.
 
-Agents discover work by reading markdown files, report progress by updating markdown files, and coordinate with each other through the structure the protocol defines. Humans oversee and steer projects by editing the files they own. Derived files — rebuilt automatically by tooling — provide at-a-glance dashboards of project state.
-
-This document is the authoritative conceptual reference for the protocol. For detailed field-level schemas of every file type, see [file-formats.md](./file-formats.md). A reader should be able to understand the entire protocol from this document alone.
+**Out of scope here:** implementation code, dashboard wireframes, and one-off migration transcripts (see [v1.0 release note](../releases/v1.0.md)).
 
 ---
 
-## 2. Design Principles
+## 2. Vocabulary
 
-### Markdown-as-Database
+| Term | Meaning |
+|------|---------|
+| ticket | The unit of work; the noun everywhere (files, UI, database keys) |
+| project | Container under `~/.syntaur/projects/<slug>/` with `project.md` and `tickets/` |
+| template | Directory under `~/.syntaur/templates/<name>/` defining stages, files, gates, workspace policy |
+| kernel | Invariant core: `ticket.md` and `chat/` only |
+| role | One of `plan`, `log`, `notes`, `deliverable`; tool behaviour for a template file |
+| stage | Fixed id in §3.5; stored in `ticket.md` `status` |
+| flag | `blocked` or `parked`; reason string or null; does not change stage |
+| gate | Named check a verb evaluates when declared on the template |
+| verb | CLI command that may move `status`, set flags, or act on role files |
+| broker | Chat subsystem that owns `chat/` and supplies standing context to ACP participants |
+| show | Rendered ticket summary from `syntaur show <id>` |
 
-Every file in the protocol uses YAML frontmatter for structured, machine-readable fields and a markdown body for human-readable prose. This means a single file serves both as a data record and as a readable document. There is no separate database — the filesystem is the database.
-
-### Agent-Framework Agnostic
-
-The protocol does not assume any particular agent framework. Claude Code, Cursor, Codex, custom scripts — anything that can read a file and write a file can participate. Framework-specific configuration (e.g., `claude.md` for Claude Code) supplements the universal protocol files but is never required.
-
-### Human-Readable
-
-Every file in the protocol can be opened in a text editor and understood without specialized tooling. Status, dependencies, progress, and decisions are all visible as plain text. Derived files like dependency graphs use Mermaid syntax that renders in most markdown viewers.
-
-### Machine-Parseable
-
-YAML frontmatter provides structured fields with defined types and valid values. Tooling can parse frontmatter to build indexes, compute status rollups, enforce lifecycle rules, and power dashboards — all without fragile regex parsing of prose content.
-
-### Workspace Grouping
-
-Projects can optionally declare a `workspace` string in their frontmatter to group related projects by codebase or project context. This is a flat organizational label -- not a directory hierarchy. The dashboard uses workspace values to scope navigation and filtering. Projects without a workspace are treated as "Ungrouped." Note: the project-level `workspace` (a string) is distinct from the ticket-level `workspace` (an object containing repository, branch, and worktree information).
-
-### Minimal Nesting
-
-The directory structure is intentionally flat. Projects contain tickets, and that is the deepest nesting goes. Cross-references between tickets use slugs, not deeply nested paths. Index files at the project level provide navigation without requiring directory traversal.
-
-### Derived state
-
-Rollups, board summaries, and dependency graphs are computed at read time from ticket frontmatter and journal entries — not written back to markdown under `projects/`. Operational history lives in the SQLite `events` table and in the git log of the Syntaur home (`syntaur history`). Canonical ticket and project files stay authoritative; dashboards and the CLI query live data instead of maintaining derived index files.
+Verbs drop the noun: `syntaur new`, not `syntaur new-ticket`.
 
 ---
 
-## 3. Directory Structure
+## 3. Kernel
 
-The root of all Syntaur data is `~/.syntaur/`. Below is the full directory tree with every file's purpose:
+### 3.1 Home layout
 
 ```
 ~/.syntaur/
-  .git/                              # Git repository (created by `syntaur init`)
-  .gitignore                         # Ignores DB, runtime, and other operational files
-  home-commit.sh                     # Daily auto-commit script (installed by `syntaur init`)
-  config.md                          # Global Syntaur configuration (optional)
-  projects/
-    <project-slug>/
-      project.md                     # Human-authored: project overview, goal, context, success criteria (entry point)
-      tickets/
-        <ID>-<slug>/                 # Agent-writable ticket folder; ID is <PREFIX>-<n> from project.md
-          ticket.md              # Agent-writable: the ticket record (source of truth for state)
-          plan*.md                   # Agent-writable: versioned implementation plans (optional, 0 or more: plan.md, plan-v2.md, ...)
-          journal.md                 # CLI-mediated log role: progress, decisions, handoffs, Q&A, reviews (modern templates)
-          chat/                      # Kernel: chat notes when template has no log role; attachments for log entries
-          scratchpad.md              # Agent-writable notes (legacy template only)
-      resources/
-        <resource-slug>.md           # Shared-writable: reference material for the project
-      memories/
-        <memory-slug>.md             # Shared-writable: learnings discovered during the project
-  templates/
-    <template-id>/
-      template.md                    # Human-authored: ticket template manifest (stages, files, gates)
-      ...                            # Optional companion files copied with custom templates
-  playbooks/
-    manifest.md                      # Derived: playbook listing with descriptions and when_to_use
-    <slug>.md                        # User-authored: behavioral rules and workflows for agents
-  syntaur.db                         # SQLite: sessions, events, engagements (operational; gitignored)
+  config.md                 # human via dashboard Settings; CLI reads
+  templates/                # built-ins on init/update; human edits copies
+  playbooks/                # human via dashboard Library
+  agents/                   # human via dashboard Library
+  projects/<slug>/
+    project.md
+    tickets/<ID>-<slug>/
+  syntaur.db                # sessions, engagement, events, usage, chat index
+  inbox-snoozes.json
+  view-prefs.json
+  hooks/                    # copied by syntaur hooks install
+  statusline*               # statusline.sh, conf, backups (when installed)
+  home-commit.sh
+  .git / .gitignore         # git-backed home from syntaur init
+  runtime/                  # operational logs and pid files (gitignored)
 ```
 
-### Key structural observations
+`SYNTAUR_HOME` overrides `~/.syntaur`. Retired top-level entries (`servers/`, `todos/`, `schedules/`, `workspaces.json`, `saved-views.json`, and similar) are tolerated by `doctor` but are not part of v2 — move them aside on upgrade (see [v1.0 release note](../releases/v1.0.md)).
 
-- **One folder per project.** The folder name is the project slug and matches the `slug` field in `project.md` frontmatter.
-- **All tickets live under a project.** Ticket folders are at `projects/<project-slug>/tickets/<ID>-<slug>/`, where `ID` is `<PREFIX>-<n>` (e.g. `FIT-3-implement-jwt-middleware`). The `prefix` and `nextTicket` counter live in `project.md`; ids are allocated by `syntaur new` and never reused. The `slug` is the human-readable suffix and may be renamed with `syntaur rename`.
-- **Scratch project** (`projects/scratch/`, prefix `SCR`) holds tickets created without `--project`. `syntaur new` defaults here when `--project` is omitted. There is no standalone `~/.syntaur/tickets/` tree.
-- **`project.md` is the project entry point.** An agent starting work reads `project.md` for context, then discovers tickets under `tickets/`.
-- **Resources and memories live at the project level**, not inside tickets. They are shared context available to all tickets in the project.
-- **Templates live at the home level** (`~/.syntaur/templates/`). Five built-ins ship with the CLI (`feature`, `bug`, `spike`, `quick`, `legacy`); each is a directory with a `template.md` manifest. `syntaur init` seeds any missing built-ins. Custom templates are copies under the same tree.
+### 3.2 project.md
 
----
+| Field | Writer | Meaning |
+|-------|--------|---------|
+| `slug` | CLI | Directory name under `projects/` |
+| `title` | human | Display name |
+| `prefix` | CLI | 2–5 uppercase letters, unique across projects |
+| `nextTicket` | CLI | Next counter for id allocation |
+| `defaultTemplate` | human | Default for `syntaur new` (usually `feature`) |
+| `archived`, `archivedAt`, `archivedReason` | CLI / human | Project archive state (`syntaur archive` / `restore`) |
+| `created`, `updated` | CLI | Timestamps |
 
-## 4. File Ownership Rules
+Body: `## Overview`, optional `## Notes`. Optional `repositories[]` and `externalIds[]` may appear on older projects; they are not required for v2 tickets.
 
-Every file in the protocol belongs to exactly one of five ownership categories. These categories determine who may write to a file and how conflicts are avoided.
+**Id allocation:** ids are `<PREFIX>-<n>`, never reused. Source of truth is `nextTicket` in `project.md`; `syntaur new` and `migrate v2` allocate under exclusion.
 
-### Human-Authored
+### 3.3 Ticket folder and ticket.md
 
-Files written and maintained exclusively by humans. Agents read these but never modify them.
+**Folder:** `projects/<project>/tickets/<ID>-<slug>/`. Address tickets by `<ID>`; folders match by id prefix. `syntaur rename <id> <new-slug>` changes slug and renames the folder.
 
-| File | Purpose |
-|------|---------|
-| `project.md` | Project overview, goal, context, success criteria |
-| `templates/<id>/template.md` | Ticket template manifest (stages, file roles, gates). Built-ins are seeded from the package; humans may copy and customize. |
+**References:** `depends_on` and `links` hold ticket ids or URLs, never slugs or paths.
 
-### Agent-Writable
+**Unknown files** (legacy `proof/`, `sessions/`, etc.) are ignored by verbs and not listed in `show`.
 
-Files inside ticket folders. Only the assigned agent writes to its own ticket folder. This single-writer guarantee prevents conflicts between concurrent agents.
+**Kernel files are not in `files[]`.** `ticket.md` and `chat/` are never manifest entries.
 
-| File | Purpose |
-|------|---------|
-| `ticket.md` | Ticket record and source of truth for state |
-| `plan*.md` | Versioned implementation plans (optional, 0 or more: `plan.md`, `plan-v2.md`, ...) |
-| `scratchpad.md` | Unstructured working notes (legacy template) |
+**Frontmatter (17 fields):**
 
-### CLI-Mediated (log role and chat)
+| Field | Writer | Meaning |
+|-------|--------|---------|
+| `id` | CLI | `<PREFIX>-<n>` |
+| `slug` | CLI/human | Display; folder suffix |
+| `title` | human | |
+| `project` | CLI | Project slug |
+| `template` | CLI | Template id |
+| `status` | CLI/verbs | Current stage |
+| `priority` | human | `low` \| `medium` \| `high` \| `critical` |
+| `blocked`, `parked` | verbs | Flag reasons or null |
+| `depends_on` | human | Ticket ids |
+| `assignee` | human / `assign` | Agent id or null |
+| `tags`, `links` | human | |
+| `workspace` | human/CLI | `repository`, `branch`, `worktree`, `parentBranch` or null |
+| `plan` | CLI | `file`, `approvedDigest`, `approvedAt`, `approvedBy` |
+| `created`, `updated` | CLI | |
 
-Writable only through `syntaur log` (or the dashboard Journal tab / log API) — never by directly editing the log file. Preserves safe concurrency across agents and humans.
+Required body: `## Objective`, `## Acceptance Criteria` (checkboxes; `criteria-checked` gate). `## Context` is conventional. Links live in frontmatter only.
 
-| File / path | Purpose | Mediator |
-|------|---------|----------|
-| `journal.md` (or template-declared log path) | Append-only typed log: `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review` | `syntaur log` CLI and dashboard log write API |
-| `chat/` notes | Fallback when the template has no log role | `syntaur log` (appends chat notes) |
+Agents edit `ticket.md` directly plus template files with `writer: agent`. Log-role files are append-only via `syntaur log`.
 
-Legacy templates still use separate `progress.md`, `comments.md`, `handoff.md`, and `decision-record.md` files until `syntaur migrate journal` merges them into `journal.md`.
+### 3.4 chat/
 
-### Shared-Writable
+Ticket chat is documented in [ticket-chat.md](../ticket-chat.md). Contract for v2:
 
-Files in the `resources/` and `memories/` folders. Both humans and agents can create and update files here directly. There is no single-owner constraint — these are shared project context.
+1. **Standing context** per adapter session is the full `syntaur show` text; refreshed on stage change.
+2. **Record actions** from chat append **log-role** entries via the journal grammar (§4), not fixed legacy filenames.
 
-| File | Purpose |
-|------|---------|
-| `resources/<resource-slug>.md` | Reference material (docs, API specs, architecture notes) |
-| `memories/<memory-slug>.md` | Learnings and patterns discovered during the project |
+### 3.5 Stages and flags
 
-The `source` field in each file's frontmatter tracks who created it (e.g., `"human"`, `"claude-1"`), providing authorship provenance.
+**Fixed stage ids (global order):**
 
-### Derived state (not on disk)
-
-Project rollups, ticket board summaries, and dependency graphs are computed at read time by the CLI and dashboard from ticket frontmatter and journal entries. Legacy derived markdown (`manifest.md`, `_index-*.md`, `_status.md`, resource/memory indexes) is removed by `syntaur migrate v2 --apply`; do not recreate it.
-
----
-
-## 5. Source of Truth
-
-**Ticket frontmatter is the single source of truth for all ticket state.**
-
-This is the most important rule in the protocol. The `status`, `priority`, `assignee`, `depends_on`, `template`, `plan`, `workspace`, and all other structured fields in a ticket's YAML frontmatter are canonical. Dashboard and CLI views (board columns, rollups, dependency graphs, inbox predicates) are live computations from that data and from SQLite `events` — not separate markdown files.
-
-Similarly, `project.md` frontmatter is the canonical source for project-level human-authored fields (`archived`, `archivedAt`, `archivedReason`, `title`, `externalIds`). Project status is not stored in `project.md` — it is computed from ticket stages and flags when the UI or CLI needs it.
-
-**Workspace naming note:** On `ticket.md`, `workspace` is an **object** containing code context fields (`repository`, `worktree`, `branch`, `parentBranch`) — the git worktree where the ticket's code lives. This is unrelated to the Syntaur workspace marker file (`.syntaur/context.json`), which identifies the repository/branch/worktree of the agent's current working directory.
-
----
-
-## 6. Lifecycle Overview
-
-### Stages
-
-Every ticket has a `status` field in its frontmatter holding a **stage id** from the fixed vocabulary. Templates declare an ordered subset and may relabel display names; they must never invent stage ids.
-
-| Stage id | Meaning | Typical entry verb |
-|----------|---------|-------------------|
+| Stage | Meaning | Typical verb |
+|-------|---------|--------------|
 | `backlog` | Not started | `syntaur new` |
-| `planning` | Plan being written | `plan` |
-| `ready` | Plan approved, waiting to start | `approve` |
-| `in_progress` | Active implementation | `start` |
-| `review` | Awaiting or in review | `review` |
-| `done` | Successfully completed | `done` |
-| `dropped` | Abandoned or failed | `drop` |
+| `planning` | Plan being written | `syntaur plan create` |
+| `ready` | Plan approved | `syntaur approve` |
+| `in_progress` | Active work | `syntaur start` |
+| `review` | In or awaiting review | `syntaur review` |
+| `done` | Completed | `syntaur done` |
+| `dropped` | Abandoned | `syntaur drop` |
 
-`dropped` is implicit for every template — it is never listed in a template's `stages[]`, and `drop` works from any active stage. `ready` is valid only when the template declares a `plan` role; templates without a plan role use `backlog → in_progress` (no `planning`/`ready` stages).
+Templates declare an ordered subset of `backlog`…`done` and may relabel. `dropped` is never in `stages[]`; `drop` works from any active stage. `ready` requires a `plan` role.
 
-**Stage order:** `backlog < planning < ready < in_progress < review < done` (`dropped` is aside).
-
-### Stage instructions and the prompt hook
-
-Each template declares `stages[].instructions` — imperative guidance for that stage. Agents run `syntaur show <id>` and follow **Stage** and **Next**; adapter standing context includes the Stage line. The `UserPromptSubmit` hook calls `syntaur session context --from-hook`, which injects the open engagement's ticket id, current stage, that stage's instructions (verbatim, including line breaks), the Next hint, and only **cross-template** playbooks: enabled slugs not listed in any template manifest's `playbooks` field. Template-claimed playbook slugs are omitted because their content lives in stage instructions. The derived playbook manifest is for the dashboard Library; the hook reads playbook files directly.
-
-Status moves only by explicit lifecycle verbs (`plan`, `approve`, `start`, `review`, `done`, `drop`, `reopen`). Gates declared on the template run at call time; `--force` skips gates and records `forced: true` on the `moved` event.
-
-Use `--by <name>` on lifecycle verbs, plan create/version, and flag verbs for **audit attribution** in the event log (`human` by default). On `start` only, `--agent <id>` names a **one-use stage dispatch recipient** override — not the audit actor. `assign --agent`, `log --agent`, and `track-session --agent` keep their separate existing meanings.
-
-#### Stage-owned dispatch
-
-Each template stage may declare at most one of `agent` or `reviewer` (an implementer target or a review target), plus optional `auto` (default `true` for `agent`, `false` for `reviewer`). Terminal stages never auto-dispatch even when a target is named; ordinary chat stays available at every stage.
-
-On every **live** stage entry (`created` or stage-changing `moved`), the lifecycle records a UUID **stage entry id** and the resolved dispatch policy. When `auto: true` (or `start --agent` authorizes a one-shot override on a manual stage), the dashboard broker may accept **one** exact-target ACP turn for that entry — distinct from ordinary chat fanout, `@mention` routing, or reply hops. A completed receipt means the agent **turn** ended normally, not that review passed, gates cleared, or the ticket is done. Agents never advance stages, approve plans, or call `done` on behalf of the driver.
-
-Manual stages, missed automatic dispatch, or failed receipts expose **Hand to** on the ticket page. Manual handoff mints a fresh request id; ambiguous network acceptance retries the original id (`auto~<entryId>` for automatic entries). Receipt states include `queued`, `running`, `completed`, `failed`, `cancelled`, `interrupted`, and `superseded`. CLI lifecycle moves succeed even when dispatch is offline; dispatch failure is reported separately and recovered from the dashboard — never by repeating the lifecycle verb.
-
-`review-clean` still reads the latest `review` log entry (`approve` with `high=0`) independently of author; the driver's stricter no-high/no-medium review policy is separate. Reviewer stages instruct the target to record findings with `syntaur log <ID> -t review --agent <actual-id> --verdict approve|changes --open high=<n>,medium=<n> "<body>"` when the template log role allows it; otherwise findings stay in chat and no gate pass is fabricated.
-
-Agent ids resolve through `~/.syntaur/agents/<id>.md` (user overrides plus built-ins `claude`, `codex`, `cursor`). The `harness` field selects the ACP adapter; separate ids sharing one harness can pin different models and sessions. Example Library definitions (documented, not shipped into every home): implementer `cursor` with model `composer-2.5`; reviewer `reviewer` with harness `cursor` and model `cursor-grok-4.6-high`.
-
-`syntaur show` renders **Handoff:** (latest log handoff entry) and **Agent:** (stage dispatch status) on separate lines.
-
-#### Gate table
-
-| Gate id | Reads | Passes when |
-|---------|-------|-------------|
-| `plan-exists` | plan role file | File exists and is non-empty beyond scaffold |
-| `plan-approved` | plan role + `plan.approvedDigest` | SHA-256 digest of current plan file equals `plan.approvedDigest` |
-| `deps-done` | `depends_on` + ticket statuses | Every depended ticket is `done` |
-| `workspace-set` | `workspace` frontmatter | All four workspace fields non-empty when template `workspace: required` |
-| `criteria-checked` | Acceptance Criteria checkboxes | Every box checked |
-| `handoff-logged` | log role | `handoff` entry later than last entry into `in_progress` or last `reopen` |
-| `review-clean` | log role | Latest `review` entry is `approve` with `high=0`, after last entry into `review` or `reopen` |
-| `deliverable-present` | deliverable role | File non-empty beyond scaffold |
-
-Gate failure shape: `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exit 1).
-
-#### Verb table
-
-| Verb | From (by template) | To | Gates (typical) | Side effects |
-|------|-------------------|-----|-----------------|--------------|
-| `plan` | stage before `planning`, or any active if no `planning` | `planning` or file-only | — | create/scaffold plan file |
-| `approve` | stage before `ready`, or any active if no `planning`/`ready` | `ready` or file-only | `plan-exists` | set `plan.approved*` |
-| `start` | stage before `in_progress` | `in_progress` | `plan-approved`, `deps-done`, `workspace-set` (per template) | stage entry; auto-dispatch when `auto: true` or `start --agent` override |
-| `review` | stage before `review` | `review` | — | stage entry; auto-dispatch reviewer when `auto: true` |
-| `done` | stage before `done` | `done` | per template `gates.done` | — |
-| `drop` | any active | `dropped` | reason required | — |
-| `reopen` | `done` or `dropped` | stage before `done` in subset | — | keeps `plan.approvedDigest` |
-| `block` | any | — (flag) | reason required | `blocked: reason` |
-| `unblock` | any | — | — | `blocked: null` |
-| `park` | any | — (flag) | reason required | `parked: reason` |
-| `unpark` | any | — | — | `parked: null` |
-
-`plan version` creates `plan-v<N>.md`, sets `plan.file`, clears approval, and moves to `planning` when the template declares a `planning` stage.
-
-### Flags
-
-`blocked` and `parked` are **flags**, not stages. They hold a reason string or `null` in ticket frontmatter. A flagged ticket keeps its stage and shows a badge on the board and in `show`.
+**Flags:**
 
 | Flag | Set by | Cleared by |
 |------|--------|------------|
-| `blocked` | `syntaur block <id> "<reason>"` | `syntaur unblock <id>` |
-| `parked` | `syntaur park <id> "<reason>"` | `syntaur unpark <id>` |
+| `blocked` | `block <id> "<reason>"` | `unblock <id>` |
+| `parked` | `park <id> "<reason>"` | `unpark <id>` |
 
-`block` and `park` require a non-empty reason.
+**`depends_on`:** the `deps-done` gate (when declared) requires every listed ticket to be `done` before the gated verb runs — on built-in `feature`, `deps-done` is on `done`, not `start` (**as shipped in 1.0**).
 
-### Dependency Semantics
+### 3.6 Ids and folder names
 
-Tickets declare dependencies via `depends_on`, which lists ticket ids (`<PREFIX>-<n>`).
-
-- **`backlog` (or any pre-`in_progress` stage) with unmet `depends_on`** — the ticket is waiting for dependencies to reach `done`. The `deps-done` gate on `start` enforces this; no extra field is needed.
-
-- **`blocked` flag** — a manual or runtime obstacle unrelated to declared dependencies (missing credentials, external system down, unclear requirements). Set with `syntaur block` and a reason string.
-
-Structural waiting on dependencies is normal and resolves when dependencies complete. A `blocked` flag is exceptional and requires explicit clearance via `unblock`.
-
-### Project Status Rollup
-
-Project status is not stored in `project.md`. It is computed from ticket stages and flags by the CLI and dashboard. Rules are evaluated top-to-bottom; first match wins:
-
-| Priority | Condition | Resulting Status |
-|----------|-----------|-----------------|
-| 1 | `project.md` has `archived: true` | `archived` |
-| 2 | ALL tickets are `done` | `completed` |
-| 3 | ANY ticket is `in_progress` or `review` | `active` |
-| 4 | ANY ticket is `dropped` | `failed` |
-| 5 | ANY ticket has `blocked` set | `blocked` |
-| 6 | ALL tickets are `backlog` (or pre-active stages only) | `pending` |
-| 7 | Otherwise | `active` |
-
-**Valid project statuses:** `pending`, `active`, `blocked`, `completed`, `failed`, `archived`.
-
-`archived` is a human-authored override in `project.md` frontmatter. It is the only project status not computed from ticket states.
-
-### Edge Case Examples
-
-- **2 done + 1 backlog + 0 active** = `active` (rule 7). Work remains but nothing is running.
-
-- **1 done + 1 blocked flag + 1 backlog** = `blocked` (rule 5). The blocked flag takes precedence.
-
-- **1 in_progress + 1 dropped + 1 done** = `active` (rule 3). Active work takes precedence over drops.
-
-- **3 done** = `completed` (rule 2).
-
-- **Human sets `archived: true` on `project.md`** = `archived` (rule 1).
+Format `<PREFIX>-<n>` per project. Scratch project (`projects/scratch/`, prefix `SCR`) holds tickets created without `--project`. Operational tables key tickets by `id` string only.
 
 ---
 
-## 7. Naming Conventions
+## 4. Roles and the log grammar
 
-### Project Slugs
+### plan
 
-Lowercase, hyphen-separated. The slug is used as the project folder name and stored in the `slug` field of `project.md` frontmatter.
+At most one file. Verbs: `syntaur plan create`, `plan version`, `approve`. Gates: `plan-exists`, `plan-approved`.
 
-Examples: `build-auth-system`, `migrate-to-postgres`, `q1-performance-audit`
+### log
 
-### Ticket Slugs
+At most one file; `writer: cli`. Verb: `syntaur log`. Without a log role, `syntaur log` appends chat notes under `chat/`. Gates: `handoff-logged`, `review-clean`; Needs me tier 2 for open `question`.
 
-Lowercase, hyphen-separated. The slug is used as the ticket folder name and stored in the `slug` field of `ticket.md` frontmatter.
+**Frontmatter:** `purpose` only (from manifest `description`).
 
-Examples: `design-auth-schema`, `implement-jwt-middleware`, `write-auth-tests`
+**Entry grammar:**
 
-### Resource and Memory Slugs
-
-Lowercase, hyphen-separated. The filename (slug) is the canonical identifier for resources and memories. Unlike projects and tickets, they do not carry a separate `id`/`slug` in frontmatter — the `name` field is display-only.
-
-Examples: `auth-requirements.md`, `postgres-connection-pooling.md`
-
----
-
-## 8. Timestamp & Path Normalization
-
-### Timestamps
-
-All timestamps throughout the protocol use **RFC 3339 / ISO 8601 with UTC offset**.
-
-Format: `2026-03-18T14:30:00Z`
-
-This applies to every timestamp field in frontmatter (`created`, `updated`, `generated`, `archivedAt`, etc.) and to timestamps in markdown body content (progress entries, handoff dates, decision dates, session times).
-
-### Filesystem Paths
-
-**Local filesystem path fields** (`workspace.worktree`, `defaultProjectDir`, and any other local path stored in YAML frontmatter or config) use the **absolute expanded form**. Never store `~` literally — always expand to the full path at write time.
-
-**Note:** `workspace.repository` is exempt from this rule — it may be either a local absolute path or a remote URL (e.g., `https://github.com/org/repo.git`, `git@github.com:org/repo.git`). Only local filesystem paths require absolute expansion.
-
-```yaml
-# Correct
-workspace:
-  worktree: /Users/brennen/worktrees/build-auth-system/implement-jwt-middleware
-
-# Incorrect
-workspace:
-  worktree: ~/worktrees/build-auth-system/implement-jwt-middleware
+```
+## <ISO-8601Z> · <type> · <author>
+<optional key lines>
+<body>
 ```
 
-**Intra-project markdown links** (links between files within the same project folder) use **relative paths** for portability. If a project folder is moved or renamed, relative links remain valid.
+**Types (seven):** `progress`, `decision`, `handoff`, `note`, `question`, `answer`, `review`.
 
-```markdown
-## Links
-- [Ticket](./tickets/FIT-3-implement-jwt-middleware/ticket.md)
-- [Project overview](./project.md)
+**Key lines:** `verdict: approve|changes · open: high=<n> medium=<n>` on `review`; `answers: <ISO>` on `answer`; `attachments: <path>` (under `chat/attachments/`).
+
+**Author:** agent id from `~/.syntaur/agents/` or `human`. `--agent` on `syntaur log` sets author.
+
+### notes
+
+Any number of files; direct edit; no verbs.
+
+### deliverable
+
+At most one file; gate `deliverable-present` when declared.
+
+---
+
+## 5. Templates
+
+**Layout:** `~/.syntaur/templates/<id>/template.md` (manifest), optional skeleton files.
+
+**Commands:** `template list|new|check|reset`, `retemplate` (add missing files only).
+
+**Built-ins (gates and stages as shipped in `templates/*/template.md`):**
+
+| Template | Stages | `gates` (summary) |
+|----------|--------|-------------------|
+| `feature` | backlog → planning → ready → in_progress → review → done | `approve`: plan-exists; `start`: plan-approved, workspace-set; `done`: criteria-checked, handoff-logged, review-clean, deps-done |
+| `bug` | backlog → in_progress → review → done | `start`: workspace-set; `done`: criteria-checked, handoff-logged, review-clean, deps-done |
+| `spike` | backlog → in_progress → done | `done`: deliverable-present |
+| `quick` | backlog → done | `done`: [] |
+| `legacy` | full active set (migration only) | `approve`: plan-exists; `start`: []; `done`: criteria-checked, handoff-logged, deps-done |
+
+Manifest schema and validation rules: [file-formats.md](./file-formats.md) §5.
+
+---
+
+## 6. Verbs, gates, dispatch, events, and CLI
+
+**Stage order:** `backlog < planning < ready < in_progress < review < done`.
+
+**`--force`:** skips gates; `forced: true` on `moved`.
+
+**`--by <name>`:** audit actor on lifecycle verbs, plan create/version, and flag verbs (`human` default). **`start --agent <id>`** is dispatch recipient only, not audit attribution.
+
+| Gate | Passes when |
+|------|-------------|
+| `plan-exists` | Plan role file non-empty |
+| `plan-approved` | Plan digest matches `plan.approvedDigest` |
+| `deps-done` | Every `depends_on` ticket is `done` |
+| `workspace-set` | All four workspace fields set when template `workspace: required` |
+| `criteria-checked` | All acceptance checkboxes checked |
+| `handoff-logged` | `handoff` entry after last `in_progress` entry or `reopen` |
+| `review-clean` | Latest `review` is `approve` with `high=0` after last `review` entry or `reopen` |
+| `deliverable-present` | Deliverable role file non-empty |
+
+| Verb | To / effect | Built-in gates (typical) |
+|------|-------------|---------------------------|
+| `plan create` / `plan version` | `planning` or file-only | — |
+| `approve` | `ready` or file-only | `plan-exists` |
+| `start` | `in_progress` | template `gates.start` |
+| `review` | `review` | — |
+| `done` | `done` | template `gates.done` |
+| `drop` | `dropped` | reason required |
+| `reopen` | stage before `done` | — |
+| `block` / `park` / `unblock` / `unpark` | flags | reason on set |
+
+**Dispatch:** on stage entry, when `stages[].agent` is set and `auto: true`, the broker queues one ACP turn (dashboard must be running). `reviewer` defaults `auto: false` → **Hand to**. `syntaur start --agent <id>` overrides the recipient once.
+
+**Events** (`events` table): `created`, `moved`, `flagged`, `unflagged`, `plan-approved`, `plan-versioned`, `logged`, `dispatched`, `retemplated`. Ticket key column: `ticket_id`.
+
+**CLI groups:** see [cli.md](../cli.md) — Setup, Projects, Tickets, Lifecycle, Records, Workspace, Sessions, Migrations, Hooks, Playbooks, Stage dispatch, Retired.
+
+---
+
+## 7. syntaur show
+
+Text grammar (representative):
+
+```
+<ID> · <title> · <template> · <status>[ · blocked: …][ · parked: …]
+Objective: …
+Acceptance: n of m checked
+Workspace: … — or — Workspace: none (template does not require one)
+Depends: …
+Files:
+  ticket.md  kernel · editable
+  …
+Handoff: …
+Log: last 3 entries
+Stage: <id>. <instructions>
+Next: <hint>
+Commands: syntaur log …; syntaur block …; ask via question log or @mention in chat
+```
+
+`--json` emits the same content structurally. `--log` prints log entries only (chat notes when no log role).
+
+**Worked example (feature, in_progress):**
+
+```
+BAS-2 · Implement JWT middleware · feature · in_progress
+Objective: Implement Express middleware that validates JWT tokens…
+Acceptance: 3 of 5 checked
+Workspace: /Users/me/myapp · feat/jwt · /Users/me/myapp/.worktrees/feat/jwt
+Depends: BAS-1 done
+Files:
+  ticket.md  kernel · editable
+    JWT middleware for protected routes
+  plan.md  plan · approved
+    Implementation plan with tasks and verify steps…
+  journal.md  log · 4 entries · last progress 1h
+    Append-only log for progress, decisions, handoffs…
+Handoff: none
+Log: last 3 entries
+  ## 2026-03-18T14:00:00Z · progress · cursor — Wired refresh rotation
+Stage: in_progress. Implement the approved plan task by task…
+Next: syntaur review BAS-2
+Commands: syntaur log BAS-2 -t progress "…"; …
 ```
 
 ---
 
-## 9. Versioning
+## 8. Needs me and the board
 
-The protocol version is tracked in **`config.md` frontmatter** — the `version` field in the global config indicates the installed protocol version.
+**Needs me tiers:**
 
-The current protocol version is **`"2.0"`**.
+| Tier | Source |
+|------|--------|
+| 0 | Unsettled permission/ask cards (chat) |
+| 1 | Chat replies owed |
+| 2 | Open `question` log entries |
+| 3 | Unapproved plan-role file |
+| 4 | `status: review` |
 
-### Changes in 2.0
+Snooze keys: `<ID>` or `<ID>~<compact-ts>` (no colons). CLI: `syntaur inbox`; dashboard: **Needs me** page.
 
-- **`project` added to `ticket.md` frontmatter.** `project: string | null` makes the containing project explicit (`null` for standalone). Ticket classification moved to `template:` (see Templates section).
-- **Log role (`journal.md`)** replaces the old body sections and legacy sidecars (`progress.md`, `comments.md`, etc.) on modern templates. Append via `syntaur log -t <type>`. See [file-formats.md](./file-formats.md) §5.
-- **Standalone tickets** at `~/.syntaur/tickets/<uuid>/` — tickets that don't belong to any project. Folder is named by UUID.
-- **Derived project markdown removed** — `manifest.md`, `_index-*.md`, `_status.md`, and per-folder resource/memory indexes are no longer generated; rollups and graphs are computed at read time. Remove leftovers with `syntaur migrate v2 --apply`.
-- **Record-file counters removed** — `entryCount`, `handoffCount`, `decisionCount`, and `updated` are stripped from legacy record frontmatter; undated blocks may gain a `**Recorded:**` line during migration.
-- **Git-backed home** — `syntaur init` runs `git init` in `~/.syntaur/`, writes `.gitignore` and `home-commit.sh`, and installs a daily auto-commit. Ticket folder history: `syntaur history <id>`; audit events: `syntaur timeline <id>` or `syntaur history <id> --events`.
-
-### Forward Compatibility
-
-- **Additive changes** (new optional fields, new file types) will increment the minor version and remain backward compatible. A tool that understands version `2.0` can safely ignore fields it does not recognize.
-- **Breaking changes** (removed fields, changed semantics, restructured directories) will increment the major version. Tooling should check the version field and warn if it encounters a version it does not support.
-- **The `version` field is a string**, not a number, to support semver-style versioning (e.g., `"2.0"`, `"2.1"`, `"3.0"`).
-
-Tooling should always write the version it supports and should handle unknown versions gracefully — logging a warning rather than failing silently or crashing.
+**Board:** columns follow global stage order; `done` and `dropped` age out of the default view; `blocked` and `parked` badges do not change column.
 
 ---
 
-## 10. Cross-Ticket References
+## 9. Agent surface
 
-Tickets frequently need to reference each other — a newly-created ticket may depend on an older one, a question may cross a boundary, or a decision in one ticket may affect another.
+**Skills (six):** `syntaur-protocol`, `grab`, `plan`, `done`, `log`, `worktree` — install with `npx skills add prong-horn/syntaur -g -a claude-code`.
 
-### Declared Dependencies
+**Hooks (three):** SessionStart → `session register`; PostToolUse → `session touch`; UserPromptSubmit → `session context`. No SessionEnd hook.
 
-The `depends_on` field in `ticket.md` frontmatter is the structural form of a cross-ticket reference. It holds an array of ticket ids this one depends on. The lifecycle engine blocks transitions out of `pending` while any dependency is not `completed`. Dependencies are only valid between tickets within the **same project** — standalone tickets may not declare `depends_on` entries (the dashboard write API validates this).
-
-### Markdown Links
-
-Any markdown body (ticket, progress, comments, handoff) may reference another ticket with a normal markdown link. Two link forms resolve to a ticket:
-
-- **Relative path** — `[title](../other-slug/ticket.md)` for project-nested peers.
-- **Absolute route** — `[title](/projects/<slug>/tickets/<aslug>/ticket.md)` for project-nested cross-project links, or `[title](/tickets/<id>/ticket.md)` for standalone tickets.
-
-Tooling can resolve these links in both directions. The **forward** direction is explicit in the link. The **backward** direction (`Referenced by`) is computed by the dashboard when it loads a ticket detail — it scans other tickets' comments, progress, and handoff bodies for links that resolve to the current ticket. Results are capped at 50 mentions to bound work.
+**Playbooks** live in `~/.syntaur/playbooks/` for Library editing; built-in templates embed condensed content in `stages[].instructions`. Manifest `playbooks:` is documentary.
 
 ---
 
-## 11. Ticket Templates
+## 10. Timestamps and paths
 
-A **template** declares how a ticket is worked: stage instructions, which files exist and who writes them, workspace requirements, and lifecycle gates. The ticket's `template` frontmatter field names the active template (replacing the old `type` field).
+Timestamps: RFC 3339 UTC (`2026-03-18T14:30:00Z`). Local path fields use absolute expanded paths (not `~`). `workspace.repository` may be a URL. Intra-project links use relative paths.
 
-**Built-ins:** `feature`, `bug`, `spike`, `quick`, and `legacy`. New tickets default to the project's `defaultTemplate` (usually `feature`). Migrated v1 tickets are assigned `legacy`, which maps existing sidecar files (`progress.md`, `plan.md`, `comments.md`, etc.) to roles without rewriting them.
+---
 
-**Agent guide:** `syntaur show <id>` renders the ticket summary — objective, acceptance, workspace, dependencies, declared files with roles and state, log tail, current stage instructions, a **Next** line, and CLI **Commands**. Agents and chat standing context use this rendered text as the authoritative file list; they do not hardcode filenames.
+## 11. Versioning
 
-**Management:** `syntaur template list|new|check|reset` for manifests; `syntaur retemplate <id> <template>` to switch a ticket and scaffold missing files. See [file-formats.md](./file-formats.md) for the `template.md` manifest schema and `ticket.md` frontmatter fields (`template`, `depends_on`, `plan`).
+- **Protocol** `"2.0"` in `config.md` `version`.
+- **npm package** 1.0.0 for this release line.
+
+### Changes in 2.0 (shipped in 1.0.0)
+
+- Ticket ids `<PREFIX>-<n>`; `assignments/` → `tickets/`; `assignment.md` → `ticket.md`.
+- Fixed stages and template manifests; lifecycle verbs and SQLite `events`.
+- Log role (`journal.md`) and seven entry types; `syntaur log` only.
+- Kernel `chat/`; dashboard ACP chat replaces terminal-launch stack.
+- Derived project markdown removed; git-backed home (`init`, `history`).
+- Resources/memories subsystems removed; six skills and settings hooks install path.
+- Session usage rollups include input/output token split on the Sessions page (carried from 0.80.x).
+
+**Forward compatibility:** optional new fields may appear; tooling should warn on unknown major versions, not crash.

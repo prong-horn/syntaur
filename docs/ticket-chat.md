@@ -14,7 +14,7 @@ transcript afterwards: the dashboard server *is* the agent's client, speaking th
 [Agent Client Protocol](https://agentclientprotocol.com) over stdio to an adapter
 it owns. The terminal-launch stack it replaced — the `syntaur://` deep link,
 launch prompts, `AgentConfig` profiles, the transcript scanner and the `syntaurd`
-daemon — was deleted in v0.80.
+daemon — was deleted in v1.0.
 
 ## Stage handoff (template-owned agents)
 

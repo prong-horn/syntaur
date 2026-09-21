@@ -25,8 +25,7 @@ Do not hardcode ticket sidecar filenames (`progress.md`, `journal.md`, `plan.md`
 
 ## Codex + Syntaur
 
-- When the task is about Syntaur missions, tickets, or files under `~/.syntaur/`, use the six skills: `syntaur-protocol`, `grab`, `plan`, `done`, `log`, `worktree` (install via `npx skills add` above).
-- `agent.md` is universal per-mission guidance and stays human-authored and read-only. `claude.md` may still hold mission-specific context worth reading.
+- When the task is about Syntaur tickets or files under `~/.syntaur/`, use the six skills: `syntaur-protocol`, `grab`, `plan`, `done`, `log`, `worktree` (install via `npx skills add` above).
 - Respect the workspace boundary marked by `.syntaur/context.json` whenever that file exists. The active ticket itself is resolved from the session's open engagement, not from context.json.
 
 ## Validation

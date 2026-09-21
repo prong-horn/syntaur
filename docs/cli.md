@@ -1,8 +1,12 @@
 # Syntaur CLI
 
-Reference for `syntaur` subcommands. Run `syntaur --help` for a full list.
+Reference for `syntaur` subcommands. Run `syntaur --help` and `syntaur <cmd> --help` for flags and defaults.
 
-## `syntaur init`
+**Groups:** [Setup](#setup) · [Projects](#projects) · [Tickets](#tickets) · [Lifecycle](#lifecycle-verbs) · [Records](#records) · [Workspace](#workspace) · [Sessions](#sessions) · [Migrations](#migrations) · [Hooks](#hooks) · [Playbooks](#playbooks) · [Stage dispatch](#stage-dispatch-and-offline-behavior) · [Retired](#retired-in-v10)
+
+## Setup
+
+### `syntaur init`
 
 Create or refresh the Syntaur home (`~/.syntaur/` or `SYNTAUR_HOME`).
 
@@ -23,6 +27,40 @@ If the home directory is already inside another git repository (for example a do
 
 Doctor checks: `git.home-repo`, `git.auto-commit`.
 
+### `syntaur dashboard`
+
+Start the local dashboard (default port `4800`).
+
+```
+syntaur dashboard [--port <number>] [--dev] [--server-only] [--no-open]
+```
+
+`--dev` runs the Vite dev server; `--server-only` (alias `--api-only`) serves the API without UI. `--no-open` skips opening a browser tab.
+
+### `syntaur doctor`
+
+Diagnose home structure, hooks, skills, git, tickets, and dashboard DB reachability.
+
+```
+syntaur doctor [--json] [--fix] [--only <check-id>] [--verbose] [--ticket <path>]
+```
+
+**Categories:** `env` (`env.syntaur-root-exists`, `env.config-valid`, `env.node-version`, `env.cli-version`), `structure`, `project`, `git`, `hooks`, `skills`, `dashboard`, `ticket`, `workspace`, `staleness`.
+
+`--fix` is reserved (no-op in 1.0). `--ticket` validates one `ticket.md` frontmatter (used before `workspace set`).
+
+### `syntaur update` / `syntaur upgrade`
+
+Self-update the global `syntaur` package and refresh session hooks (unless `--skip-refresh`).
+
+```
+syntaur update [--version <v>] [--check] [--dry-run] [--skip-refresh] [--pm npm|pnpm|yarn|bun] [--yes]
+```
+
+### `syntaur hooks` / `syntaur statusline`
+
+See [Hooks](#hooks) and the `statusline` subsection under Setup above (`syntaur statusline install|configure|uninstall`).
+
 ## Lifecycle verbs
 
 Status moves only by explicit verbs. Each verb evaluates template gates at call time; `--force` skips gates and records `forced: true` on the `moved` event.
@@ -42,7 +80,7 @@ syntaur reopen <id> [--project <slug>] [--by <name>]
 
 - `plan create` / `plan version` — scaffold or version the plan file; `plan version` also moves to `planning` when the template declares that stage. Use `--by` for audit attribution on the stage move.
 - `approve` — approve the plan and move to `ready` when the template declares it.
-- `start` — move to `in_progress`; runs `plan-approved`, `deps-done`, and `workspace-set` gates per template. On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
+- `start` — move to `in_progress`; runs template `gates.start` (on built-in `feature`: `plan-approved`, `workspace-set`; on `bug`: `workspace-set`; on `legacy`: none). On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
 - `review` — move to `review`.
 - `done` — move to `done`; runs template `gates.done`.
 - `drop` — move to `dropped`; reason required.
@@ -70,7 +108,9 @@ syntaur plan version [--ticket <id> [--project <slug>]] [--force]
 
 Gate failure: `Cannot <verb> <ID>: <gate> — <reason>. Next: <hint>` (exit 1).
 
-## `syntaur project new` / `syntaur project list`
+## Projects
+
+### `syntaur project new` / `syntaur project list`
 
 Create or list projects under `~/.syntaur/projects/`.
 
@@ -91,7 +131,18 @@ syntaur project new "My App" --slug my-app --prefix MYA
 syntaur project list
 ```
 
-## `syntaur new`
+### `syntaur archive` / `syntaur restore`
+
+```
+syntaur archive <project-slug> [--reason <text>] [--dir <path>]
+syntaur restore <project-slug> [--dir <path>]
+```
+
+Archived projects are hidden from normal board/search views; tickets remain on disk read-only until restored.
+
+## Tickets
+
+### `syntaur new`
 
 Create a ticket and allocate the next `<PREFIX>-<n>` id from the target project's counter. Defaults to the **scratch** project (`projects/scratch/`, prefix `SCR`) when `--project` is omitted.
 
@@ -112,7 +163,7 @@ syntaur new "Add OAuth" --project my-api
 syntaur new "Wire refresh token" --project my-api --depends-on MYA-1
 ```
 
-## `syntaur rename <id> <new-slug>`
+### `syntaur rename <id> <new-slug>`
 
 Rename a ticket's display slug. Updates `slug` in `ticket.md` and renames the folder from `<ID>-<old-slug>` to `<ID>-<new-slug>`. The ticket id is unchanged.
 
@@ -126,7 +177,7 @@ syntaur rename <id> <new-slug> [--dir <path>]
 syntaur rename BAS-2 implement-jwt-auth
 ```
 
-## `syntaur show [ticket]`
+### `syntaur show [ticket]`
 
 Render the agent guide for a ticket — objective, acceptance, workspace, dependencies, declared files with roles and state, log tail, stage instructions, **Next**, and **Commands**. Defaults to the session's open engagement when no ticket id is given.
 
@@ -150,7 +201,26 @@ syntaur show BAS-2 --log -t progress
 
 Commands line (representative): `syntaur log BAS-2 -t progress "..."`; `syntaur block BAS-2 "<reason>"`; ask via `syntaur log -t question` or @mention in chat.
 
-## `syntaur log <ticket> <body>`
+### `syntaur ls`
+
+```
+syntaur ls [--status <list>] [--project <slug>] [--tag <list>] [--age <duration>] [--query <expr>] [--json]
+```
+
+### `syntaur assign` / `syntaur unassign`
+
+```
+syntaur assign <ticket> --agent <name> [--project <slug>] [--dir <path>]
+syntaur unassign <ticket> [--project <slug>] [--dir <path>]
+```
+
+### `syntaur template` / `syntaur retemplate`
+
+Listed under [Migrations](#migrations) (`retemplate`) and the dedicated [`syntaur template`](#syntaur-template) section below.
+
+## Records
+
+### `syntaur log <ticket> <body>`
 
 Append a typed entry to the ticket's log-role file (`journal.md` on modern templates, `progress.md` on `legacy`). When the template has no log role, appends a chat note under `chat/` instead.
 
@@ -186,7 +256,7 @@ syntaur log API-3 -t handoff "Ready for merge; tests green" --project my-api
 syntaur show API-3 --log -t progress
 ```
 
-## `syntaur progress log <text>`
+### `syntaur progress log <text>`
 
 Alias of `syntaur log -t progress` for the active ticket (or `--ticket <id> [--project <slug>]`). Resolves the open engagement when no ticket is given.
 
@@ -196,7 +266,9 @@ syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
 
 On modern templates this writes a `progress` entry to `journal.md`. The `legacy` template still targets `progress.md` (newest-first `# Progress` layout).
 
-## `syntaur migrate journal`
+## Migrations
+
+### `syntaur migrate journal`
 
 Merge legacy per-purpose record files into `journal.md` and switch the ticket off the `legacy` template. Dry-run by default; pass `--apply` to write. Creates `.migrate-journal.bak/` before applying.
 
@@ -242,7 +314,7 @@ Switch a ticket to another template and scaffold any missing declared files. Upd
 syntaur retemplate <ticket> <template> [--project <slug>]
 ```
 
-## `syntaur migrate v2`
+### `syntaur migrate v2`
 
 One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dry-run by default; pass `--apply` to write. Creates a `.bak-v2-*` backup before applying.
 
@@ -289,7 +361,9 @@ syntaur migrate v2
 syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
 ```
 
-## `syntaur workspace set`
+## Workspace
+
+### `syntaur workspace set`
 
 Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
 
@@ -301,17 +375,15 @@ syntaur workspace set \
 
 Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given (`<PREFIX>-<n>`). Provide at least one field flag.
 
-## `syntaur unassign <ticket>`
-
-Clear the assignee on a ticket (the inverse of `syntaur assign`) and bump `updated`.
+### `syntaur open [ticket]`
 
 ```
-syntaur unassign <id> [--project <slug>] [--dir <path>]
+syntaur open [ticket] [--id <uuid>] [--project <slug>] [--editor] [--terminal] [--recreate] [--json]
 ```
 
-`<id>` is the ticket id (`<PREFIX>-<n>`).
+Prints the ticket worktree path and copies it to the clipboard. `--terminal` opens a terminal at the worktree (reads optional `terminal:` from `config.md`). `--recreate` rebuilds a missing worktree from `ticket.md` workspace fields.
 
-## `syntaur worktree`
+### `syntaur worktree`
 
 Manage git worktrees bound to tickets.
 
@@ -341,7 +413,28 @@ Install, configure, or remove the syntaur `statusLine` entry in Claude Code sett
 - `syntaur statusline configure [--preset <name>] [--segments <list>] [--separator <string>] [--wrap <path>] [--preview]` — segment order and composition.
 - `syntaur statusline uninstall [--keep-script]` — remove the settings entry; restores from `~/.syntaur/statusline.backup.json` when present.
 
-## `syntaur history <ticket>`
+## Sessions
+
+### `syntaur session`
+
+Subcommands: `register` (SessionStart hook), `touch` (PostToolUse), `context` (UserPromptSubmit), `stop` (`--from-hook`), `resume`, `summarize`, `resolve-id`, `boundary`. All hook entry points read JSON from stdin and exit 0 on failure.
+
+### `syntaur track-session`
+
+```
+syntaur track-session --agent <name> [--session-id <id>] [--transcript-path <path>] \
+  [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>] [--from-hook]
+```
+
+### `syntaur usage`
+
+```
+syntaur usage [--since <iso>] [--until <iso>] [--project <slug>] [--ticket <id>] [--json]
+```
+
+Token and cost rollup from `usage_events` / `usage_daily`.
+
+### `syntaur history <ticket>`
 
 Show the git commit history for a ticket folder under the Syntaur home (the home must be a git repository from `syntaur init`). Commits are listed newest first with the UTC timestamp, short SHA, subject, and count of paths under that ticket directory touched in each commit.
 
@@ -360,7 +453,7 @@ syntaur history <ticket> [options]
 
 Git history follows the ticket folder path only; renames start a new history (no `--follow` across folder renames).
 
-## `syntaur timeline <ticket>`
+### `syntaur timeline <ticket>`
 
 Show the chronological audit event log for one ticket — who changed what, when, and what the value moved from→to — newest first.
 
@@ -425,7 +518,7 @@ syntaur timeline API-3 --project my-api \
 syntaur timeline API-3 --project my-api --json --limit 10
 ```
 
-## `syntaur search <query>`
+### `syntaur search <query>`
 
 Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by a ticket and returns ranked results with a snippet and location.
 
@@ -487,7 +580,7 @@ syntaur search "authentication flow" --project my-api --in plans,handoff --json
 syntaur search "stripe webhook" --all --limit 5
 ```
 
-## `syntaur inbox`
+### `syntaur inbox`
 
 One triage view of everything awaiting a human across all projects (including scratch). Read-only — prints the exact action command for each item; never mutates. Chat-sourced question rows print an **Open chat** URL; reply in the dashboard **Needs me** queue.
 
@@ -633,13 +726,13 @@ worktree. It reads an optional `terminal:` scalar from `~/.syntaur/config.md`
 (`terminal-app` | `iterm` | `ghostty` | `alacritty` | `warp` | `kitty` |
 `cmux`) and falls back to the platform default.
 
-### Retired in v0.80
+### Retired in v1.0
 
 The terminal-launch stack is gone: the `syntaur://` URL scheme and
 `install-url-handler`, `syntaur url`, `syntaur agents *`, `syntaur tui` (the
 cockpit), `syntaur daemon` / `bg` / `attach` / `attach-doctor`, and
 `syntaur session scan` / `scan-install` / `scan-uninstall`. See the
-[v0.80 release note](./releases/v0.80.md) for the one-time cleanup an already-
+[v1.0 release note](./releases/v1.0.md) for the one-time cleanup an already-
 installed machine needs.
 
 Also removed: `syntaur status *` (custom status workflow in `config.md`),
