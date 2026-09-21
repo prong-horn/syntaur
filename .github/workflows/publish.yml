@@ -65,11 +65,14 @@ jobs:
       - name: Lint dashboard architecture
         run: npm run lint:dashboard
 
+      - name: Ensure jq
+        run: command -v jq >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq jq)
+
       - name: Run test suite
-        run: npm test
+        run: npm run test:ci-like
 
       - name: Run dashboard tests
-        run: npm run test:dashboard
+        run: npm run test:ci-like -- test:dashboard
 
       - name: Build dashboard
         run: npm run build --prefix dashboard

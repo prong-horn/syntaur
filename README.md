@@ -352,8 +352,10 @@ cd syntaur
 npm install
 npm run build
 npm run typecheck
-env -u SYNTAUR_HOME npm test
+npm run test:ci-like
 ```
+
+`npm run test:ci-like` runs the full suite with PATH reduced to the Node toolchain (plus `jq`), an empty `HOME`, and `SYNTAUR_HOME` unset — the same gate the release workflow uses. For a quick local loop without that isolation, `env -u SYNTAUR_HOME npm test` still works.
 
 Skills live at `<repo>/skills/` (six `SKILL.md` files). Hook scripts live at `<repo>/hooks/`. Local skill testing: `npx skills add <path-to-clone> -g -a claude-code`.
 
@@ -361,7 +363,7 @@ Skills live at `<repo>/skills/` (six `SKILL.md` files). Hook scripts live at `<r
 
 This repo publishes to npm and the skills index on GitHub Pages from GitHub Actions.
 
-Release flow (on the release branch after gates pass):
+Release flow (on the release branch after gates pass: typecheck, `npx tsc -p tsconfig.tests.json --noEmit`, build, `npm run test:ci-like`, `npm run test:ci-like -- test:dashboard`, dashboard build):
 
 ```bash
 npm version <bump> -m "chore: release %s"

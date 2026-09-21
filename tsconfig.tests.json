@@ -84,6 +84,7 @@
     "src/__tests__/chat-stage-dispatch.test.ts",
     "src/__tests__/chat-broker-shutdown.test.ts",
     "src/__tests__/broker-test-guard.test.ts",
+    "src/__tests__/test-ci-like.test.ts",
     "src/__tests__/process-owner.test.ts",
     "src/__tests__/dashboard-api-stage-dispatch.test.ts",
     "src/__tests__/stage-handoff.test.ts",

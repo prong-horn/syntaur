@@ -31,6 +31,7 @@ Do not hardcode ticket sidecar filenames (`progress.md`, `journal.md`, `plan.md`
 ## Validation
 
 - Run `npm run typecheck` for TypeScript changes.
+- Run `npm run test:ci-like` before any release tag; it hides the ACP adapter binaries and the real home the way the runner does.
 - Run `npx vitest run src/__tests__/skills-pack.test.ts` for skill pack / CLI reference guard changes.
 - Run `npx vitest run src/__tests__/hooks-install.test.ts` for hooks install behavior.
 - Run `npx vitest run src/__tests__/package-files.test.ts` for npm pack contents.
