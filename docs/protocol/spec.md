@@ -1,6 +1,6 @@
 # Syntaur Protocol Specification
 
-**Protocol version:** 2.0 · **Package:** 1.0.0 (as shipped)
+**Protocol version:** 2.0 · **Package:** 1.0.1 (as shipped)
 
 This document is the conceptual contract for Syntaur v2. Field-level schemas live in [file-formats.md](./file-formats.md). The CLI surface is in [cli.md](../cli.md). Where this text disagrees with running code, the code wins — callouts below note known deltas as **as shipped in 1.0**.
 
@@ -326,9 +326,9 @@ Timestamps: RFC 3339 UTC (`2026-03-18T14:30:00Z`). Local path fields use absolut
 ## 11. Versioning
 
 - **Protocol** `"2.0"` in `config.md` `version`.
-- **npm package** 1.0.0 for this release line.
+- **npm package** 1.0.1 for this release line (1.0.0 was tagged but never published).
 
-### Changes in 2.0 (shipped in 1.0.0)
+### Changes in 2.0 (shipped in 1.0.1)
 
 - Ticket ids `<PREFIX>-<n>`; `assignments/` → `tickets/`; `assignment.md` → `ticket.md`.
 - Fixed stages and template manifests; lifecycle verbs and SQLite `events`.
