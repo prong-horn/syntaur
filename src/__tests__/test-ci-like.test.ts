@@ -6,8 +6,9 @@ import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const { buildCiLikeEnv } = require('../../scripts/test-ci-like.mjs') as {
-  buildCiLikeEnv: (options?: { lookupPath?: string }) => {
+const { buildCiLikeEnv, resolveToolPath } = require('../../scripts/test-ci-like.mjs') as {
+  resolveToolPath: (tool: string, lookupPath: string, nodeExecPath?: string) => string;
+  buildCiLikeEnv: (options?: { lookupPath?: string; nodeExecPath?: string }) => {
     env: Record<string, string | undefined>;
     binDir: string;
     homeDir: string;
@@ -62,7 +63,7 @@ describe('test-ci-like env', () => {
     expect(() => buildCiLikeEnv({ lookupPath: '/var/empty' })).toThrow(/jq is required/);
   });
 
-  it('throws when npm is absent on lookupPath', () => {
+  it('throws when npm is absent on lookupPath and beside node', () => {
     const lookupPath = process.env.PATH ?? '';
     const jqPath = execSync('command -v jq', {
       encoding: 'utf8',
@@ -70,7 +71,15 @@ describe('test-ci-like env', () => {
     }).trim();
     const isolated = mkdtempSync(join(tmpdir(), 'ci-like-jq-only-'));
     symlinkSync(jqPath, join(isolated, 'jq'));
-    expect(() => buildCiLikeEnv({ lookupPath: isolated })).toThrow(/npm is required/);
+    const bareNodeDir = mkdtempSync(join(tmpdir(), 'ci-like-bare-node-'));
+    symlinkSync(process.execPath, join(bareNodeDir, 'node'));
+    expect(() => resolveToolPath('npm', isolated, join(bareNodeDir, 'node'))).toThrow(
+      /npm is required/,
+    );
+    expect(() =>
+      buildCiLikeEnv({ lookupPath: isolated, nodeExecPath: join(bareNodeDir, 'node') }),
+    ).toThrow(/npm is required/);
     rmSync(isolated, { recursive: true, force: true });
+    rmSync(bareNodeDir, { recursive: true, force: true });
   });
 });

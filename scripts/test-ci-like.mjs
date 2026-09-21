@@ -34,10 +34,15 @@ function resolveOnPath(tool, lookupPath) {
   }
 }
 
-function resolveToolPath(tool, lookupPath) {
+/**
+ * @param {string} tool
+ * @param {string} lookupPath
+ * @param {string} [nodeExecPath]
+ */
+export function resolveToolPath(tool, lookupPath, nodeExecPath = process.execPath) {
   let path = resolveOnPath(tool, lookupPath);
   if (!path && (tool === 'npm' || tool === 'npx')) {
-    const sibling = join(dirname(process.execPath), tool);
+    const sibling = join(dirname(nodeExecPath), tool);
     if (existsSync(sibling)) path = sibling;
   }
   if (!path) {
@@ -47,7 +52,7 @@ function resolveToolPath(tool, lookupPath) {
 }
 
 /**
- * @param {{ lookupPath?: string }} [options]
+ * @param {{ lookupPath?: string; nodeExecPath?: string }} [options]
  * @returns {{
  *   env: Record<string, string | undefined>;
  *   binDir: string;
@@ -59,15 +64,16 @@ function resolveToolPath(tool, lookupPath) {
  */
 export function buildCiLikeEnv(options = {}) {
   const lookupPath = options.lookupPath ?? process.env.PATH ?? '';
-  const jqPath = resolveToolPath('jq', lookupPath);
-  const npmPath = resolveToolPath('npm', lookupPath);
-  const npxPath = resolveToolPath('npx', lookupPath);
+  const nodeExecPath = options.nodeExecPath ?? process.execPath;
+  const jqPath = resolveToolPath('jq', lookupPath, nodeExecPath);
+  const npmPath = resolveToolPath('npm', lookupPath, nodeExecPath);
+  const npxPath = resolveToolPath('npx', lookupPath, nodeExecPath);
 
   const binDir = mkdtempSync(join(tmpdir(), 'syntaur-ci-like-bin-'));
   const homeDir = mkdtempSync(join(tmpdir(), 'syntaur-ci-like-home-'));
   mkdirSync(homeDir, { recursive: true });
 
-  symlinkSync(process.execPath, join(binDir, 'node'));
+  symlinkSync(nodeExecPath, join(binDir, 'node'));
   symlinkSync(npmPath, join(binDir, 'npm'));
   symlinkSync(npxPath, join(binDir, 'npx'));
   symlinkSync(jqPath, join(binDir, 'jq'));
