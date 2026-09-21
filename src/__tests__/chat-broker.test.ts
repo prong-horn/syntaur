@@ -2628,7 +2628,7 @@ describe('inbox questions (needs-me)', () => {
     await idle(2);
     expect(isResolved(await readLogEntries(), questionTs)).toBe(false);
     await broker.send({ ticket: ticket(), text: 'use alpha', agentId: 'claude' });
-    await idle(2);
+    await waitUntil(async () => isResolved(await readLogEntries(), questionTs), 'resolved reply question');
     expect(isResolved(await readLogEntries(), questionTs)).toBe(true);
   });
 
