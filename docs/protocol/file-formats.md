@@ -113,7 +113,7 @@ The kernel defines exactly **17 fields**:
 | `title` | string | any | required | — | Display title for the ticket. |
 | `project` | string | project slug | required | — | The containing project's slug (e.g. `build-auth-system` or `scratch`). |
 | `template` | string | installed template id | required | — | Ticket template (e.g. `feature`, `bug`, `legacy`). |
-| `status` | stage id | `backlog`, `planning`, `ready`, `in_progress`, `review`, `done`, `dropped` | required | first template stage | Current stage. See [spec.md](./spec.md) §6. |
+| `status` | stage id | `backlog`, `planning`, `ready`, `in_progress`, `review`, `done`, `dropped` | required | first template stage | Current stage. See [spec.md](./spec.md) §3.5. |
 | `priority` | string (enum) | `low`, `medium`, `high`, `critical` | required | template default | Priority level. |
 | `blocked` | string or null | any | required | `null` | Reason when blocked (flag, not a stage). Set by `syntaur block`. |
 | `parked` | string or null | any | required | `null` | Reason when parked (flag). Set by `syntaur park`. |
@@ -150,9 +150,9 @@ The kernel defines exactly **17 fields**:
 
 Cross-ticket references live in frontmatter (`depends_on`, `links`) — not in a body section.
 
-**Q&A and progress live in the log role:** Modern templates declare `journal.md` with role `log`. Append typed entries via `syntaur log -t <type>` (questions, answers, progress, decisions, handoffs, notes, reviews). See section 5. Legacy templates keep separate files until `syntaur migrate journal` merges them — see sections 7–10.
+**Q&A and progress live in the log role:** Modern templates declare `journal.md` with role `log`. Append typed entries via `syntaur log -t <type>` (questions, answers, progress, decisions, handoffs, notes, reviews). See [§4](#4-journalmd--log-role). Legacy templates keep separate files until `syntaur migrate journal` merges them — see [§10](#10-legacy-files-pre-20-merged-by-migrate-journal).
 
-**Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the ticket file. The `assignee` field in frontmatter is the authoritative owner. See section 13 for session storage details.
+**Sessions:** Agent sessions are tracked in a SQLite database (`~/.syntaur/syntaur.db`), not in the ticket file. The `assignee` field in frontmatter is the authoritative owner. See [§9](#9-sqlite-syntaurdb).
 
 ### Example
 
@@ -380,7 +380,7 @@ A `question` entry is open until an `answer` entry names it via `answers: <quest
 
 Each installed template is a directory under `~/.syntaur/templates/<id>/` with a `template.md` manifest. The manifest's YAML frontmatter declares stages, file roles, gates, and defaults; the markdown body is human notes (often a single line for built-ins).
 
-### Manifest schema (§5.2)
+### Manifest schema
 
 All fields below live in the YAML frontmatter of `template.md`.
 
@@ -410,7 +410,7 @@ All fields below live in the YAML frontmatter of `template.md`.
 | `workspace` | enum | no | `optional` | `required`, `optional`, or `none` |
 | `defaultPriority` | enum | no | `medium` | Default on `syntaur new` |
 
-### Validation rules (§5.3)
+### Validation rules
 
 1. `id` matches directory name.
 2. `version` is `1`.

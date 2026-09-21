@@ -2,7 +2,7 @@
 
 Reference for `syntaur` subcommands. Run `syntaur --help` and `syntaur <cmd> --help` for flags and defaults.
 
-**Groups:** [Setup](#setup) · [Projects](#projects) · [Tickets](#tickets) · [Lifecycle](#lifecycle-verbs) · [Records](#records) · [Workspace](#workspace) · [Sessions](#sessions) · [Migrations](#migrations) · [Hooks](#hooks) · [Playbooks](#playbooks) · [Stage dispatch](#stage-dispatch-and-offline-behavior) · [Retired](#retired-in-v10)
+**Groups:** [Setup](#setup) · [Lifecycle](#lifecycle-verbs) · [Projects](#projects) · [Tickets](#tickets) · [Records](#records) · [Workspace](#workspace) · [Sessions](#sessions) · [Migrations](#migrations) · [Hooks](#hooks) · [Playbooks](#playbooks) · [Stage dispatch](#stage-dispatch-and-offline-behavior) · [Retired](#retired-in-v10)
 
 ## Setup
 
@@ -57,9 +57,20 @@ Self-update the global `syntaur` package and refresh session hooks (unless `--sk
 syntaur update [--version <v>] [--check] [--dry-run] [--skip-refresh] [--pm npm|pnpm|yarn|bun] [--yes]
 ```
 
-### `syntaur hooks` / `syntaur statusline`
+### `syntaur hooks`
 
-See [Hooks](#hooks) and the `statusline` subsection under Setup above (`syntaur statusline install|configure|uninstall`).
+Install or remove Syntaur session hooks in Claude Code's `~/.claude/settings.json`.
+
+- `syntaur hooks install` — copy scripts to `~/.syntaur/hooks/` (mode `0755`) and register `SessionStart`, `PostToolUse`, and `UserPromptSubmit`. Backs up the previous `hooks` object to `~/.syntaur/hooks.backup.json` before the first mutation.
+- `syntaur hooks uninstall` — remove Syntaur hook entries pointing at `~/.syntaur/hooks/`, delete that directory, leave the backup file.
+
+See [Hooks](#hooks) for the script table and prompt-block shape.
+
+### `syntaur statusline`
+
+- `syntaur statusline install [--mode replace|wrap|skip|ask] [--link]`
+- `syntaur statusline configure [--preset <name>] [--segments <list>] [--separator <string>] [--wrap <path>] [--preview]`
+- `syntaur statusline uninstall [--keep-script]`
 
 ## Lifecycle verbs
 
@@ -214,9 +225,90 @@ syntaur assign <ticket> --agent <name> [--project <slug>] [--dir <path>]
 syntaur unassign <ticket> [--project <slug>] [--dir <path>]
 ```
 
-### `syntaur template` / `syntaur retemplate`
+### `syntaur template`
 
-Listed under [Migrations](#migrations) (`retemplate`) and the dedicated [`syntaur template`](#syntaur-template) section below.
+Manage ticket template manifests under `~/.syntaur/templates/`.
+
+```
+syntaur template list [--json]
+syntaur template new <id> --from <builtin>
+syntaur template check [id] [--builtins] [--json]
+syntaur template reset <builtin-id>
+syntaur template reset --missing
+```
+
+Built-ins: `feature`, `bug`, `spike`, `quick`, `legacy`. `list` shows drift status for built-ins. `new` copies a built-in and strips the `builtin:` stamp. `check --builtins` reports `current` / `modified` / `outdated` / `missing`. `reset` restores shipped files for one built-in; `--missing` seeds only absent built-ins.
+
+### `syntaur retemplate <ticket> <template>`
+
+Switch a ticket to another template and scaffold any missing declared files. Updates `template:` in `ticket.md`, resets the `plan:` block when a new plan file is written, and records a `retemplated` audit event. Does not delete existing files.
+
+```
+syntaur retemplate <ticket> <template> [--project <slug>]
+```
+
+### `syntaur search <query>`
+
+Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by a ticket and returns ranked results with a snippet and location.
+
+```
+syntaur search <query> [options]
+```
+
+### File kinds searched
+
+| Kind | File |
+|------|------|
+| `ticket` | `ticket.md` |
+| `plan` | Latest plan only — `plan-v<N>.md` supersedes `plan.md` when a versioned plan exists |
+| `journal` | `journal.md` (log role on modern templates) |
+| `progress` | `progress.md` (`legacy` log role) |
+| `scratchpad` | `scratchpad.md` |
+
+### Options
+
+- `--project <slug>` — Restrict results to one project.
+- `--template <list>` — Comma-separated ticket template filter.
+- `--status <list>` — Comma-separated ticket status filter.
+- `--in <fileKinds>` — Comma-separated file-kind filter. Accepts singular or plural names (e.g. `--in comment,plans` or `--in comments,plan`).
+- `--all` — Include archived tickets and projects (excluded by default).
+- `--limit <n>` — Maximum number of results. Default: `20`.
+- `--semantic` — Use the semantic search provider when available; falls back to full-text automatically. The semantic layer is a designed-but-deferred seam — v1 uses full-text search via fuse.js.
+- `--json` — Emit results as a JSON array instead of a table.
+
+### JSON output shape
+
+Each item in the `--json` array contains:
+
+```json
+{
+  "path": "/abs/path/to/file.md",
+  "project": "project-slug",
+  "ticket": "ticket-slug",
+  "fileKind": "plan",
+  "score": 0.82,
+  "snippet": "…matched text excerpt…",
+  "line": 14,
+  "section": "## Implementation",
+  "route": "/tickets/my-ticket?tab=plan#implementation"
+}
+```
+
+The `route` field is also used by the dashboard's visible Search dialog: selecting a result opens the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
+
+### Examples
+
+```bash
+# Find any mention of "rate limit" across all content
+syntaur search "rate limit"
+
+# Search only plans and handoffs in one project, return JSON
+syntaur search "authentication flow" --project my-api --in plans,handoff --json
+
+# Include archived tickets, cap at 5 results
+syntaur search "stripe webhook" --all --limit 5
+```
+
 
 ## Records
 
@@ -265,193 +357,6 @@ syntaur progress log "<text>" [--ticket <id> [--project <slug>]]
 ```
 
 On modern templates this writes a `progress` entry to `journal.md`. The `legacy` template still targets `progress.md` (newest-first `# Progress` layout).
-
-## Migrations
-
-### `syntaur migrate journal`
-
-Merge legacy per-purpose record files into `journal.md` and switch the ticket off the `legacy` template. Dry-run by default; pass `--apply` to write. Creates `.migrate-journal.bak/` before applying.
-
-```
-syntaur migrate journal [<id>] [--project <slug>] [--all] [--template <id>] [--apply]
-```
-
-**Sources merged (when present and non-empty):** `progress.md`, `decision-record.md`, `handoff.md`, `comments.md`, `scratchpad.md` — converted to typed log entries, sorted oldest-first, written to `journal.md`. Legacy files are copied into `.migrate-journal.bak/` on apply and deleted after a successful merge; the backup dir is removed on success.
-
-**Refuse / resume:** Refuses when `journal.md` exists with neither legacy sources nor a complete backup (already migrated). Refuses when the ticket template is not `legacy` and no `journal.md` exists. Resumes when `journal.md` coexists with legacy sources or a complete backup (for example after a crash between template switch and source deletion). `--all` skips tickets that are not `legacy` and have no sources or backup to resume. Both modes print `projects: <absolute path>` first, resolving the projects tree from `config.md` `defaultProjectDir` (same as `syntaur show`, `inbox`, and `search`).
-
-Default `--template` is `feature`. Per-ticket mode takes a ticket id; `--project <slug> --all` migrates every `legacy` ticket in that project.
-
-### Examples
-
-```bash
-# Preview one ticket
-syntaur migrate journal LEG-12 --project my-api
-
-# Apply all legacy tickets in scratch
-syntaur migrate journal --project scratch --all --apply
-```
-
-## `syntaur template`
-
-Manage ticket template manifests under `~/.syntaur/templates/`.
-
-```
-syntaur template list [--json]
-syntaur template new <id> --from <builtin>
-syntaur template check [id] [--builtins] [--json]
-syntaur template reset <builtin-id>
-syntaur template reset --missing
-```
-
-Built-ins: `feature`, `bug`, `spike`, `quick`, `legacy`. `list` shows drift status for built-ins. `new` copies a built-in and strips the `builtin:` stamp. `check --builtins` reports `current` / `modified` / `outdated` / `missing`. `reset` restores shipped files for one built-in; `--missing` seeds only absent built-ins.
-
-## `syntaur retemplate <ticket> <template>`
-
-Switch a ticket to another template and scaffold any missing declared files. Updates `template:` in `ticket.md`, resets the `plan:` block when a new plan file is written, and records a `retemplated` audit event. Does not delete existing files.
-
-```
-syntaur retemplate <ticket> <template> [--project <slug>]
-```
-
-### `syntaur migrate v2`
-
-One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dry-run by default; pass `--apply` to write. Creates a `.bak-v2-*` backup before applying.
-
-```
-syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
-```
-
-Four steps, recorded in the `v2-migrated` marker ledger:
-
-1. **`rename-ids`** — Renames `assignments/` → `tickets/` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
-2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`.
-3. **`statuses`** — Maps v1 statuses to v2 stages (`draft→backlog`, legacy planning→`planning`, legacy ready→`ready`, `completed→done`, `failed→dropped`, etc.); folds the legacy blocked-reason scalar into the `blocked` flag; adds `parked: null`; re-renders each ticket to the 17-field v2 frontmatter shape; backfills missing audit rows from legacy frontmatter history then rewrites `status-change` / `plan-approval` events to `moved` / `plan-approved`.
-4. **`derived`** — Deletes derived project markdown (`manifest.md`, `_index-*.md`, `_status.md`, `resources/_index.md`, `memories/_index.md`); strips `entryCount`, `handoffCount`, `decisionCount`, and `updated` from legacy record files; injects `**Recorded:**` lines on undated decision and handoff blocks using the file’s former `updated` timestamp before the strip.
-
-Dry-run / apply transcript lines (representative):
-
-```
-[dry-run] templates: seeded feature, bug, spike, quick, legacy
-[dry-run] template legacy: 12 tickets
-[dry-run] depends_on: 8 renamed
-[dry-run] plan block: 5 tickets (3 approvals carried, 1 superseded approvals dropped)
-[dry-run] dropped type: 12
-[dry-run] statuses: 12 tickets mapped (backlog 3, planning 2, ready 1, in_progress 0, review 0, done 4, dropped 2)
-[dry-run] archived → dropped: 0
-[dry-run] flags: blocked 1, parked 0
-[dry-run] history: 5 backfilled, 3 status-change and 2 plan-approval rows rewritten
-[dry-run] mapped: draft→backlog 3, …→planning 2, completed→done 4
-[dry-run] worktree: 0 renamed
-[dry-run] dropped fields: 48
-[dry-run] removed: derive-migrated, stages-migrated, workflows/
-[dry-run] derived: 85 files removed (manifest.md 15, _index-tickets.md 15, _index-plans.md 15, _index-decisions.md 15, _status.md 15, resources/_index.md 5, memories/_index.md 5)
-[dry-run] counters: 1284 record files stripped (entryCount 643, handoffCount 321, decisionCount 321, updated 1284); recorded lines injected: decisions 748, handoffs 12
-```
-
-`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step. A home whose ledger already has the first three steps runs only `derived`.
-
-### Examples
-
-```bash
-# Preview changes
-syntaur migrate v2
-
-# Apply with a custom prefix for one project
-syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
-```
-
-## Workspace
-
-### `syntaur workspace set`
-
-Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
-
-```
-syntaur workspace set \
-  --repository <path> --worktree-path <path> --branch <name> --parent-branch <name> \
-  [--ticket <id> [--project <slug>]]
-```
-
-Targets the active ticket from `.syntaur/context.json` unless `--ticket` is given (`<PREFIX>-<n>`). Provide at least one field flag.
-
-### `syntaur open [ticket]`
-
-```
-syntaur open [ticket] [--id <uuid>] [--project <slug>] [--editor] [--terminal] [--recreate] [--json]
-```
-
-Prints the ticket worktree path and copies it to the clipboard. `--terminal` opens a terminal at the worktree (reads optional `terminal:` from `config.md`). `--recreate` rebuilds a missing worktree from `ticket.md` workspace fields.
-
-### `syntaur worktree`
-
-Manage git worktrees bound to tickets.
-
-- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <id> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
-- `syntaur worktree list [--repository <path>] [--json]` — list the repository's worktrees.
-- `syntaur worktree remove` (alias `prune`) `[--ticket <id> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the ticket's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
-
-## `syntaur plan`
-
-Manage plan files for a ticket.
-
-- `syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — write the initial `plan.md` scaffold. Refuses to overwrite an existing `plan.md` without `--force`. Moves to `planning` when the template declares that stage.
-- `syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]` — create the next `plan-v<N>.md` and carry forward unchecked tasks from the prior plan body.
-
-## `syntaur hooks`
-
-Install or remove Syntaur session hooks in Claude Code's `~/.claude/settings.json`.
-
-- `syntaur hooks install` — copy scripts to `~/.syntaur/hooks/` (mode `0755`) and register three hook events: `SessionStart` → `session-start.sh`, `PostToolUse` → `session-touch.sh`, `UserPromptSubmit` → `prompt-context.sh`. Backs up the previous `hooks` object to `~/.syntaur/hooks.backup.json` before the first mutation. Idempotent on re-run. Foreign hooks (for example your own `PreToolUse` entry) are preserved.
-- `syntaur hooks uninstall` — remove Syntaur hook entries whose commands point at `~/.syntaur/hooks/`, delete that directory, leave the backup file.
-
-## `syntaur statusline`
-
-Install, configure, or remove the syntaur `statusLine` entry in Claude Code settings.
-
-- `syntaur statusline install [--mode replace|wrap|skip|ask] [--link]` — install `~/.syntaur/statusline.sh` and wire settings (wraps an existing status line by default in non-TTY).
-- `syntaur statusline configure [--preset <name>] [--segments <list>] [--separator <string>] [--wrap <path>] [--preview]` — segment order and composition.
-- `syntaur statusline uninstall [--keep-script]` — remove the settings entry; restores from `~/.syntaur/statusline.backup.json` when present.
-
-## Sessions
-
-### `syntaur session`
-
-Subcommands: `register` (SessionStart hook), `touch` (PostToolUse), `context` (UserPromptSubmit), `stop` (`--from-hook`), `resume`, `summarize`, `resolve-id`, `boundary`. All hook entry points read JSON from stdin and exit 0 on failure.
-
-### `syntaur track-session`
-
-```
-syntaur track-session --agent <name> [--session-id <id>] [--transcript-path <path>] \
-  [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>] [--from-hook]
-```
-
-### `syntaur usage`
-
-```
-syntaur usage [--since <iso>] [--until <iso>] [--project <slug>] [--ticket <id>] [--json]
-```
-
-Token and cost rollup from `usage_events` / `usage_daily`.
-
-### `syntaur history <ticket>`
-
-Show the git commit history for a ticket folder under the Syntaur home (the home must be a git repository from `syntaur init`). Commits are listed newest first with the UTC timestamp, short SHA, subject, and count of paths under that ticket directory touched in each commit.
-
-```
-syntaur history <ticket> [options]
-```
-
-`<ticket>` is a ticket id (`<PREFIX>-<n>`) or slug with `--project`.
-
-### Options
-
-- `--project <slug>` — Project the ticket belongs to (required when `<ticket>` is a slug).
-- `--limit <n>` — Maximum number of commits to show (default: 50).
-- `--json` — Emit a JSON array of `{ sha, at, subject, files }` objects.
-- `--events` — Show the SQLite events table for the ticket instead of git history (same output as `syntaur timeline`).
-
-Git history follows the ticket folder path only; renames start a new history (no `--follow` across folder renames).
 
 ### `syntaur timeline <ticket>`
 
@@ -518,67 +423,26 @@ syntaur timeline API-3 --project my-api \
 syntaur timeline API-3 --project my-api --json --limit 10
 ```
 
-### `syntaur search <query>`
 
-Full-text search across all Syntaur markdown content. Searches the bodies of every file kind tracked by a ticket and returns ranked results with a snippet and location.
+### `syntaur history <ticket>`
+
+Show the git commit history for a ticket folder under the Syntaur home (the home must be a git repository from `syntaur init`). Commits are listed newest first with the UTC timestamp, short SHA, subject, and count of paths under that ticket directory touched in each commit.
 
 ```
-syntaur search <query> [options]
+syntaur history <ticket> [options]
 ```
 
-### File kinds searched
-
-| Kind | File |
-|------|------|
-| `ticket` | `ticket.md` |
-| `plan` | Latest plan only — `plan-v<N>.md` supersedes `plan.md` when a versioned plan exists |
-| `journal` | `journal.md` (log role on modern templates) |
-| `progress` | `progress.md` (`legacy` log role) |
-| `scratchpad` | `scratchpad.md` |
+`<ticket>` is a ticket id (`<PREFIX>-<n>`) or slug with `--project`.
 
 ### Options
 
-- `--project <slug>` — Restrict results to one project.
-- `--template <list>` — Comma-separated ticket template filter.
-- `--status <list>` — Comma-separated ticket status filter.
-- `--in <fileKinds>` — Comma-separated file-kind filter. Accepts singular or plural names (e.g. `--in comment,plans` or `--in comments,plan`).
-- `--all` — Include archived tickets and projects (excluded by default).
-- `--limit <n>` — Maximum number of results. Default: `20`.
-- `--semantic` — Use the semantic search provider when available; falls back to full-text automatically. The semantic layer is a designed-but-deferred seam — v1 uses full-text search via fuse.js.
-- `--json` — Emit results as a JSON array instead of a table.
+- `--project <slug>` — Project the ticket belongs to (required when `<ticket>` is a slug).
+- `--limit <n>` — Maximum number of commits to show (default: 50).
+- `--json` — Emit a JSON array of `{ sha, at, subject, files }` objects.
+- `--events` — Show the SQLite events table for the ticket instead of git history (same output as `syntaur timeline`).
 
-### JSON output shape
+Git history follows the ticket folder path only; renames start a new history (no `--follow` across folder renames).
 
-Each item in the `--json` array contains:
-
-```json
-{
-  "path": "/abs/path/to/file.md",
-  "project": "project-slug",
-  "ticket": "ticket-slug",
-  "fileKind": "plan",
-  "score": 0.82,
-  "snippet": "…matched text excerpt…",
-  "line": 14,
-  "section": "## Implementation",
-  "route": "/tickets/my-ticket?tab=plan#implementation"
-}
-```
-
-The `route` field is also used by the dashboard's visible Search dialog: selecting a result opens the matching ticket's `?tab=<kind>` pane at the `#section` anchor.
-
-### Examples
-
-```bash
-# Find any mention of "rate limit" across all content
-syntaur search "rate limit"
-
-# Search only plans and handoffs in one project, return JSON
-syntaur search "authentication flow" --project my-api --in plans,handoff --json
-
-# Include archived tickets, cap at 5 results
-syntaur search "stripe webhook" --all --limit 5
-```
 
 ### `syntaur inbox`
 
@@ -673,7 +537,134 @@ syntaur inbox --max-age 14
 syntaur inbox --show-snoozed
 ```
 
-The dashboard **Needs me** view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever a ticket changes.
+
+ view is the GUI reply queue — live cards first, then chat replies, plain questions, plans, and reviews (oldest-first within each tier), with inline reply, allow/deny, approve, and accept/reopen controls, plus a nav badge that follows the page window (default last 14 days) and excludes snoozed rows. It live-updates via WebSocket whenever a ticket changes.
+
+
+## Workspace
+
+### `syntaur workspace set`
+
+Set the four `workspace.*` frontmatter fields on a ticket atomically. Validates the file (same checks as `syntaur doctor --ticket --json`) **before** writing and re-validates **after**, restoring the original on failure, and bumps `updated`.
+
+```
+syntaur workspace set \
+  --repository <path> --worktree-path <path> --branch <name> --parent-branch <name> \
+  [--ticket <id> [--project <slug>]]
+```
+
+Defaults to the ticket on the session's **open engagement** when `--ticket` is omitted (`<PREFIX>-<n>` with `--project` when needed). `.syntaur/context.json` is a workspace marker only, not the active-ticket source. Provide at least one field flag.
+
+### `syntaur open [ticket]`
+
+```
+syntaur open [ticket] [--id <uuid>] [--project <slug>] [--editor] [--terminal] [--recreate] [--json]
+```
+
+Prints the ticket worktree path and copies it to the clipboard. `--terminal` opens a terminal at the worktree (reads optional `terminal:` from `config.md`). `--recreate` rebuilds a missing worktree from `ticket.md` workspace fields.
+
+### `syntaur worktree`
+
+Manage git worktrees bound to tickets.
+
+- `syntaur worktree create --branch <name> [--repository <path>] [--parent-branch <name>] [--ticket <id> [--project <slug>]] [--worktree-path <path>]` — create a worktree and record the workspace block.
+- `syntaur worktree list [--repository <path>] [--json]` — list the repository's worktrees.
+- `syntaur worktree remove` (alias `prune`) `[--ticket <id> [--project <slug>]] [--repository <path>] [--delete-branch] [--force]` — remove the ticket's worktree (git teardown first), optionally delete the branch, then clear the four `workspace.*` fields and bump `updated`. Without `--force`, git refuses a dirty/locked worktree.
+- `syntaur worktree gc [--repository <path>] [--base <branch>] [--apply] [--force] [--delete-branch] [--yes] [--json]` — find worktrees safe to clean up (branch merged into `<base>` AND linked ticket completed/archived AND clean); dry-run by default; `--apply` removes them. Agent-session history is never deleted — recover with `syntaur open <ticket> --recreate`.
+
+## Sessions
+
+### `syntaur session`
+
+Subcommands: `register` (SessionStart hook), `touch` (PostToolUse), `context` (UserPromptSubmit), `stop` (`--from-hook`), `resume`, `summarize`, `resolve-id`, `boundary`. All hook entry points read JSON from stdin and exit 0 on failure.
+
+### `syntaur track-session`
+
+```
+syntaur track-session --agent <name> [--session-id <id>] [--transcript-path <path>] \
+  [--project <slug>] [--ticket <id>] [--path <cwd>] [--description <text>]
+```
+
+### `syntaur usage`
+
+```
+syntaur usage [--since <iso>] [--until <iso>] [--project <slug>] [--ticket <id>] [--json]
+```
+
+Token and cost rollup from `usage_events` / `usage_daily`.
+
+## Migrations
+
+### `syntaur migrate journal`
+
+Merge legacy per-purpose record files into `journal.md` and switch the ticket off the `legacy` template. Dry-run by default; pass `--apply` to write. Creates `.migrate-journal.bak/` before applying.
+
+```
+syntaur migrate journal [<id>] [--project <slug>] [--all] [--template <id>] [--apply]
+```
+
+**Sources merged (when present and non-empty):** `progress.md`, `decision-record.md`, `handoff.md`, `comments.md`, `scratchpad.md` — converted to typed log entries, sorted oldest-first, written to `journal.md`. Legacy files are copied into `.migrate-journal.bak/` on apply and deleted after a successful merge; the backup dir is removed on success.
+
+**Refuse / resume:** Refuses when `journal.md` exists with neither legacy sources nor a complete backup (already migrated). Refuses when the ticket template is not `legacy` and no `journal.md` exists. Resumes when `journal.md` coexists with legacy sources or a complete backup (for example after a crash between template switch and source deletion). `--all` skips tickets that are not `legacy` and have no sources or backup to resume. Both modes print `projects: <absolute path>` first, resolving the projects tree from `config.md` `defaultProjectDir` (same as `syntaur show`, `inbox`, and `search`).
+
+Default `--template` is `feature`. Per-ticket mode takes a ticket id; `--project <slug> --all` migrates every `legacy` ticket in that project.
+
+### Examples
+
+```bash
+# Preview one ticket
+syntaur migrate journal LEG-12 --project my-api
+
+# Apply all legacy tickets in scratch
+syntaur migrate journal --project scratch --all --apply
+```
+
+### `syntaur migrate v2`
+
+One-time migration from v1 / Phase-A layout to v2 id-prefixed ticket folders. Dry-run by default; pass `--apply` to write. Creates a `.bak-v2-*` backup before applying.
+
+```
+syntaur migrate v2 [--apply] [--root <path>] [--prefix <slug=PFX> ...]
+```
+
+Four steps, recorded in the `v2-migrated` marker ledger:
+
+1. **`rename-ids`** — Renames `assignments/` → `tickets/` where present; assigns each project a `prefix` and sequential ticket ids; renames folders to `<ID>-<slug>`; moves former standalone `~/.syntaur/tickets/<uuid>/` entries into `projects/scratch/`; re-keys SQLite tables (`events`, `engagement`, `chat_*`, `usage_*`).
+2. **`templates`** — Seeds missing built-in templates; sets `template: legacy` on every ticket; renames the legacy dependency frontmatter key to `depends_on`; migrates the legacy plan-approval block to `plan:`; drops `type`.
+3. **`statuses`** — Maps v1 statuses to v2 stages (`draft→backlog`, legacy planning→`planning`, legacy ready→`ready`, `completed→done`, `failed→dropped`, etc.); folds the legacy blocked-reason scalar into the `blocked` flag; adds `parked: null`; re-renders each ticket to the 17-field v2 frontmatter shape; backfills missing audit rows from legacy frontmatter history then rewrites `status-change` / `plan-approval` events to `moved` / `plan-approved`.
+4. **`derived`** — Deletes derived project markdown (`manifest.md`, `_index-*.md`, `_status.md`, `resources/_index.md`, `memories/_index.md`); strips `entryCount`, `handoffCount`, `decisionCount`, and `updated` from legacy record files; injects `**Recorded:**` lines on undated decision and handoff blocks using the file’s former `updated` timestamp before the strip.
+
+Dry-run / apply transcript lines (representative):
+
+```
+[dry-run] templates: seeded feature, bug, spike, quick, legacy
+[dry-run] template legacy: 12 tickets
+[dry-run] depends_on: 8 renamed
+[dry-run] plan block: 5 tickets (3 approvals carried, 1 superseded approvals dropped)
+[dry-run] dropped type: 12
+[dry-run] statuses: 12 tickets mapped (backlog 3, planning 2, ready 1, in_progress 0, review 0, done 4, dropped 2)
+[dry-run] archived → dropped: 0
+[dry-run] flags: blocked 1, parked 0
+[dry-run] history: 5 backfilled, 3 status-change and 2 plan-approval rows rewritten
+[dry-run] mapped: draft→backlog 3, …→planning 2, completed→done 4
+[dry-run] worktree: 0 renamed
+[dry-run] dropped fields: 48
+[dry-run] removed: derive-migrated, stages-migrated, workflows/
+[dry-run] derived: 85 files removed (manifest.md 15, _index-tickets.md 15, _index-plans.md 15, _index-decisions.md 15, _status.md 15, resources/_index.md 5, memories/_index.md 5)
+[dry-run] counters: 1284 record files stripped (entryCount 643, handoffCount 321, decisionCount 321, updated 1284); recorded lines injected: decisions 748, handoffs 12
+```
+
+`--prefix slug=PFX` overrides auto-derived prefixes (repeatable). `--root` sets the Syntaur home to migrate (default `~/.syntaur`). A bare-timestamp marker (pre-templates) re-runs only the `templates` step. A home whose ledger already has the first three steps runs only `derived`.
+
+### Examples
+
+```bash
+# Preview changes
+syntaur migrate v2
+
+# Apply with a custom prefix for one project
+syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
+```
 
 ## Hooks
 
@@ -691,7 +682,7 @@ Text mode (`syntaur session context --session-id <id>`) prints the same block fo
 
 An explicit `syntaur track-session --ticket <id>` re-binds the session's open engagement to that ticket (closing any open engagement on another ticket) so the prompt hook names the ticket you just tracked.
 
-Block shape:
+Block shape (ticket engaged):
 
 ```
 # Syntaur
@@ -699,15 +690,13 @@ Ticket: <ID> · <title> · <template> · stage: <stage id>
 Stage instructions: <verbatim multi-line text when declared>
 Next: <hint from syntaur show>
 Run `syntaur show <ID>` for files, gates and commands.
-
-## Playbooks
-### <name>
-<body>
 ```
 
-When the session has no open engagement, only the `## Playbooks` section prints (if any cross-template playbooks are enabled). When a stage is not declared by the ticket's template, the block includes `Stage: <id> (not declared by template <t>)` and omits the instructions line. A `dropped` ticket shows `stage: dropped` with no instructions line.
+When the session has no open engagement, only the Playbooks subsection prints (if any cross-template playbooks are enabled). When a stage is not declared by the ticket's template, the block includes `Stage: <id> (not declared by template <t>)` and omits the instructions line. A `dropped` ticket shows `stage: dropped` with no instructions line.
 
-**Cross-template playbooks** are enabled playbooks whose slug is not listed in the `playbooks` field of any template manifest (home copies first, shipped built-ins for ids the home lacks). Disabled slugs in `config.md` and slugs claimed by any template are excluded. The derived manifest under `~/.syntaur/playbooks/` is for the dashboard Library only — the hook reads playbook files directly, not that index.
+## Playbooks
+
+**Cross-template playbooks** are enabled playbooks whose slug is not listed in the `playbooks` field of any template manifest (home copies first, shipped built-ins for ids the home lacks). Disabled slugs in `config.md` and slugs claimed by any template are excluded. The derived manifest under `~/.syntaur/playbooks/` is for the dashboard Library only — the hook reads playbook files directly, not that index. In the injected prompt block, each enabled playbook appears as a `### <name>` heading with the playbook body.
 
 ## Stage dispatch and offline behavior
 
@@ -726,7 +715,7 @@ worktree. It reads an optional `terminal:` scalar from `~/.syntaur/config.md`
 (`terminal-app` | `iterm` | `ghostty` | `alacritty` | `warp` | `kitty` |
 `cmux`) and falls back to the platform default.
 
-### Retired in v1.0
+## Retired in v1.0
 
 The terminal-launch stack is gone: the `syntaur://` URL scheme and
 `install-url-handler`, `syntaur url`, `syntaur agents *`, `syntaur tui` (the
