@@ -25,12 +25,11 @@ let fake: FakeAgent;
 let clients: AcpClient[];
 let prevHome: string | undefined;
 
-const alwaysInstalled = fakeCommandResolver;
 const authOk = () => 'logged in';
 
 function makeBroker(
   agentOptions: Parameters<typeof createFakeAgent>[0] = {},
-  resolver: (spec: HarnessSpec) => CommandResolution = alwaysInstalled,
+  resolver: (spec: HarnessSpec) => CommandResolution = fakeCommandResolver,
   timeoutOverrides: Partial<BrokerTimeouts> = {},
 ) {
   fake = createFakeAgent({
@@ -122,7 +121,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
   });
 
   it('reports initialize failure with the injected auth prober text', async () => {
-    makeBroker({ initializeError: 'nope' }, alwaysInstalled);
+    makeBroker({ initializeError: 'nope' }, fakeCommandResolver);
     await expect(broker.refreshHarness('claude')).rejects.toMatchObject({
       status: 503,
       message: expect.stringMatching(/logged in$/),
@@ -155,7 +154,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
         clients.push(client);
         return client;
       },
-      commandResolver: alwaysInstalled,
+      commandResolver: fakeCommandResolver,
       authProber: authOk,
       timeouts: { flushMs: 1, throwawayMs: 200 },
     });
@@ -257,7 +256,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
   });
 
   it('refresh with no advertised commands returns within the bounded wait', async () => {
-    makeBroker({}, alwaysInstalled, { throwawayCommandsMs: 100 });
+    makeBroker({}, fakeCommandResolver, { throwawayCommandsMs: 100 });
     const started = Date.now();
     await broker.refreshHarness('claude');
     expect(Date.now() - started).toBeGreaterThanOrEqual(90);
@@ -280,7 +279,7 @@ describe.sequential('throwaway harness refresh and agent test', () => {
 
   it('refresh with only an empty advertisement leaves an existing record intact', async () => {
     setHarnessCommands('claude', parsedProbeCommands);
-    makeBroker({ availableCommands: [] }, alwaysInstalled, { throwawayCommandsMs: 100 });
+    makeBroker({ availableCommands: [] }, fakeCommandResolver, { throwawayCommandsMs: 100 });
     const started = Date.now();
     await broker.refreshHarness('claude');
     expect(Date.now() - started).toBeGreaterThanOrEqual(90);
@@ -474,7 +473,7 @@ function makeTicketBroker(
     },
     commandResolver: (spec) => {
       resolvedHarnesses.push(spec.id);
-      return alwaysInstalled(spec);
+      return fakeCommandResolver(spec);
     },
     authProber: authOk,
     timeouts: { flushMs: 1, sessionIdleMs: 60_000, shutdownGraceMs: 300 },

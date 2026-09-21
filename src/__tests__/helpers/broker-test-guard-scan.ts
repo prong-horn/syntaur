@@ -31,6 +31,70 @@ function stripComments(source: string): string {
   return out;
 }
 
+/** Replace string and template literal contents with spaces so `(` / `)` inside never count. */
+function maskStrings(source: string): string {
+  let out = '';
+  let i = 0;
+  while (i < source.length) {
+    const ch = source[i];
+    if (ch === "'" || ch === '"') {
+      const quote = ch;
+      out += ' ';
+      i += 1;
+      while (i < source.length) {
+        if (source[i] === '\\' && i + 1 < source.length) {
+          out += '  ';
+          i += 2;
+          continue;
+        }
+        if (source[i] === quote) {
+          out += ' ';
+          i += 1;
+          break;
+        }
+        out += source[i] === '\n' ? '\n' : ' ';
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '`') {
+      out += ' ';
+      i += 1;
+      while (i < source.length) {
+        if (source[i] === '\\' && i + 1 < source.length) {
+          out += '  ';
+          i += 2;
+          continue;
+        }
+        if (source[i] === '$' && source[i + 1] === '{') {
+          out += '  ';
+          i += 2;
+          let depth = 1;
+          while (i < source.length && depth > 0) {
+            const c = source[i];
+            if (c === '{') depth += 1;
+            else if (c === '}') depth -= 1;
+            out += c === '\n' ? '\n' : ' ';
+            i += 1;
+          }
+          continue;
+        }
+        if (source[i] === '`') {
+          out += ' ';
+          i += 1;
+          break;
+        }
+        out += source[i] === '\n' ? '\n' : ' ';
+        i += 1;
+      }
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 function lineNumberAt(source: string, index: number): number {
   return source.slice(0, index).split('\n').length;
 }
@@ -41,7 +105,7 @@ function lineNumberAt(source: string, index: number): number {
  * `// broker-test-guard: ignore`.
  */
 export function findCreateChatBrokerGuardViolations(source: string, label = 'file'): string[] {
-  const stripped = stripComments(source);
+  const stripped = maskStrings(stripComments(source));
   const violations: string[] = [];
   const needle = 'createChatBroker(';
   let from = 0;

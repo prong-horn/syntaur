@@ -15,6 +15,30 @@ describe('broker test guard', () => {
     expect(findCreateChatBrokerGuardViolations(bad, 'snippet')).toEqual(['snippet:2']);
   });
 
+  it('ignores createChatBroker( that appears only inside a string', () => {
+    const doc = `
+      const hint = "use createChatBroker({ projectsDir: '/tmp' }) with care";
+    `;
+    expect(findCreateChatBrokerGuardViolations(doc, 'snippet')).toEqual([]);
+  });
+
+  it('matches calls whose options use template literals with parentheses', () => {
+    const ok = `
+      createChatBroker({
+        commandResolver: fakeCommandResolver,
+        projectsDir: \`/tmp/\${join('a', 'b')}\`,
+      });
+    `;
+    expect(findCreateChatBrokerGuardViolations(ok, 'snippet')).toEqual([]);
+
+    const bad = `
+      createChatBroker({
+        projectsDir: \`/tmp/\${fn({ nested: true })}\`,
+      });
+    `;
+    expect(findCreateChatBrokerGuardViolations(bad, 'snippet')).toEqual(['snippet:2']);
+  });
+
   it('accepts a compliant call and the ignore marker', () => {
     const good = `
       createChatBroker({
