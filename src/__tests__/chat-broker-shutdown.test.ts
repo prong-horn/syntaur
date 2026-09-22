@@ -229,7 +229,7 @@ describe('broker stopAll shutdown', () => {
     expect(rejections).toEqual([]);
 
     const chatDir = join(ticketDir, 'chat');
-    await rm(chatDir, { recursive: true, force: true });
+    await rm(chatDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     await new Promise((r) => setTimeout(r, 200));
     await expect(stat(chatDir)).rejects.toMatchObject({ code: 'ENOENT' });
 
