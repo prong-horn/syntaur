@@ -171,7 +171,7 @@ afterEach(async () => {
   closeEventsDb();
   resetEventsDb();
   delete process.env.SYNTAUR_HOME;
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('broker stopAll shutdown', () => {

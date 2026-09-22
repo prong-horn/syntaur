@@ -114,7 +114,7 @@ afterEach(async () => {
   closeSessionDb();
   if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = prevHome;
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('chat agents API', () => {

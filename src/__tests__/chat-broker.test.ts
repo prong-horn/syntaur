@@ -134,7 +134,7 @@ function makeBroker(
       flushMs: 1,
       permissionMs: 200,
       sessionIdleMs: 120,
-      shutdownGraceMs: 200,
+      shutdownGraceMs: 1000,
       inboxGraceMs: 60_000,
       ...(options.timeouts ?? {}),
     },
@@ -208,7 +208,7 @@ afterEach(async () => {
   closeUsageDb();
   closeEventsDb();
   resetEventsDb();
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('first message', () => {

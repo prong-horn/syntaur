@@ -82,7 +82,7 @@ afterEach(async () => {
   closeSessionDb();
   if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
   else process.env.SYNTAUR_HOME = prevHome;
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe.sequential('throwaway harness refresh and agent test', () => {
@@ -515,7 +515,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     closeUsageDb();
     if (prevHome === undefined) delete process.env.SYNTAUR_HOME;
     else process.env.SYNTAUR_HOME = prevHome;
-    await rm(sandbox, { recursive: true, force: true });
+    await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it('save while idle-with-live-client re-attaches and re-applies pins', async () => {

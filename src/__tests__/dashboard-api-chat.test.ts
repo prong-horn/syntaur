@@ -156,7 +156,7 @@ afterEach(async () => {
   wss = null;
   await new Promise<void>((r) => server?.close(() => r()));
   closeSessionDb();
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('GET /api/chat/agents', () => {

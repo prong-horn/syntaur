@@ -229,7 +229,7 @@ afterEach(async () => {
   for (const client of clients) await client.close().catch(() => {});
   closeSessionDb();
   closeUsageDb();
-  await rm(sandbox, { recursive: true, force: true });
+  await rm(sandbox, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 describe('routing a human message', () => {
