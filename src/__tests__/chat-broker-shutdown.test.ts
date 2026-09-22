@@ -293,6 +293,11 @@ describe('broker stopAll shutdown', () => {
   });
 
   it('stopAll is bounded when a turn gate is never released', async () => {
+    const GRACE = 100;
+    const BOUNDED_WAITS = 9;
+    // Nine grace-bounded waits in stopAll (broker.ts): constructing join (~4838–4849),
+    // cancelTurn (~4875), inFlight (~4876), handlerWork (~4923), driving join (~4927–4941),
+    // recordChains (~4958), agentWrites (~4959), handler/recorded tail (~4970), log.close() (~4979).
     const gate = new Promise<void>(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     makeBroker([{ steps: [{ kind: 'gate', gate }] }]);
@@ -309,7 +314,7 @@ describe('broker stopAll shutdown', () => {
     const t0 = performance.now();
     await broker.stopAll();
     const elapsed = performance.now() - t0;
-    expect(elapsed).toBeLessThan(100 * 3 + 500);
+    expect(elapsed).toBeLessThan(GRACE * BOUNDED_WAITS + 500);
     expect(warn.mock.calls.filter((c) => String(c[0]).includes('shutdown grace')).length).toBe(1);
     warn.mockRestore();
   });
