@@ -10,15 +10,29 @@ import {
   type VerbOptions,
   type MoveTicketResult,
 } from '../lifecycle/verbs.js';
-import { postCliStageDispatch } from '../chat/dispatch-client.js';
+import { postCliStageDispatch, readDashboardPort } from '../chat/dispatch-client.js';
+import type { DispatchResult } from '../lifecycle/stage-entry.js';
 
 export interface VerbCommandOptions extends VerbOptions {}
 
-function formatDispatch(dispatch: MoveTicketResult['dispatch']): string[] {
+export function formatDispatchLines(
+  ticketId: string,
+  dispatch: DispatchResult | undefined,
+  port: number | null,
+): string[] {
   if (!dispatch) return [];
   const lines: string[] = [];
   if (dispatch.state === 'queued' && dispatch.requestId) {
     lines.push(`Dispatch: queued (${dispatch.requestId})`);
+    if (port !== null) {
+      lines.push(
+        `Cancel: curl -s -X POST http://127.0.0.1:${port}/api/tickets/${ticketId}/dispatch/${dispatch.requestId}/cancel`,
+      );
+    } else {
+      lines.push(
+        `Cancel: POST /api/tickets/${ticketId}/dispatch/${dispatch.requestId}/cancel on the dashboard`,
+      );
+    }
   } else if (dispatch.state === 'offline') {
     lines.push(`Dispatch: offline${dispatch.warning ? ` — ${dispatch.warning}` : ''}`);
   } else if (dispatch.state === 'unknown') {
@@ -27,17 +41,21 @@ function formatDispatch(dispatch: MoveTicketResult['dispatch']): string[] {
     lines.push(`Dispatch: failed${dispatch.error ? ` — ${dispatch.error}` : ''}`);
   } else if (dispatch.state === 'skipped') {
     lines.push('Dispatch: manual handoff required');
+  } else if (dispatch.state === 'suppressed') {
+    lines.push('Dispatch: suppressed (--no-dispatch); hand off manually when ready');
   }
   return lines;
 }
 
-function reportMove(ticketId: string, result: MoveTicketResult): void {
+async function reportMove(ticketId: string, result: MoveTicketResult): Promise<void> {
   if (result.from === result.to) {
     console.log(`${ticketId}: ${result.verb} completed (no stage change).`);
   } else {
     console.log(`${ticketId}: ${result.from} → ${result.to} (${result.verb})`);
   }
-  for (const line of formatDispatch(result.dispatch)) {
+  const port =
+    result.dispatch?.state === 'queued' ? await readDashboardPort() : null;
+  for (const line of formatDispatchLines(ticketId, result.dispatch, port)) {
     console.log(line);
   }
   for (const warning of result.warnings ?? []) {
@@ -50,18 +68,28 @@ async function runVerb(
   verb: Parameters<typeof moveTicket>[1],
   options: VerbCommandOptions,
 ): Promise<void> {
-  const cli = options as VerbCommandOptions & { by?: string; agent?: string };
+  const cli = options as VerbCommandOptions & {
+    by?: string;
+    agent?: string;
+    dispatch?: boolean;
+  };
   const actor = resolveCliActor({ ...options, actor: cli.by ?? options.actor });
   const callerSession = await resolveLifecycleCaller(options);
   const dispatchAgent = verb === 'start' ? (cli.agent ?? options.dispatchAgent) : undefined;
+  const suppressDispatch = cli.dispatch === false;
   const result = await moveTicket(ticketId, verb, {
-    ...options,
+    force: options.force,
     actor,
     callerSession,
     dispatchAgent,
+    suppressDispatch,
+    reason: options.reason,
+    cwd: options.cwd,
+    dir: options.dir,
+    project: options.project,
     dispatch: postCliStageDispatch,
   });
-  reportMove(ticketId, result);
+  await reportMove(ticketId, result);
 }
 
 function resolveCliActor(options: VerbCommandOptions): string {
@@ -131,14 +159,20 @@ const verbOptions = (cmd: Command): Command =>
     .option('--by <name>', 'Audit attribution for this action')
     .option('--project <slug>', 'Project slug for a project-nested ticket');
 
-const startOptions = (cmd: Command): Command =>
+const moveOptions = (cmd: Command): Command =>
   verbOptions(cmd).option(
+    '--no-dispatch',
+    'Record the move without the automatic stage handoff (hand off manually later)',
+  );
+
+const startOptions = (cmd: Command): Command =>
+  moveOptions(cmd).option(
     '--agent <id>',
     'Dispatch recipient override for this start only (not audit attribution)',
   );
 
 export function registerVerbCommands(program: Command): void {
-  verbOptions(
+  moveOptions(
     program
       .command('approve')
       .description('Approve the plan and move to ready when declared')
@@ -170,7 +204,7 @@ export function registerVerbCommands(program: Command): void {
       .action(verbAction('start')),
   );
 
-  verbOptions(
+  moveOptions(
     program
       .command('review')
       .description('Move to review')
@@ -178,7 +212,7 @@ export function registerVerbCommands(program: Command): void {
       .action(verbAction('review')),
   );
 
-  verbOptions(
+  moveOptions(
     program
       .command('done')
       .description('Move to done')
@@ -186,7 +220,7 @@ export function registerVerbCommands(program: Command): void {
       .action(verbAction('done')),
   );
 
-  verbOptions(
+  moveOptions(
     program
       .command('drop')
       .description('Drop the ticket (requires a reason)')
@@ -195,7 +229,7 @@ export function registerVerbCommands(program: Command): void {
       .action(verbAction('drop', true)),
   );
 
-  verbOptions(
+  moveOptions(
     program
       .command('reopen')
       .description('Reopen from done or dropped')
