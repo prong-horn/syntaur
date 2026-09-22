@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { mkdirSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -101,7 +101,11 @@ describe('lock-coordination fresh DB init', () => {
       const elapsed = Date.now() - start;
 
       expect(recovered).toBe(false);
-      expect(elapsed).toBeGreaterThanOrEqual(250);
+      // The holder commits ~300 ms after printing `held`. Without the retry the call fails in ~3 ms
+      // (see the pre-fix probe) and a vacuous no-wait success would take well under 20 ms, so 100 ms
+      // still proves the parent waited for the holder while leaving ~200 ms for pipe latency under load
+      // (measured floor under a full-CPU load test: 270 ms).
+      expect(elapsed).toBeGreaterThanOrEqual(100);
       expect(journalModeWal(dbPath)).toBe('wal');
     } finally {
       if (child.exitCode === null && child.signalCode === null) {
@@ -118,6 +122,7 @@ describe('lock-coordination fresh DB init', () => {
     const payload = JSON.stringify({ ownerToken: 'tok-1', pid: process.pid });
 
     acquireLockRecordSerialized(ownerPath, payload, () => false, root);
+    expect(existsSync(ownerPath)).toBe(true);
 
     const released = releaseLockRecordSerialized(
       ownerPath,
@@ -128,6 +133,7 @@ describe('lock-coordination fresh DB init', () => {
     );
 
     expect(released).toBe(true);
+    expect(existsSync(ownerPath)).toBe(false);
     expect(journalModeWal(dbPath)).toBe('wal');
   });
 });
