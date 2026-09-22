@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
@@ -106,6 +105,60 @@ describe('process owner records', () => {
     await expect(readFile(path, 'utf-8')).rejects.toThrow();
   });
 
+  async function barrierDirListing(barrierPath: string): Promise<string> {
+    const names = await readdir(barrierPath).catch(() => [] as string[]);
+    const parts = await Promise.all(
+      names.map(async (name) => {
+        const raw = await readFile(join(barrierPath, name), 'utf-8').catch(() => '');
+        return `${name}(${raw.length}B)`;
+      }),
+    );
+    return parts.join(', ') || '(empty)';
+  }
+
+  async function waitForBarrier(
+    barrierPath: string,
+    name: string,
+    timeoutMs = 15_000,
+  ): Promise<string> {
+    const filePath = join(barrierPath, name);
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        const text = (await readFile(filePath, 'utf-8')).trim();
+        if (text) return text;
+      } catch {
+        /* not ready */
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(
+      `timed out for barrier ${name}; listing: ${await barrierDirListing(barrierPath)}`,
+    );
+  }
+
+  async function waitForSlotOutcome(
+    barrierPath: string,
+    slot: string,
+    timeoutMs = 15_000,
+  ): Promise<{ slot: string; kind: 'winner' | 'loser'; token?: string }> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const winner = await readFile(join(barrierPath, `winner-${slot}`), 'utf-8').catch(() => '');
+      if (winner.trim()) {
+        return { slot, kind: 'winner', token: winner.trim() };
+      }
+      const loser = await readFile(join(barrierPath, `loser-${slot}`), 'utf-8').catch(() => '');
+      if (loser.trim()) {
+        return { slot, kind: 'loser' };
+      }
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    throw new Error(
+      `timed out for slot ${slot} outcome; listing: ${await barrierDirListing(barrierPath)}`,
+    );
+  }
+
   function runLockChildProcess(op: string, slot: string): Promise<void> {
     return new Promise((resolvePromise, reject) => {
       const child = spawn(
@@ -150,27 +203,17 @@ describe('process owner records', () => {
     );
     await mkdir(barrier, { recursive: true });
 
-    async function waitBarrier(name: string): Promise<void> {
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline) {
-        try {
-          await readFile(join(barrier, name), 'utf-8');
-          return;
-        } catch {
-          await new Promise((r) => setTimeout(r, 10));
-        }
-      }
-      throw new Error(`timed out for barrier ${name}`);
-    }
-
     const childA = runLockChildProcess('recover-acquire-release', '0');
     const childB = runLockChildProcess('recover-acquire-release', '1');
-    await Promise.all([waitBarrier('recovered-0'), waitBarrier('recovered-1')]);
+    await Promise.all([
+      waitForBarrier(barrier, 'recovered-0'),
+      waitForBarrier(barrier, 'recovered-1'),
+    ]);
     await writeFile(join(barrier, 'go'), '1');
     await Promise.all([childA, childB]);
 
-    expect(await readFile(join(barrier, 'acquired-0'), 'utf-8')).toBeTruthy();
-    expect(await readFile(join(barrier, 'acquired-1'), 'utf-8')).toBeTruthy();
+    expect(await waitForBarrier(barrier, 'acquired-0')).toBeTruthy();
+    expect(await waitForBarrier(barrier, 'acquired-1')).toBeTruthy();
     await expect(readFile(path, 'utf-8')).rejects.toThrow();
   });
 
@@ -180,42 +223,25 @@ describe('process owner records', () => {
     await mkdir(barrier, { recursive: true });
     await runLockChildProcess('seed-stale', 'seed');
 
-    async function waitBarrier(name: string): Promise<void> {
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline) {
-        try {
-          await readFile(join(barrier, name), 'utf-8');
-          return;
-        } catch {
-          await new Promise((r) => setTimeout(r, 10));
-        }
-      }
-      throw new Error(`timed out for barrier ${name}`);
-    }
-
     const contenders = Promise.all([
       runLockChildProcess('recover-then-contend', '0'),
       runLockChildProcess('recover-then-contend', '1'),
     ]);
-    await Promise.all([waitBarrier('ready-0'), waitBarrier('ready-1')]);
+    await Promise.all([
+      waitForBarrier(barrier, 'ready-0'),
+      waitForBarrier(barrier, 'ready-1'),
+    ]);
     await writeFile(join(barrier, 'contend'), '1');
-    const contentionDeadline = Date.now() + 15_000;
-    while (Date.now() < contentionDeadline) {
-      const outcomes = ['0', '1'].filter(
-        (s) =>
-          existsSync(join(barrier, `winner-${s}`)) || existsSync(join(barrier, `loser-${s}`)),
-      );
-      if (outcomes.length >= 2) break;
-      await new Promise((r) => setTimeout(r, 10));
-    }
-    const winner0 = await readFile(join(barrier, 'winner-0'), 'utf-8').catch(() => null);
-    const winner1 = await readFile(join(barrier, 'winner-1'), 'utf-8').catch(() => null);
-    const losers = [
-      await readFile(join(barrier, 'loser-0'), 'utf-8').catch(() => null),
-      await readFile(join(barrier, 'loser-1'), 'utf-8').catch(() => null),
-    ].filter(Boolean);
-    expect([winner0, winner1].filter(Boolean)).toHaveLength(1);
+    const [outcome0, outcome1] = await Promise.all([
+      waitForSlotOutcome(barrier, '0'),
+      waitForSlotOutcome(barrier, '1'),
+    ]);
+    const outcomes = [outcome0, outcome1];
+    const winners = outcomes.filter((o) => o.kind === 'winner');
+    const losers = outcomes.filter((o) => o.kind === 'loser');
+    expect(winners).toHaveLength(1);
     expect(losers).toHaveLength(1);
+    expect(winners[0].slot).not.toBe(losers[0].slot);
     await writeFile(join(barrier, 'release'), '1');
     await contenders;
     await expect(readFile(path, 'utf-8')).rejects.toThrow();
