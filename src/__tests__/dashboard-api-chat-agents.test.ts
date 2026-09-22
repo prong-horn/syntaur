@@ -15,6 +15,7 @@ import { createFakeAgent, textChunk } from '../chat/fake-agent.js';
 import { HARNESSES } from '../chat/harnesses.js';
 import type { WsMessage } from '../dashboard/types.js';
 import { fakeCommandResolver, missingCommandResolver } from './helpers/fake-command-resolver.js';
+import { waitUntil } from './helpers/wait-until.js';
 
 let sandbox: string;
 let server: Server;
@@ -272,7 +273,7 @@ describe('chat agents API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(plannerInput),
     });
-    await new Promise((r) => setTimeout(r, 50));
+    await waitUntil(() => frames.some((f) => f.type === 'chat-agents'), 'the chat-agents broadcast');
     ws.close();
     expect(frames.some((f) => f.type === 'chat-agents')).toBe(true);
   });
