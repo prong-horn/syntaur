@@ -59,6 +59,7 @@ describe('registerVerbCommands --no-dispatch', () => {
     registerVerbCommands(program);
     const start = program.commands.find((c) => c.name() === 'start');
     expect(start).toBeDefined();
+    start!.action(async () => {});
     start!.exitOverride();
     start!.parse(['FE-1', '--no-dispatch'], { from: 'user' });
     expect(start!.opts()).toMatchObject({ dispatch: false });
