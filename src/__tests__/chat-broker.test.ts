@@ -1633,12 +1633,20 @@ describe('the drive loop never loses a message (finding 5)', () => {
     makeBroker({ agentOptions: { initializeError: 'nope' } });
     await writeTicket();
     const { messageId } = await broker.send({ ticket: ticket(), text: 'keep me' });
+    // The injected `initializeError` reaches the broker as an ACP JSON-RPC error whose
+    // message is the generic `Internal error` (the SDK does not forward the agent's text);
+    // the broker then records `<cmd> failed to start: <message>. <probe>` (broker.ts
+    // ensureAdapter initialize catch). Accept either wording so the test tracks the
+    // failure path, not the SDK's remapping.
+    const startFailure = /failed to start: (Internal error|nope)/;
     await waitUntil(() => {
       if (lastSessionFrame()?.state !== 'error') return false;
       const systemRows = itemsOfType('system') as Array<{ text: string }>;
-      // ACP surfaces agent-thrown `nope` as `Internal error` on the wire.
-      return systemRows.some((s) => /failed to start: Internal error/.test(s.text));
+      return systemRows.some((s) => startFailure.test(s.text));
     }, 'adapter initialize failure');
+    const failureRows = (itemsOfType('system') as Array<{ text: string }>).filter((s) => startFailure.test(s.text));
+    expect(failureRows).toHaveLength(1);
+    expect(lastSessionFrame()?.state).toBe('error');
     expect(fake.calls).toEqual(['initialize']);
     await expectQueuedAfterStartFailure(messageId);
   });
