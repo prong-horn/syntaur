@@ -238,6 +238,7 @@ describe('routing a human message', () => {
 
     await broker.send({ ticket: ticket(), text: '@planner @implementer go' });
     await idleAll(2);
+    await settled('planner', 'implementer');
 
     expect(prompts('planner')).toHaveLength(1);
     expect(prompts('implementer')).toHaveLength(1);
