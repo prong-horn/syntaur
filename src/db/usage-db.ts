@@ -21,6 +21,7 @@
 
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
+import { openWalDatabase } from './open-sqlite.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { priceForModel } from '../usage/pricing.js';
 
@@ -248,10 +249,7 @@ export function initUsageDb(dbPath?: string): Database.Database {
   if (db) return db;
 
   const finalPath = dbPath ?? resolve(syntaurRoot(), 'syntaur.db');
-  db = new Database(finalPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('foreign_keys = ON');
+  db = openWalDatabase(finalPath, { foreignKeys: true });
 
   const database = db;
   const runMigrations = database.transaction(() => {
