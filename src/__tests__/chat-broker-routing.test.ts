@@ -1012,7 +1012,7 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
     const before = itemsOfType('system').length;
     await broker.send({ ticket: ticket(), text: '@implementer are you there' });
     await idleAll(1);
-    await settled('planner', 'implementer');
+    await settled('planner');
 
     // Nothing is routed to it; the default answers and the room is told.
     expect(prompts('implementer')).toHaveLength(0);
