@@ -11,6 +11,7 @@ import { cp, readFile, readdir, rename, rm, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 import Database from 'better-sqlite3';
+import { openWalDatabase } from '../db/open-sqlite.js';
 import { expandHome, syntaurRoot } from '../utils/paths.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { derivePrefix } from '../utils/ticket-ids.js';
@@ -1994,8 +1995,7 @@ export function rekeyDatabase(
   usageDailyMerged: number;
   skippedStandaloneSlugRekeys: string[];
 } {
-  const database = new Database(dbPath);
-  database.pragma('journal_mode = WAL');
+  const database = openWalDatabase(dbPath);
   const skippedStandaloneSlugRekeys: string[] = [];
   const counts = {
     events: 0,

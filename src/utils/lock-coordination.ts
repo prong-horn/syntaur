@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import Database from 'better-sqlite3';
+import { openWalDatabase } from '../db/open-sqlite.js';
 import { canonicalPath } from './path-canon.js';
 import { syntaurRoot } from './paths.js';
 
@@ -20,40 +21,7 @@ const COORD_SCHEMA = `CREATE TABLE IF NOT EXISTS lock_recovery (
   updated_at INTEGER NOT NULL
 )`;
 
-const COORD_BUSY_TIMEOUT_MS = 5000;
-const INIT_RETRY_BACKOFF_MS = 5;
-
 const coordDbs = new Map<string, Database.Database>();
-
-function isSqliteBusy(err: unknown): boolean {
-  if (typeof err !== 'object' || err === null || !('code' in err)) {
-    return false;
-  }
-  const code = (err as { code: unknown }).code;
-  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
-}
-
-function sleepSync(ms: number): void {
-  const buf = new SharedArrayBuffer(4);
-  const arr = new Int32Array(buf);
-  Atomics.wait(arr, 0, 0, ms);
-}
-
-function initializeCoordinationDb(db: Database.Database, deadline: number): void {
-  for (;;) {
-    try {
-      db.pragma('journal_mode = WAL');
-      db.exec(COORD_SCHEMA);
-      return;
-    } catch (err) {
-      if (isSqliteBusy(err) && Date.now() < deadline) {
-        sleepSync(INIT_RETRY_BACKOFF_MS);
-        continue;
-      }
-      throw err;
-    }
-  }
-}
 
 function coordinationRoot(root?: string): string {
   return root ?? syntaurRoot();
@@ -65,21 +33,9 @@ function coordinationDb(root?: string): Database.Database {
   const existing = coordDbs.get(dbPath);
   if (existing) return existing;
   mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
-  try {
-    db.pragma(`busy_timeout = ${COORD_BUSY_TIMEOUT_MS}`);
-    const deadline = Date.now() + COORD_BUSY_TIMEOUT_MS;
-    initializeCoordinationDb(db, deadline);
-    coordDbs.set(dbPath, db);
-    return db;
-  } catch (err) {
-    try {
-      db.close();
-    } catch {
-      /* best effort */
-    }
-    throw err;
-  }
+  const db = openWalDatabase(dbPath, { init: (handle) => handle.exec(COORD_SCHEMA) });
+  coordDbs.set(dbPath, db);
+  return db;
 }
 
 export function canonicalLockPath(lockPath: string): string {

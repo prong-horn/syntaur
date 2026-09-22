@@ -6,7 +6,7 @@ async function createListeningServer(port: number = 0): Promise<{ server: Return
   const server = createServer();
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject);
-    server.listen(port, () => resolve());
+    server.listen(port, () => resolve()); // listen-guard: ignore — simulates a foreign listener for the port probe
   });
 
   const address = server.address();

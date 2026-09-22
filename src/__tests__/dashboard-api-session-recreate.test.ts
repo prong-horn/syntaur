@@ -92,7 +92,7 @@ beforeEach(async () => {
     createAgentSessionsRouter(projectsDir, undefined),
   );
   await new Promise<void>((ready) => {
-    server = app.listen(0, () => ready());
+    server = app.listen(0, '127.0.0.1', () => ready());
   });
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/agent-sessions`;
 });

@@ -856,7 +856,7 @@ describe('POST /api/agent-sessions', () => {
     app.use('/api/agent-sessions', createAgentSessionsRouter(dbDir));
 
     await new Promise<void>((ready) => {
-      server = app.listen(0, () => ready());
+      server = app.listen(0, '127.0.0.1', () => ready());
     });
     port = (server.address() as AddressInfo).port;
   });
@@ -992,7 +992,7 @@ describe('PATCH /api/agent-sessions/:sessionId (terminal-only)', () => {
     app.use('/api/agent-sessions', createAgentSessionsRouter(dbDir));
 
     await new Promise<void>((ready) => {
-      server = app.listen(0, () => ready());
+      server = app.listen(0, '127.0.0.1', () => ready());
     });
     port = (server.address() as AddressInfo).port;
 
