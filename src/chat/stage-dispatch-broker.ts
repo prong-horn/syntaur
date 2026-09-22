@@ -299,6 +299,9 @@ export async function resolveStageDispatchTarget(
     if (agentIdOverride && agentIdOverride !== entry.dispatchTarget) {
       throw new StageDispatchError('automatic agentId conflicts with recorded target', 409);
     }
+    if (entry.dispatchSuppressed) {
+      throw new StageDispatchError('automatic dispatch suppressed for this entry (--no-dispatch)', 409);
+    }
     if (!entry.dispatchAuto && !entry.dispatchOverride) {
       throw new StageDispatchError('automatic dispatch not authorized for this entry', 409);
     }

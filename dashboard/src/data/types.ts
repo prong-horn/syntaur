@@ -248,6 +248,7 @@ export interface StageHandoffDescriptor {
   canDispatch: boolean;
   reason?: string;
   manualFallback: boolean;
+  suppressed?: boolean;
   latestReceipt?: StageHandoffReceiptSummary;
 }
 

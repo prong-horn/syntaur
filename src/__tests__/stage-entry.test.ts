@@ -220,6 +220,69 @@ describe('stage entry recording', () => {
     expect(outcome.warnings?.some((w) => w.includes('stage entry notification failed'))).toBe(true);
     expect(dispatchImpl).toHaveBeenCalledOnce();
   });
+
+  it('records dispatchSuppressed on auto stage when suppressDispatch is set', async () => {
+    const manifest = await loadTemplate(home, 'feature');
+    const entry = recordStageEntryLocked({
+      ticketId: 'FE-6',
+      projectSlug: 'p',
+      actor: 'human',
+      at: '2026-01-01T00:00:00Z',
+      eventType: 'moved',
+      stage: 'in_progress',
+      manifest,
+      from: 'ready',
+      verb: 'start',
+      suppressDispatch: true,
+    });
+    expect(entry.dispatchSuppressed).toBe(true);
+    const latest = latestStageEntryForTicket('FE-6');
+    expect(latest?.dispatchSuppressed).toBe(true);
+    const dispatch = vi.fn();
+    const notifyStageEntry = vi.fn().mockResolvedValue(undefined);
+    const dispatchCb = Object.assign(dispatch, { notifyStageEntry }) as StageDispatchCallback;
+    const outcome = await completeStageEntry({
+      ticketId: 'FE-6',
+      ticketDir: '/tmp/t',
+      projectSlug: 'p',
+      ticketSlug: 't',
+      entry,
+      actor: 'human',
+      dispatch: dispatchCb,
+    });
+    expect(outcome.dispatch?.state).toBe('suppressed');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(notifyStageEntry).toHaveBeenCalledOnce();
+  });
+
+  it('suppressDispatch on a stage without target stays skipped', async () => {
+    const manifest = await loadTemplate(home, 'feature');
+    const entry = recordStageEntryLocked({
+      ticketId: 'FE-7',
+      projectSlug: 'p',
+      actor: 'human',
+      at: '2026-01-01T00:00:00Z',
+      eventType: 'moved',
+      stage: 'ready',
+      manifest,
+      from: 'planning',
+      verb: 'approve',
+      suppressDispatch: true,
+    });
+    expect(entry.dispatchSuppressed).toBe(false);
+    const dispatch = vi.fn();
+    const outcome = await completeStageEntry({
+      ticketId: 'FE-7',
+      ticketDir: '/tmp/t',
+      projectSlug: 'p',
+      ticketSlug: 't',
+      entry,
+      actor: 'human',
+      dispatch,
+    });
+    expect(outcome.dispatch?.state).toBe('skipped');
+    expect(dispatch).not.toHaveBeenCalled();
+  });
 });
 
 describe('completeStageEntry caller engagement', () => {

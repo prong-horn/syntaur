@@ -52,6 +52,7 @@ function inProgressEntry(fields: Partial<StageEntryEvent>): StageEntryEvent {
     dispatchRole: 'agent',
     dispatchAuto: true,
     dispatchOverride: false,
+    dispatchSuppressed: false,
     verb: 'start',
     type: 'moved',
     ...fields,
@@ -305,5 +306,28 @@ describe('buildStageHandoffDescriptor', () => {
       defaultAgentId: 'cursor',
     });
     expect(formatStageHandoffLine(descriptor)).toBe('Agent: hand off to @cursor when ready');
+  });
+
+  it('marks a suppressed auto entry manual with the suppressed show line', async () => {
+    const manifest = await loadTemplate(home, 'feature');
+    const { definitions } = await loadAgentDefinitions(home);
+    const descriptor = buildStageHandoffDescriptor({
+      ticketId: 'FE-1',
+      status: 'in_progress',
+      templateId: 'feature',
+      manifest,
+      chatEvents: [],
+      definitions,
+      stageEntry: inProgressEntry({ dispatchSuppressed: true }),
+    });
+    expect(descriptor).toMatchObject({
+      auto: false,
+      suppressed: true,
+      canDispatch: true,
+      recordedTargetId: 'cursor',
+    });
+    expect(formatStageHandoffLine(descriptor)).toBe(
+      'Agent: automatic handoff to @cursor suppressed (--no-dispatch); hand off manually when ready',
+    );
   });
 });
