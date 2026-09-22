@@ -20,7 +20,40 @@ const COORD_SCHEMA = `CREATE TABLE IF NOT EXISTS lock_recovery (
   updated_at INTEGER NOT NULL
 )`;
 
+const COORD_BUSY_TIMEOUT_MS = 5000;
+const INIT_RETRY_BACKOFF_MS = 5;
+
 const coordDbs = new Map<string, Database.Database>();
+
+function isSqliteBusy(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null || !('code' in err)) {
+    return false;
+  }
+  const code = (err as { code: unknown }).code;
+  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
+}
+
+function sleepSync(ms: number): void {
+  const buf = new SharedArrayBuffer(4);
+  const arr = new Int32Array(buf);
+  Atomics.wait(arr, 0, 0, ms);
+}
+
+function initializeCoordinationDb(db: Database.Database, deadline: number): void {
+  for (;;) {
+    try {
+      db.pragma('journal_mode = WAL');
+      db.exec(COORD_SCHEMA);
+      return;
+    } catch (err) {
+      if (isSqliteBusy(err) && Date.now() < deadline) {
+        sleepSync(INIT_RETRY_BACKOFF_MS);
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 function coordinationRoot(root?: string): string {
   return root ?? syntaurRoot();
@@ -33,11 +66,20 @@ function coordinationDb(root?: string): Database.Database {
   if (existing) return existing;
   mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
-  db.pragma('busy_timeout = 5000');
-  db.pragma('journal_mode = WAL');
-  db.exec(COORD_SCHEMA);
-  coordDbs.set(dbPath, db);
-  return db;
+  try {
+    db.pragma(`busy_timeout = ${COORD_BUSY_TIMEOUT_MS}`);
+    const deadline = Date.now() + COORD_BUSY_TIMEOUT_MS;
+    initializeCoordinationDb(db, deadline);
+    coordDbs.set(dbPath, db);
+    return db;
+  } catch (err) {
+    try {
+      db.close();
+    } catch {
+      /* best effort */
+    }
+    throw err;
+  }
 }
 
 export function canonicalLockPath(lockPath: string): string {
