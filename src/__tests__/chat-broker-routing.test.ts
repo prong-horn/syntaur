@@ -56,6 +56,28 @@ function lastSessionQueued(agentId: string): number | null {
   }
   return null;
 }
+
+function lastSessionSummary(agentId: string): { state: string; queued: unknown[] } | null {
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (frames[i].type !== 'chat-session') continue;
+    const payload = frames[i].payload as {
+      agentId: string;
+      session: { state: string; queued: unknown[] };
+    };
+    if (payload.agentId === agentId) return payload.session;
+  }
+  return null;
+}
+
+function isSettled(agentId: string): boolean {
+  const session = lastSessionSummary(agentId);
+  if (!session) return true;
+  return (session.state === 'ready' || session.state === 'idle') && session.queued.length === 0;
+}
+
+async function settled(...agentIds: string[]): Promise<void> {
+  await waitUntil(() => agentIds.every(isSettled), 'sessions to settle');
+}
 const promptText = (p: { prompt: unknown[] }) => (p.prompt[p.prompt.length - 1] as { text: string }).text;
 
 /** Turns that have started and finished, per agent id. */
@@ -231,7 +253,7 @@ describe('routing a human message', () => {
 
     await broker.send({ ticket: ticket(), text: 'no mentions here' });
     await idleAll(1);
-    await new Promise((r) => setTimeout(r, 20));
+    await settled('planner', 'implementer');
 
     expect(prompts('planner')).toHaveLength(1);
     expect(prompts('implementer')).toHaveLength(0);
@@ -251,7 +273,7 @@ describe('routing a human message', () => {
 
     await broker.send({ ticket: ticket(), text: 'no mentions here' });
     await idleAll(2);
-    await new Promise((r) => setTimeout(r, 20));
+    await settled('planner', 'implementer', 'chime');
 
     expect(prompts('planner')).toHaveLength(1);
     expect(prompts('chime')).toHaveLength(1);
@@ -301,7 +323,7 @@ describe('agent-to-agent hops', () => {
 
     await broker.send({ ticket: ticket(), text: '@planner outline it' });
     await idleAll(2);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
 
     const handoffs = itemsOfType('handoff') as Array<{
       fromAgentId: string;
@@ -339,7 +361,7 @@ describe('agent-to-agent hops', () => {
 
     await broker.send({ ticket: ticket(), text: '@planner outline it' });
     await idleAll(2);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
 
     const prompt = prompts('implementer')[0] as { prompt: Array<{ text?: string }> };
     expect(prompt).toBeTruthy();
@@ -371,7 +393,7 @@ describe('agent-to-agent hops', () => {
       'the budget-exhausted notice',
     );
     await idleAll(3);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
 
     const handoffs = itemsOfType('handoff') as Array<{ hop: number }>;
     expect(handoffs.map((h) => h.hop)).toEqual([1, 2]);
@@ -394,7 +416,7 @@ describe('agent-to-agent hops', () => {
     );
     expect(await broker.cancel(ticket(), 'planner')).toBe(true);
     await idleAll(1);
-    await new Promise((r) => setTimeout(r, 40));
+    await settled('planner', 'implementer');
 
     expect(itemsOfType('handoff')).toHaveLength(0);
     expect(prompts('implementer')).toHaveLength(0);
@@ -484,7 +506,7 @@ describe('withdrawing a fan-out message', () => {
 
     release();
     await idleAll(2);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
     // Neither agent ever saw it.
     expect(prompts('planner')).toHaveLength(1);
     expect(prompts('implementer')).toHaveLength(1);
@@ -578,8 +600,8 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     await waitUntil(() => prompts('implementer').length === 1, 'the recovered implementer prompt');
     expect(promptText(prompts('implementer')[0] as never)).toContain('two targets');
 
-    await broker.getSession(ticket(), 'planner');
-    await new Promise((r) => setTimeout(r, 30));
+    const plannerSummary = await broker.getSession(ticket(), 'planner');
+    expect(plannerSummary?.queued).toEqual([]);
     // The planner already ran it; nothing is re-sent to it.
     expect(prompts('planner')).toHaveLength(0);
   });
@@ -630,7 +652,7 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     await broker.getSession(ticket(), 'implementer');
     await waitUntil(() => prompts('implementer').length === 1, 'the recovered hop');
     await idleAll(1);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
 
     // The hop keeps its ORIGINAL trigger — routing is never re-run…
     const implementerTurns = turnsOf('implementer');
@@ -680,8 +702,8 @@ describe('per-target crash repair (Decision 12 extended)', () => {
 
     await broker.getSession(ticket(), 'planner');
     await waitUntil(() => prompts('planner').length === 1, 'the recovered planner prompt');
-    await broker.getSession(ticket(), 'implementer');
-    await new Promise((r) => setTimeout(r, 40));
+    const implementerSummary = await broker.getSession(ticket(), 'implementer');
+    expect(implementerSummary?.queued).toEqual([]);
 
     expect(prompts('implementer')).toHaveLength(0);
     expect((await broker.getSession(ticket(), 'implementer'))?.queued).toEqual([]);
@@ -715,8 +737,12 @@ describe('per-target crash repair (Decision 12 extended)', () => {
     ]);
     makeBroker({ implementer: [justSays('done')] });
 
-    await broker.getSession(ticket(), 'implementer');
-    await new Promise((r) => setTimeout(r, 40));
+    const summary = await broker.getSession(ticket(), 'implementer');
+    expect(summary?.queued).toEqual([]);
+    await waitUntil(
+      () => (turnsOf('implementer')[0] as { state?: string } | undefined)?.state === 'ended',
+      'the orphaned turn to be sealed',
+    );
     expect(prompts('implementer')).toHaveLength(0);
     // The orphaned turn is still sealed as an error, as in phase 2.
     expect((turnsOf('implementer')[0] as { state: string }).state).toBe('ended');
@@ -986,7 +1012,7 @@ describe('detaching an agent (code review round 1, finding 1)', () => {
     const before = itemsOfType('system').length;
     await broker.send({ ticket: ticket(), text: '@implementer are you there' });
     await idleAll(1);
-    await new Promise((r) => setTimeout(r, 30));
+    await settled('planner', 'implementer');
 
     // Nothing is routed to it; the default answers and the room is told.
     expect(prompts('implementer')).toHaveLength(0);
