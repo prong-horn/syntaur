@@ -16,6 +16,7 @@ import {
 import { createChatBroker, type ChatBroker, type ClientFactory } from '../chat/broker.js';
 import { readEvents, rebuildChatIndex, replayItems } from '../chat/store.js';
 import { ChatNormalizer } from '../chat/normalizer.js';
+import { waitUntil } from './helpers/wait-until.js';
 import {
   findStageDispatchAcceptance,
   policyDigest,
@@ -54,19 +55,6 @@ const ticket = (): ResolvedTicket => ({
   id: TICKET_ID,
   standalone: false,
 });
-
-async function waitUntil(
-  predicate: () => boolean | Promise<boolean>,
-  what: string,
-  timeoutMs = 5000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await predicate()) return;
-    await new Promise((r) => setTimeout(r, 10));
-  }
-  throw new Error(`timed out waiting for ${what}`);
-}
 
 async function writeTicket(status = 'in_progress'): Promise<void> {
   await mkdir(join(ticketDir, 'chat'), { recursive: true });
