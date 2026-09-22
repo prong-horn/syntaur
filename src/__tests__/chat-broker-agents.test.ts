@@ -18,6 +18,7 @@ import type { ChatCommand } from '../chat/commands.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import type * as acp from '@agentclientprotocol/sdk';
 import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
+import { waitUntil } from './helpers/wait-until.js';
 
 let sandbox: string;
 let broker: ChatBroker;
@@ -340,15 +341,6 @@ const ticket = (): ResolvedTicket => ({
 
 const sessionKey = (agentId: string) => `${TICKET_ID}~${agentId}`;
 
-async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`timed out waiting for ${what}`);
-}
-
 const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const handoffs = () => items().filter((i) => i.type === 'handoff');
 const systemTexts = () =>
@@ -484,7 +476,7 @@ async function idleTurns(count = 1): Promise<void> {
   await waitUntil(() => {
     const turns = items().filter((i) => i.type === 'turn.status') as Array<{ state: string }>;
     return turns.length >= count && turns.every((t) => t.state === 'ended');
-  }, `${count} turn(s) to finish`);
+  }, `${count} turn(s) to finish`, 8000);
 }
 
 function staleSessionFrames(agentId: string): boolean[] {
@@ -567,6 +559,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await waitUntil(
       () => fakes.has('planner') && (fakes.get('planner')?.prompts.length ?? 0) === 1,
       'prompt started',
+      8000,
     );
     await broker.saveAgent(plannerInput({ model: 'claude-sonnet-5', mode: 'edits' }));
     expect(staleSessionFrames('planner').some(Boolean)).toBe(true);
@@ -629,6 +622,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await waitUntil(
       () => fakes.has('implementer') && (fakes.get('implementer')?.prompts.length ?? 0) === 1,
       'prompt started',
+      8000,
     );
     await broker.deleteAgent('implementer');
     release();
@@ -771,7 +765,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(await sessionP).not.toBeNull();
 
     await broker.send({ ticket: tp1Ticket(), text: '@codex roster check' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt', 8000);
     expect(getChatSessionByKey('TP-1~codex')?.session_key).toBe('TP-1~codex');
 
     const promptText = fakes
@@ -827,7 +821,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(await sessionP).not.toBeNull();
 
     await broker.send({ ticket: ticket(), text: '@codex roster check' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt', 8000);
 
     const fake = fakes.get('codex')!;
     const promptText = fake.prompts[0]!.prompt
@@ -869,7 +863,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(await sessionP).not.toBeNull();
 
     await broker.send({ ticket: ticket(), text: '@codex roster check' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt', 8000);
     await idleTurns(1);
 
     const promptText = fakes
@@ -915,7 +909,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     expect(await sessionP).not.toBeNull();
 
     await broker.send({ ticket: ticket(), text: '@codex roster check' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex prompt', 8000);
     await idleTurns(1);
 
     const promptText = fakes
@@ -1034,13 +1028,13 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
       );
 
     await broker.send({ ticket: ticket(), text: '@codex hello' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized', 8000);
     await idleTurns(1);
     expect(promptTexts().join('\n')).not.toContain('@codex hi');
     expect(promptTexts().join('\n')).toContain('@codex hello');
 
     await broker.send({ ticket: ticket(), text: '@codex follow up' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 2, 'codex follow-up prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 2, 'codex follow-up prompt', 8000);
     await idleTurns(1);
     expect(promptTexts().join('\n')).toContain('@codex follow up');
   });
@@ -1075,6 +1069,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
         (fakes.get('codex')?.prompts.length ?? 0) === 0 &&
         systemTexts().some((t) => t.includes('@codex was detached while the hand-off was being routed')),
       'hand-off construction notice',
+      8000,
     );
   });
 
@@ -1100,7 +1095,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     await broker.send({ ticket: ticket(), text: '@codex hello' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex materialized', 8000);
     const codexPromptsBefore = fakes.get('codex')?.prompts.length ?? 0;
 
     detachOnHandoffRoute = true;
@@ -1115,6 +1110,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
         (fakes.get('codex')?.prompts.length ?? 0) === codexPromptsBefore &&
         systemTexts().some((t) => t.includes('@codex was detached while the hand-off was being routed')),
       'hand-off re-validation notice',
+      8000,
     );
   });
 
@@ -1267,7 +1263,7 @@ describe.sequential('live session bookkeeping (Task 5)', () => {
     await sessionP;
 
     await broker.send({ ticket: ticket(), text: '@planner after race' });
-    await waitUntil(() => fakes.has('planner'), 'planner adapter');
+    await waitUntil(() => fakes.has('planner'), 'planner adapter', 8000);
     await idleTurns(2);
 
     const fake = fakes.get('planner')!;
@@ -1485,7 +1481,7 @@ function gateDefinitionsLoad(
       }
       return result;
     },
-    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate'),
+    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate', 8000),
     release: () => releaseGate(),
   };
 }
@@ -1516,7 +1512,7 @@ function gateDefinitionsWhen(
       }
       return result;
     },
-    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate'),
+    waitEntered: () => waitUntil(() => entered, 'standing snapshot gate', 8000),
     release: () => releaseGate(),
   };
 }
@@ -1538,7 +1534,7 @@ const plannerSlashCommands = [
     await broker.send({ ticket: ticket(), text: '@planner hello' });
     await idleTurns(1);
     await broker.send({ ticket: ticket(), text: '@codex hello' });
-    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex standing prompt');
+    await waitUntil(() => (fakes.get('codex')?.prompts.length ?? 0) >= 1, 'codex standing prompt', 8000);
     const fingerprintBefore = getChatSession(TICKET_ID, 'codex')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
@@ -1575,7 +1571,7 @@ const plannerSlashCommands = [
     );
 
     const sendP = broker.send({ ticket: ticket(), text: '@planner /plan' });
-    await waitUntil(() => (fakes.get('planner')?.prompts.length ?? 0) >= 1, 'standing ack prompt');
+    await waitUntil(() => (fakes.get('planner')?.prompts.length ?? 0) >= 1, 'standing ack prompt', 8000);
     const fingerprintBefore = getChatSession(TICKET_ID, 'planner')?.standing_fingerprint ?? null;
 
     await broker.saveAgent(plannerInput({ description: 'Plans v2' }));
@@ -1587,7 +1583,7 @@ const plannerSlashCommands = [
 
     const promptsBefore = fakes.get('planner')!.prompts.length;
     await broker.send({ ticket: ticket(), text: '@planner /plan' });
-    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry', 8000);
     await idleTurns(2);
     const standingPrompt = fakes
       .get('planner')!
@@ -1632,7 +1628,7 @@ const plannerSlashCommands = [
 
     const promptsBefore = fakes.get('codex')!.prompts.length;
     await broker.send({ ticket: ticket(), text: '@codex again' });
-    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
+    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry', 8000);
     await idleTurns(1);
     const promptText = fakes
       .get('codex')!
@@ -1675,7 +1671,7 @@ const plannerSlashCommands = [
 
     const promptsBefore = fakes.get('planner')!.prompts.length;
     await broker.send({ ticket: ticket(), text: '@planner /plan' });
-    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry');
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'standing ack retry', 8000);
     await idleTurns(2);
     const standingPrompt = fakes
       .get('planner')!
@@ -1752,7 +1748,7 @@ const plannerSlashCommands = [
     await broker.setParticipants(ticket(), { agents: ['planner', 'claude'], defaultAgent: 'planner' });
 
     await broker.send({ ticket: ticket(), text: '@planner after detach' });
-    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'planner standing retry');
+    await waitUntil(() => fakes.get('planner')!.prompts.length > promptsBefore, 'planner standing retry', 8000);
     await idleTurns(1);
     const standingPrompt = fakes
       .get('planner')!
@@ -1800,7 +1796,7 @@ const plannerSlashCommands = [
 
     const promptsBefore = fakes.get('codex')!.prompts.length;
     await broker.send({ ticket: ticket(), text: '@codex after attach' });
-    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry');
+    await waitUntil(() => fakes.get('codex')!.prompts.length > promptsBefore, 'codex standing retry', 8000);
     await idleTurns(1);
     const promptText = fakes
       .get('codex')!

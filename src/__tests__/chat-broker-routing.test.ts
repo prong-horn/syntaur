@@ -11,6 +11,7 @@ import { ticketScopeKey, createChatBroker, type ChatBroker } from '../chat/broke
 import type { ChatEvent, ChatItem, Participants } from '../chat/types.js';
 import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
+import { waitUntil } from './helpers/wait-until.js';
 
 /**
  * Task 3 — routing through the broker, with one scripted fake ACP agent per
@@ -39,15 +40,6 @@ const ticket = (): ResolvedTicket => ({
   id: TICKET_ID,
   standalone: false,
 });
-
-async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`timed out waiting for ${what}`);
-}
 
 const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const itemsOfType = (type: ChatItem['type']) => items().filter((i) => i.type === type);

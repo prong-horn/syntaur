@@ -22,6 +22,7 @@ import {
   type FakeAgent,
   type FakeTurn,
 } from '../chat/fake-agent.js';
+import { waitUntil } from './helpers/wait-until.js';
 import {
   createChatBroker,
   ChatSendError,
@@ -64,24 +65,6 @@ const ticket = (): ResolvedTicket => ({
   id: TICKET_ID,
   standalone: false,
 });
-
-/** Poll rather than sleep, so the tests stay fast and deterministic. */
-async function waitUntil(
-  predicate: () => boolean | Promise<boolean>,
-  what: string,
-  timeoutMs = 5000,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      if (await predicate()) return;
-    } catch {
-      /* predicate not ready yet */
-    }
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`timed out waiting for ${what}`);
-}
 
 const items = (): ChatItem[] => broker.items(ticket(), { limit: 500 });
 const itemsOfType = (type: ChatItem['type']) => items().filter((i) => i.type === type);

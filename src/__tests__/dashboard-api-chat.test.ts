@@ -17,6 +17,7 @@ import { parseLogEntries } from '../ticket-templates/log-reader.js';
 import { HARNESSES, type CommandResolution } from '../chat/harnesses.js';
 import type { HarnessSpec } from '../chat/types.js';
 import { fakeCommandResolver, missingCommandResolver } from './helpers/fake-command-resolver.js';
+import { waitUntil } from './helpers/wait-until.js';
 
 /**
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
@@ -112,15 +113,6 @@ async function boot(
   server = http;
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-}
-
-async function waitUntil(predicate: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  throw new Error(`timed out waiting for ${what}`);
 }
 
 const url = (path: string) => `${baseUrl}/api${path}`;
