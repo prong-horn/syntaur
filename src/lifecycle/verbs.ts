@@ -48,6 +48,8 @@ export interface VerbOptions {
   actor?: string;
   /** Start-only dispatch recipient override (`start --agent`). */
   dispatchAgent?: string;
+  /** Skip automatic stage handoff for this move (`--no-dispatch`). */
+  suppressDispatch?: boolean;
   callerSession?: ResolvedSession;
   reason?: string;
   cwd?: string;
@@ -280,6 +282,10 @@ export async function moveTicket(
   const forced = options.force ?? false;
   const dispatchAgent = verb === 'start' ? options.dispatchAgent : undefined;
 
+  if (options.suppressDispatch && dispatchAgent?.trim()) {
+    throw new VerbRefusedError('--no-dispatch cannot be combined with --agent');
+  }
+
   if (dispatchAgent?.trim()) {
     await validateDispatchRecipient(dispatchAgent.trim());
   }
@@ -333,6 +339,7 @@ export async function moveTicket(
         to,
         forced,
         reason: options.reason!.trim(),
+        suppressDispatch: options.suppressDispatch,
       });
       return {
         ticketId: fm.id,
@@ -366,6 +373,7 @@ export async function moveTicket(
         from: current,
         to,
         forced,
+        suppressDispatch: options.suppressDispatch,
       });
       return {
         ticketId: fm.id,
@@ -471,6 +479,7 @@ export async function moveTicket(
       from: current,
       to: toStatus,
       forced,
+      suppressDispatch: options.suppressDispatch,
     });
 
     return {

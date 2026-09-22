@@ -20,7 +20,7 @@ import { emitDispatched } from './event-emit.js';
 export type DispatchSource = 'automatic' | 'manual';
 
 export interface DispatchResult {
-  state: 'queued' | 'failed' | 'offline' | 'unknown' | 'skipped' | 'manual-only';
+  state: 'queued' | 'failed' | 'offline' | 'unknown' | 'skipped' | 'manual-only' | 'suppressed';
   requestId?: string;
   error?: string;
   warning?: string;
@@ -31,6 +31,7 @@ export interface StageEntryRecord {
   stage: string;
   dispatchTarget: StageDispatchTarget | null;
   dispatchOverride: boolean;
+  dispatchSuppressed: boolean;
   eventType: 'created' | 'moved';
 }
 
@@ -44,6 +45,7 @@ export interface RecordStageEntryInput {
   stage: string;
   manifest: TemplateManifest;
   dispatchAgent?: string;
+  suppressDispatch?: boolean;
   verb?: string;
   from?: string;
   to?: string;
@@ -141,6 +143,7 @@ export function recordStageEntryLocked(input: RecordStageEntryInput): StageEntry
     input.stage,
     input.dispatchAgent,
   );
+  const dispatchSuppressed = Boolean(input.suppressDispatch && target);
 
   const details: Record<string, unknown> = {
     stageEntryId: entryId,
@@ -155,6 +158,7 @@ export function recordStageEntryLocked(input: RecordStageEntryInput): StageEntry
           dispatchRole: target.role,
           dispatchAuto: target.auto,
           dispatchOverride,
+          ...(dispatchSuppressed ? { dispatchSuppressed: true } : {}),
         }
       : {}),
   };
@@ -174,6 +178,7 @@ export function recordStageEntryLocked(input: RecordStageEntryInput): StageEntry
     stage: input.stage,
     dispatchTarget: target,
     dispatchOverride,
+    dispatchSuppressed,
     eventType: input.eventType,
   };
 }
@@ -184,6 +189,7 @@ function automaticRequestId(entryId: string): string {
 
 function shouldAutoDispatch(entry: StageEntryRecord): boolean {
   if (!entry.dispatchTarget) return false;
+  if (entry.dispatchSuppressed) return false;
   if (isTerminalStage(entry.stage as StageId | 'dropped')) return false;
   if (entry.dispatchOverride) return true;
   return entry.dispatchTarget.auto;
@@ -247,6 +253,19 @@ export async function completeStageEntry(
   const engagementWarning = await updateCallerEngagement(input);
   if (engagementWarning) {
     warnings.push(`engagement update failed: ${engagementWarning}`);
+  }
+
+  if (
+    input.entry.dispatchSuppressed &&
+    input.entry.dispatchTarget &&
+    !isTerminalStage(input.entry.stage as StageId | 'dropped')
+  ) {
+    return {
+      stageChanged: true,
+      entry: input.entry,
+      dispatch: { state: 'suppressed' },
+      ...(warnings.length ? { warnings } : {}),
+    };
   }
 
   if (!shouldAutoDispatch(input.entry)) {
@@ -321,6 +340,7 @@ export async function completeStageEntryAfterRecordFailure(
       stage: input.stage,
       dispatchTarget: null,
       dispatchOverride: false,
+      dispatchSuppressed: false,
       eventType: 'moved',
     },
   });

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
+import { openWalDatabase } from '../db/open-sqlite.js';
 import { syntaurRoot } from '../utils/paths.js';
 import type { AgentSession, AgentSessionStatus } from './types.js';
 import { ENGAGEMENT_DDL, ENGAGEMENT_SCHEMA_VERSION } from '../db/engagement-schema.js';
@@ -147,9 +148,7 @@ export function initSessionDb(dbPath?: string): Database.Database {
   if (db) return db;
 
   const finalPath = dbPath ?? resolve(syntaurRoot(), 'syntaur.db');
-  db = new Database(finalPath);
-  db.pragma('journal_mode = WAL');
-  db.pragma('busy_timeout = 5000');
+  db = openWalDatabase(finalPath);
   db.exec(SCHEMA_SQL);
   // ENGAGEMENT_DDL / CHAT_DDL run AFTER migrations (below) so a pre-migration
   // table with assignment_id is not indexed on ticket_id before the rebuild.

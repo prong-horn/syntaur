@@ -532,6 +532,180 @@ Fix it.
   });
 });
 
+describe('--no-dispatch on move verbs', () => {
+  function movedDetails(ticketId: string): Record<string, unknown> {
+    const moved = listEventsByTicket(ticketId).find((e) => e.type === 'moved');
+    return JSON.parse(moved?.details ?? '{}') as Record<string, unknown>;
+  }
+
+  it('start default queues automatic dispatch when transport is provided', async () => {
+    await writeFeatureTicket('ND-1', 'nd1', 'ready', { approved: true, workspace: true });
+    const dispatch = vi.fn().mockResolvedValue({ state: 'queued', requestId: 'auto~x' });
+    const result = await moveTicket('ND-1', 'start', { project: 'p', dir: projectsDir, dispatch });
+    expect(result.dispatch?.state).toBe('queued');
+    expect(dispatch).toHaveBeenCalledOnce();
+    expect(dispatch.mock.calls[0]![0]).toMatchObject({ source: 'automatic' });
+  });
+
+  it('start with suppressDispatch records suppression and skips dispatch', async () => {
+    await writeFeatureTicket('ND-2', 'nd2', 'ready', { approved: true, workspace: true });
+    const notifyStageEntry = vi.fn().mockResolvedValue(undefined);
+    const dispatchImpl = vi.fn();
+    const dispatch = Object.assign(dispatchImpl, { notifyStageEntry }) as StageDispatchCallback;
+    const result = await moveTicket('ND-2', 'start', {
+      project: 'p',
+      dir: projectsDir,
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('suppressed');
+    expect(dispatchImpl).not.toHaveBeenCalled();
+    expect(notifyStageEntry).toHaveBeenCalledOnce();
+    expect(movedDetails('ND-2').dispatchSuppressed).toBe(true);
+  });
+
+  it('review default keeps skipped dispatch', async () => {
+    await writeFeatureTicket('ND-3', 'nd3', 'in_progress', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-3', 'review', { project: 'p', dir: projectsDir, dispatch });
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+
+  it('review with suppressDispatch records suppression', async () => {
+    await writeFeatureTicket('ND-4', 'nd4', 'in_progress', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-4', 'review', {
+      project: 'p',
+      dir: projectsDir,
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('suppressed');
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(movedDetails('ND-4').dispatchSuppressed).toBe(true);
+  });
+
+  it('reopen default lands on review with skipped dispatch', async () => {
+    await writeFeatureTicket('ND-5', 'nd5', 'done', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-5', 'reopen', { project: 'p', dir: projectsDir, dispatch });
+    expect(result.to).toBe('review');
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-5').dispatchTarget).toBe('cursor');
+  });
+
+  it('reopen with suppressDispatch records suppression on review', async () => {
+    await writeFeatureTicket('ND-6', 'nd6', 'done', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-6', 'reopen', {
+      project: 'p',
+      dir: projectsDir,
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('suppressed');
+    expect(movedDetails('ND-6').dispatchSuppressed).toBe(true);
+  });
+
+  it('done default and with suppressDispatch behave the same on a targetless stage', async () => {
+    const dir = await writeFeatureTicket('ND-7', 'nd7', 'review', {
+      approved: true,
+      workspace: true,
+    });
+    await writeFile(
+      resolve(dir, 'journal.md'),
+      '## 2026-09-01T00:00:00Z · handoff · human\n\nReady.\n\n## 2026-09-02T00:00:00Z · review · pi\nverdict: approve · open: high=0 medium=0\n\nok\n',
+      'utf-8',
+    );
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-7', 'done', {
+      project: 'p',
+      dir: projectsDir,
+      force: true,
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-7').dispatchSuppressed).toBeUndefined();
+    await writeFeatureTicket('ND-8', 'nd8', 'review', { approved: true, workspace: true });
+    await writeFile(
+      resolve(await ticketDir('ND-8', 'nd8'), 'journal.md'),
+      '## 2026-09-01T00:00:00Z · handoff · human\n\nReady.\n\n## 2026-09-02T00:00:00Z · review · pi\nverdict: approve · open: high=0 medium=0\n\nok\n',
+      'utf-8',
+    );
+    const suppressed = await moveTicket('ND-8', 'done', {
+      project: 'p',
+      dir: projectsDir,
+      force: true,
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(suppressed.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-8').dispatchSuppressed).toBeUndefined();
+  });
+
+  it('approve default and with suppressDispatch behave the same on ready', async () => {
+    await writeFeatureTicket('ND-9', 'nd9', 'planning');
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-9', 'approve', {
+      project: 'p',
+      dir: projectsDir,
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-9').dispatchSuppressed).toBeUndefined();
+    await writeFeatureTicket('ND-10', 'nd10', 'planning');
+    const flagged = await moveTicket('ND-10', 'approve', {
+      project: 'p',
+      dir: projectsDir,
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(flagged.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-10').dispatchSuppressed).toBeUndefined();
+  });
+
+  it('drop default and with suppressDispatch behave the same', async () => {
+    await writeFeatureTicket('ND-11', 'nd11', 'in_progress', { approved: true, workspace: true });
+    const dispatch = vi.fn() as StageDispatchCallback;
+    const result = await moveTicket('ND-11', 'drop', {
+      project: 'p',
+      dir: projectsDir,
+      reason: 'obsolete',
+      dispatch,
+    });
+    expect(result.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-11').dispatchSuppressed).toBeUndefined();
+    await writeFeatureTicket('ND-12', 'nd12', 'in_progress', { approved: true, workspace: true });
+    const flagged = await moveTicket('ND-12', 'drop', {
+      project: 'p',
+      dir: projectsDir,
+      reason: 'obsolete',
+      suppressDispatch: true,
+      dispatch,
+    });
+    expect(flagged.dispatch?.state).toBe('skipped');
+    expect(movedDetails('ND-12').dispatchSuppressed).toBeUndefined();
+  });
+
+  it('refuses suppressDispatch combined with dispatchAgent before mutation', async () => {
+    await writeFeatureTicket('ND-13', 'nd13', 'ready', { approved: true, workspace: true });
+    await expect(
+      moveTicket('ND-13', 'start', {
+        project: 'p',
+        dir: projectsDir,
+        dispatchAgent: 'codex',
+        suppressDispatch: true,
+      }),
+    ).rejects.toThrow(/--no-dispatch cannot be combined with --agent/);
+    const fm = parseTicketFrontmatter(
+      await readFile(resolve(await ticketDir('ND-13', 'nd13'), 'ticket.md'), 'utf-8'),
+    );
+    expect(fm.status).toBe('ready');
+    expect(listEventsByTicket('ND-13').some((e) => e.type === 'moved')).toBe(false);
+  });
+});
+
 describe('syntaur new', () => {
   it('seeds backlog and emits created', async () => {
     await createProjectCommand('P', { dir: projectsDir });

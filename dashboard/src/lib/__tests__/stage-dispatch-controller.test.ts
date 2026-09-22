@@ -33,6 +33,7 @@ const descriptor: StageHandoffDescriptor = {
   recordedTargetId: 'cursor',
   canDispatch: true,
   manualFallback: false,
+  suppressed: false,
 };
 
 describe('stage-dispatch-controller', () => {
@@ -304,6 +305,21 @@ describe('stage-dispatch-controller', () => {
       source: 'automatic',
     });
     expect(shouldUseAutomaticHandOff(state, { ...descriptor, auto: true })).toBe(true);
+  });
+
+  it('resolves suppressed entries to manual handoff requests', () => {
+    const state = initialStageDispatchState('T-1');
+    const suppressedDescriptor = {
+      ...descriptor,
+      auto: false,
+      suppressed: true,
+      recordedTargetId: 'cursor',
+    };
+    expect(shouldUseAutomaticHandOff(state, suppressedDescriptor)).toBe(false);
+    expect(resolveHandOffRequest(state, suppressedDescriptor, () => 'uuid-suppressed')).toEqual({
+      requestId: 'uuid-suppressed',
+      source: 'manual',
+    });
   });
 
   it('mints a fresh manual id after terminal failed receipt on retry', () => {

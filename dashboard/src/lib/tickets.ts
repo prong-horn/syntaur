@@ -29,7 +29,12 @@ export interface VerbResult {
   warnings?: string[];
 }
 
-/** User-visible messages after a lifecycle verb with optional stage dispatch. */
+/**
+ * User-visible messages after a lifecycle verb with optional stage dispatch.
+ * `suppressed` is deliberately not handled here: the dashboard's verb endpoint never
+ * passes `suppressDispatch` (that is a CLI-only `--no-dispatch` flag), so this path
+ * never sees that state.
+ */
 export function dispatchVerbMessages(result: VerbResult): string[] {
   const messages: string[] = [];
   if (result.warnings?.length) {

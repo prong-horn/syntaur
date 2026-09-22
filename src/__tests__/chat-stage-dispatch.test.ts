@@ -679,6 +679,36 @@ describe('stage dispatch broker integration', () => {
     expect(receipt?.state).toBe('superseded');
   });
 
+  it('rejects automatic dispatch on a suppressed stage entry', async () => {
+    const manifest = await loadTemplate(sandbox, 'feature');
+    const entry = recordStageEntryLocked({
+      ticketId: TICKET_ID,
+      projectSlug: 'demo',
+      actor: 'human',
+      at: new Date().toISOString(),
+      eventType: 'moved',
+      stage: 'in_progress',
+      manifest,
+      from: 'ready',
+      verb: 'start',
+      suppressDispatch: true,
+    });
+    await expect(
+      resolveStageDispatchTarget(ticket(), entry.entryId, 'automatic', undefined, sandbox),
+    ).rejects.toMatchObject({
+      status: 409,
+      message: 'automatic dispatch suppressed for this entry (--no-dispatch)',
+    });
+    const manual = await resolveStageDispatchTarget(
+      ticket(),
+      entry.entryId,
+      'manual',
+      undefined,
+      sandbox,
+    );
+    expect(manual.target.agentId).toBe('cursor');
+  });
+
   it('accepts manual dispatch with unrecorded fallback entry token', async () => {
     const manifest = await loadTemplate(sandbox, 'feature');
     const latest = await recordEntryAsync('backlog');

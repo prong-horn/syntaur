@@ -248,7 +248,7 @@ describe('dashboard playbook routes', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1');
     await new Promise<void>((res) => server.once('listening', () => res()));
     const port = (server.address() as AddressInfo).port;
     return {
@@ -438,7 +438,7 @@ describe('PATCH /:slug route', () => {
     const app = express();
     app.use(express.json());
     app.use('/api/playbooks', createPlaybooksRouter(playbooksDir));
-    const server = app.listen(0);
+    const server = app.listen(0, '127.0.0.1');
     await new Promise<void>((res) => server.once('listening', () => res()));
     const port = (server.address() as AddressInfo).port;
     return {

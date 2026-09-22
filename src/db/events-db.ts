@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { resolve } from 'node:path';
+import { openWalDatabase } from './open-sqlite.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { generateId } from '../utils/uuid.js';
 
@@ -83,8 +84,7 @@ export function initEventsDb(dbPath?: string): Database.Database {
   if (db) return db;
 
   const finalPath = dbPath ?? resolve(syntaurRoot(), 'syntaur.db');
-  db = new Database(finalPath);
-  db.pragma('journal_mode = WAL');
+  db = openWalDatabase(finalPath);
 
   const database = db;
   const runMigrations = database.transaction(() => {
@@ -390,6 +390,7 @@ export interface StageEntryEvent {
   dispatchRole: string | null;
   dispatchAuto: boolean | null;
   dispatchOverride: boolean;
+  dispatchSuppressed: boolean;
   verb?: string;
   type: 'created' | 'moved';
 }
@@ -406,6 +407,7 @@ function parseStageEntryRow(
       dispatchRole?: string;
       dispatchAuto?: boolean;
       dispatchOverride?: boolean;
+      dispatchSuppressed?: boolean;
       verb?: string;
     };
     const stage =
@@ -426,6 +428,7 @@ function parseStageEntryRow(
       dispatchAuto:
         typeof parsed.dispatchAuto === 'boolean' ? parsed.dispatchAuto : null,
       dispatchOverride: parsed.dispatchOverride ?? false,
+      dispatchSuppressed: Boolean(parsed.dispatchSuppressed),
       verb: parsed.verb,
       type: row.type as 'created' | 'moved',
     };
@@ -476,6 +479,7 @@ export function latestStageEntryForTicket(ticketId: string): StageEntryEvent | n
         dispatchAuto:
           typeof details.dispatchAuto === 'boolean' ? details.dispatchAuto : null,
         dispatchOverride: Boolean(details.dispatchOverride),
+        dispatchSuppressed: Boolean(details.dispatchSuppressed),
         type: 'created',
       };
     }
@@ -516,6 +520,7 @@ export function getStageEntryById(
       dispatchAuto:
         typeof details.dispatchAuto === 'boolean' ? details.dispatchAuto : null,
       dispatchOverride: Boolean(details.dispatchOverride),
+      dispatchSuppressed: Boolean(details.dispatchSuppressed),
       type: 'created',
     };
   }

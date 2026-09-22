@@ -47,6 +47,8 @@ export interface StageHandoffDescriptor {
   reason?: string;
   /** True when entryId is an unrecorded~ fallback token. */
   manualFallback: boolean;
+  /** True when the stage entry was recorded with --no-dispatch suppression. */
+  suppressed: boolean;
   latestReceipt?: StageHandoffReceiptSummary;
 }
 
@@ -148,8 +150,12 @@ export function buildStageHandoffDescriptor(input: BuildStageHandoffInput): Stag
   // server refuses anything else), so recovery and labels must follow the entry,
   // not the template: a `start --agent Y` override on an auto:false stage is auto.
   const recordedTargetId = entry?.dispatchTarget ?? null;
+  const suppressed = Boolean(entry?.dispatchSuppressed);
   const auto = Boolean(
-    entry && recordedTargetId && (entry.dispatchAuto === true || entry.dispatchOverride),
+    entry &&
+      recordedTargetId &&
+      !suppressed &&
+      (entry.dispatchAuto === true || entry.dispatchOverride),
   );
   const startDefault = resolveStageDispatch(input.manifest, 'in_progress');
   const startDefaultAgentId = startDefault?.agentId ?? null;
@@ -169,6 +175,7 @@ export function buildStageHandoffDescriptor(input: BuildStageHandoffInput): Stag
       canDispatch: false,
       reason: 'Terminal stages do not accept stage handoffs',
       manualFallback,
+      suppressed,
       ...(latestReceipt ? { latestReceipt: summarizeReceipt(latestReceipt) } : {}),
     };
   }
@@ -206,6 +213,7 @@ export function buildStageHandoffDescriptor(input: BuildStageHandoffInput): Stag
     canDispatch,
     ...(reason ? { reason } : {}),
     manualFallback,
+    suppressed,
     ...(latestReceipt ? { latestReceipt: summarizeReceipt(latestReceipt) } : {}),
   };
 }
@@ -231,6 +239,10 @@ export function formatStageHandoffLine(descriptor: StageHandoffDescriptor): stri
 
   if (!descriptor.canDispatch) {
     return `Agent: ${descriptor.reason ?? 'handoff unavailable'}`;
+  }
+
+  if (descriptor.suppressed && descriptor.recordedTargetId) {
+    return `Agent: automatic handoff to @${descriptor.recordedTargetId} suppressed (--no-dispatch); hand off manually when ready`;
   }
 
   if (descriptor.auto && descriptor.recordedTargetId) {

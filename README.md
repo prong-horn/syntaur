@@ -134,6 +134,8 @@ replace multi-turn work in chat.
 
 - `syntaur start <id> --agent <id>` — one-use dispatch recipient override only
   (not audit attribution); use `--by <name>` on lifecycle verbs for the event log
+- `syntaur start <id> --no-dispatch` (and the same flag on other stage move verbs)
+  — record the stage without automatic handoff when you run your own implementer
 - Offline dispatch leaves the stage move intact; recover from the ticket page
 - A `completed` receipt means the agent turn ended, not that review passed or the
   ticket is done

@@ -81,19 +81,19 @@ Status moves only by explicit verbs. Each verb evaluates template gates at call 
 ```
 syntaur plan create [--ticket <id> [--project <slug>]] [--by <name>] [--force]
 syntaur plan version [--ticket <id> [--project <slug>]] [--by <name>] [--force]
-syntaur approve <id> [--project <slug>] [--by <name>] [--force]
+syntaur approve <id> [--project <slug>] [--no-dispatch] [--by <name>] [--force]
 syntaur unapprove <id> [--project <slug>] [--by <name>]
-syntaur start <id> [--project <slug>] [--agent <id>] [--by <name>] [--force]
-syntaur review <id> [--project <slug>] [--by <name>] [--force]
-syntaur done <id> [--project <slug>] [--by <name>] [--force]
-syntaur drop <id> "<reason>" [--project <slug>] [--by <name>]
-syntaur reopen <id> [--project <slug>] [--by <name>]
+syntaur start <id> [--project <slug>] [--agent <id>] [--no-dispatch] [--by <name>] [--force]
+syntaur review <id> [--project <slug>] [--no-dispatch] [--by <name>] [--force]
+syntaur done <id> [--project <slug>] [--no-dispatch] [--by <name>] [--force]
+syntaur drop <id> "<reason>" [--project <slug>] [--no-dispatch] [--by <name>]
+syntaur reopen <id> [--project <slug>] [--no-dispatch] [--by <name>]
 ```
 
 - `plan create` / `plan version` — scaffold or version the plan file; `plan version` also moves to `planning` when the template declares that stage. Use `--by` for audit attribution on the stage move.
 - `approve` — approve the plan and move to `ready` when the template declares it.
 - `unapprove` — clear the plan approval (`plan.approvedDigest`/`approvedAt`/`approvedBy`) without changing stage; the next `approve` re-records it.
-- `start` — move to `in_progress`; runs template `gates.start` (on built-in `feature`: `plan-approved`, `workspace-set`; on `bug`: `workspace-set`; on `legacy`: none). On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
+- `start` — move to `in_progress`; runs template `gates.start` (on built-in `feature`: `plan-approved`, `workspace-set`; on `bug`: `workspace-set`; on `legacy`: none). On `start` only, `--agent <id>` names the **stage dispatch recipient** (one automatic handoff turn when the template allows it), not the audit actor. Use `--no-dispatch` when you are running your own implementer in the worktree so the move records the stage without queuing an automatic handoff; the CLI prints `Dispatch: suppressed (--no-dispatch); hand off manually when ready`. When dispatch is queued, the CLI also prints a `Cancel:` line with `POST /api/tickets/<ID>/dispatch/<requestId>/cancel` (or a curl one-liner when `dashboard-port` is readable). Use `--by <name>` on any lifecycle verb to attribute the move in the event log (`human` by default).
 - `review` — move to `review`.
 - `done` — move to `done`; runs template `gates.done`.
 - `drop` — move to `dropped`; reason required.
@@ -704,7 +704,7 @@ When the session has no open engagement, only the Playbooks subsection prints (i
 
 Stage-owned handoff requires the dashboard server for this Syntaur home (`syntaur dashboard`). The CLI reads `~/.syntaur/dashboard-port` and POSTs dispatch to `127.0.0.1` — no automatic server start and no default-port fallback.
 
-When a lifecycle verb succeeds but dispatch cannot be accepted (dashboard stopped, wrong home, timeout before acceptance), the CLI still exits 0 for the stage move and prints dispatch status separately. Retry from the ticket page **Hand to** control; do not repeat the lifecycle verb. After network uncertainty, retry the **same** request id until the receipt is terminal; mint a new id only for an intentional new handoff after failure or completion.
+When a lifecycle verb succeeds but dispatch cannot be accepted (dashboard stopped, wrong home, timeout before acceptance), the CLI still exits 0 for the stage move and prints dispatch status separately. A successful move with `--no-dispatch` prints `Dispatch: suppressed (--no-dispatch)` instead of queuing. When dispatch is queued, the CLI prints a cancel line for `POST /api/tickets/<ID>/dispatch/<requestId>/cancel`. Retry from the ticket page **Hand to** control; do not repeat the lifecycle verb. After network uncertainty, retry the **same** request id until the receipt is terminal; mint a new id only for an intentional new handoff after failure or completion.
 
 Automatic request ids are `auto~<stageEntryId>` (one automatic dispatch per stage entry). Manual handoffs use a fresh UUID per intentional attempt.
 
