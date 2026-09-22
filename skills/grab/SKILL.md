@@ -23,7 +23,7 @@ Check `syntaur session resume --json`. If an active ticket exists, warn that gra
 syntaur assign <ID> --agent <name> --project <slug>
 ```
 
-Run `syntaur start <ID> --project <slug>` only when **Next** says start (never rewind `in_progress`, `review`, `done`, or `dropped`). Optional dispatch on start: `--agent <id>`. Use `--by <name>` when audit attribution matters.
+Run `syntaur start <ID> --project <slug>` only when **Next** says start (never rewind `in_progress`, `review`, `done`, or `dropped`). Optional dispatch on start: `--agent <id>`. When you run your own implementer in the worktree, add `--no-dispatch` so the move does not queue an automatic @cursor handoff. Use `--by <name>` when audit attribution matters.
 
 For project-nested tickets, add `--project <slug>` on every verb in this skill.
 

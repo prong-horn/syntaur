@@ -234,7 +234,7 @@ Manifest schema and validation rules: [file-formats.md](./file-formats.md) §5.
 | `reopen` | stage before `done` | — |
 | `block` / `park` / `unblock` / `unpark` | flags | reason on set |
 
-**Dispatch:** on stage entry, when `stages[].agent` is set and `auto: true`, the broker queues one ACP turn (dashboard must be running). `reviewer` defaults `auto: false` → **Hand to**. `syntaur start --agent <id>` overrides the recipient once.
+**Dispatch:** on stage entry, when `stages[].agent` is set and `auto: true`, the broker queues one ACP turn (dashboard must be running). `reviewer` defaults `auto: false` → **Hand to**. `syntaur start --agent <id>` overrides the recipient once. Lifecycle move verbs accept `--no-dispatch` to record the stage entry with `dispatchSuppressed` and skip the automatic request (hand off manually later).
 
 **Events** (`events` table): `created`, `moved`, `flagged`, `unflagged`, `plan-approved`, `plan-versioned`, `logged`, `dispatched`, `retemplated`. Ticket key column: `ticket_id`.
 
