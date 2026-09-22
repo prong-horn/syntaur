@@ -91,7 +91,7 @@ async function boot(
   };
 
   broker = createChatBroker({
-    commandResolver,
+    commandResolver: commandResolver,
     projectsDir,
     syntaurHome: sandbox,
     broadcast: (message) => broadcast(message as WsMessage),
