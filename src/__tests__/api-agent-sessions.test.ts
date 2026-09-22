@@ -57,7 +57,7 @@ beforeEach(async () => {
   app.use(express.json());
   app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined));
   await new Promise<void>((ready) => {
-    server = app.listen(0, () => ready());
+    server = app.listen(0, '127.0.0.1', () => ready());
   });
   baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/agent-sessions`;
 });
@@ -129,7 +129,7 @@ describe('GET /by-id/:sessionId', () => {
     app.use(express.json());
     app.use('/api/agent-sessions', createAgentSessionsRouter(projectsDir, undefined));
     await new Promise<void>((ready) => {
-      dServer = app.listen(0, () => ready());
+      dServer = app.listen(0, '127.0.0.1', () => ready());
     });
     dBase = `http://127.0.0.1:${(dServer.address() as AddressInfo).port}/api/agent-sessions`;
   });

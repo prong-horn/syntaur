@@ -27,7 +27,7 @@ beforeEach(async () => {
   app.use('/api/config/search', createSearchConfigRouter());
 
   await new Promise<void>((ready) => {
-    server = app.listen(0, () => ready());
+    server = app.listen(0, '127.0.0.1', () => ready());
   });
   const port = (server.address() as AddressInfo).port;
   baseUrl = `http://127.0.0.1:${port}/api/config/search`;
