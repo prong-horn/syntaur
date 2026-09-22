@@ -14,7 +14,9 @@ import { connectAcpClient, type AcpClient } from '../chat/acp-client.js';
 import { createFakeAgent, textChunk, type FakeAgent, type FakeTurn } from '../chat/fake-agent.js';
 import type { WsMessage } from '../dashboard/types.js';
 import { parseLogEntries } from '../ticket-templates/log-reader.js';
-import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
+import { HARNESSES, type CommandResolution } from '../chat/harnesses.js';
+import type { HarnessSpec } from '../chat/types.js';
+import { fakeCommandResolver, missingCommandResolver } from './helpers/fake-command-resolver.js';
 
 /**
  * Task 7 — the chat router (pattern of `dashboard-api-inbox.test.ts`: a real
@@ -59,7 +61,10 @@ async function uploadChatAttachment(
   });
 }
 
-async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }]) {
+async function boot(
+  turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: textChunk('ok', 'm1') }] }],
+  commandResolver: (spec: HarnessSpec) => CommandResolution = fakeCommandResolver,
+) {
   fake = createFakeAgent({ turns, sessionIds: ['acp-1'] });
   const wsClients = new Set<WebSocket>();
   const app = express();
@@ -86,9 +91,9 @@ async function boot(turns: FakeTurn[] = [{ steps: [{ kind: 'update', update: tex
   };
 
   broker = createChatBroker({
-    commandResolver: fakeCommandResolver,
+    commandResolver,
     projectsDir,
-        syntaurHome: sandbox,
+    syntaurHome: sandbox,
     broadcast: (message) => broadcast(message as WsMessage),
     clientFactory: (input) => {
       const client = connectAcpClient(fake.app, {
@@ -163,7 +168,7 @@ afterEach(async () => {
 });
 
 describe('GET /api/chat/agents', () => {
-  it('lists the builtin definitions with their PATH status', async () => {
+  it('lists the builtin definitions with installed adapters (stub resolver)', async () => {
     await boot();
     const res = await fetch(url('/chat/agents'));
     expect(res.status).toBe(200);
@@ -174,9 +179,20 @@ describe('GET /api/chat/agents', () => {
     expect(body.agents.map((a) => a.id)).toEqual(['claude', 'codex', 'cursor']);
     expect(body.agents.find((a) => a.id === 'claude')?.default).toBe(true);
     expect(body.errors).toEqual([]);
-    // `missing` is either null (installed on this machine) or the install hint.
     for (const agent of body.agents) {
-      expect(agent.missing === null || agent.missing.startsWith('npm i -g')).toBe(true);
+      expect(agent.missing).toBeNull();
+    }
+  });
+
+  it('lists install hints when adapters are not on PATH', async () => {
+    await boot(undefined, missingCommandResolver);
+    const res = await fetch(url('/chat/agents'));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      agents: Array<{ id: string; harness: keyof typeof HARNESSES; missing: string | null }>;
+    };
+    for (const agent of body.agents) {
+      expect(agent.missing).toBe(HARNESSES[agent.harness].installHint);
     }
   });
 });

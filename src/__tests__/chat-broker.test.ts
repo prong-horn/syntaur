@@ -36,7 +36,9 @@ import type { ResolvedTicket } from '../utils/ticket-resolver.js';
 import { renderProgress } from '../templates/index.js';
 import { seedMissingBuiltins } from '../ticket-templates/builtins.js';
 import { openQuestions, parseLogEntries } from '../ticket-templates/log-reader.js';
-import { fakeCommandResolver } from './helpers/fake-command-resolver.js';
+import type { HarnessSpec } from '../chat/types.js';
+import type { CommandResolution } from '../chat/harnesses.js';
+import { fakeCommandResolver, missingCommandResolver } from './helpers/fake-command-resolver.js';
 
 /**
  * Task 6 — the broker, driven against the in-process fake ACP agent
@@ -98,11 +100,20 @@ async function idle(turns = 1): Promise<void> {
   }, `${turns} turn(s) to finish`);
 }
 
-function lastSessionFrame(): { state: string; queued: Array<{ messageId: string }> } | null {
+function lastSessionFrame(): {
+  state: string;
+  queued: Array<{ text: string; trigger: { kind: string; messageId?: string } }>;
+} | null {
   for (let i = frames.length - 1; i >= 0; i--) {
     if (frames[i].type === 'chat-session') {
-      return (frames[i].payload as { session: { state: string; queued: Array<{ messageId: string }> } })
-        .session;
+      return (
+        frames[i].payload as {
+          session: {
+            state: string;
+            queued: Array<{ text: string; trigger: { kind: string; messageId?: string } }>;
+          };
+        }
+      ).session;
     }
   }
   return null;
@@ -113,6 +124,8 @@ function makeBroker(
     turns?: FakeTurn[];
     agentOptions?: Parameters<typeof createFakeAgent>[0];
     timeouts?: Partial<BrokerTimeouts>;
+    commandResolver?: (spec: HarnessSpec) => CommandResolution;
+    authProber?: (spec: HarnessSpec) => string;
   } = {},
 ) {
   fake = createFakeAgent({ turns: options.turns ?? [{ steps: [] }], ...(options.agentOptions ?? {}) });
@@ -128,7 +141,8 @@ function makeBroker(
     return client;
   };
   broker = createChatBroker({
-    commandResolver: fakeCommandResolver,
+    commandResolver: options.commandResolver ?? fakeCommandResolver,
+    authProber: options.authProber ?? (() => 'auth probe stubbed'),
     projectsDir: join(sandbox, 'projects'),
     syntaurHome: sandbox,
     broadcast: (message) => frames.push({ type: message.type, payload: message.payload }),
@@ -1592,15 +1606,41 @@ describe('one event log per ticket (finding 4)', () => {
 });
 
 describe('the drive loop never loses a message (finding 5)', () => {
-  it('keeps a message queued when the adapter cannot start, and reports why', async () => {
-    makeBroker();
-    // No workspace ⇒ ensureAdapter throws before the turn is committed.
-    await writeTicket({ worktree: '/nope/nowhere', repository: worktree });
-    // `send` itself refuses on a bad cwd, so queue through a good one first and
-    // then break the workspace under it.
+  async function expectQueuedAfterStartFailure(messageId: string): Promise<void> {
+    const frame = lastSessionFrame();
+    expect(frame?.state).toBe('error');
+    expect(frame?.queued).toHaveLength(1);
+    expect(frame?.queued[0].trigger).toEqual({ kind: 'human', messageId });
+    const user = itemsOfType('user.message').find(
+      (m) => (m as { messageId: string }).messageId === messageId,
+    ) as { state: string } | undefined;
+    expect(user?.state).toBe('queued');
+  }
+
+  it('keeps a message queued when the adapter is not on PATH, and reports why', async () => {
+    makeBroker({ commandResolver: missingCommandResolver });
+    await writeTicket();
     const { messageId } = await broker.send({ ticket: ticket(), text: 'keep me' });
-    await idle();
-    expect(messageId).toBeTruthy();
+    await waitUntil(() => {
+      if (lastSessionFrame()?.state !== 'error') return false;
+      const systemRows = itemsOfType('system') as Array<{ text: string }>;
+      return systemRows.some((s) => /is not on PATH — install it with:/.test(s.text));
+    }, 'adapter PATH failure');
+    await expectQueuedAfterStartFailure(messageId);
+  });
+
+  it('keeps a message queued when adapter initialize fails, and reports why', async () => {
+    makeBroker({ agentOptions: { initializeError: 'nope' } });
+    await writeTicket();
+    const { messageId } = await broker.send({ ticket: ticket(), text: 'keep me' });
+    await waitUntil(() => {
+      if (lastSessionFrame()?.state !== 'error') return false;
+      const systemRows = itemsOfType('system') as Array<{ text: string }>;
+      // ACP surfaces agent-thrown `nope` as `Internal error` on the wire.
+      return systemRows.some((s) => /failed to start: Internal error/.test(s.text));
+    }, 'adapter initialize failure');
+    expect(fake.calls).toEqual(['initialize']);
+    await expectQueuedAfterStartFailure(messageId);
   });
 
   it('seals the turn and stays drivable when the prompt itself fails', async () => {
