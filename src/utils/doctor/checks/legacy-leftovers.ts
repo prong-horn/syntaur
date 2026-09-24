@@ -29,13 +29,33 @@ const legacyLeftovers: Check = {
     }
     const detailParts = [...byCategory.entries()].map(([k, n]) => `${k}: ${n}`);
 
+    const blocked = warnItems.filter((l) => l.kind === 'blocked');
+    let detail = `${warnItems.length} leftover(s) (${detailParts.join(', ')})`;
+    if (blocked.length > 0) {
+      const blockedLines = blocked.slice(0, 5).map((l) => `${l.path}: ${l.detail}`);
+      let suffix = blockedLines.join('; ');
+      if (blocked.length > 5) {
+        suffix += `; … and ${blocked.length - 5} more`;
+      }
+      detail += `. Blocked: ${suffix}`;
+    }
+
+    const affectedPaths = warnItems.map((l) => l.path);
+    const affected = affectedPaths.slice(0, 10);
+    if (blocked.length > 0) {
+      for (const item of blocked) {
+        if (affected.length >= 10) break;
+        if (!affected.includes(item.path)) affected.push(item.path);
+      }
+    }
+
     return {
       id: this.id,
       category: this.category,
       title: this.title,
       status: 'warn',
-      detail: `${warnItems.length} leftover(s) (${detailParts.join(', ')})`,
-      affected: warnItems.slice(0, 10).map((l) => l.path),
+      detail,
+      affected,
       remediation: {
         kind: 'manual',
         suggestion: 'Retire detected leftovers reversibly',

@@ -8,11 +8,12 @@ import {
   readlink,
   rename,
   rm,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { Command } from 'commander';
 import { isSyntaurPluginKey } from '../utils/claude-plugin-key.js';
 import {
@@ -72,6 +73,7 @@ export interface CleanupDeps {
   env: NodeJS.ProcessEnv;
   tmpDir: string;
   runner: CleanupRunner;
+  rename: (oldPath: string, newPath: string) => Promise<void>;
   now: () => Date;
 }
 
@@ -187,6 +189,7 @@ export function defaultCleanupDeps(): CleanupDeps {
     env: process.env,
     tmpDir: '/tmp',
     runner: defaultRunner,
+    rename,
     now: () => new Date(),
   };
 }
@@ -301,15 +304,24 @@ async function ownsClaudePluginPath(entryPath: string): Promise<boolean> {
     return false;
   }
   if (st.isSymbolicLink()) {
+    const danglingOwned =
+      basename(entryPath) === 'syntaur' && entryPath.includes(`${join('plugins', 'syntaur')}`);
     try {
       const target = await readlink(entryPath);
       const resolved = isAbsolute(target) ? target : resolve(dirname(entryPath), target);
+      try {
+        await lstat(resolved);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return danglingOwned;
+        throw err;
+      }
+      const marker = await readInstallMarker(resolved);
+      if (marker?.packageName === 'syntaur' && marker.pluginKind === 'claude') return true;
       const name = await readPluginNameFromManifest(resolved);
-      if (name === 'syntaur') return true;
+      return name === 'syntaur';
     } catch {
-      return basename(entryPath) === 'syntaur' && entryPath.includes(`${join('plugins', 'syntaur')}`);
+      return danglingOwned;
     }
-    return basename(entryPath) === 'syntaur';
   }
   if (!st.isDirectory()) return false;
   const marker = await readInstallMarker(entryPath);
@@ -326,17 +338,23 @@ async function ownsAgentPluginPath(entryPath: string): Promise<boolean> {
     return false;
   }
   if (st.isSymbolicLink()) {
+    const danglingOwned = basename(entryPath) === 'syntaur';
     try {
       const target = await readlink(entryPath);
       const resolved = isAbsolute(target) ? target : resolve(dirname(entryPath), target);
+      try {
+        await lstat(resolved);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return danglingOwned;
+        throw err;
+      }
       const marker = await readInstallMarker(resolved);
       if (marker?.packageName === 'syntaur') return true;
       const name = await readPluginNameFromManifest(resolved);
-      if (name === 'syntaur') return true;
+      return name === 'syntaur';
     } catch {
-      return basename(entryPath) === 'syntaur';
+      return danglingOwned;
     }
-    return basename(entryPath) === 'syntaur';
   }
   if (!st.isDirectory()) return false;
   const marker = await readInstallMarker(entryPath);
@@ -448,7 +466,14 @@ async function detectClaudePluginLeftovers(deps: CleanupDeps): Promise<Leftover[
   const home = deps.homeDir;
 
   for (const dir of await collectClaudePluginDirCandidates(home)) {
-    if (!(await fileExists(dir))) continue;
+    let present = false;
+    try {
+      await lstat(dir);
+      present = true;
+    } catch {
+      /* missing */
+    }
+    if (!present) continue;
     if (!(await ownsClaudePluginPath(dir))) continue;
     items.push({
       category: 'claude-plugin',
@@ -644,7 +669,10 @@ async function detectAgentPluginLeftovers(deps: CleanupDeps): Promise<Leftover[]
   return items;
 }
 
-async function detectSkillLeftovers(deps: CleanupDeps): Promise<Leftover[]> {
+async function detectSkillLeftovers(
+  deps: CleanupDeps,
+  retiringPaths: Set<string>,
+): Promise<Leftover[]> {
   const items: Leftover[] = [];
   const roots = [
     resolve(deps.homeDir, '.claude/skills'),
@@ -657,7 +685,13 @@ async function detectSkillLeftovers(deps: CleanupDeps): Promise<Leftover[]> {
     resolve(hermesHome(deps), 'skills'),
   ];
 
-  const retiringPaths = new Set<string>();
+  function targetInsideRetiringPath(resolved: string): boolean {
+    for (const root of retiringPaths) {
+      const normalized = resolve(root);
+      if (resolved === normalized || resolved.startsWith(normalized + sep)) return true;
+    }
+    return false;
+  }
 
   for (const root of roots) {
     if (!(await fileExists(root))) continue;
@@ -676,7 +710,9 @@ async function detectSkillLeftovers(deps: CleanupDeps): Promise<Leftover[]> {
         try {
           const target = await readlink(full);
           const resolved = isAbsolute(target) ? target : resolve(dirname(full), target);
-          owned = await ownsRetiredSkillDir(resolved, entry.name);
+          owned =
+            (await ownsRetiredSkillDir(resolved, entry.name)) ||
+            targetInsideRetiringPath(resolve(resolved));
         } catch {
           owned = true;
         }
@@ -962,10 +998,16 @@ async function detectRuntimeLeftovers(deps: CleanupDeps): Promise<Leftover[]> {
 }
 
 export async function detectLeftovers(deps: CleanupDeps): Promise<Leftover[]> {
+  const claude = await detectClaudePluginLeftovers(deps);
+  const agent = await detectAgentPluginLeftovers(deps);
+  const retiringPaths = new Set<string>();
+  for (const item of [...claude, ...agent]) {
+    if (item.kind === 'move') retiringPaths.add(item.path);
+  }
   const parts = await Promise.all([
-    detectClaudePluginLeftovers(deps),
-    detectAgentPluginLeftovers(deps),
-    detectSkillLeftovers(deps),
+    Promise.resolve(claude),
+    Promise.resolve(agent),
+    detectSkillLeftovers(deps, retiringPaths),
     detectLaunchAgentLeftovers(deps),
     detectUrlHandlerLeftovers(deps),
     detectHomeEntryLeftovers(deps),
@@ -995,15 +1037,15 @@ async function appendManifest(manifestPath: string, manifest: Manifest): Promise
 }
 
 async function moveToRetired(
-  homeDir: string,
+  deps: CleanupDeps,
   retiredDir: string,
   sourcePath: string,
 ): Promise<string> {
-  const rel = retiredRelativePath(homeDir, sourcePath);
+  const rel = retiredRelativePath(deps.homeDir, sourcePath);
   const dest = resolve(retiredDir, rel);
   await ensureDir(dirname(dest));
   try {
-    await rename(sourcePath, dest);
+    await deps.rename(sourcePath, dest);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'EXDEV') throw err;
     await copyTree(sourcePath, dest);
@@ -1015,6 +1057,11 @@ async function moveToRetired(
 async function copyTree(src: string, dest: string): Promise<void> {
   await ensureDir(dirname(dest));
   const st = await lstat(src);
+  if (st.isSocket() || st.isFIFO()) return;
+  if (st.isSymbolicLink()) {
+    await symlink(await readlink(src), dest);
+    return;
+  }
   if (st.isDirectory()) {
     await ensureDir(dest);
     for (const entry of await readdir(src, { withFileTypes: true })) {
@@ -1090,7 +1137,7 @@ export async function applyCleanup(
       const cmd = 'launchctl';
       const args = ['bootout', `gui/${deps.uid}/${item.launchLabel}`];
       const result = deps.runner(cmd, args);
-      await moveToRetired(deps.homeDir, retiredDir, item.path);
+      await moveToRetired(deps, retiredDir, item.path);
       manifest.entries.push({
         category: item.category,
         action: item.kind,
@@ -1106,14 +1153,14 @@ export async function applyCleanup(
     if (item.category === 'url-handler' && item.kind === 'move') {
       const cmd = LSREGISTER;
       const args = ['-u', item.path];
-      deps.runner(cmd, args);
-      const retired = await moveToRetired(deps.homeDir, retiredDir, item.path);
+      const result = deps.runner(cmd, args);
+      const retired = await moveToRetired(deps, retiredDir, item.path);
       manifest.entries.push({
         category: item.category,
         action: item.kind,
         original: item.path,
         retired,
-        command: { cmd, args, status: 0 },
+        command: { cmd, args, status: result.status },
       });
       moved += 1;
       await appendManifest(manifestPath, manifest);
@@ -1133,7 +1180,7 @@ export async function applyCleanup(
     }
 
     if (item.kind === 'move') {
-      const retired = await moveToRetired(deps.homeDir, retiredDir, item.path);
+      const retired = await moveToRetired(deps, retiredDir, item.path);
       manifest.entries.push({
         category: item.category,
         action: item.kind,
@@ -1156,7 +1203,7 @@ export async function applyCleanup(
             await backupEditedFile(deps.homeDir, retiredDir, item.path);
             editedFileBackedUp.add(item.path);
           }
-          const retired = await moveToRetired(deps.homeDir, retiredDir, item.path);
+          const retired = await moveToRetired(deps, retiredDir, item.path);
           manifest.entries.push({
             category: item.category,
             action: 'move',
@@ -1295,7 +1342,7 @@ export async function runMigrateCleanup(
 
   if (!options.apply) {
     lines.push(
-      `${total} leftovers: ${moveCount} moved, ${editCount} edited, ${deleteCount} deleted, ${blockedCount} blocked`,
+      `${total} leftovers: ${moveCount} would move, ${editCount} would edit, ${deleteCount} would delete, ${blockedCount} blocked`,
     );
     return { lines };
   }

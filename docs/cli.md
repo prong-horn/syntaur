@@ -687,7 +687,7 @@ syntaur migrate cleanup [--apply] [--root <path>]
 [dry-run] ~/.claude/settings.json: remove enabledPlugins key syntaur@user-plugins (json-edit)
 [dry-run] Retired ~/.syntaur entries:
 [dry-run] ~/.syntaur/todos: move retired entry todos (move)
-[dry-run] 3 leftovers: 2 moved, 1 edited, 0 deleted, 0 blocked
+[dry-run] 3 leftovers: 2 would move, 1 would edit, 0 would delete, 0 blocked
 ```
 
 **Blocked** items (non-empty `assignments/`/`tickets/`/`missions/`, unparseable JSON, `/Applications/syntaur-url.app` without write access) stay reported until resolved; `--apply` still processes everything else and exits 0.
