@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   mkdtemp,
@@ -10,6 +11,8 @@ import {
   symlink,
   writeFile,
   access,
+  rename,
+  lstat,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -122,7 +125,12 @@ async function minimalValidConfig(syntaur: string): Promise<void> {
 function makeDeps(
   homeDir: string,
   syntaurHome: string,
-  opts?: { platform?: NodeJS.Platform; runner?: CleanupDeps['runner']; tmpDir?: string },
+  opts?: {
+    platform?: NodeJS.Platform;
+    runner?: CleanupDeps['runner'];
+    tmpDir?: string;
+    rename?: CleanupDeps['rename'];
+  },
 ): CleanupDeps {
   const calls: Array<{ cmd: string; args: string[] }> = [];
   const runner =
@@ -139,6 +147,7 @@ function makeDeps(
     env: { ...process.env, HOME: homeDir },
     tmpDir: opts?.tmpDir ?? resolve(homeDir, 'tmp'),
     runner: runner as CleanupDeps['runner'],
+    rename: opts?.rename ?? rename,
     now: () => new Date('2026-09-24T17:00:00.000Z'),
   };
 }
@@ -193,11 +202,12 @@ describe('migrate cleanup', () => {
       resolve(homeDir, '.claude/settings.json'),
       JSON.stringify({ enabledPlugins: { 'syntaur@user-plugins': true, 'syntaur-demos@x': true } }, null, 2) + '\n',
     );
-    const before = await treeHash(homeDir);
+    const before = await contentTreeFingerprint(homeDir);
     const { lines } = await runMigrateCleanup({}, makeDeps(homeDir, syntaurHome));
     expect(lines.some((l) => l.includes('syntaur@user-plugins'))).toBe(true);
     expect(lines.some((l) => l.includes('syntaur-demos'))).toBe(false);
-    expect(await treeHash(homeDir)).toBe(before);
+    expect(lines.some((l) => l.includes('would move'))).toBe(true);
+    expect(await contentTreeFingerprint(homeDir)).toBe(before);
   });
 
   it('apply removes enabledPlugins key and writes manifest', async () => {
@@ -409,7 +419,38 @@ describe('migrate cleanup', () => {
     expect(await access(mktPlugin, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
   });
 
-  it('claude plugin symlink: moves link only; dangling plugins/syntaur link moved', async () => {
+  it('claude plugin symlink to unowned target is untouched on apply', async () => {
+    const foreign = resolve(homeDir, 'foreign-plugin');
+    await mkdir(foreign, { recursive: true });
+    await writeClaudePluginManifest(foreign, 'other-product');
+    const link = resolve(homeDir, '.claude/plugins/syntaur');
+    await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
+    await symlink(foreign, link);
+
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect(await access(link, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    expect(await access(foreign, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    expect(await readlink(link)).toBe(foreign);
+  });
+
+  it('codex plugin symlink to unowned target is untouched on apply', async () => {
+    const foreign = resolve(homeDir, 'foreign-codex-plugin');
+    await mkdir(foreign, { recursive: true });
+    await mkdir(resolve(foreign, '.codex-plugin'), { recursive: true });
+    await writeFile(
+      resolve(foreign, '.codex-plugin/plugin.json'),
+      JSON.stringify({ name: 'other-product' }) + '\n',
+    );
+    const link = resolve(homeDir, 'plugins/syntaur');
+    await mkdir(resolve(homeDir, 'plugins'), { recursive: true });
+    await symlink(foreign, link);
+
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect(await access(link, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    expect(await readlink(link)).toBe(foreign);
+  });
+
+  it('claude plugin symlink: moves owned link only; target stays', async () => {
     const target = resolve(homeDir, 'real-syntaur-plugin');
     await mkdir(target, { recursive: true });
     await writeClaudePluginManifest(target, 'syntaur');
@@ -417,13 +458,154 @@ describe('migrate cleanup', () => {
     await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
     await symlink(target, link);
 
-    const dangling = resolve(homeDir, '.claude/plugins/syntaur-dangling');
-    await symlink(resolve(homeDir, 'missing-target'), dangling);
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect(await access(link, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
+    expect(await access(target, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+  });
+
+  it('dangling ~/.claude/plugins/syntaur symlink is detected and moved', async () => {
+    const link = resolve(homeDir, '.claude/plugins/syntaur');
+    await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
+    await symlink(resolve(homeDir, 'missing-target'), link);
+    const missingTarget = resolve(homeDir, 'missing-target');
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === link && l.kind === 'move')).toBe(true);
 
     await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
     expect(await access(link, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
-    expect(await access(dangling, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
-    expect(await access(target, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    expect(await access(missingTarget, constants.F_OK).then(() => false).catch(() => true)).toBe(
+      true,
+    );
+  });
+
+  it('unowned agent plugin dirs named syntaur are untouched', async () => {
+    for (const rel of ['plugins/syntaur', '.codex/plugins/syntaur'] as const) {
+      const dir = resolve(homeDir, rel);
+      await mkdir(dir, { recursive: true });
+      await writeFile(resolve(dir, 'plugin.json'), JSON.stringify({ name: 'other-product' }) + '\n');
+      const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+      expect(leftovers.some((l) => l.path === dir && l.kind === 'move')).toBe(false);
+      await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+      expect(await access(dir, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('known_marketplaces-only claude plugin moved without config integrations block', async () => {
+    await minimalValidConfig(syntaurHome);
+    const mktRoot = resolve(homeDir, 'external-marketplace');
+    const mktPlugin = resolve(mktRoot, 'plugins/syntaur');
+    await mkdir(mktPlugin, { recursive: true });
+    await writeInstallMarker(mktPlugin, { pluginKind: 'claude' });
+    await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
+    await writeFile(
+      resolve(homeDir, '.claude/plugins/known_marketplaces.json'),
+      JSON.stringify({ ext: { installLocation: mktRoot } }) + '\n',
+    );
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === mktPlugin && l.kind === 'move')).toBe(true);
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect(await access(mktPlugin, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
+  });
+
+  it('retired skill symlink into retiring plugin dir is detected via retiringPaths', async () => {
+    const plugin = resolve(homeDir, 'plugins/syntaur');
+    await mkdir(plugin, { recursive: true });
+    await writeInstallMarker(plugin, { pluginKind: 'codex' });
+    const skillInside = resolve(plugin, 'skills/grab-ticket');
+    await mkdir(skillInside, { recursive: true });
+    await writeFile(
+      resolve(skillInside, 'SKILL.md'),
+      `---\nname: grab-ticket\nmetadata:\n  author: someone-else\n---\n# grab\n`,
+    );
+    const link = resolve(homeDir, '.claude/skills/grab-ticket');
+    await mkdir(resolve(homeDir, '.claude/skills'), { recursive: true });
+    await symlink(skillInside, link);
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === link && l.kind === 'move')).toBe(true);
+  });
+
+  it('EXDEV copyTree preserves symlinks, skips sockets, removes source after copy', async () => {
+    const pluginDir = resolve(homeDir, '.claude/plugins/syntaur');
+    await mkdir(pluginDir, { recursive: true });
+    await writeInstallMarker(pluginDir, { pluginKind: 'claude' });
+
+    const fileTarget = resolve(homeDir, 'symlink-file-target.txt');
+    await writeFile(fileTarget, 'payload');
+    await symlink(fileTarget, resolve(pluginDir, 'linked-file.txt'));
+    const dirTarget = resolve(homeDir, 'symlink-dir-target');
+    await mkdir(dirTarget);
+    await symlink(dirTarget, resolve(pluginDir, 'linked-dir'));
+
+    const sockPath = resolve(pluginDir, 'daemon.sock');
+    const server = createServer();
+    await new Promise<void>((resolvePromise, reject) => {
+      server.listen(sockPath, () => resolvePromise()); // listen-guard: ignore
+      server.on('error', reject);
+    });
+
+    let renameAttempts = 0;
+    const exdevRename: CleanupDeps['rename'] = async (src, dest) => {
+      renameAttempts += 1;
+      if (renameAttempts === 1) {
+        const err = new Error('EXDEV') as NodeJS.ErrnoException;
+        err.code = 'EXDEV';
+        throw err;
+      }
+      await rename(src, dest);
+    };
+
+    await runMigrateCleanup(
+      { apply: true },
+      makeDeps(homeDir, syntaurHome, { rename: exdevRename }),
+    );
+    server.close();
+
+    expect(await access(pluginDir, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
+    const retired = (await readdir(homeDir)).find((n) => n.startsWith('.syntaur-retired-'))!;
+    const retiredPlugin = resolve(homeDir, retired, '.claude/plugins/syntaur');
+    expect(await readlink(resolve(retiredPlugin, 'linked-file.txt'))).toBe(fileTarget);
+    expect(await readlink(resolve(retiredPlugin, 'linked-dir'))).toBe(dirTarget);
+    expect(
+      await access(resolve(retiredPlugin, 'daemon.sock'), constants.F_OK)
+        .then(() => true)
+        .catch(() => false),
+    ).toBe(false);
+  });
+
+  it('EXDEV move of top-level plugin symlink preserves symlink at retired path', async () => {
+    const realPlugin = resolve(homeDir, 'real-owned-plugin');
+    await mkdir(realPlugin, { recursive: true });
+    await writeInstallMarker(realPlugin, { pluginKind: 'claude' });
+    const link = resolve(homeDir, '.claude/plugins/syntaur');
+    await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
+    await symlink(realPlugin, link);
+
+    let renameAttempts = 0;
+    const exdevRename: CleanupDeps['rename'] = async (src, dest) => {
+      renameAttempts += 1;
+      if (renameAttempts === 1) {
+        const err = new Error('EXDEV') as NodeJS.ErrnoException;
+        err.code = 'EXDEV';
+        throw err;
+      }
+      await rename(src, dest);
+    };
+
+    await runMigrateCleanup(
+      { apply: true },
+      makeDeps(homeDir, syntaurHome, { rename: exdevRename }),
+    );
+
+    expect(await access(link, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
+    expect(await access(realPlugin, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    const retired = (await readdir(homeDir)).find((n) => n.startsWith('.syntaur-retired-'))!;
+    const retiredLink = resolve(homeDir, retired, '.claude/plugins/syntaur');
+    expect((await lstat(retiredLink)).isSymbolicLink()).toBe(true);
+    expect(await readlink(retiredLink)).toBe(realPlugin);
   });
 
   it('claude marketplace.json and enabledPlugins edit syntaur only with backup', async () => {
@@ -637,7 +819,8 @@ describe('migrate cleanup', () => {
     const calls: Array<{ cmd: string; args: string[] }> = [];
     const runner = (cmd: string, args: string[]) => {
       calls.push({ cmd, args });
-      return { status: 0, stdout: '', stderr: '' };
+      const status = cmd.includes('lsregister') ? 17 : 0;
+      return { status, stdout: '', stderr: '' };
     };
     const supportDir = resolve(homeDir, 'Library/Application Support/Syntaur');
     const ownedApp = resolve(supportDir, 'syntaur-url.app');
@@ -662,6 +845,12 @@ describe('migrate cleanup', () => {
     expect(await access(ownedApp, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
     expect(await readFile(resolve(supportDir, 'sibling.txt'), 'utf-8')).toBe('stay');
     expect(await access(foreignApp, constants.F_OK).then(() => true).catch(() => false)).toBe(true);
+    const retired = (await readdir(homeDir)).find((n) => n.startsWith('.syntaur-retired-'))!;
+    const manifest = JSON.parse(
+      await readFile(resolve(homeDir, retired, 'manifest.json'), 'utf-8'),
+    );
+    const urlEntry = manifest.entries.find((e: { category: string }) => e.category === 'url-handler');
+    expect(urlEntry?.command?.status).toBe(17);
 
     const linuxLeftovers = await detectLeftovers(
       makeDeps(homeDir, syntaurHome, { platform: 'linux' }),
@@ -883,6 +1072,20 @@ describe('migrate cleanup', () => {
     for (const p of affected) {
       expect(reported.some((l) => l.path === p)).toBe(true);
     }
+  });
+
+  it('doctor legacy-leftovers detail lists blocked paths and remediation text', async () => {
+    await mkdir(resolve(syntaurHome, 'assignments/x'), { recursive: true });
+    await writeFile(resolve(syntaurHome, 'assignments/x/a.md'), 'data');
+    await writeFile(resolve(syntaurHome, V2_MIGRATED_MARKER), 'rename-ids 2026-01-01T00:00:00.000Z\n');
+
+    const report = await runChecks();
+    const check = report.checks.find((c) => c.id === 'structure.legacy-leftovers');
+    expect(check?.status).toBe('warn');
+    expect(check?.detail).toContain('Blocked:');
+    expect(check?.detail).toContain(resolve(syntaurHome, 'assignments'));
+    expect(check?.detail).toContain('migrate v2');
+    expect(check?.affected).toContain(resolve(syntaurHome, 'assignments'));
   });
 });
 
