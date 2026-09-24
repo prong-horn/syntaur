@@ -668,6 +668,40 @@ syntaur migrate v2
 syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
 ```
 
+### `syntaur migrate cleanup`
+
+Detect and reversibly retire pre-v2 install leftovers (Claude/Codex plugins, retired skills, macOS LaunchAgents and URL handler, old `~/.syntaur` entries, legacy `config.md` blocks, daemon runtime). Dry-run by default; pass `--apply` to move/edit into a single `~/.syntaur-retired-<timestamp>/` directory with `manifest.json`.
+
+```
+syntaur migrate cleanup [--apply] [--root <path>]
+```
+
+`--root` sets `SYNTAUR_HOME` for category **F** (`~/.syntaur` tree, `config.md`, project `todos/`) and **G** only. Categories **A–E** always scan the process `HOME` (`~/.claude`, `~/plugins/syntaur`, skill dirs, LaunchAgents, URL handler).
+
+**Retired folder:** moved paths mirror their original location under `HOME` (absolute paths such as `/Applications/...` land under `_abs/`). JSON/config edits copy the pre-edit file to `_edited/` first. Only the legacy daemon runtime directory is deleted, and only when it contains socket/pid files alone.
+
+**Sample dry-run lines:**
+
+```
+[dry-run] Claude Code plugin:
+[dry-run] ~/.claude/settings.json: remove enabledPlugins key syntaur@user-plugins (json-edit)
+[dry-run] Retired ~/.syntaur entries:
+[dry-run] ~/.syntaur/todos: move retired entry todos (move)
+[dry-run] 3 leftovers: 2 moved, 1 edited, 0 deleted, 0 blocked
+```
+
+**Blocked** items (non-empty `assignments/`/`tickets/`/`missions/`, unparseable JSON, `/Applications/syntaur-url.app` without write access) stay reported until resolved; `--apply` still processes everything else and exits 0.
+
+**Restore:** move entries back using paths in `manifest.json` (and reverse JSON edits from `_edited/` backups if needed).
+
+### Examples
+
+```bash
+syntaur migrate cleanup
+syntaur migrate cleanup --apply
+syntaur migrate cleanup --apply --root ~/.syntaur
+```
+
 ## Hooks
 
 `syntaur hooks install` writes three entries into `~/.claude/settings.json`. Each runs a bash script under `~/.syntaur/hooks/` with the hook JSON payload on stdin. Hook paths exit 0 even on failure.

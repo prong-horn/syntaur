@@ -336,13 +336,15 @@ Projects, tickets, and `syntaur.db` under `~/.syntaur/` are unchanged unless you
 
 ## Troubleshooting
 
-Run `syntaur doctor` (or `syntaur doctor --json` for agents). Checks include `hooks.installed`, `skills.installed`, `git.home-repo`, and `git.auto-commit`.
+Run `syntaur doctor` (or `syntaur doctor --json` for agents). Checks include `hooks.installed`, `skills.installed`, `git.home-repo`, `git.auto-commit`, and `structure.legacy-leftovers` when pre-v2 install files remain.
 
 Common issues:
 
+- **Pre-v2 leftovers after upgrade** — `syntaur migrate cleanup` then `syntaur migrate cleanup --apply` (see [cli.md](./docs/cli.md#syntaur-migrate-cleanup) and [v1.0 upgrade](./docs/releases/v1.0.md)).
+
 - **SQLite schema errors** (`no such column: project_slug` / `assignment_slug` on `sessions` or `events`) — you are on a pre-v2 database or a partial migration. Back up `~/.syntaur`, upgrade to 1.0, and run `syntaur migrate v2 --apply` (v2 homes key `engagement` and `events` by `ticket_id` only).
 - **Skills missing** — `npx skills add prong-horn/syntaur -g -a claude-code`; then `syntaur doctor --only skills.installed`.
-- **Hooks missing or stale** — `syntaur hooks install` (re-run after upgrade). If the old marketplace plugin is still enabled, doctor warns about duplicate hooks — remove the plugin per [v1.0 cutover](./docs/releases/v1.0.md).
+- **Hooks missing or stale** — `syntaur hooks install` (re-run after upgrade). If the old marketplace plugin is still enabled, doctor warns about duplicate hooks — run `syntaur migrate cleanup --apply` or remove the plugin per [v1.0 cutover](./docs/releases/v1.0.md).
 - **Session stays `active` after closing the terminal** — without SessionEnd, pipe the session id to stop: `printf '{"session_id":"<id>"}' | syntaur session stop --from-hook`. Otherwise the dashboard maintenance loop closes rows idle past `session.idleSweepHours` (default 6 h) on its first tick after start and every 45 s, and a ticket reaching `done` closes the sessions engaged on it.
 - **`npx syntaur` keeps asking to install globally** — choose "3) Never", or `export SYNTAUR_SKIP_INSTALL_PROMPT=1`.
 
