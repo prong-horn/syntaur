@@ -162,7 +162,7 @@ describe('migrate cleanup', () => {
     await mkdir(launchDir, { recursive: true });
     const plist = resolve(launchDir, 'com.syntaur.session.scan.plist');
     await writeFile(plist, '<plist/>');
-    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome, { runner }));
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome, { runner: runner as CleanupDeps['runner'] }));
     expect(calls.some((c) => c.cmd === 'launchctl' && c.args[0] === 'bootout')).toBe(true);
     expect(await access(plist, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
   });
