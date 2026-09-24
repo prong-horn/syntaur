@@ -10,6 +10,7 @@ import { archiveCommand } from './commands/archive.js';
 import { restoreCommand } from './commands/restore.js';
 import { v2MigrateCommand } from './commands/migrate-v2.js';
 import { journalMigrateCommand } from './commands/migrate-journal.js';
+import { cleanupMigrateCommand } from './commands/migrate-cleanup.js';
 import { registerVerbCommands } from './commands/verbs.js';
 import { updateCommand } from './commands/update.js';
 import { installStatuslineCommand, uninstallStatuslineCommand, type StatuslineMode } from './commands/statusline-install.js';
@@ -298,6 +299,7 @@ program
 const migrateCommand = new Command('migrate').description('One-time data migrations');
 migrateCommand.addCommand(v2MigrateCommand);
 migrateCommand.addCommand(journalMigrateCommand);
+migrateCommand.addCommand(cleanupMigrateCommand);
 program.addCommand(migrateCommand);
 
 program.addCommand(doctorCommand);

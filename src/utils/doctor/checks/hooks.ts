@@ -8,6 +8,7 @@ import {
   isOurHookCommand,
   listPackageHookScripts,
 } from '../../../commands/hooks.js';
+import { isSyntaurPluginKey } from '../../claude-plugin-key.js';
 import type { Check, CheckResult } from '../types.js';
 
 const CATEGORY = 'hooks';
@@ -21,9 +22,7 @@ function syntaurPluginEnabled(settings: ClaudeSettingsFile | null): boolean {
   const enabled = settings?.enabledPlugins ?? {};
   for (const [key, value] of Object.entries(enabled)) {
     if (value !== true) continue;
-    const atIndex = key.lastIndexOf('@');
-    const pluginName = atIndex > 0 ? key.slice(0, atIndex) : key;
-    if (pluginName === 'syntaur') return true;
+    if (isSyntaurPluginKey(key)) return true;
   }
   return false;
 }
