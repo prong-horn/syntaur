@@ -296,6 +296,55 @@ async function readPluginNameFromManifest(dir: string): Promise<string | null> {
   return null;
 }
 
+export type SymlinkTargetState =
+  | { state: 'present'; resolved: string }
+  | { state: 'dangling' }
+  | { state: 'unknown' };
+
+/** Classify a symlink: present target, dangling (ENOENT), or unknown (any other error). */
+export async function symlinkTarget(linkPath: string): Promise<SymlinkTargetState> {
+  try {
+    const target = await readlink(linkPath);
+    const resolved = isAbsolute(target) ? target : resolve(dirname(linkPath), target);
+    try {
+      await lstat(resolved);
+      return { state: 'present', resolved };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { state: 'dangling' };
+      return { state: 'unknown' };
+    }
+  } catch {
+    return { state: 'unknown' };
+  }
+}
+
+function danglingOwnedPluginsDirLink(entryPath: string): boolean {
+  return basename(entryPath) === 'syntaur' && entryPath.includes(`${join('plugins', 'syntaur')}`);
+}
+
+async function pathEntryPresent(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function ownsClaudePluginAtResolved(resolved: string): Promise<boolean> {
+  const marker = await readInstallMarker(resolved);
+  if (marker?.packageName === 'syntaur' && marker.pluginKind === 'claude') return true;
+  const name = await readPluginNameFromManifest(resolved);
+  return name === 'syntaur';
+}
+
+async function ownsAgentPluginAtResolved(resolved: string): Promise<boolean> {
+  const marker = await readInstallMarker(resolved);
+  if (marker?.packageName === 'syntaur') return true;
+  const name = await readPluginNameFromManifest(resolved);
+  return name === 'syntaur';
+}
+
 async function ownsClaudePluginPath(entryPath: string): Promise<boolean> {
   let st;
   try {
@@ -304,30 +353,13 @@ async function ownsClaudePluginPath(entryPath: string): Promise<boolean> {
     return false;
   }
   if (st.isSymbolicLink()) {
-    const danglingOwned =
-      basename(entryPath) === 'syntaur' && entryPath.includes(`${join('plugins', 'syntaur')}`);
-    try {
-      const target = await readlink(entryPath);
-      const resolved = isAbsolute(target) ? target : resolve(dirname(entryPath), target);
-      try {
-        await lstat(resolved);
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return danglingOwned;
-        throw err;
-      }
-      const marker = await readInstallMarker(resolved);
-      if (marker?.packageName === 'syntaur' && marker.pluginKind === 'claude') return true;
-      const name = await readPluginNameFromManifest(resolved);
-      return name === 'syntaur';
-    } catch {
-      return danglingOwned;
-    }
+    const linkState = await symlinkTarget(entryPath);
+    if (linkState.state === 'unknown') return false;
+    if (linkState.state === 'dangling') return danglingOwnedPluginsDirLink(entryPath);
+    return ownsClaudePluginAtResolved(linkState.resolved);
   }
   if (!st.isDirectory()) return false;
-  const marker = await readInstallMarker(entryPath);
-  if (marker?.packageName === 'syntaur' && marker.pluginKind === 'claude') return true;
-  const name = await readPluginNameFromManifest(entryPath);
-  return name === 'syntaur';
+  return ownsClaudePluginAtResolved(entryPath);
 }
 
 async function ownsAgentPluginPath(entryPath: string): Promise<boolean> {
@@ -338,29 +370,13 @@ async function ownsAgentPluginPath(entryPath: string): Promise<boolean> {
     return false;
   }
   if (st.isSymbolicLink()) {
-    const danglingOwned = basename(entryPath) === 'syntaur';
-    try {
-      const target = await readlink(entryPath);
-      const resolved = isAbsolute(target) ? target : resolve(dirname(entryPath), target);
-      try {
-        await lstat(resolved);
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') return danglingOwned;
-        throw err;
-      }
-      const marker = await readInstallMarker(resolved);
-      if (marker?.packageName === 'syntaur') return true;
-      const name = await readPluginNameFromManifest(resolved);
-      return name === 'syntaur';
-    } catch {
-      return danglingOwned;
-    }
+    const linkState = await symlinkTarget(entryPath);
+    if (linkState.state === 'unknown') return false;
+    if (linkState.state === 'dangling') return danglingOwnedPluginsDirLink(entryPath);
+    return ownsAgentPluginAtResolved(linkState.resolved);
   }
   if (!st.isDirectory()) return false;
-  const marker = await readInstallMarker(entryPath);
-  if (marker?.packageName === 'syntaur') return true;
-  const name = await readPluginNameFromManifest(entryPath);
-  return name === 'syntaur';
+  return ownsAgentPluginAtResolved(entryPath);
 }
 
 async function ownsMarkerlessAgentDir(dir: string): Promise<boolean> {
@@ -623,7 +639,7 @@ async function detectAgentPluginLeftovers(deps: CleanupDeps): Promise<Leftover[]
   ];
 
   for (const dir of agentDirs) {
-    if (!(await fileExists(dir))) continue;
+    if (!(await pathEntryPresent(dir))) continue;
     const owned =
       basename(dir) === 'syntaur' &&
       (dir.includes('extensions') || dir.includes(`${join('plugins', 'syntaur')}`))
@@ -706,15 +722,14 @@ async function detectSkillLeftovers(
         continue;
       }
       if (isLink) {
+        const linkState = await symlinkTarget(full);
         let owned = false;
-        try {
-          const target = await readlink(full);
-          const resolved = isAbsolute(target) ? target : resolve(dirname(full), target);
-          owned =
-            (await ownsRetiredSkillDir(resolved, entry.name)) ||
-            targetInsideRetiringPath(resolve(resolved));
-        } catch {
+        if (linkState.state === 'dangling') {
           owned = true;
+        } else if (linkState.state === 'present') {
+          owned =
+            (await ownsRetiredSkillDir(linkState.resolved, entry.name)) ||
+            targetInsideRetiringPath(resolve(linkState.resolved));
         }
         if (!owned) continue;
         items.push({

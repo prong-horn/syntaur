@@ -670,7 +670,7 @@ syntaur migrate v2 --apply --prefix scratch=SCR --prefix my-api=API
 
 ### `syntaur migrate cleanup`
 
-Detect and reversibly retire pre-v2 install leftovers (Claude/Codex plugins, retired skills, macOS LaunchAgents and URL handler, old `~/.syntaur` entries, legacy `config.md` blocks, daemon runtime). Dry-run by default; pass `--apply` to move/edit into a single `~/.syntaur-retired-<timestamp>/` directory with `manifest.json`.
+Detect and reversibly retire pre-v2 install leftovers (Claude/Codex plugins, retired skills, macOS LaunchAgents and URL handler, old `~/.syntaur` entries, legacy `config.md` blocks, daemon runtime). Dry-run by default; pass `--apply` to move/edit into a single `~/.syntaur-retired-<timestamp>/` directory with `manifest.json`. `syntaur doctor` runs the same read-only detection for the plugin, skill, and LaunchAgent locations listed here.
 
 ```
 syntaur migrate cleanup [--apply] [--root <path>]
