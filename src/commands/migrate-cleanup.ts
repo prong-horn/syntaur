@@ -1077,6 +1077,7 @@ export async function applyCleanup(
   let edited = 0;
   let deleted = 0;
   let blocked = 0;
+  const editedFileBackedUp = new Set<string>();
 
   for (const item of leftovers) {
     if (item.kind === 'info') continue;
@@ -1151,7 +1152,10 @@ export async function applyCleanup(
         const parsed = JSON.parse(nextRaw) as Record<string, unknown>;
         const agentsMarketplace = item.path.endsWith('.agents/plugins/marketplace.json');
         if (agentsMarketplace && marketplaceIsDefaultShell(parsed)) {
-          await backupEditedFile(deps.homeDir, retiredDir, item.path);
+          if (!editedFileBackedUp.has(item.path)) {
+            await backupEditedFile(deps.homeDir, retiredDir, item.path);
+            editedFileBackedUp.add(item.path);
+          }
           const retired = await moveToRetired(deps.homeDir, retiredDir, item.path);
           manifest.entries.push({
             category: item.category,
@@ -1164,7 +1168,10 @@ export async function applyCleanup(
           await appendManifest(manifestPath, manifest);
           continue;
         }
-        await backupEditedFile(deps.homeDir, retiredDir, item.path);
+        if (!editedFileBackedUp.has(item.path)) {
+          await backupEditedFile(deps.homeDir, retiredDir, item.path);
+          editedFileBackedUp.add(item.path);
+        }
         await writeFileForce(item.path, nextRaw);
         manifest.entries.push({
           category: item.category,
@@ -1177,7 +1184,10 @@ export async function applyCleanup(
         continue;
       }
 
-      await backupEditedFile(deps.homeDir, retiredDir, item.path);
+      if (!editedFileBackedUp.has(item.path)) {
+        await backupEditedFile(deps.homeDir, retiredDir, item.path);
+        editedFileBackedUp.add(item.path);
+      }
       let next = raw;
       if (item.path.endsWith('settings.json') && item.jsonKey) {
         const data = JSON.parse(raw) as Record<string, unknown>;
@@ -1207,17 +1217,21 @@ export async function applyCleanup(
     }
 
     if (item.kind === 'config-edit') {
+      if (editedFileBackedUp.has(item.path)) continue;
+      editedFileBackedUp.add(item.path);
       await backupEditedFile(deps.homeDir, retiredDir, item.path);
       const raw = await readFile(item.path, 'utf-8');
-      const { content } = removeRetiredConfigKeys(raw);
+      const { content, removed } = removeRetiredConfigKeys(raw);
       await writeFileForce(item.path, content);
-      manifest.entries.push({
-        category: item.category,
-        action: item.kind,
-        original: item.path,
-        removed: item.configKey,
-      });
-      edited += 1;
+      for (const key of removed) {
+        manifest.entries.push({
+          category: item.category,
+          action: item.kind,
+          original: item.path,
+          removed: key,
+        });
+        edited += 1;
+      }
       await appendManifest(manifestPath, manifest);
     }
   }
