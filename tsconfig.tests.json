@@ -111,6 +111,7 @@
     "src/__tests__/skills-pack.test.ts",
     "src/__tests__/migrate-v2-derived.test.ts",
     "src/__tests__/migrate-v2.test.ts",
+    "src/__tests__/migrate-cleanup.test.ts",
     "src/__tests__/record-append.test.ts",
     "src/__tests__/progress-template.test.ts",
     "src/__tests__/session-resume-handoff.test.ts",
