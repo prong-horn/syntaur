@@ -14,7 +14,6 @@ import { constants } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { Command } from 'commander';
-import { createRequire } from 'node:module';
 import { isSyntaurPluginKey } from '../utils/claude-plugin-key.js';
 import {
   RETIRED_CONFIG_KEYS,
@@ -25,14 +24,12 @@ import { SYNTAUR_PACK_SKILL_NAMES } from '../utils/doctor/checks/skills.js';
 import { ensureDir, fileExists, writeFileForce } from '../utils/fs.js';
 import { readJsonFile, writeJsonFileAtomic } from '../utils/json-file.js';
 import { expandHome, syntaurRoot } from '../utils/paths.js';
+import { readPackageVersion } from '../utils/version.js';
 import {
   pendingMigrationSteps,
   readMarkerSteps,
   V2_MIGRATED_MARKER,
 } from './migrate-v2.js';
-
-const require = createRequire(import.meta.url);
-const { version: SYNTAUR_VERSION } = require('../../package.json') as { version: string };
 
 export type LeftoverCategory =
   | 'claude-plugin'
@@ -1067,9 +1064,10 @@ export async function applyCleanup(
   retiredDir: string,
 ): Promise<CleanupResult> {
   const manifestPath = resolve(retiredDir, 'manifest.json');
+  const syntaurVersion = (await readPackageVersion(import.meta.url)) ?? '0.0.0';
   const manifest: Manifest = {
     createdAt: deps.now().toISOString(),
-    syntaurVersion: SYNTAUR_VERSION,
+    syntaurVersion,
     entries: [],
   };
   await ensureDir(retiredDir);
