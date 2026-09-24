@@ -519,7 +519,7 @@ export async function deleteThemeConfig(): Promise<void> {
  * Used for scalar keys that don't have child lines, so they can't use the
  * block-style `stripTopLevelBlock`. No-op when the key is absent.
  */
-function stripTopLevelScalar(fmBlock: string, key: string): string {
+export function stripTopLevelScalar(fmBlock: string, key: string): string {
   const lines = fmBlock.split('\n');
   const keyRegex = new RegExp(`^${key}:\\s*\\S`);
   const filtered = lines.filter((line) => !keyRegex.test(line));
@@ -664,6 +664,60 @@ export function stripTopLevelBlock(fmBlock: string, key: string): string {
   }
 
   return (before + remaining.slice(endIdx).join('\n')).replace(/\n+$/, '');
+}
+
+/** Retired config.md frontmatter keys removed by `syntaur migrate cleanup`. */
+export const RETIRED_CONFIG_KEYS = [
+  'agents',
+  'agentDiscovery',
+  'backup',
+  'statuses',
+  'workflows',
+] as const;
+
+function fmBlockContainsKey(fmBlock: string, key: string): boolean {
+  if (new RegExp(`^${key}:\\s*$`, 'm').test(fmBlock)) return true;
+  if (new RegExp(`^${key}:[ \\t]*\\S`, 'm').test(fmBlock)) return true;
+  return false;
+}
+
+function stripKeyFromFrontmatter(fmBlock: string, key: string): string {
+  let next = stripTopLevelBlock(fmBlock, key);
+  const inlineRegex = new RegExp(`^${key}:[ \\t]*\\S.*$`, 'm');
+  next = next
+    .split('\n')
+    .filter((line) => !inlineRegex.test(line))
+    .join('\n')
+    .replace(/\n+$/, '');
+  return next;
+}
+
+/**
+ * Remove retired top-level keys from config.md frontmatter (block and inline forms).
+ * Body after the closing `---` is unchanged.
+ */
+export function removeRetiredConfigKeys(
+  content: string,
+  keys: readonly string[] = RETIRED_CONFIG_KEYS,
+): { content: string; removed: string[] } {
+  const fmMatch = content.match(/^(---\n)([\s\S]*?)\n(---)/);
+  if (!fmMatch) return { content, removed: [] };
+
+  let fmBlock = fmMatch[2];
+  const removed: string[] = [];
+  for (const key of keys) {
+    if (!fmBlockContainsKey(fmBlock, key)) continue;
+    const next = stripKeyFromFrontmatter(fmBlock, key);
+    if (next !== fmBlock) {
+      removed.push(key);
+      fmBlock = next;
+    }
+  }
+
+  if (removed.length === 0) return { content, removed: [] };
+  const afterFrontmatter = content.slice(fmMatch[0].length);
+  const newContent = `---\n${fmBlock}\n---${afterFrontmatter}`;
+  return { content: newContent, removed };
 }
 
 function parseOptionalAbsolutePath(

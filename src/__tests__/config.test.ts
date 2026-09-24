@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { readConfig } from '../utils/config.js';
+import { readConfig, removeRetiredConfigKeys, RETIRED_CONFIG_KEYS } from '../utils/config.js';
 import { runChecks } from '../utils/doctor/index.js';
 
 describe('config legacy install keys', () => {
@@ -64,5 +64,52 @@ describe('config legacy install keys', () => {
     expect(config.defaultProjectDir).toBe(resolve(homeDir, '.syntaur', 'projects'));
     await readConfig();
     expect(await readFile(configPath, 'utf-8')).toBe(raw);
+  });
+});
+
+describe('removeRetiredConfigKeys', () => {
+  const keepLines = `version: "2.0"
+defaultProjectDir: /tmp/projects
+theme:
+  preset: dark
+session:
+  idleSweepHours: 6
+`;
+
+  for (const key of RETIRED_CONFIG_KEYS) {
+    it(`removes block form of ${key}`, () => {
+      const before = `---\n${keepLines}${key}:\n  foo: bar\n---\nbody stays\n`;
+      const { content, removed } = removeRetiredConfigKeys(before, [key]);
+      expect(removed).toEqual([key]);
+      expect(content).toBe(`---\n${keepLines}---\nbody stays\n`);
+    });
+
+    it(`removes inline [] form of ${key}`, () => {
+      const before = `---\n${keepLines}${key}: []\n---\n`;
+      const { content, removed } = removeRetiredConfigKeys(before, [key]);
+      expect(removed).toEqual([key]);
+      expect(content).toBe(`---\n${keepLines}---\n`);
+    });
+
+    it(`removes inline {} form of ${key}`, () => {
+      const before = `---\n${keepLines}${key}: {}\n---\n`;
+      const { content, removed } = removeRetiredConfigKeys(before, [key]);
+      expect(removed).toEqual([key]);
+      expect(content).toBe(`---\n${keepLines}---\n`);
+    });
+
+    it(`removes scalar inline form of ${key}`, () => {
+      const before = `---\n${keepLines}${key}: "legacy"\n---\n`;
+      const { content, removed } = removeRetiredConfigKeys(before, [key]);
+      expect(removed).toEqual([key]);
+      expect(content).toBe(`---\n${keepLines}---\n`);
+    });
+  }
+
+  it('leaves unrelated frontmatter bytes identical', () => {
+    const before = `---\n${keepLines}---\nunchanged body\n`;
+    const { content, removed } = removeRetiredConfigKeys(before);
+    expect(removed).toEqual([]);
+    expect(content).toBe(before);
   });
 });
