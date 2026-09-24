@@ -178,6 +178,7 @@ const RULE_B_ALLOWLIST: Record<string, string> = {
   'src/usage/cwd-extractor.ts': 'cwd extraction',
   'src/chat/chat-cwd.ts': 'chat cwd',
   'src/commands/home-git.ts': 'home git init and auto-commit',
+  'src/commands/migrate-cleanup.ts': 'pre-v2 cleanup scans user HOME for plugins and skills',
 };
 
 type HomeLookupContext = {
