@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { syntaurRoot } from '../utils/paths.js';
 import { ensureDir, fileExists } from '../utils/fs.js';
+import { readJsonFile, writeJsonFileAtomic } from '../utils/json-file.js';
 
 export interface HookEntry {
   event: 'SessionStart' | 'PostToolUse' | 'UserPromptSubmit';
@@ -35,25 +36,6 @@ function getPackageHooksDir(): string {
   const fromDist = resolve(here, '..', 'hooks');
   if (existsSync(fromDist)) return fromDist;
   return resolve(here, '..', '..', 'hooks');
-}
-
-async function readSettingsJson(settingsPath: string): Promise<Record<string, unknown>> {
-  if (!(await fileExists(settingsPath))) return {};
-  const raw = await readFile(settingsPath, 'utf-8');
-  if (raw.trim() === '') return {};
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? parsed : {};
-  } catch (error) {
-    throw new Error(
-      `Unable to parse ${settingsPath}: ${(error as Error).message}. Fix the JSON and re-run.`,
-    );
-  }
-}
-
-async function writeSettingsJson(settingsPath: string, data: Record<string, unknown>): Promise<void> {
-  await ensureDir(dirname(settingsPath));
-  await writeFile(settingsPath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
 }
 
 export function hooksDirForInstallRoot(installRoot: string): string {
@@ -217,7 +199,7 @@ export async function installHooksCommand(options: HooksCommandOptions = {}): Pr
   const installedHooksDir = hooksDirForInstallRoot(installRoot);
   const backupPath = resolve(installRoot, 'hooks.backup.json');
 
-  const settings = await readSettingsJson(settingsPath);
+  const settings = await readJsonFile(settingsPath);
   const previousHooks = settings.hooks;
 
   if (settingsAlreadyHasOurEntries(settings, HOOK_ENTRIES, installedHooksDir)) {
@@ -235,7 +217,7 @@ export async function installHooksCommand(options: HooksCommandOptions = {}): Pr
 
   const stripped = removeHookEntries(settings, installedHooksDir);
   const merged = mergeHookEntries(stripped, HOOK_ENTRIES, installedHooksDir);
-  await writeSettingsJson(settingsPath, merged);
+  await writeJsonFileAtomic(settingsPath, merged);
 
   console.log('Installed Syntaur hooks:');
   console.log(`  hooks dir:     ${installedHooksDir}`);
@@ -251,9 +233,9 @@ export async function uninstallHooksCommand(options: HooksCommandOptions = {}): 
   const installRoot = options.installRoot ?? syntaurRoot();
   const installedHooksDir = hooksDirForInstallRoot(installRoot);
 
-  const settings = await readSettingsJson(settingsPath);
+  const settings = await readJsonFile(settingsPath);
   const next = removeHookEntries(settings, installedHooksDir);
-  await writeSettingsJson(settingsPath, next);
+  await writeJsonFileAtomic(settingsPath, next);
 
   try {
     await rm(installedHooksDir, { recursive: true, force: true });
