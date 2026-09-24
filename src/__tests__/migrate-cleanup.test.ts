@@ -479,6 +479,83 @@ describe('migrate cleanup', () => {
     );
   });
 
+  it('dangling agent plugin symlinks under plugins/ are detected and moved', async () => {
+    for (const rel of ['plugins/syntaur', '.codex/plugins/syntaur'] as const) {
+      const link = resolve(homeDir, rel);
+      await mkdir(dirname(link), { recursive: true });
+      await symlink(resolve(homeDir, `missing-${rel.replace(/\//g, '-')}`), link);
+
+      const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+      expect(leftovers.some((l) => l.path === link && l.kind === 'move')).toBe(true);
+
+      await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+      expect(await access(link, constants.F_OK).then(() => false).catch(() => true)).toBe(true);
+      await rm(dirname(link), { recursive: true, force: true }).catch(() => undefined);
+    }
+  });
+
+  it('dangling ~/.pi/agent/extensions/syntaur symlink is untouched', async () => {
+    const link = resolve(homeDir, '.pi/agent/extensions/syntaur');
+    await mkdir(dirname(link), { recursive: true });
+    await symlink(resolve(homeDir, 'missing-pi-ext'), link);
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === link)).toBe(false);
+
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect((await lstat(link)).isSymbolicLink()).toBe(true);
+  });
+
+  it('dangling retired skill symlinks: replan moved; plan and custom names untouched', async () => {
+    const skillsDir = resolve(homeDir, '.claude/skills');
+    await mkdir(skillsDir, { recursive: true });
+
+    const replanLink = resolve(skillsDir, 'replan');
+    await symlink(resolve(homeDir, 'missing-replan-target'), replanLink);
+
+    const planLink = resolve(skillsDir, 'plan');
+    await symlink(resolve(homeDir, 'missing-plan-target'), planLink);
+
+    const customLink = resolve(skillsDir, 'my-own');
+    await symlink(resolve(homeDir, 'missing-custom-target'), customLink);
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === replanLink && l.kind === 'move')).toBe(true);
+    expect(leftovers.some((l) => l.path === planLink)).toBe(false);
+    expect(leftovers.some((l) => l.path === customLink)).toBe(false);
+
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    await expect(lstat(replanLink)).rejects.toThrow();
+    expect((await lstat(planLink)).isSymbolicLink()).toBe(true);
+    expect((await lstat(customLink)).isSymbolicLink()).toBe(true);
+  });
+
+  it('symlink loops are never owned (claude plugin and retired skill)', async () => {
+    const loopDir = resolve(homeDir, 'loop-pair');
+    await mkdir(loopDir, { recursive: true });
+    const loopA = resolve(loopDir, 'a');
+    const loopB = resolve(loopDir, 'b');
+    await symlink(loopB, loopA);
+    await symlink(loopA, loopB);
+
+    const pluginLink = resolve(homeDir, '.claude/plugins/syntaur');
+    await mkdir(resolve(homeDir, '.claude/plugins'), { recursive: true });
+    await rm(pluginLink, { force: true }).catch(() => undefined);
+    await symlink(loopA, pluginLink);
+
+    const skillLink = resolve(homeDir, '.claude/skills/replan');
+    await mkdir(resolve(homeDir, '.claude/skills'), { recursive: true });
+    await symlink(loopB, skillLink);
+
+    const leftovers = await detectLeftovers(makeDeps(homeDir, syntaurHome));
+    expect(leftovers.some((l) => l.path === pluginLink)).toBe(false);
+    expect(leftovers.some((l) => l.path === skillLink)).toBe(false);
+
+    await runMigrateCleanup({ apply: true }, makeDeps(homeDir, syntaurHome));
+    expect((await lstat(pluginLink)).isSymbolicLink()).toBe(true);
+    expect((await lstat(skillLink)).isSymbolicLink()).toBe(true);
+  });
+
   it('unowned agent plugin dirs named syntaur are untouched', async () => {
     for (const rel of ['plugins/syntaur', '.codex/plugins/syntaur'] as const) {
       const dir = resolve(homeDir, rel);
