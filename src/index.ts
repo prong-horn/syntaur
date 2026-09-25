@@ -3,6 +3,7 @@ import { initCommand } from './commands/init.js';
 import { projectCommand } from './commands/project.js';
 import { newCommand } from './commands/new.js';
 import { renameCommand } from './commands/rename.js';
+import { moveCommand, runMove } from './commands/move.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { unassignCommand } from './commands/unassign.js';
@@ -110,6 +111,8 @@ program
       await renameCommand(ticket, newSlug, options);
     }),
   );
+
+program.addCommand(moveCommand);
 
 program
   .command('dashboard')
