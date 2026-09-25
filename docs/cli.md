@@ -207,6 +207,8 @@ syntaur move --all-from <project> --to <project> [--apply] [--dir <path>]
 
 After `--apply`, restart the dashboard if it is running (the chat broker caches ticket paths).
 
+**Exit codes:** `0` when every requested move succeeds or dry-run is clean; `1` when any ticket is refused, bulk planning finds a refusal, or a bulk `--apply` stops after a partial move (stdout still lists refusals or the stopped/moved/remaining summary).
+
 ### `syntaur show [ticket]`
 
 Render the agent guide for a ticket — objective, acceptance, workspace, dependencies, declared files with roles and state, log tail, stage instructions, **Next**, and **Commands**. Defaults to the session's open engagement when no ticket id is given.

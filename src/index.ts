@@ -3,7 +3,7 @@ import { initCommand } from './commands/init.js';
 import { projectCommand } from './commands/project.js';
 import { newCommand } from './commands/new.js';
 import { renameCommand } from './commands/rename.js';
-import { moveCommand, runMove } from './commands/move.js';
+import { moveCommand, runMove, MoveRefusedError } from './commands/move.js';
 import { dashboardCommand, didUserSpecifyDashboardPort } from './commands/dashboard.js';
 import { assignCommand } from './commands/assign.js';
 import { unassignCommand } from './commands/unassign.js';
@@ -39,7 +39,7 @@ import { getDefaultCommandName } from './cli-default-command.js';
 import { maybePromptInstall } from './utils/npx-prompt.js';
 import { maybeNudgeForNpxInstall } from './utils/install-detection.js';
 import { readPackageVersion } from './utils/version.js';
-import { runCommand } from './errors.js';
+import { exitCodeFor, formatCliError, runCommand } from './errors.js';
 
 // Skip the npx/global-install startup nudges for `update`/`upgrade` — that
 // command does its own install-kind detection and must stay read-only for
@@ -113,12 +113,18 @@ program
   );
 
 program.addCommand(
-  moveCommand.action(
-    runCommand(async (ticket: string | undefined, options) => {
+  moveCommand.action(async (ticket: string | undefined, options) => {
+    try {
       const { lines } = await runMove({ ...options, ticket });
       for (const line of lines) console.log(line);
-    }),
-  ),
+    } catch (error) {
+      if (error instanceof MoveRefusedError && error.reportLines?.length) {
+        for (const line of error.reportLines) console.log(line);
+      }
+      console.error(formatCliError(error));
+      process.exit(exitCodeFor(error));
+    }
+  }),
 );
 
 program

@@ -13,6 +13,7 @@ import { acquireTicketMutationLock } from '../utils/ticket-mutation-lock.js';
 import { rekeyTicket, type TicketRekeyCounts } from '../db/ticket-rekey.js';
 import { rewriteChatEventLineForTicket } from '../chat/ticket-event-rewrite.js';
 import { rebuildChatIndex } from '../chat/store.js';
+import { deleteChatItems } from '../db/chat-db.js';
 import { initSessionDb, closeSessionDb, getSessionDb, resetSessionDb } from '../dashboard/session-db.js';
 import { initEventsDb, closeEventsDb, resetEventsDb } from '../db/events-db.js';
 import { initUsageDb, closeUsageDb, resetUsageDb } from '../db/usage-db.js';
@@ -23,7 +24,7 @@ import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const BUSY_CHAT_STATES = new Set<ChatSessionState>(['spawning', 'ready', 'running', 'idle']);
 
-export type MoveFailStep = 'db-rekey' | 'home-json';
+export type MoveFailStep = 'db-rekey' | 'chat-rebuild' | 'home-json';
 
 export interface MoveDeps {
   syntaurHome: string;
@@ -44,7 +45,15 @@ export interface MoveTicketPlan {
   dstTicketMd: string;
 }
 
-export class MoveRefusedError extends Error {}
+export class MoveRefusedError extends Error {
+  /** Lines already formatted for stdout when the move fails after partial output. */
+  readonly reportLines?: readonly string[];
+
+  constructor(message: string, reportLines?: readonly string[]) {
+    super(message);
+    this.reportLines = reportLines;
+  }
+}
 
 type UndoFn = () => Promise<void>;
 
@@ -251,9 +260,14 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
     const dbs = undo.filter((u) => u.kind === 'db');
     const folders = undo.filter((u) => u.kind === 'folder');
     for (let i = files.length - 1; i >= 0; i--) await files[i].fn();
-    for (let i = dbs.length - 1; i >= 0; i--) await dbs[i].fn();
     for (const entry of folders) await entry.fn();
+    for (let i = dbs.length - 1; i >= 0; i--) await dbs[i].fn();
   };
+
+  const oldId = plan.oldId;
+  const now = deps.now();
+
+  const srcLock = await acquireTicketMutationLock(plan.srcTicketMd, home);
 
   let newId = plan.newId;
   if (plan.newIdPreview) {
@@ -268,10 +282,6 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
     formatTicketFolderName(newId, plan.slug),
   );
   const dstTicketMd = resolve(dstTicketDir, 'ticket.md');
-  const oldId = plan.oldId;
-  const now = deps.now();
-
-  const srcLock = await acquireTicketMutationLock(plan.srcTicketMd, home);
   const dstLock = await acquireTicketMutationLock(dstTicketMd, home);
   undo.push({
     kind: 'file',
@@ -381,16 +391,13 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
           oldProjectSlug: plan.dstProject,
           newProjectSlug: plan.srcProject,
         });
+        deleteChatItems(newId);
+        await rebuildChatIndex(plan.srcTicketDir, oldId);
       },
     });
 
+    deps.fail?.('chat-rebuild');
     await rebuildChatIndex(dstTicketDir, newId);
-    undo.push({
-      kind: 'db',
-      fn: async () => {
-        await rebuildChatIndex(dstTicketDir, oldId);
-      },
-    });
 
     const walk = await listTicketsByProject(projectsDir);
     for (const entry of walk.withTicketMd) {
@@ -402,7 +409,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       const depends = parsed.depends_on.map((d) => (d === oldId ? newId : d));
       const oldLink = `${plan.srcProject}/${plan.slug}`;
       const newLink = `${plan.dstProject}/${plan.slug}`;
-      const links = parsed.links.map((l) => (l === oldLink ? newLink : l));
+      const links = parsed.links.map((l) => {
+        if (l === oldLink) return newLink;
+        if (l === oldId) return newId;
+        return l;
+      });
       let nextFm = setListInFrontmatter(fm, 'depends_on', depends);
       nextFm = setListInFrontmatter(nextFm, 'links', links);
       if (nextFm === fm) continue;
@@ -536,7 +547,7 @@ export async function runMove(options: RunMoveOptions, deps?: Partial<MoveDeps>)
     if (refusals.length > 0) {
       lines.push(`${mode}Refusing bulk move — ${refusals.length} ticket(s) would fail:`);
       for (const r of refusals) lines.push(`  ${r}`);
-      return { lines };
+      throw new MoveRefusedError('Bulk move refused.', lines);
     }
     for (const plan of plans) {
       const label = plan.newIdPreview ? `${plan.newId} (preview)` : plan.newId;
@@ -566,7 +577,10 @@ export async function runMove(options: RunMoveOptions, deps?: Partial<MoveDeps>)
         resetEventsDb();
         closeUsageDb();
         resetUsageDb();
-        return { lines };
+        throw new MoveRefusedError(
+          err instanceof Error ? err.message : String(err),
+          lines,
+        );
       }
     }
     lines.push(`${mode}Summary: moved ${moved.length} ticket(s) to ${options.to}.`);
