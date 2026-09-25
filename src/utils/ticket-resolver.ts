@@ -31,18 +31,12 @@ export interface ResolvedTicket {
 
 export class TicketResolverError extends Error {}
 
+import { parseYamlBlockList } from './ticket-frontmatter-patch.js';
+
 /** Parse `movedFrom:` block-list entries (`OLD@project`). */
 export function parseMovedFrom(frontmatter: string): MovedFromHint[] {
-  const inlineMatch = frontmatter.match(/^movedFrom:\s*\[\s*\]/m);
-  if (inlineMatch) return [];
-
   const results: MovedFromHint[] = [];
-  const blockMatch = frontmatter.match(/^movedFrom:\s*\n((?:\s+-\s+.*\n?)*)/m);
-  if (!blockMatch) return results;
-
-  const items = blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm);
-  for (const item of items) {
-    const raw = item[1].trim();
+  for (const raw of parseYamlBlockList(frontmatter, 'movedFrom')) {
     const at = raw.indexOf('@');
     if (at <= 0) continue;
     const aliasId = raw.slice(0, at).trim();

@@ -21,6 +21,13 @@ import type { ChatSessionState } from '../chat/types.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
+import {
+  appendMovedFromEntry,
+  arraysEqual,
+  replaceQuotedScalarField,
+  replaceScalarField,
+  rewriteYamlBlockListItems,
+} from '../utils/ticket-frontmatter-patch.js';
 
 const BUSY_CHAT_STATES = new Set<ChatSessionState>(['spawning', 'ready', 'running', 'idle']);
 
@@ -57,6 +64,13 @@ export class MoveRefusedError extends Error {
 
 type UndoFn = () => Promise<void>;
 
+/** Like dashboard `extractFrontmatter` but preserves body bytes after the closing `---`. */
+function extractFrontmatterPreservingBody(fileContent: string): [string, string] {
+  const match = fileContent.match(/^---\n([\s\S]*?)\n---/);
+  if (!match) return ['', fileContent];
+  return [match[1], fileContent.slice(match[0].length)];
+}
+
 interface UndoEntry {
   kind: 'folder' | 'file' | 'db';
   fn: UndoFn;
@@ -83,43 +97,35 @@ function rewriteSnoozeKey(key: string, oldId: string, newId: string): string {
   return key;
 }
 
-function appendMovedFromToFm(fm: string, entry: string): string {
-  if (/^movedFrom:\s*\n/m.test(fm)) {
-    return `${fm}\n  - ${entry}`;
+function patchReferencingTicketFrontmatter(
+  fm: string,
+  parsed: ReturnType<typeof parseTicketFrontmatter>,
+  oldId: string,
+  newId: string,
+  oldLink: string,
+  newLink: string,
+): string | null {
+  const nextDepends = parsed.depends_on.map((d) => (d === oldId ? newId : d));
+  const nextLinks = parsed.links.map((l) => {
+    if (l === oldLink) return newLink;
+    if (l === oldId) return newId;
+    return l;
+  });
+  if (arraysEqual(parsed.depends_on, nextDepends) && arraysEqual(parsed.links, nextLinks)) {
+    return null;
   }
-  if (/^movedFrom:\s*\[\s*\]/m.test(fm)) {
-    return fm.replace(/^movedFrom:\s*\[\s*\]/m, `movedFrom:\n  - ${entry}`);
-  }
-  return `${fm}\nmovedFrom:\n  - ${entry}`;
-}
-
-function parseListFromFrontmatter(frontmatter: string, field: 'depends_on' | 'links'): string[] {
-  const inline = frontmatter.match(new RegExp(`^${field}:\\s*\\[\\s*\\]`, 'm'));
-  if (inline) return [];
-  const results: string[] = [];
-  const block = frontmatter.match(
-    new RegExp(`^${field}:\\s*\\n((?:\\s+-\\s+.*\\n?)*)`),
+  let next = fm;
+  const dependsPatch = rewriteYamlBlockListItems(next, 'depends_on', (item) =>
+    item === oldId ? newId : item,
   );
-  if (block) {
-    for (const item of block[1].matchAll(/^\s+-\s+(.+)$/gm)) {
-      results.push(item[1].trim());
-    }
-  }
-  return results;
-}
-
-function setListInFrontmatter(frontmatter: string, field: 'depends_on' | 'links', items: string[]): string {
-  const block =
-    items.length === 0
-      ? `${field}: []`
-      : `${field}:\n${items.map((i) => `  - ${i}`).join('\n')}`;
-  if (new RegExp(`^${field}:`, 'm').test(frontmatter)) {
-    return frontmatter.replace(
-      new RegExp(`^${field}:(?:\\s*\\[\\s*\\]|\\s*\\n(?:\\s+-\\s+.*\\n?)*)`, 'm'),
-      block,
-    );
-  }
-  return `${frontmatter}\n${block}`;
+  if (dependsPatch !== null) next = dependsPatch;
+  const linksPatch = rewriteYamlBlockListItems(next, 'links', (item) => {
+    if (item === oldLink) return newLink;
+    if (item === oldId) return newId;
+    return item;
+  });
+  if (linksPatch !== null) next = linksPatch;
+  return next === fm ? null : next;
 }
 
 async function readProjectMeta(projectDir: string): Promise<{ archived: boolean }> {
@@ -156,13 +162,18 @@ async function ticketHasBusyChat(home: string, ticketId: string): Promise<boolea
   if (!(await fileExists(dbPath))) return false;
   resetSessionDb();
   initSessionDb(dbPath);
-  const db = getSessionDb();
-  const cols = db.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>;
-  const ticketCol = cols.some((c) => c.name === 'ticket_id') ? 'ticket_id' : 'assignment_id';
-  const rows = db
-    .prepare(`SELECT state FROM chat_sessions WHERE ${ticketCol} = ?`)
-    .all(ticketId) as Array<{ state: string }>;
-  return rows.some((r) => BUSY_CHAT_STATES.has(r.state as ChatSessionState));
+  try {
+    const db = getSessionDb();
+    const cols = db.prepare('PRAGMA table_info(chat_sessions)').all() as Array<{ name: string }>;
+    const ticketCol = cols.some((c) => c.name === 'ticket_id') ? 'ticket_id' : 'assignment_id';
+    const rows = db
+      .prepare(`SELECT state FROM chat_sessions WHERE ${ticketCol} = ?`)
+      .all(ticketId) as Array<{ state: string }>;
+    return rows.some((r) => BUSY_CHAT_STATES.has(r.state as ChatSessionState));
+  } finally {
+    closeSessionDb();
+    resetSessionDb();
+  }
 }
 
 export async function planMoveTicket(
@@ -311,20 +322,12 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       },
     });
 
-    const [fmStart, body] = extractFrontmatter(originalTicketBytes);
+    const [fmStart, body] = extractFrontmatterPreservingBody(originalTicketBytes);
     let fm = fmStart;
-    fm = fm.replace(/^id:\s*.*$/m, `id: ${newId}`);
-    if (/^project:\s/m.test(fm)) {
-      fm = fm.replace(/^project:\s*.*$/m, `project: ${plan.dstProject}`);
-    } else {
-      fm = `${fm}\nproject: ${plan.dstProject}`;
-    }
-    fm = appendMovedFromToFm(fm, movedFromEntry);
-    if (/^updated:\s/m.test(fm)) {
-      fm = fm.replace(/^updated:\s*.*$/m, `updated: "${now}"`);
-    } else {
-      fm = `${fm}\nupdated: "${now}"`;
-    }
+    fm = replaceScalarField(fm, 'id', newId);
+    fm = replaceScalarField(fm, 'project', plan.dstProject);
+    fm = appendMovedFromEntry(fm, movedFromEntry);
+    fm = replaceQuotedScalarField(fm, 'updated', `"${now}"`);
     const ticketContent = `---\n${fm}\n---${body}`;
     await writeFileForce(dstTicketMd, ticketContent);
     undo.push({
@@ -404,19 +407,17 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       if (entry.ticketDir === dstTicketDir) continue;
       const path = resolve(entry.ticketDir, 'ticket.md');
       const original = await readFile(path, 'utf-8');
-      const [fm, body] = extractFrontmatter(original);
+      const [fm, body] = extractFrontmatterPreservingBody(original);
       const parsed = parseTicketFrontmatter(original);
-      const depends = parsed.depends_on.map((d) => (d === oldId ? newId : d));
-      const oldLink = `${plan.srcProject}/${plan.slug}`;
-      const newLink = `${plan.dstProject}/${plan.slug}`;
-      const links = parsed.links.map((l) => {
-        if (l === oldLink) return newLink;
-        if (l === oldId) return newId;
-        return l;
-      });
-      let nextFm = setListInFrontmatter(fm, 'depends_on', depends);
-      nextFm = setListInFrontmatter(nextFm, 'links', links);
-      if (nextFm === fm) continue;
+      const nextFm = patchReferencingTicketFrontmatter(
+        fm,
+        parsed,
+        oldId,
+        newId,
+        `${plan.srcProject}/${plan.slug}`,
+        `${plan.dstProject}/${plan.slug}`,
+      );
+      if (nextFm === null) continue;
       const nextContent = `---\n${nextFm}\n---${body}`;
       await writeFileForce(path, nextContent);
       undo.push({
