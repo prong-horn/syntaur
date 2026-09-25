@@ -105,6 +105,23 @@ describe('parseMovedFrom', () => {
       { id: 'SV-2', project: 'other' },
     ]);
   });
+
+  it('parses movedFrom before later top-level keys (real ticket layout)', () => {
+    const fm = [
+      'id: PJU-12',
+      'depends_on:',
+      '  - PJU-11',
+      'assignee: claude',
+      'tags: []',
+      'links: []',
+      'workspace:',
+      '  repository: /tmp',
+      'updated: "2026-09-25T13:40:42Z"',
+      'movedFrom:',
+      '  - PJU-11@pi-jobs-ui',
+    ].join('\n');
+    expect(parseMovedFrom(fm)).toEqual([{ id: 'PJU-11', project: 'pi-jobs-ui' }]);
+  });
 });
 
 describe('resolveTicketByMovedFromAlias', () => {

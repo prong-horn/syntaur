@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { runMove, applyMove, planMoveTicket, MoveRefusedError } from '../commands/move.js';
 import { runShowCommand } from '../commands/show.js';
 import { newCommand } from '../commands/new.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketById, parseMovedFrom as parseMovedFromResolver } from '../utils/ticket-resolver.js';
+import { parseYamlBlockList } from '../utils/ticket-frontmatter-patch.js';
 import { isPlanApproved } from '../ticket-templates/plan-facts.js';
 import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 import { initSessionDb, getSessionDb, resetSessionDb, closeSessionDb } from '../dashboard/session-db.js';
@@ -53,6 +54,74 @@ async function fingerprintTree(root: string): Promise<string> {
   }
   await walk(root);
   return hash.digest('hex');
+}
+
+const GLUED_KEY_RE = /\S(assignee|tags|links|workspace|updated|movedFrom):/;
+
+function realLayoutFrontmatter(
+  id: string,
+  project: string,
+  slug: string,
+  dependsOn: string,
+): string {
+  return [
+    `id: ${id}`,
+    `slug: ${slug}`,
+    'title: "Agent runs: start and steer pi from the UI"',
+    `project: ${project}`,
+    'template: feature',
+    'status: done',
+    'priority: high',
+    'blocked: null',
+    'parked: null',
+    'depends_on:',
+    `  - ${dependsOn}`,
+    'assignee: claude',
+    'tags: []',
+    'links: []',
+    'workspace:',
+    '  repository: /Users/brennen/job-applier-agent',
+    '  branch: agent-runs',
+    '  worktree: /Users/brennen/job-applier-agent/.worktrees/agent-runs',
+    '  parentBranch: distribution-repo-split',
+    'plan:',
+    '  file: plan.md',
+    '  approvedDigest: c3e03117ff2c205c70accb3f17b748533fac41e416ecdf1c72c2581812c7acd6',
+    '  approvedAt: "2026-08-27T13:40:22Z"',
+    '  approvedBy: human',
+    'created: "2026-08-27T03:35:16Z"',
+    'updated: "2026-09-25T13:40:42Z"',
+  ].join('\n');
+}
+
+async function writeRealLayoutTicket(
+  project: string,
+  id: string,
+  slug: string,
+  dependsOn: string,
+): Promise<string> {
+  const dir = resolve(projectsDir, project, 'tickets', `${id}-${slug}`);
+  await mkdir(dir, { recursive: true });
+  const fm = realLayoutFrontmatter(id, project, slug, dependsOn);
+  await writeFile(resolve(dir, 'ticket.md'), `---\n${fm}\n---\n\n# Ticket\n`, 'utf-8');
+  return dir;
+}
+
+async function hashAllTicketMdFiles(): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  async function walk(dir: string): Promise<void> {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const p = resolve(dir, e.name);
+      if (e.isDirectory()) await walk(p);
+      else if (e.name === 'ticket.md') {
+        const bytes = await readFile(p);
+        out.set(p, createHash('sha256').update(bytes).digest('hex'));
+      }
+    }
+  }
+  await walk(projectsDir);
+  return out;
 }
 
 async function writeProject(slug: string, prefix: string, nextTicket: number, extra = ''): Promise<void> {
@@ -689,5 +758,117 @@ describe('syntaur move', () => {
     expect(md).toContain('PJ-2@p2');
     expect((await resolveTicketById(projectsDir, 'PI-1'))?.id).toBe('PK-1');
     expect((await resolveTicketById(projectsDir, 'PJ-2'))?.id).toBe('PK-1');
+  });
+
+  it('real-layout move updates one depends_on line and leaves unrelated tickets byte-identical', async () => {
+    await writeProject('pi-jobs-ui', 'PJU', 13);
+    await writeProject('dst-proj', 'DP', 1);
+    await writeProject('other-a', 'OA', 1);
+    await writeProject('other-b', 'OB', 1);
+    await writeProject('other-c', 'OC', 1);
+
+    const movedDir = await writeRealLayoutTicket('pi-jobs-ui', 'PJU-11', 'dep-target', 'PJU-10');
+    const dependentDir = await writeRealLayoutTicket('pi-jobs-ui', 'PJU-12', 'agent-runs', 'PJU-11');
+    const unrelatedDirs = [
+      await writeRealLayoutTicket('other-a', 'OA-1', 'una', 'OA-9'),
+      await writeRealLayoutTicket('other-b', 'OB-1', 'unb', 'OB-9'),
+      await writeRealLayoutTicket('other-c', 'OC-1', 'unc', 'OC-9'),
+    ];
+
+    const beforeHashes = await hashAllTicketMdFiles();
+    const dependentBefore = await readFile(resolve(dependentDir, 'ticket.md'), 'utf-8');
+
+    const plan = await planMoveTicket(projectsDir, 'PJU-11', 'dst-proj');
+    await applyMove(plan, { syntaurHome: home, now: () => '2026-09-26T00:00:00Z' });
+
+    const dependentAfter = await readFile(resolve(dependentDir, 'ticket.md'), 'utf-8');
+    expect(dependentAfter.replace('  - DP-1', '  - PJU-11')).toBe(dependentBefore);
+    expect(dependentAfter).toContain('  - DP-1');
+    expect(dependentAfter).not.toContain('PJU-11assignee');
+
+    const afterHashes = await hashAllTicketMdFiles();
+    for (const dir of unrelatedDirs) {
+      const path = resolve(dir, 'ticket.md');
+      expect(afterHashes.get(path)).toBe(beforeHashes.get(path));
+    }
+
+    const newDir = resolve(projectsDir, 'dst-proj', 'tickets', 'DP-1-dep-target');
+    const movedMd = await readFile(resolve(newDir, 'ticket.md'), 'utf-8');
+    expect(movedMd).not.toMatch(GLUED_KEY_RE);
+    const fmBlock = movedMd.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+    expect(parseYamlBlockList(fmBlock, 'movedFrom')).toEqual(['PJU-11@pi-jobs-ui']);
+    expect(parseMovedFromResolver(fmBlock)).toEqual([{ id: 'PJU-11', project: 'pi-jobs-ui' }]);
+    expect(fmBlock).toMatch(/^movedFrom:\n  - PJU-11@pi-jobs-ui$/m);
+  });
+
+  it('bulk chain move rewrites depends_on, keeps unrelated project byte-identical, show OLD resolves', async () => {
+    await writeProject('chain-src', 'CS', 6);
+    await writeProject('chain-dst', 'CD', 1);
+    await writeProject('quiet-proj', 'QP', 2);
+
+    const chainIds = ['CS-1', 'CS-2', 'CS-3', 'CS-4', 'CS-5'];
+    const chainSlugs = ['t1', 't2', 't3', 't4', 't5'];
+    for (let i = 0; i < chainIds.length; i++) {
+      const dep = i === 0 ? 'CS-0' : chainIds[i - 1];
+      await writeRealLayoutTicket('chain-src', chainIds[i], chainSlugs[i], dep);
+    }
+    const quietDir = await writeRealLayoutTicket('quiet-proj', 'QP-1', 'quiet', 'QP-9');
+    const quietBefore = await readFile(resolve(quietDir, 'ticket.md'), 'utf-8');
+
+    await runMove({ allFrom: 'chain-src', to: 'chain-dst', apply: true, dir: projectsDir }, {
+      syntaurHome: home,
+      now: () => '2026-09-26T00:00:00Z',
+    });
+
+    const quietAfter = await readFile(resolve(quietDir, 'ticket.md'), 'utf-8');
+    expect(quietAfter).toBe(quietBefore);
+
+    async function walkTicketMd(dir: string): Promise<string[]> {
+      const paths: string[] = [];
+      const entries = await readdir(dir, { withFileTypes: true });
+      for (const e of entries) {
+        const p = resolve(dir, e.name);
+        if (e.isDirectory()) paths.push(...(await walkTicketMd(p)));
+        else if (e.name === 'ticket.md') paths.push(p);
+      }
+      return paths;
+    }
+
+    for (const path of await walkTicketMd(projectsDir)) {
+      const md = await readFile(path, 'utf-8');
+      expect(md).not.toMatch(GLUED_KEY_RE);
+    }
+
+    for (let i = 0; i < chainIds.length; i++) {
+      const newId = `CD-${i + 1}`;
+      const dir = resolve(projectsDir, 'chain-dst', 'tickets', `${newId}-${chainSlugs[i]}`);
+      const md = await readFile(resolve(dir, 'ticket.md'), 'utf-8');
+      const fm = md.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+      const seen = new Set<string>();
+      for (const line of fm.split('\n')) {
+        const m = line.match(/^([a-z_]+):/);
+        if (!m) continue;
+        if (
+          ['repository', 'branch', 'worktree', 'parentBranch', 'file', 'approvedDigest', 'approvedAt', 'approvedBy'].includes(
+            m[1],
+          )
+        ) {
+          continue;
+        }
+        if (m[1] === 'workspace' || m[1] === 'plan') continue;
+        expect(seen.has(m[1]), `duplicate top-level key ${m[1]} in ${newId}`).toBe(false);
+        seen.add(m[1]);
+      }
+      if (i > 0) {
+        expect(fm).toContain(`  - CD-${i}`);
+        expect(fm).not.toContain(`  - ${chainIds[i - 1]}\n`);
+      }
+      const logs: string[] = [];
+      const orig = console.log;
+      console.log = (...args: unknown[]) => logs.push(args.join(' '));
+      await runShowCommand(chainIds[i], { dir: home });
+      console.log = orig;
+      expect(logs[0]).toMatch(new RegExp(`Moved: ${chainIds[i]} → ${newId}`));
+    }
   });
 });
