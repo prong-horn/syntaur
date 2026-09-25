@@ -9,7 +9,7 @@ import { writeFileForce } from '../utils/fs.js';
 import { readConfig } from '../utils/config.js';
 import { isValidSlug } from '../utils/slug.js';
 import { nowTimestamp } from '../utils/timestamp.js';
-import { resolveTicketById } from '../utils/ticket-resolver.js';
+import { resolveTicketWithProject } from '../utils/ticket-target.js';
 import { isTicketId } from '../utils/ticket-ids.js';
 import { parseTicketFrontmatter, updatePlanBlock, updateTicketFile } from './frontmatter.js';
 import {
@@ -112,18 +112,18 @@ async function resolveTicketDir(
     if (!isValidSlug(options.project)) {
       throw new VerbRefusedError(`Invalid project slug "${options.project}".`);
     }
-    const resolved = await resolveTicketById(baseDir, ticketId);
-    if (!resolved || resolved.projectSlug !== options.project) {
+    const resolved = await resolveTicketWithProject(baseDir, ticketId, options.project);
+    if (!resolved) {
       throw new VerbRefusedError(`Ticket "${ticketId}" not found in project "${options.project}".`);
     }
     return {
       ticketDir: resolved.ticketDir,
-      projectSlug: options.project,
+      projectSlug: resolved.projectSlug,
       ticketSlug: resolved.ticketSlug,
     };
   }
 
-  const resolved = await resolveTicketById(baseDir, ticketId);
+  const resolved = await resolveTicketWithProject(baseDir, ticketId);
   if (!resolved) {
     throw new VerbRefusedError(`Ticket "${ticketId}" not found.`);
   }

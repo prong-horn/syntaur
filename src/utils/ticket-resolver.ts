@@ -8,6 +8,11 @@ import {
   parseTicketFolderName,
 } from './ticket-folder.js';
 
+export interface MovedFromHint {
+  id: string;
+  project: string;
+}
+
 export interface ResolvedTicket {
   ticketDir: string;
   projectSlug: string;
@@ -20,11 +25,35 @@ export interface ResolvedTicket {
    * the session's open engagement (Case 3). Undefined for explicit id resolution.
    */
   stage?: string;
+  /** Set when the requested id was resolved via a ticket's `movedFrom` alias. */
+  movedFrom?: MovedFromHint;
 }
 
 export class TicketResolverError extends Error {}
 
-export async function resolveTicketById(
+/** Parse `movedFrom:` block-list entries (`OLD@project`). */
+export function parseMovedFrom(frontmatter: string): MovedFromHint[] {
+  const inlineMatch = frontmatter.match(/^movedFrom:\s*\[\s*\]/m);
+  if (inlineMatch) return [];
+
+  const results: MovedFromHint[] = [];
+  const blockMatch = frontmatter.match(/^movedFrom:\s*\n((?:\s+-\s+.*\n?)*)/m);
+  if (!blockMatch) return results;
+
+  const items = blockMatch[1].matchAll(/^\s+-\s+(.+)$/gm);
+  for (const item of items) {
+    const raw = item[1].trim();
+    const at = raw.indexOf('@');
+    if (at <= 0) continue;
+    const aliasId = raw.slice(0, at).trim();
+    const project = raw.slice(at + 1).trim();
+    if (!isTicketId(aliasId) || !project) continue;
+    results.push({ id: aliasId, project });
+  }
+  return results;
+}
+
+export async function resolveTicketByIdDirect(
   projectsDir: string,
   id: string,
 ): Promise<ResolvedTicket | null> {
@@ -43,6 +72,7 @@ export async function resolveTicketById(
       const entries = await readdir(ticketsPath, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
         if (!folderNameForTicketId(entry.name, id)) continue;
 
         const ticketDir = resolve(ticketsPath, entry.name);
@@ -83,6 +113,78 @@ export async function resolveTicketById(
     );
   }
   return matches[0];
+}
+
+export async function resolveTicketByMovedFromAlias(
+  projectsDir: string,
+  id: string,
+  projectFilter?: string,
+): Promise<ResolvedTicket | null> {
+  if (!isTicketId(id)) return null;
+  if (!(await fileExists(projectsDir))) return null;
+
+  const matches: ResolvedTicket[] = [];
+  try {
+    const projects = await readdir(projectsDir, { withFileTypes: true });
+    for (const project of projects) {
+      if (!project.isDirectory()) continue;
+      if (project.name.startsWith('.') || project.name.startsWith('_')) continue;
+      const ticketsPath = resolve(projectsDir, project.name, 'tickets');
+      if (!(await fileExists(ticketsPath))) continue;
+
+      const entries = await readdir(ticketsPath, { withFileTypes: true });
+      for (const entry of entries) {
+        if (!entry.isDirectory()) continue;
+        if (entry.name.startsWith('.') || entry.name.startsWith('_')) continue;
+
+        const ticketDir = resolve(ticketsPath, entry.name);
+        const ticketMdPath = resolve(ticketDir, 'ticket.md');
+        if (!(await fileExists(ticketMdPath))) continue;
+
+        try {
+          const content = await readFile(ticketMdPath, 'utf-8');
+          const [fm] = extractFrontmatter(content);
+          const fileId = getField(fm, 'id');
+          const ticketSlug = getField(fm, 'slug') ?? parseTicketFolderName(entry.name)?.slug ?? entry.name;
+          if (!fileId || !isTicketId(fileId)) continue;
+
+          for (const alias of parseMovedFrom(fm)) {
+            if (alias.id !== id) continue;
+            if (projectFilter && alias.project !== projectFilter) continue;
+            matches.push({
+              ticketDir,
+              projectSlug: project.name,
+              ticketSlug,
+              id: fileId,
+              standalone: false,
+              movedFrom: { id: alias.id, project: alias.project },
+            });
+          }
+        } catch {
+          // skip unreadable
+        }
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  if (matches.length === 0) return null;
+  if (matches.length > 1) {
+    throw new TicketResolverError(
+      `Multiple tickets match id "${id}" via movedFrom; expected exactly one.`,
+    );
+  }
+  return matches[0];
+}
+
+export async function resolveTicketById(
+  projectsDir: string,
+  id: string,
+): Promise<ResolvedTicket | null> {
+  const direct = await resolveTicketByIdDirect(projectsDir, id);
+  if (direct) return direct;
+  return resolveTicketByMovedFromAlias(projectsDir, id);
 }
 
 /** Resolve `ticket.md` within a project dir by slug or ticket id. */

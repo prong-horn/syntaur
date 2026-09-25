@@ -186,6 +186,63 @@ describe('resolveTicketTarget', () => {
     ).rejects.toThrow(/not found/);
   });
 
+  it('resolves old id with --project via movedFrom', async () => {
+    await writeProject('src-proj', 'SP');
+    await writeProject('dst-proj', 'DP');
+    await writeTicket('dst-proj', 'DP-3-task', 'DP-3', 'task', {
+      project: 'dst-proj',
+      movedFrom: '[]',
+    });
+    const dir = resolve(projectsDir, 'dst-proj', 'tickets', 'DP-3-task');
+    const ticketMd = await import('node:fs/promises').then((fs) =>
+      fs.readFile(resolve(dir, 'ticket.md'), 'utf-8'),
+    );
+    const withAlias = ticketMd.replace(
+      'movedFrom: []',
+      'movedFrom:\n  - SP-7@src-proj',
+    );
+    await writeFile(resolve(dir, 'ticket.md'), withAlias, 'utf-8');
+
+    const resolved = await resolveTicketTarget('SP-7', {
+      project: 'src-proj',
+      dir: projectsDir,
+    });
+    expect(resolved.id).toBe('DP-3');
+    expect(resolved.projectSlug).toBe('dst-proj');
+    expect(resolved.movedFrom).toEqual({ id: 'SP-7', project: 'src-proj' });
+  });
+
+  it('rejects old id with wrong --project', async () => {
+    await writeProject('src-proj', 'SP');
+    await writeProject('dst-proj', 'DP');
+    const dir = resolve(projectsDir, 'dst-proj', 'tickets', 'DP-1-x');
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      resolve(dir, 'ticket.md'),
+      [
+        '---',
+        'id: DP-1',
+        'slug: x',
+        'title: Example',
+        'status: pending',
+        'priority: medium',
+        'created: "2026-04-20T00:00:00Z"',
+        'updated: "2026-04-20T00:00:00Z"',
+        'project: dst-proj',
+        'movedFrom:',
+        '  - SP-1@src-proj',
+        '---',
+        '',
+        '# Example',
+        '',
+      ].join('\n'),
+    );
+
+    await expect(
+      resolveTicketTarget('SP-1', { project: 'other-proj', dir: projectsDir }),
+    ).rejects.toThrow(/not found/);
+  });
+
   it('throws on invalid ticket id format', async () => {
     await expect(
       resolveTicketTarget('not-a-real-id-xxxx', { dir: projectsDir }),

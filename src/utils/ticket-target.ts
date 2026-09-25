@@ -2,7 +2,11 @@ import { readConfig } from './config.js';
 import { expandHome } from './paths.js';
 import { isValidSlug } from './slug.js';
 import { isTicketId } from './ticket-ids.js';
-import { resolveTicketById, type ResolvedTicket } from './ticket-resolver.js';
+import {
+  resolveTicketByIdDirect,
+  resolveTicketByMovedFromAlias,
+  type ResolvedTicket,
+} from './ticket-resolver.js';
 import type { EngagementBinding } from './engagement-binding.js';
 
 export interface TicketTargetOptions {
@@ -34,6 +38,27 @@ export function classifyContext(ctx: ContextJsonShape | null): ContextKind {
 }
 
 /**
+ * Resolve a ticket id, optionally constrained to a project slug. On a direct
+ * folder miss or a direct hit in the wrong project, falls back to `movedFrom`.
+ */
+export async function resolveTicketWithProject(
+  baseDir: string,
+  id: string,
+  project?: string,
+): Promise<ResolvedTicket | null> {
+  const direct = await resolveTicketByIdDirect(baseDir, id);
+  if (direct && (!project || direct.projectSlug === project)) {
+    return direct;
+  }
+  const alias = await resolveTicketByMovedFromAlias(baseDir, id, project);
+  if (alias) return alias;
+  if (direct && project && direct.projectSlug !== project) {
+    return null;
+  }
+  return direct;
+}
+
+/**
  * Resolve a ticket target:
  *   1. `--project <slug> <ticket-id>` (id must belong to that project)
  *   2. bare ticket id (`<PREFIX>-<n>`)
@@ -60,8 +85,8 @@ export async function resolveTicketTarget(
         `Ticket "${input}" is not a valid ticket id. Use <PREFIX>-<n> (e.g. SCR-1).`,
       );
     }
-    const resolved = await resolveTicketById(baseDir, input);
-    if (!resolved || resolved.projectSlug !== opts.project) {
+    const resolved = await resolveTicketWithProject(baseDir, input, opts.project);
+    if (!resolved) {
       throw new TicketTargetError(
         `Ticket "${input}" not found in project "${opts.project}".`,
       );
@@ -75,7 +100,7 @@ export async function resolveTicketTarget(
         `Ticket "${input}" is not a valid ticket id. Use <PREFIX>-<n> (e.g. SCR-1).`,
       );
     }
-    const resolved = await resolveTicketById(baseDir, input);
+    const resolved = await resolveTicketWithProject(baseDir, input);
     if (!resolved) {
       throw new TicketTargetError(`Ticket "${input}" not found.`);
     }
@@ -102,7 +127,7 @@ export async function reconstructFromBinding(
       `Open engagement has invalid ticket id: "${ticketId ?? ''}".`,
     );
   }
-  const resolved = await resolveTicketById(baseDir, ticketId);
+  const resolved = await resolveTicketWithProject(baseDir, ticketId);
   if (!resolved) {
     throw new TicketTargetError(
       `Open engagement points to a missing ticket: ${ticketId}.`,

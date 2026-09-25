@@ -5,18 +5,18 @@ import { assertMayMutate } from '../utils/session-id.js';
 import { syntaurRoot } from '../utils/paths.js';
 import { buildShow, renderLogOnly, renderShowText } from '../ticket-templates/show.js';
 
-async function resolveTicketDir(opts: {
+async function resolveShowTarget(opts: {
   ticket?: string;
   project?: string;
   cwd?: string;
-}): Promise<string> {
+}): Promise<{ ticketDir: string; movedFrom?: { id: string; project: string } }> {
   const cwd = opts.cwd ?? process.cwd();
   if (opts.ticket) {
     const target = await resolveTicketTarget(opts.ticket, {
       project: opts.project,
       cwd,
     });
-    return target.ticketDir;
+    return { ticketDir: target.ticketDir, movedFrom: target.movedFrom };
   }
   const { initSessionDb } = await import('../dashboard/session-db.js');
   initSessionDb();
@@ -29,7 +29,7 @@ async function resolveTicketDir(opts: {
     cwd,
     resolveEngagement: async () => se?.open ?? null,
   });
-  return target.ticketDir;
+  return { ticketDir: target.ticketDir, movedFrom: target.movedFrom };
 }
 
 export interface ShowCommandOptions {
@@ -45,12 +45,19 @@ export async function runShowCommand(
   options: ShowCommandOptions = {},
 ): Promise<void> {
   const cwd = options.dir ? options.dir : process.cwd();
-  const ticketDir = await resolveTicketDir({
+  const { ticketDir, movedFrom } = await resolveShowTarget({
     ticket,
     project: options.project,
     cwd,
   });
   const root = syntaurRoot();
+
+  if (movedFrom) {
+    const modelPeek = await buildShow(root, ticketDir);
+    console.log(
+      `Moved: ${movedFrom.id} → ${modelPeek.ticket.id} (project ${modelPeek.ticket.project})`,
+    );
+  }
 
   if (options.log) {
     const output = await renderLogOnly(root, ticketDir, options.type);

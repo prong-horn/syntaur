@@ -3,7 +3,9 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import {
+  parseMovedFrom,
   resolveTicketById,
+  resolveTicketByMovedFromAlias,
   resolveTicketSlugInProject,
   TicketResolverError,
 } from '../utils/ticket-resolver.js';
@@ -57,6 +59,61 @@ describe('resolveTicketById', () => {
     await expect(resolveTicketById(projectsDir, 'FIT-1')).rejects.toBeInstanceOf(
       TicketResolverError,
     );
+  });
+
+  it('resolves a moved ticket by old id via movedFrom', async () => {
+    await writeProjectTicket(
+      'dst',
+      'DST-2-carried',
+      [
+        'id: DST-2',
+        'slug: carried',
+        'title: Carried',
+        'movedFrom:',
+        '  - FIT-9@proj',
+      ].join('\n'),
+    );
+    const r = await resolveTicketById(projectsDir, 'FIT-9');
+    expect(r).toMatchObject({
+      id: 'DST-2',
+      projectSlug: 'dst',
+      ticketSlug: 'carried',
+      movedFrom: { id: 'FIT-9', project: 'proj' },
+    });
+  });
+
+  it('throws when multiple tickets claim the same movedFrom id', async () => {
+    const fm = ['id: X-1', 'slug: a', 'title: A', 'movedFrom:', '  - SP-9@src'].join('\n');
+    await writeProjectTicket('p1', 'X-1-a', fm);
+    await writeProjectTicket(
+      'p2',
+      'X-2-b',
+      ['id: X-2', 'slug: b', 'title: B', 'movedFrom:', '  - SP-9@src'].join('\n'),
+    );
+    await expect(resolveTicketById(projectsDir, 'SP-9')).rejects.toBeInstanceOf(TicketResolverError);
+  });
+});
+
+describe('parseMovedFrom', () => {
+  it('parses block-list entries', () => {
+    const fm = 'movedFrom:\n  - SV-1@old-proj\n  - SV-2@other\n';
+    expect(parseMovedFrom(fm)).toEqual([
+      { id: 'SV-1', project: 'old-proj' },
+      { id: 'SV-2', project: 'other' },
+    ]);
+  });
+});
+
+describe('resolveTicketByMovedFromAlias', () => {
+  it('filters by project when --project is used', async () => {
+    await writeProjectTicket(
+      'dst',
+      'DST-1-x',
+      ['id: DST-1', 'slug: x', 'title: X', 'movedFrom:', '  - OLD-1@want-proj'].join('\n'),
+    );
+    expect(await resolveTicketByMovedFromAlias(projectsDir, 'OLD-1', 'wrong-proj')).toBeNull();
+    const hit = await resolveTicketByMovedFromAlias(projectsDir, 'OLD-1', 'want-proj');
+    expect(hit?.id).toBe('DST-1');
   });
 });
 
