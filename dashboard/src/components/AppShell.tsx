@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Inbox, KanbanSquare, Library, Settings, X } from 'lucide-react';
 import { SidebarNav, type SidebarNavItem } from './SidebarNav';
+import { SidebarProjects } from './SidebarProjects';
 import { TopBar } from './TopBar';
 import { useInbox } from '../hooks/useInbox';
 import { useInboxWindow } from '../hooks/useInboxWindow';
@@ -137,6 +138,7 @@ function ShellSidebar({
 
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <SidebarNav items={items} onNavigate={onNavigate} />
+        <SidebarProjects onNavigate={onNavigate} />
       </div>
     </div>
   );
