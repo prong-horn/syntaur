@@ -83,14 +83,17 @@ describe('resolveTicketById', () => {
   });
 
   it('throws when multiple tickets claim the same movedFrom id', async () => {
-    const fm = ['id: X-1', 'slug: a', 'title: A', 'movedFrom:', '  - SP-9@src'].join('\n');
-    await writeProjectTicket('p1', 'X-1-a', fm);
     await writeProjectTicket(
-      'p2',
-      'X-2-b',
-      ['id: X-2', 'slug: b', 'title: B', 'movedFrom:', '  - SP-9@src'].join('\n'),
+      'dst',
+      'DST-2-a',
+      ['id: DST-2', 'slug: a', 'title: A', 'movedFrom:', '  - FIT-9@proj'].join('\n'),
     );
-    await expect(resolveTicketById(projectsDir, 'SP-9')).rejects.toBeInstanceOf(TicketResolverError);
+    await writeProjectTicket(
+      'dst',
+      'DST-3-b',
+      ['id: DST-3', 'slug: b', 'title: B', 'movedFrom:', '  - FIT-9@proj'].join('\n'),
+    );
+    await expect(resolveTicketById(projectsDir, 'FIT-9')).rejects.toBeInstanceOf(TicketResolverError);
   });
 });
 
