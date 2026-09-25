@@ -39,6 +39,17 @@ function sortProjects(projects: ProjectSummary[]): ProjectSummary[] {
   });
 }
 
+/** Ticket id from a `/t/:id` path; undefined elsewhere or when the segment is not valid URI encoding. */
+export function ticketIdFromPathname(pathname: string): string | undefined {
+  const match = pathname.match(/^\/t\/([^/]+)/);
+  if (!match?.[1]) return undefined;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
 interface SidebarProjectsProps {
   onNavigate?: () => void;
 }
@@ -48,10 +59,7 @@ export function SidebarProjects({ onNavigate }: SidebarProjectsProps) {
   const { data, loading, error } = useProjects();
   const { isCollapsed, toggle } = useSidebarCollapse();
 
-  const ticketPathMatch = location.pathname.match(/^\/t\/([^/]+)/);
-  const ticketId = ticketPathMatch?.[1]
-    ? decodeURIComponent(ticketPathMatch[1])
-    : undefined;
+  const ticketId = ticketIdFromPathname(location.pathname);
   const { data: ticket } = useTicket(ticketId);
 
   const boardActiveSlug = activeSidebarProjectSlug(location.pathname, location.search);

@@ -2,7 +2,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { renderToStaticMarkup } from 'react-dom/server';
 import TestRenderer, { act } from 'react-test-renderer';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { activeSidebarProjectSlug } from '../SidebarProjects';
+import { activeSidebarProjectSlug, ticketIdFromPathname } from '../SidebarProjects';
 import { ResourceProvider } from '../../data/useResource';
 import { resources } from '../../data/resources';
 import { createApiClient } from '../../data/client';
@@ -89,6 +89,18 @@ beforeAll(() => {
       collapseStorage.delete(key);
     },
     clear: () => collapseStorage.clear(),
+  });
+});
+
+describe('ticketIdFromPathname', () => {
+  it('returns the decoded id on a ticket page', () => {
+    expect(ticketIdFromPathname('/t/SYN-230')).toBe('SYN-230');
+    expect(ticketIdFromPathname('/t/PJ%2D1/chat')).toBe('PJ-1');
+  });
+
+  it('returns undefined off ticket pages and for malformed encoding', () => {
+    expect(ticketIdFromPathname('/board')).toBeUndefined();
+    expect(ticketIdFromPathname('/t/%E0%A4%A')).toBeUndefined();
   });
 });
 
