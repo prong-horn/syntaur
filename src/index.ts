@@ -112,7 +112,14 @@ program
     }),
   );
 
-program.addCommand(moveCommand);
+program.addCommand(
+  moveCommand.action(
+    runCommand(async (ticket: string | undefined, options) => {
+      const { lines } = await runMove({ ...options, ticket });
+      for (const line of lines) console.log(line);
+    }),
+  ),
+);
 
 program
   .command('dashboard')
