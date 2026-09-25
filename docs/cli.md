@@ -190,6 +190,23 @@ syntaur rename <id> <new-slug> [--dir <path>]
 syntaur rename BAS-2 implement-jwt-auth
 ```
 
+### `syntaur move <id> --to <project>`
+
+Move one ticket into another project. Dry-run by default; pass `--apply` to execute. The ticket folder becomes `<NEWID>-<slug>/` under the destination project, where `NEWID` is allocated from the destination prefix and `nextTicket` (same rules as `syntaur new`). The previous id is recorded in `movedFrom` (`OLD@oldProject`) and keeps resolving (`syntaur show OLD` prints a `Moved:` line).
+
+```
+syntaur move <id> --to <project> [--project <src>] [--apply] [--dir <path>]
+syntaur move --all-from <project> --to <project> [--apply] [--dir <path>]
+```
+
+**Refusals:** destination missing or archived; destination equals source; slug collision in the destination (use `syntaur rename` first); any `chat_sessions` row for the ticket in `spawning`, `ready`, `running`, or `idle` (stop chat or the dashboard first).
+
+**Rewritten on apply:** ticket folder path; `ticket.md` `id` / `project` / `movedFrom` / `updated` (plan file and `plan.approvedDigest` stay as-is); `chat/events.jsonl`; chat question markers in `journal.md` and legacy `comments.md`; SQLite (`events`, `engagement`, `chat_sessions`, `usage_events`, `usage_daily` — `chat_items` rebuilt from the log); other tickets' `depends_on` / `links`; `inbox-snoozes.json` keys; worktree `.syntaur/context.json` when it points at the ticket.
+
+**Not rewritten:** journal/plan prose, branch names, `events.details` JSON bodies, project-level usage rows (`ticket_id = ''`), view prefs, transient runtime locks.
+
+After `--apply`, restart the dashboard if it is running (the chat broker caches ticket paths).
+
 ### `syntaur show [ticket]`
 
 Render the agent guide for a ticket — objective, acceptance, workspace, dependencies, declared files with roles and state, log tail, stage instructions, **Next**, and **Commands**. Defaults to the session's open engagement when no ticket id is given.

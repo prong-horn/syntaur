@@ -19,6 +19,7 @@ import { initUsageDb, closeUsageDb, resetUsageDb } from '../db/usage-db.js';
 import type { ChatSessionState } from '../chat/types.js';
 import { nowTimestamp } from '../utils/timestamp.js';
 import { listTicketsByProject } from '../utils/ticket-walk.js';
+import { parseTicketFrontmatter } from '../lifecycle/frontmatter.js';
 
 const BUSY_CHAT_STATES = new Set<ChatSessionState>(['spawning', 'ready', 'running', 'idle']);
 
@@ -46,6 +47,11 @@ export interface MoveTicketPlan {
 export class MoveRefusedError extends Error {}
 
 type UndoFn = () => Promise<void>;
+
+interface UndoEntry {
+  kind: 'folder' | 'file' | 'db';
+  fn: UndoFn;
+}
 
 function rewriteMarkerFile(content: string, oldId: string, newId: string): string {
   return content.replace(/item="([^"]+)"/g, (_, itemId: string) => {
@@ -82,7 +88,9 @@ function parseListFromFrontmatter(frontmatter: string, field: 'depends_on' | 'li
   const inline = frontmatter.match(new RegExp(`^${field}:\\s*\\[\\s*\\]`, 'm'));
   if (inline) return [];
   const results: string[] = [];
-  const block = frontmatter.match(new RegExp(`^${field}:\\s*\\n((?:\\s+-\\s+.*\\n?)*)`, 'm'));
+  const block = frontmatter.match(
+    new RegExp(`^${field}:\\s*\\n((?:\\s+-\\s+.*\\n?)*)`),
+  );
   if (block) {
     for (const item of block[1].matchAll(/^\s+-\s+(.+)$/gm)) {
       results.push(item[1].trim());
@@ -152,7 +160,7 @@ export async function planMoveTicket(
   projectsDir: string,
   ticketId: string,
   dstProject: string,
-  opts: { srcProject?: string; previewOffset?: number },
+  opts: { srcProject?: string; previewOffset?: number } = {},
 ): Promise<MoveTicketPlan> {
   if (!isTicketId(ticketId)) {
     throw new MoveRefusedError(`Invalid ticket id "${ticketId}".`);
@@ -237,11 +245,14 @@ async function listProjectTicketsSorted(projectsDir: string, projectSlug: string
 export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<TicketRekeyCounts> {
   const home = deps.syntaurHome;
   const projectsDir = resolve(home, 'projects');
-  const undo: UndoFn[] = [];
+  const undo: UndoEntry[] = [];
   const rollback = async (): Promise<void> => {
-    for (let i = undo.length - 1; i >= 0; i--) {
-      await undo[i]();
-    }
+    const files = undo.filter((u) => u.kind === 'file');
+    const dbs = undo.filter((u) => u.kind === 'db');
+    const folders = undo.filter((u) => u.kind === 'folder');
+    for (let i = files.length - 1; i >= 0; i--) await files[i].fn();
+    for (let i = dbs.length - 1; i >= 0; i--) await dbs[i].fn();
+    for (const entry of folders) await entry.fn();
   };
 
   let newId = plan.newId;
@@ -262,9 +273,12 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
 
   const srcLock = await acquireTicketMutationLock(plan.srcTicketMd, home);
   const dstLock = await acquireTicketMutationLock(dstTicketMd, home);
-  undo.push(async () => {
-    await dstLock.release();
-    await srcLock.release();
+  undo.push({
+    kind: 'file',
+    fn: async () => {
+      await dstLock.release();
+      await srcLock.release();
+    },
   });
 
   const originalTicketBytes = await readFile(plan.srcTicketMd, 'utf-8');
@@ -280,8 +294,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       }
       throw err;
     }
-    undo.push(async () => {
-      await rename(dstTicketDir, plan.srcTicketDir);
+    undo.push({
+      kind: 'folder',
+      fn: async () => {
+        await rename(dstTicketDir, plan.srcTicketDir);
+      },
     });
 
     const [fmStart, body] = extractFrontmatter(originalTicketBytes);
@@ -300,8 +317,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
     }
     const ticketContent = `---\n${fm}\n---${body}`;
     await writeFileForce(dstTicketMd, ticketContent);
-    undo.push(async () => {
-      await writeFileForce(plan.srcTicketMd, originalTicketBytes);
+    undo.push({
+      kind: 'file',
+      fn: async () => {
+        await writeFileForce(dstTicketMd, originalTicketBytes);
+      },
     });
 
     const eventsPath = resolve(dstTicketDir, 'chat', 'events.jsonl');
@@ -313,8 +333,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
         .map((line) => (line.trim() ? rewriteChatEventLineForTicket(line, oldId, newId) : ''))
         .join('\n');
       await writeFileForce(eventsPath, out.endsWith('\n') || out.length === 0 ? out : `${out}\n`);
-      undo.push(async () => {
-        await writeFileForce(eventsPath, originalEvents);
+      undo.push({
+        kind: 'file',
+        fn: async () => {
+          await writeFileForce(eventsPath, originalEvents);
+        },
       });
     }
 
@@ -325,8 +348,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       const next = rewriteMarkerFile(original, oldId, newId);
       if (next !== original) {
         await writeFileForce(path, next);
-        undo.push(async () => {
-          await writeFileForce(path, original);
+        undo.push({
+          kind: 'file',
+          fn: async () => {
+            await writeFileForce(path, original);
+          },
         });
       }
     }
@@ -346,18 +372,24 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       oldProjectSlug: plan.srcProject,
       newProjectSlug: plan.dstProject,
     });
-    undo.push(async () => {
-      rekeyTicket(dbPath, {
-        oldId: newId,
-        newId: oldId,
-        oldProjectSlug: plan.dstProject,
-        newProjectSlug: plan.srcProject,
-      });
+    undo.push({
+      kind: 'db',
+      fn: async () => {
+        rekeyTicket(dbPath, {
+          oldId: newId,
+          newId: oldId,
+          oldProjectSlug: plan.dstProject,
+          newProjectSlug: plan.srcProject,
+        });
+      },
     });
 
     await rebuildChatIndex(dstTicketDir, newId);
-    undo.push(async () => {
-      await rebuildChatIndex(plan.srcTicketDir, oldId);
+    undo.push({
+      kind: 'db',
+      fn: async () => {
+        await rebuildChatIndex(dstTicketDir, oldId);
+      },
     });
 
     const walk = await listTicketsByProject(projectsDir);
@@ -366,19 +398,21 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
       const path = resolve(entry.ticketDir, 'ticket.md');
       const original = await readFile(path, 'utf-8');
       const [fm, body] = extractFrontmatter(original);
-      const depends = parseListFromFrontmatter(fm, 'depends_on').map((d) =>
-        d === oldId ? newId : d,
-      );
+      const parsed = parseTicketFrontmatter(original);
+      const depends = parsed.depends_on.map((d) => (d === oldId ? newId : d));
       const oldLink = `${plan.srcProject}/${plan.slug}`;
       const newLink = `${plan.dstProject}/${plan.slug}`;
-      const links = parseListFromFrontmatter(fm, 'links').map((l) => (l === oldLink ? newLink : l));
+      const links = parsed.links.map((l) => (l === oldLink ? newLink : l));
       let nextFm = setListInFrontmatter(fm, 'depends_on', depends);
       nextFm = setListInFrontmatter(nextFm, 'links', links);
       if (nextFm === fm) continue;
       const nextContent = `---\n${nextFm}\n---${body}`;
       await writeFileForce(path, nextContent);
-      undo.push(async () => {
-        await writeFileForce(path, original);
+      undo.push({
+        kind: 'file',
+        fn: async () => {
+          await writeFileForce(path, original);
+        },
       });
     }
 
@@ -392,8 +426,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
         next[rewriteSnoozeKey(key, oldId, newId)] = value;
       }
       await writeFileForce(snoozePath, `${JSON.stringify(next, null, 2)}\n`);
-      undo.push(async () => {
-        await writeFileForce(snoozePath, raw);
+      undo.push({
+        kind: 'file',
+        fn: async () => {
+          await writeFileForce(snoozePath, raw);
+        },
       });
     }
 
@@ -409,8 +446,11 @@ export async function applyMove(plan: MoveTicketPlan, deps: MoveDeps): Promise<T
           ctx.ticketDir = dstTicketDir;
           const next = `${JSON.stringify(ctx, null, 2)}\n`;
           await writeFileForce(ctxPath, next);
-          undo.push(async () => {
-            await writeFileForce(ctxPath, raw);
+          undo.push({
+            kind: 'file',
+            fn: async () => {
+              await writeFileForce(ctxPath, raw);
+            },
           });
         }
       }

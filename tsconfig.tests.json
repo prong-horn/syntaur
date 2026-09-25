@@ -118,5 +118,7 @@
     "src/__tests__/home-git.test.ts",
     "src/__tests__/doctor-git.test.ts",
     "src/__tests__/history.test.ts",
+    "src/__tests__/move.test.ts",
+    "src/__tests__/ticket-rekey.test.ts",
   ]
 }
