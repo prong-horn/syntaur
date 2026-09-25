@@ -13,13 +13,26 @@ import { initSessionDb, getSessionDb, resetSessionDb, closeSessionDb } from '../
 import { initEventsDb, resetEventsDb, closeEventsDb } from '../db/events-db.js';
 import { initUsageDb, resetUsageDb, closeUsageDb } from '../db/usage-db.js';
 import { rewriteChatEventLineForTicket } from '../chat/ticket-event-rewrite.js';
-import { openChatLog } from '../chat/store.js';
+import { openChatLog, rebuildChatIndex } from '../chat/store.js';
 import { resolveTicketTarget } from '../utils/ticket-target.js';
 import { flagTicket } from '../lifecycle/verbs.js';
 
 let home: string;
 let projectsDir: string;
 let origHome: string | undefined;
+
+function snapshotChatTables(dbPath: string): string {
+  resetSessionDb();
+  initSessionDb(dbPath);
+  const db = getSessionDb();
+  const out = {
+    chat_sessions: db.prepare('SELECT * FROM chat_sessions ORDER BY rowid').all(),
+    chat_items: db.prepare('SELECT * FROM chat_items ORDER BY rowid').all(),
+  };
+  closeSessionDb();
+  resetSessionDb();
+  return JSON.stringify(out);
+}
 
 async function fingerprintTree(root: string): Promise<string> {
   const hash = createHash('sha256');
@@ -478,13 +491,44 @@ describe('syntaur move', () => {
     expect(await readFile(resolve(home, 'syntaur.db'))).toEqual(dbBefore);
   });
 
+  it('rewrites bare OLD ticket ids in other tickets links', async () => {
+    await writeProject('src-proj', 'SP', 3);
+    await writeProject('dst-proj', 'DP', 1);
+    await seedTicket('src-proj', 'SP-1', 'alpha');
+    const otherDir = await seedTicket('src-proj', 'SP-2', 'beta');
+    let otherMd = await readFile(resolve(otherDir, 'ticket.md'), 'utf-8');
+    otherMd = otherMd.replace('links: []', 'links:\n  - SP-1');
+    await writeFile(resolve(otherDir, 'ticket.md'), otherMd, 'utf-8');
+    const plan = await planMoveTicket(projectsDir, 'SP-1', 'dst-proj');
+    await applyMove(plan, { syntaurHome: home, now: () => '2026-06-01T00:00:00Z' });
+    const otherAfter = await readFile(resolve(otherDir, 'ticket.md'), 'utf-8');
+    expect(otherAfter).toContain('DP-1');
+    expect(otherAfter).not.toMatch(/links:\s*\n\s+- SP-1/m);
+  });
+
   it('injected failure at home-json leaves ticket fully unmoved and DB unchanged', async () => {
     await writeProject('src-proj', 'SP', 2);
     await writeProject('dst-proj', 'DP', 1);
     const ticketDir = await seedTicket('src-proj', 'SP-1', 'alpha');
     await writeFile(resolve(home, 'inbox-snoozes.json'), '{}\n', 'utf-8');
     await seedDb('SP-1', 'src-proj');
-    const dbBefore = await readFile(resolve(home, 'syntaur.db'));
+    const log = await openChatLog(ticketDir);
+    await log.append({
+      ticketId: 'SP-1',
+      agentId: 'claude',
+      sessionKey: 'SP-1~claude',
+      turnId: null,
+      kind: 'user.message',
+      payload: { messageId: 'm1', text: 'hi' },
+      ts: '2026-01-01T00:00:00Z',
+    });
+    const dbPath = resolve(home, 'syntaur.db');
+    resetSessionDb();
+    initSessionDb(dbPath);
+    await rebuildChatIndex(ticketDir, 'SP-1');
+    closeSessionDb();
+    resetSessionDb();
+    const chatBefore = snapshotChatTables(dbPath);
     const plan = await planMoveTicket(projectsDir, 'SP-1', 'dst-proj');
     await expect(
       applyMove(plan, {
@@ -496,17 +540,139 @@ describe('syntaur move', () => {
       }),
     ).rejects.toThrow('injected home');
     await expect(stat(ticketDir)).resolves.toBeDefined();
-    expect(await readFile(resolve(home, 'syntaur.db'))).toEqual(dbBefore);
+    expect(snapshotChatTables(dbPath)).toBe(chatBefore);
+  });
+
+  it('injected failure at chat-rebuild restores chat_items and chat_sessions', async () => {
+    await writeProject('src-proj', 'SP', 2);
+    await writeProject('dst-proj', 'DP', 1);
+    const ticketDir = await seedTicket('src-proj', 'SP-1', 'alpha');
+    const log = await openChatLog(ticketDir);
+    await log.append({
+      ticketId: 'SP-1',
+      agentId: 'claude',
+      sessionKey: 'SP-1~claude',
+      turnId: null,
+      kind: 'user.message',
+      payload: { messageId: 'm1', text: 'hi' },
+      ts: '2026-01-01T00:00:00Z',
+    });
+    await seedDb('SP-1', 'src-proj');
+    const dbPath = resolve(home, 'syntaur.db');
     resetSessionDb();
-    initSessionDb(resolve(home, 'syntaur.db'));
-    const db = getSessionDb();
-    expect(
-      (db.prepare('SELECT ticket_id FROM chat_sessions WHERE ticket_id = ?').get('SP-1') as {
-        ticket_id: string;
-      }).ticket_id,
-    ).toBe('SP-1');
+    initSessionDb(dbPath);
+    await rebuildChatIndex(ticketDir, 'SP-1');
     closeSessionDb();
     resetSessionDb();
+    const chatBefore = snapshotChatTables(dbPath);
+    const plan = await planMoveTicket(projectsDir, 'SP-1', 'dst-proj');
+    await expect(
+      applyMove(plan, {
+        syntaurHome: home,
+        now: () => '2026-06-01T00:00:00Z',
+        fail: (step) => {
+          if (step === 'chat-rebuild') throw new Error('injected chat-rebuild');
+        },
+      }),
+    ).rejects.toThrow('injected chat-rebuild');
+    await expect(stat(ticketDir)).resolves.toBeDefined();
+    expect(snapshotChatTables(dbPath)).toBe(chatBefore);
+  });
+
+  it('bulk apply stops with non-zero exit when a later ticket fails', async () => {
+    await writeProject('src-proj', 'SP', 4);
+    await writeProject('dst-proj', 'DP', 1);
+    await seedTicket('src-proj', 'SP-1', 'one');
+    await seedTicket('src-proj', 'SP-2', 'two');
+    await seedTicket('src-proj', 'SP-3', 'three');
+    let applyCount = 0;
+    await expect(
+      runMove({
+        allFrom: 'src-proj',
+        to: 'dst-proj',
+        apply: true,
+      }, {
+        syntaurHome: home,
+        now: () => '2026-06-01T00:00:00Z',
+        fail: (step) => {
+          if (step !== 'db-rekey') return;
+          applyCount += 1;
+          if (applyCount === 2) throw new Error('injected bulk stop');
+        },
+      }),
+    ).rejects.toThrow('injected bulk stop');
+    await expect(stat(resolve(projectsDir, 'dst-proj', 'tickets', 'DP-1-one'))).resolves.toBeDefined();
+    await expect(stat(resolve(projectsDir, 'src-proj', 'tickets', 'SP-2-two'))).resolves.toBeDefined();
+    await expect(stat(resolve(projectsDir, 'src-proj', 'tickets', 'SP-3-three'))).resolves.toBeDefined();
+    const md2 = await readFile(resolve(projectsDir, 'src-proj', 'tickets', 'SP-2-two', 'ticket.md'), 'utf-8');
+    expect(md2).toContain('id: SP-2');
+    const md3 = await readFile(resolve(projectsDir, 'src-proj', 'tickets', 'SP-3-three', 'ticket.md'), 'utf-8');
+    expect(md3).toContain('id: SP-3');
+  });
+
+  it('bulk apply failure report names moved and remaining ticket ids', async () => {
+    await writeProject('src-proj', 'SP', 4);
+    await writeProject('dst-proj', 'DP', 1);
+    await seedTicket('src-proj', 'SP-1', 'one');
+    await seedTicket('src-proj', 'SP-2', 'two');
+    await seedTicket('src-proj', 'SP-3', 'three');
+    let applyCount = 0;
+    try {
+      await runMove({
+        allFrom: 'src-proj',
+        to: 'dst-proj',
+        apply: true,
+      }, {
+        syntaurHome: home,
+        fail: (step) => {
+          if (step !== 'db-rekey') return;
+          applyCount += 1;
+          if (applyCount === 2) throw new Error('injected bulk stop');
+        },
+      });
+      expect.fail('expected rejection');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MoveRefusedError);
+      const lines = (err as MoveRefusedError).reportLines ?? [];
+      const text = lines.join('\n');
+      expect(text).toMatch(/Stopped after 1 ticket/);
+      expect(text).toContain('SP-1 → DP-1');
+      expect(text).toMatch(/Remaining: 2 ticket/);
+    }
+  });
+
+  it('bulk up-front refusal lists failed tickets and changes nothing', async () => {
+    await writeProject('src-proj', 'SP', 4);
+    await writeProject('dst-proj', 'DP', 2);
+    await seedTicket('src-proj', 'SP-1', 'ok');
+    await seedTicket('src-proj', 'SP-2', 'collision');
+    await seedTicket('src-proj', 'SP-3', 'busy');
+    await seedTicket('dst-proj', 'DP-1', 'collision');
+    await seedDb('SP-3', 'src-proj');
+    resetSessionDb();
+    initSessionDb(resolve(home, 'syntaur.db'));
+    getSessionDb()
+      .prepare('UPDATE chat_sessions SET state = ? WHERE ticket_id = ?')
+      .run('running', 'SP-3');
+    closeSessionDb();
+    resetSessionDb();
+
+    const before = await fingerprintTree(home);
+    for (const apply of [false, true]) {
+      try {
+        await runMove({ allFrom: 'src-proj', to: 'dst-proj', apply });
+        expect.fail('expected refusal');
+      } catch (err) {
+        expect(err).toBeInstanceOf(MoveRefusedError);
+        const lines = (err as MoveRefusedError).reportLines ?? [];
+        const text = lines.join('\n');
+        expect(text).toContain('SP-2:');
+        expect(text).toContain('SP-3:');
+        expect(text).toMatch(/slug|chat session/i);
+        expect(text).toContain(apply ? '[apply]' : '[dry-run]');
+      }
+    }
+    expect(await fingerprintTree(home)).toBe(before);
   });
 
   it('moving twice accumulates movedFrom entries and both old ids resolve', async () => {
